@@ -1,5 +1,6 @@
 use chrono::DateTime;
 use chrono::Utc;
+use prosto_derive::proto_dump;
 use proto_rs::HasProto;
 use proto_rs::inject_proto_import;
 use proto_rs::proto_message;
@@ -7,6 +8,13 @@ use serde::Deserialize;
 use serde::Serialize;
 
 inject_proto_import!("test.proto", "google/protobuf/timestamp", "common/types");
+
+#[proto_dump(file = "protos/proto_dump.proto")]
+#[derive(prost::Message, Clone, PartialEq)]
+pub struct LamportsProto {
+    #[prost(uint64, tag = 1)]
+    pub amount: u64,
+}
 
 fn get_current_timestamp(_proto: &UserProto) -> DateTime<Utc> {
     Utc::now()

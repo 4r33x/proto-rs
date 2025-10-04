@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
 
+mod proto_dump;
 mod proto_import;
 mod proto_message;
 mod proto_rpc;
@@ -59,4 +60,9 @@ pub fn proto_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item2 = proc_macro2::TokenStream::from(item);
     let output = proto_rpc::proto_rpc_impl(attr2, item2);
     TokenStream::from(output)
+}
+
+#[proc_macro_attribute]
+pub fn proto_dump(attr: TokenStream, item: TokenStream) -> TokenStream {
+    proto_dump::proto_dump_impl(attr, item)
 }

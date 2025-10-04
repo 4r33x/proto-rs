@@ -17,9 +17,9 @@ pub fn register_import(file_name: &str, import_name: &str) {
     write_proto_file(file_name, &import_entry);
 }
 
-pub fn write_proto_file(file_name: &str, content: &str) {
-    let path = Path::new(".").join(file_name);
-    let file_name = path.file_name().unwrap().to_str().unwrap();
+pub fn write_proto_file(file_name_path: &str, content: &str) {
+    let path = Path::new(".").join(file_name_path);
+    let file_name_last = path.file_name().unwrap().to_str().unwrap();
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
@@ -28,7 +28,7 @@ pub fn write_proto_file(file_name: &str, content: &str) {
 
     // Lock registry and add new content
     let mut registry = REGISTRY.lock().unwrap();
-    let defs = registry.entry(file_name.to_string()).or_default();
+    let defs = registry.entry(file_name_path.to_string()).or_default();
 
     // Add content to registry (deduplication happens here)
     let was_new = defs.insert(content.to_string());
@@ -51,7 +51,7 @@ pub fn write_proto_file(file_name: &str, content: &str) {
     let content_items: Vec<String> = defs.iter().filter(|e| !e.starts_with(IMPORT_PREFIX)).cloned().collect();
 
     // Build complete file content
-    let file_content = build_complete_proto_file(file_name, &imports, &content_items);
+    let file_content = build_complete_proto_file(file_name_last, &imports, &content_items);
 
     // Write entire file atomically
     let mut file = OpenOptions::new().create(true).write(true).truncate(true).open(&path).expect("Failed to open proto file for writing");
@@ -60,7 +60,7 @@ pub fn write_proto_file(file_name: &str, content: &str) {
 
     // Mark as initialized
     let mut initialized = INITIALIZED_FILES.lock().unwrap();
-    initialized.insert(file_name.to_string());
+    initialized.insert(file_name_path.to_string());
 }
 
 /// Build the complete proto file content from scratch

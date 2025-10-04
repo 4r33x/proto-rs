@@ -5,7 +5,7 @@ use syn::DeriveInput;
 use syn::Fields;
 use syn::Type;
 
-use crate::proto_message::utils::ProtoConfig;
+use crate::utils::ProtoConfig;
 use crate::utils::strip_proto_suffix;
 use crate::utils::*;
 use crate::write_file::register_import;

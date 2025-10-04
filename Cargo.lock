@@ -742,7 +742,7 @@ dependencies = [
 
 [[package]]
 name = "prosto_derive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "proto_rs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "prost",

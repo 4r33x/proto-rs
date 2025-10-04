@@ -5,7 +5,7 @@ use syn::DeriveInput;
 use syn::Fields;
 mod complex_enum_handler;
 
-use crate::proto_message::utils::ProtoConfig;
+use crate::utils::ProtoConfig;
 use crate::utils::*;
 use crate::write_file::write_proto_file;
 
