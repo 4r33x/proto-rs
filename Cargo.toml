@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 
 
@@ -16,9 +16,15 @@ resolver = "3"
 prosto_derive = { path = "crates/prosto_derive" }
 prost = "0.14.1"
 
+
 [dependencies]
 prosto_derive.workspace = true
 prost.workspace = true
+fastnum = { version = "0.7.2", optional = true }
+
+
+[features]
+fastnum = ["dep:fastnum"]
 
 
 [dev-dependencies]

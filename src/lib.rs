@@ -3,6 +3,9 @@ pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
 pub use prosto_derive::proto_rpc;
 
+#[cfg(feature = "fastnum")]
+pub mod fastnum;
+
 pub trait HasProto {
     type Proto: Clone + prost::Message + PartialEq;
     fn to_proto(&self) -> Self::Proto;

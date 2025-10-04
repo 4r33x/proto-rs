@@ -135,6 +135,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2261d10cca569e4643e526d8dc2e62e433cc8aba21ab764233731f8d369bf394"
 
 [[package]]
+name = "bnum"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f781dba93de3a5ef6dc5b17c9958b208f6f3f021623b360fb605ea51ce443f10"
+
+[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -201,6 +207,15 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys",
+]
+
+[[package]]
+name = "fastnum"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2b47f3fc03a5f8fe0c6de086e328733fa2c14eef3562eb5ee8d347332a38182"
+dependencies = [
+ "bnum",
 ]
 
 [[package]]
@@ -742,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "prosto_derive"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -751,9 +766,10 @@ dependencies = [
 
 [[package]]
 name = "proto_rs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
+ "fastnum",
  "prost",
  "prosto_derive",
  "serde",

@@ -6,11 +6,9 @@ message Id {
   uint64 id = 1;
 }
 
-enum ServiceStatus {
-  PENDING = 0;
-  ACTIVE = 1;
-  INACTIVE = 2;
-  COMPLETED = 3;
+message GoonPong {
+  Id id = 1;
+  ServiceStatus status = 2;
 }
 
 message RizzPing {
@@ -18,8 +16,10 @@ message RizzPing {
   ServiceStatus status = 2;
 }
 
-message GoonPong {
-  Id id = 1;
-  ServiceStatus status = 2;
+enum ServiceStatus {
+  PENDING = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+  COMPLETED = 3;
 }
 

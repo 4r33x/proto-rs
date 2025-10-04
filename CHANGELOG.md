@@ -1,3 +1,7 @@
+## [0.1.2]
+### Added
+- Fastnum proto conversions via feature flag (`D128Proto` and `UD128Proto`)
+
 ## [0.1.1]
 
 ### Added
