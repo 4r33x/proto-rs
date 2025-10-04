@@ -1,0 +1,7 @@
+
+syntax = "proto3";
+package rizz_types;
+
+message BarSub {}
+
+message FooResponse {}

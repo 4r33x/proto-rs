@@ -1,0 +1,10 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package rizz_types;
+
+message FooResponse {
+}
+
+message BarSub {
+}
+

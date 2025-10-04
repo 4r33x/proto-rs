@@ -1,0 +1,10 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package goon_types;
+
+message RizzPing {
+}
+
+message GoonPong {
+}
+

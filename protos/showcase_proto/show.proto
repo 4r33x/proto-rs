@@ -1,0 +1,226 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package show;
+
+import "google.protobuf.proto";
+
+message RepeatedComplex {
+  uint64 id = 1;
+  repeated Address addresses = 2;
+  repeated Order orders = 3;
+  repeated Status statuses = 4;
+  optional Status status_opt = 5;
+}
+
+message NumericTypes {
+  uint32 uint32_field = 1;
+  uint64 uint64_field = 2;
+  int32 int32_field = 3;
+  int64 int64_field = 4;
+  float float_field = 5;
+  double double_field = 6;
+}
+
+message PaymentMethodProto {
+  oneof value {
+    uint64 cash = 1;
+    string card = 2;
+    QuoteLamports crypto = 3;
+}
+}
+
+message QuoteLamportsProto {
+  oneof value {
+    uint64 lamports = 1;
+    uint64 wsol = 2;
+    uint64 usdc = 3;
+    uint64 usdt = 4;
+}
+}
+
+message Address {
+  string street = 1;
+  string city = 2;
+  string country = 3;
+}
+
+message User {
+  uint64 id = 1;
+  string name = 2;
+}
+
+enum Status {
+  PENDING = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+  COMPLETED = 3;
+}
+
+message Person {
+  uint64 id = 1;
+  string name = 2;
+  Address address = 3;
+}
+
+message Order {
+  uint64 id = 1;
+  uint64 amount = 2;
+  QuoteLamports quote = 3;
+}
+
+message UserWithMetadata {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message MixedAnnotations {
+  uint64 id = 1;
+  int64 created_at = 2;
+  Address address = 3;
+}
+
+message SingleField {
+  uint64 value = 1;
+}
+
+message UserList {
+  repeated uint64 ids = 1;
+  repeated string names = 2;
+}
+
+message OptionalComplex {
+  uint64 id = 1;
+  optional Address address = 2;
+  optional QuoteLamports quote = 3;
+  optional Status status = 4;
+}
+
+message Attr {
+  repeated string id_vec = 1;
+  optional string id_opt = 2;
+  Status status = 3;
+  optional Status status_opt = 4;
+  repeated Status status_vec = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  repeated google.protobuf.Timestamp timestamp_vec = 7;
+  optional google.protobuf.Timestamp timestamp_opt = 8;
+  google.protobuf.TestEnum test_enum = 9;
+  optional google.protobuf.TestEnum test_enum_opt = 10;
+  repeated google.protobuf.TestEnum test_enum_vec = 11;
+  int64 updated_at = 12;
+}
+
+message SimpleMessage {
+  uint64 id = 1;
+  string name = 2;
+  bool active = 3;
+}
+
+message Empty {
+}
+
+message UserWithDefaults {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message FileData {
+  string name = 1;
+  bytes content = 2;
+  uint64 size = 3;
+}
+
+message OptionalFields {
+  uint64 id = 1;
+  optional string email = 2;
+  optional uint32 age = 3;
+}
+
+message ComplexConversions {
+  uint64 id = 1;
+  int64 timestamp = 2;
+  string metadata = 3;
+  Status status = 4;
+  string name = 5;
+}
+
+message Payment {
+  uint64 id = 1;
+  uint64 amount = 2;
+  PaymentMethod method = 3;
+  int64 created_at = 4;
+}
+
+message VeryComplexProtoFirst {}
+
+message VeryComplexProtoThird {
+  uint64 id = 1;
+  Address address = 2;
+}
+
+message VeryComplexProtoRepeated {
+  repeated uint64 id = 1;
+  repeated Address address = 2;
+}
+
+message VeryComplexProtoOption {
+  optional uint64 id = 1;
+  optional Option address = 2;
+}
+
+message VeryComplexProtoAttr {
+  repeated string id_vec = 1;
+  optional string id_opt = 2;
+  Status status = 3;
+  optional Status status_opt = 4;
+  repeated Status status_vec = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  repeated google.protobuf.Timestamp timestamp_vec = 7;
+  optional google.protobuf.Timestamp timestamp_opt = 8;
+  google.protobuf.TestEnum test_enum = 9;
+  optional google.protobuf.TestEnum test_enum_opt = 10;
+  repeated google.protobuf.TestEnum test_enum_vec = 11;
+}
+
+message VeryComplexProto {
+  oneof value {
+    VeryComplexProtoFirst first = 1;
+    Address second = 2;
+    VeryComplexProtoThird third = 3;
+    VeryComplexProtoRepeated repeated = 4;
+    VeryComplexProtoOption option = 5;
+    VeryComplexProtoAttr attr = 6;
+}
+}
+
+message Invoice {
+  uint64 id = 1;
+  Person customer = 2;
+  repeated Payment payments = 3;
+  Status status = 4;
+}
+
+message MyMessage {
+  uint64 id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  repeated Timestamp timestamp_vec = 3;
+  optional Timestamp timestamp_opt = 4;
+  string name = 5;
+  TestEnum test_enum = 6;
+  optional TestEnum test_enum_opt = 7;
+  repeated TestEnum test_enum_vec = 8;
+}
+
+message Transaction {
+  uint64 id = 1;
+  int64 created_at = 2;
+  int64 updated_at = 3;
+}
+
+message FieldNumbering {
+  uint64 field1 = 1;
+  string field2 = 2;
+  uint32 field3 = 3;
+  bool field4 = 4;
+}
+

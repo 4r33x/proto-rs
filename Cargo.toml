@@ -1,0 +1,46 @@
+[package]
+name = "proto_rs"
+version = "0.1.0"
+edition = "2024"
+
+
+[workspace]
+members = [
+  "crates/prosto_derive",
+  "tests/tonic_prost_test",
+  "tests/proto_rs_test",
+]
+resolver = "3"
+
+[workspace.dependencies]
+prosto_derive = { path = "crates/prosto_derive" }
+prost = "0.14.1"
+
+[dependencies]
+prosto_derive.workspace = true
+prost.workspace = true
+
+
+[dev-dependencies]
+tonic = "0.14.2"
+tonic-prost = "0.14.1"
+
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-stream = "0.1.17"
+
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+chrono = "0.4.42"
+
+
+[workspace.lints.rust]
+unsafe_code = { level = "forbid", priority = 0 }
+
+[workspace.lints.clippy]
+# cargo = { level = "deny", priority = -1 }
+# complexity = { level = "deny", priority = -1 }
+# correctness = { level = "deny", priority = -1 }
+# pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+# restriction = { level = "warn", priority = -1 }
+# style = { level = "deny", priority = -1 }
