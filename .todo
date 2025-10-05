@@ -1,5 +1,1 @@
-Add stable sorting for registry entries
-Add possibility to enable\disable .proto generation (env var way or someother)
-Generate .proto, when crate imported as dependency
-Fix readme
 Publish to crates.io
