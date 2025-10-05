@@ -1,4 +1,4 @@
-# Rust as First-Class Citizen for gRPC
+# Rust as first-class citizen for gRPC ecosystem
 
 This crate provides 3 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
 
@@ -126,18 +126,6 @@ Controls auto-emission of .proto files by macros:
 | emit-proto-files | false | ❌ No emission (override) |
 | build-schemas | (any) | ✅ Emit const |
 
-## Proto Dump Macro
-
-You can just dump proto files with (without HasProto impl, helpful for handwritten prost types):
-
-```rust
-#[proto_dump(proto_path = "protos/proto_dump.proto")]
-#[derive(prost::Message, Clone, PartialEq)]
-pub struct LamportsProto {
-    #[prost(uint64, tag = 1)]
-    pub amount: u64,
-}
-```
 
 This crate also provides an auxiliary macro `#[proto_dump(proto_path ="protos/proto_dump.proto")]` that outputs a .proto file. This is helpful for hand-written prost types.
 
