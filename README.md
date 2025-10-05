@@ -1,6 +1,6 @@
 # Rust as first-class citizen for gRPC ecosystem
 
-This crate provides 3 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
+This crate provides 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
 
 ## Motivation
 
@@ -126,8 +126,9 @@ Controls auto-emission of .proto files by macros:
 | emit-proto-files | false | ❌ No emission (override) |
 | build-schemas | (any) | ✅ Emit const |
 
+## proto_dump for hand-written types
 
-This crate also provides an auxiliary macro `#[proto_dump(proto_path ="protos/proto_dump.proto")]` that outputs a .proto file. This is helpful for hand-written prost types.
+This crate also provides an auxiliary macro `#[proto_dump(proto_path ="protos/proto_dump.proto")]` that outputs a .proto file. This is helpful for hand-written types.
 
 ```rust
 #[proto_dump(proto_path ="protos/proto_dump.proto")]
@@ -148,6 +149,19 @@ message Lamports {
     uint64 amount = 1;
 }
 ```
+
+## Inject Proto Imports
+
+It's not mandatory to use this macro at all, macros above derive and inject imports from attributes automaticly
+
+But in case you need it, to add custom imports to your generated .proto files use the `inject_proto_import!` macro:
+
+```rust
+inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common");
+```
+
+This will inject the specified import statements into the target .proto file
+
 
 ## Advanced Features
 
