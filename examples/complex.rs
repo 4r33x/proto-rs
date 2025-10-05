@@ -9,9 +9,7 @@ use tonic::Request;
 use tonic::Response;
 use tonic::Status;
 
-use crate::sigma_rpc_server::SigmaRpcServer;
-
-#[proto_message(file = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum ServiceStatus {
     Pending,
@@ -21,13 +19,13 @@ pub enum ServiceStatus {
     Completed,
 }
 
-#[proto_message(file = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Id {
     pub id: u64,
 }
 
-#[proto_message(file = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing {
     id: Id,
@@ -35,7 +33,7 @@ pub struct RizzPing {
     status: ServiceStatus,
 }
 
-#[proto_message(file = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
     id: Id,
@@ -43,16 +41,16 @@ pub struct GoonPong {
     status: ServiceStatus,
 }
 
-#[proto_message(file = "protos/gen_complex_proto/rizz_types.proto")]
+#[proto_message(proto_path ="protos/gen_complex_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct FooResponse;
 
-#[proto_message(file = "protos/gen_complex_proto/rizz_types.proto")]
+#[proto_message(proto_path ="protos/gen_complex_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarSub;
 
 // Define trait with the proto_rpc macro
-#[proto_rpc(sigma_rpc, server = true, client = true, proto = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"] )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
@@ -66,6 +64,8 @@ struct S;
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     use tonic::transport::Server;
+
+    use crate::sigma_rpc_server::SigmaRpcServer;
 
     let addr = "127.0.0.1:50051".parse()?;
     let service = S;

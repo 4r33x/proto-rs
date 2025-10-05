@@ -5,6 +5,8 @@ package rizz_types;
 message BarSub {
 }
 
+
 message FooResponse {
 }
+
 

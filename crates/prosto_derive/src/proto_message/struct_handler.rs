@@ -1,21 +1,15 @@
-use proc_macro::TokenStream;
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
 use syn::Fields;
 use syn::Type;
 
-use crate::utils::ProtoConfig;
 use crate::utils::*;
-use crate::write_file::write_proto_file;
 
-pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct, config: ProtoConfig) -> TokenStream {
+pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     let name = &input.ident;
     let proto_name = syn::Ident::new(&format!("{}Proto", name), name.span());
     let error_name = syn::Ident::new(&format!("{}ConversionError", name), name.span());
-
-    let proto_def = generate_struct_proto(&name.to_string(), &data.fields);
-
-    write_proto_file(&config.file_name, &proto_def);
 
     let mut proto_fields = Vec::new();
     let mut to_proto_fields = Vec::new();
@@ -567,5 +561,4 @@ pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct, config: ProtoCo
                 }
             }
         }
-    .into()
 }

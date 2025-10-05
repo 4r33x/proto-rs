@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::utils::MethodInfo;
+use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 

@@ -1,25 +1,13 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::sync::LazyLock;
-use std::sync::Mutex;
-
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::quote;
 use syn::Field;
-use syn::Fields;
 use syn::GenericArgument;
 use syn::Lit;
 use syn::PathArguments;
 use syn::Type;
 use syn::TypePath;
 use syn::parse_quote;
-
-/// Global registry: filename -> HashSet<proto definitions>
-pub static REGISTRY: LazyLock<Mutex<HashMap<String, HashSet<String>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// Track which files have been initialized (cleared) this compilation
-pub static INITIALIZED_FILES: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[derive(Debug, Clone)]
 pub struct FieldConfig {
@@ -177,9 +165,9 @@ pub fn convert_field_type_to_proto(ty: &Type) -> Type {
 
 #[derive(Clone)]
 pub struct ParsedFieldType {
-    pub rust_type: Type,          // Rust type (original)
-    pub proto_type: String,       // Proto type string (for .proto file)
-    pub prost_type: TokenStream2, // prost attribute type
+    pub rust_type: Type,         // Rust type (original)
+    pub proto_type: String,      // Proto type string (for .proto file)
+    pub prost_type: TokenStream, // prost attribute type
     pub is_option: bool,
     pub is_repeated: bool,
 
@@ -291,106 +279,6 @@ pub fn to_upper_snake_case(s: &str) -> String {
     result
 }
 
-pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
-    let mut proto_fields = String::new();
-    let mut field_num = 0;
-
-    for field in fields.iter() {
-        let config = parse_field_config(field);
-        if config.skip {
-            continue;
-        }
-
-        field_num += 1;
-        let ident = field.ident.as_ref().unwrap().to_string();
-
-        // Get the type to use for proto generation
-        let ty = if let Some(ref into_type) = config.into_type {
-            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| field.ty.clone())
-        } else {
-            field.ty.clone()
-        };
-
-        // Special handling for Vec<u8> -> bytes
-        if is_bytes_vec(&ty) {
-            proto_fields.push_str(&format!("  bytes {} = {};\n", ident, field_num));
-            continue;
-        }
-
-        // Extract the actual type from wrappers (Option/Vec)
-        let (is_option, is_repeated, inner_type) = if is_option_type(&ty) {
-            if let Type::Path(type_path) = &ty {
-                if let Some(segment) = type_path.path.segments.last() {
-                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                            (true, false, inner.clone())
-                        } else {
-                            (true, false, ty.clone())
-                        }
-                    } else {
-                        (true, false, ty.clone())
-                    }
-                } else {
-                    (true, false, ty.clone())
-                }
-            } else {
-                (true, false, ty.clone())
-            }
-        } else if let Some(inner) = vec_inner_type(&ty) {
-            (false, true, inner)
-        } else {
-            (false, false, ty.clone())
-        };
-
-        // Determine the proto type string
-        let proto_ty_str = if let Some(ref import_path) = config.import_path {
-            // Use the import path prefix
-            let base_name = rust_type_path_ident(&inner_type).to_string();
-            format!("{}.{}", import_path, base_name)
-        } else if config.is_rust_enum {
-            // For Rust enums converted to proto, get the type name
-            rust_type_path_ident(&inner_type).to_string()
-        } else if config.is_proto_enum {
-            // For proto-native enums, use the type name as-is
-            rust_type_path_ident(&inner_type).to_string()
-        } else if config.is_message {
-            // For imported message types, use as-is without Proto suffix
-            rust_type_path_ident(&inner_type).to_string()
-        } else if is_complex_type(&inner_type) {
-            // For complex types, strip Proto suffix for .proto file
-            let base_name = rust_type_path_ident(&inner_type).to_string();
-            strip_proto_suffix(&base_name)
-        } else {
-            // For primitives, use the proto type
-            let parsed = parse_field_type(&inner_type);
-            parsed.proto_type
-        };
-
-        // Determine modifier
-        let modifier = if is_repeated {
-            "repeated "
-        } else if is_option {
-            "optional "
-        } else {
-            ""
-        };
-
-        proto_fields.push_str(&format!("  {}{} {} = {};\n", modifier, proto_ty_str, ident, field_num));
-    }
-
-    format!("message {} {{\n{}}}\n\n", name, proto_fields)
-}
-
-pub fn generate_enum_proto(name: &str, variants: &syn::punctuated::Punctuated<syn::Variant, syn::token::Comma>) -> String {
-    let mut proto_variants = String::new();
-    for (i, variant) in variants.iter().enumerate() {
-        let variant_name = variant.ident.to_string();
-        let proto_name = to_upper_snake_case(&variant_name);
-        proto_variants.push_str(&format!("  {} = {};\n", proto_name, i));
-    }
-    format!("enum {} {{\n{}}}\n\n", name, proto_variants)
-}
-
 pub fn rust_type_path_ident(ty: &Type) -> &syn::Ident {
     if let Type::Path(type_path) = ty {
         &type_path.path.segments.last().unwrap().ident
@@ -456,53 +344,35 @@ pub fn strip_proto_suffix(type_name: &str) -> String {
     type_name.strip_suffix("Proto").unwrap_or(type_name).to_string()
 }
 
-use proc_macro::TokenStream;
-use syn::Attribute;
-use syn::Expr;
-use syn::ExprLit;
-use syn::MetaNameValue;
-
-#[derive(Debug, Clone)]
-pub struct ProtoConfig {
-    pub file_name: String,
-}
-
-impl Default for ProtoConfig {
-    fn default() -> Self {
-        Self {
-            file_name: "generated.proto".to_string(),
-        }
-    }
-}
-impl ProtoConfig {
-    /// Parse proto configuration from both macro attributes and item attributes
-    ///
-    /// # Arguments
-    /// * `attr` - The macro attribute TokenStream (e.g., from `#[proto_message(file = "test.proto")]`)
-    /// * `item_attrs` - The attributes on the item itself
-    ///
-    /// # Returns
-    /// A ProtoConfig with the file name extracted from the macro attribute, or default if not provided
-    pub fn parse_proto_config(attr: TokenStream, _item_attrs: &[Attribute]) -> Self {
-        let mut config = Self::default();
-
-        // Parse file name from macro attribute if present
-        if !attr.is_empty() {
-            if let Ok(meta) = syn::parse::<MetaNameValue>(attr) {
-                if meta.path.is_ident("file") {
-                    if let Expr::Lit(ExprLit { lit: Lit::Str(litstr), .. }) = &meta.value {
-                        config.file_name = litstr.value();
-                    } else {
-                        panic!("Expected string literal for file attribute");
-                    }
-                } else {
-                    panic!("Expected file = \"...\" attribute");
-                }
-            } else {
-                panic!("Invalid macro attribute format. Expected: #[proto_message(file = \"filename.proto\")]");
+// Helper to extract wrapper info (returns base type, is_option, is_repeated)
+pub fn extract_wrapper_info(ty: &Type) -> (Type, bool, bool) {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        if segment.ident == "Option" {
+            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+            {
+                return (inner.clone(), true, false);
             }
+        } else if segment.ident == "Vec"
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+        {
+            return (inner.clone(), false, true);
         }
-
-        config
     }
+    (ty.clone(), false, false)
+}
+
+/// Information about a method extracted from the trait
+pub struct MethodInfo {
+    pub name: syn::Ident,
+    pub _attrs: Vec<syn::Attribute>,
+    pub request_type: Box<Type>,
+    pub response_type: Box<Type>,
+    pub is_streaming: bool,
+    pub stream_type_name: Option<syn::Ident>,
+    pub inner_response_type: Option<Type>,
+    pub user_method_signature: TokenStream,
 }

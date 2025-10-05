@@ -1,3 +1,4 @@
+// CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
 package sigma_rpc;
 

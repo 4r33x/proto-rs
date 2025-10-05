@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 
 
@@ -9,11 +9,13 @@ members = [
   "crates/prosto_derive",
   "tests/tonic_prost_test",
   "tests/proto_rs_test",
+  "tests/proto_build_test",
 ]
 resolver = "3"
 
 [workspace.dependencies]
-prosto_derive = { path = "crates/prosto_derive" }
+prosto_derive = { version = "*", path = "crates/prosto_derive" }
+proto_rs = { version = "*", path = "./" }
 prost = "0.14.1"
 
 
@@ -21,11 +23,15 @@ prost = "0.14.1"
 prosto_derive.workspace = true
 prost.workspace = true
 fastnum = { version = "0.7.2", optional = true }
+inventory = { version = "0.3.21", optional = true }
 
 
 [features]
 fastnum = ["dep:fastnum"]
-
+# Schema collection for build scripts
+build-schemas = ["inventory"]
+# Enable live proto dumping
+emit-proto-files = ["prosto_derive/emit-proto-files"]
 
 [dev-dependencies]
 tonic = "0.14.2"

@@ -468,6 +468,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc61209c082fbeb19919bee74b176221b27223e27b65d781eb91af24eb1fb46e"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "io-uring"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -757,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "prosto_derive"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -765,11 +774,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "proto_build_test"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "prost",
+ "proto_rs",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+]
+
+[[package]]
 name = "proto_rs"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "fastnum",
+ "inventory",
  "prost",
  "prosto_derive",
  "serde",

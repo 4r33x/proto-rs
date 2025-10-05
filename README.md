@@ -1,18 +1,20 @@
-# Rust as first-class citizen for gRPC
+# Rust as First-Class Citizen for gRPC
 
-This crate provides 2 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
+This crate provides 3 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
 
-**Motivation:**
+## Motivation
 
-0. I hate to do conversion after conversion for conversion 
-1. I love to see Rust only as first citizen for all my stuff
-2. I hate bloat, so no protoc (shoutout to pewdiepie debloat trend)
+0. I hate to do conversion after conversion for conversion
+1. I love to see Rust only as first-class citizen for all my stuff
+2. I hate bloat, so no protoc (shoutout to PewDiePie debloat trend)
 3. I don't want to touch .proto files at all
 
-`#[proto_rpc]` macro will convert your Rust native trait to tonic:
+## Usage
+
+The `#[proto_rpc]` macro will convert your Rust native trait to tonic and optionally emit .proto file:
 
 ```rust
-#[proto_rpc(sigma_rpc, server = true, client = true, proto = true, proto_path = "protos/gen_proto/sigma_rpc.proto")]
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
@@ -63,28 +65,110 @@ pub trait HasProto {
 }
 ```
 
-We can derive it (or manually impmlement) for most types with #[proto_message] macro:
+We can derive it (or manually implement) for most types with `#[proto_message]` macro:
 
 ```rust
-#[proto_message(file = "protos/gen_proto/goon_types.proto")]
+#[proto_message(proto_path ="protos/gen_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing;
 ```
 
-
 But that's not all — `#[proto_message]` and `#[proto_rpc]` will also create .proto definitions for non-Rust clients.
+
+## Build All .proto Files from Dependencies at once
+
+**Pure Rust Black Magic**
+
+This crate provides a powerful feature to collect and build .proto files from ALL dependencies that use `proto_rs` in a single place. This is incredibly useful for building a centralized proto schema from a multi-crate workspace.
+
+### Usage
+
+In your `build.rs` or `main.rs` (or any crate that has other proto_rs dependent crates):
+
+```rust
+use proto_rs::schemas::ProtoSchema;
+
+fn main() {
+    proto_rs::schemas::write_all("build_protos").expect("Failed to write proto files");
+    
+    for schema in inventory::iter::<ProtoSchema> {
+        println!("Collected: {}", schema.name);
+    }
+}
+```
+
+This will automatically collect and build all .proto files from all crates in your dependency tree that use `proto_rs` macros!
+
+## Examples
 
 You can see more in examples:
 
 - **proto_gen_example** - simple service with streaming (generated .proto saved here: protos/gen_proto)
 - **prosto_proto** - showcase of type possibilities (generated .proto saved here: protos/showcase_proto)
+- **tests/proto_build_test** - example of how you can build .proto files only on demand
 
-You can also test implementations in tests.
 
-The macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
+## .proto Auto-Emission Control
+
+Controls auto-emission of .proto files by macros:
+- `"emit-proto-files"` - cargo feature
+- `"PROTO_EMIT_FILE"` - env var
+
+### .proto Auto-Emission Behavior
+
+| Feature | Env Var | Result |
+|---------|---------|--------|
+| none | not set | ❌ No emission |
+| none | true | ✅ Emit files |
+| none | false | ❌ No emission |
+| emit-proto-files | not set | ✅ Emit files |
+| emit-proto-files | true | ✅ Emit files |
+| emit-proto-files | false | ❌ No emission (override) |
+| build-schemas | (any) | ✅ Emit const |
+
+## Proto Dump Macro
+
+You can just dump proto files with (without HasProto impl, helpful for handwritten prost types):
 
 ```rust
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(prost::Message, Clone, PartialEq)]
+pub struct LamportsProto {
+    #[prost(uint64, tag = 1)]
+    pub amount: u64,
+}
+```
+
+This crate also provides an auxiliary macro `#[proto_dump(proto_path ="protos/proto_dump.proto")]` that outputs a .proto file. This is helpful for hand-written prost types.
+
+```rust
+#[proto_dump(proto_path ="protos/proto_dump.proto")]
+#[derive(prost::Message, Clone, PartialEq)]
+pub struct LamportsProto {
+    #[prost(uint64, tag = 1)]
+    pub amount: u64,
+}
+```
+
+Generated proto:
+
+```proto
+syntax = "proto3";
+package proto_dump;
+
+message Lamports {
+    uint64 amount = 1;
+}
+```
+
+## Advanced Features
+
+Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
+
+### Struct with Advanced Attributes
+
+```rust
+#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
 pub struct Attr {
     #[proto(skip)]
     id_skip: Vec<i64>,
@@ -121,7 +205,8 @@ pub struct Attr {
 }
 ```
 
-Generated:
+Generated proto:
+
 ```proto
 message Attr {
   repeated string id_vec = 1;
@@ -139,10 +224,10 @@ message Attr {
 }
 ```
 
-Complex enums:
+### Complex Enums
 
 ```rust
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
 pub enum VeryComplex {
     First,
     Second(Address),
@@ -193,7 +278,7 @@ pub enum VeryComplex {
 }
 ```
 
-Generated Proto:
+Generated proto:
 
 ```proto
 message VeryComplexProto {
@@ -204,7 +289,7 @@ message VeryComplexProto {
     VeryComplexProtoRepeated repeated = 4;
     VeryComplexProtoOption option = 5;
     VeryComplexProtoAttr attr = 6;
-}
+  }
 }
 
 message VeryComplexProtoFirst {}
@@ -237,13 +322,12 @@ message VeryComplexProtoAttr {
   optional google.protobuf.TestEnum test_enum_opt = 10;
   repeated google.protobuf.TestEnum test_enum_vec = 11;
 }
-
 ```
 
-Rust simple enum:
+### Simple Rust Enum
 
 ```rust
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub enum Status {
     Pending,
@@ -254,6 +338,8 @@ pub enum Status {
 }
 ```
 
+Generated proto:
+
 ```proto
 enum Status {
   PENDING = 0;
@@ -263,30 +349,7 @@ enum Status {
 }
 ```
 
-Here's the corrected and formatted version:
-
----
-
-This crate also provides an auxiliary macro `#[proto_dump(file = "protos/proto_dump.proto")]` that outputs a .proto file. This is helpful for hand-written prost types.
-
-```rust
-#[proto_dump(file = "protos/proto_dump.proto")]
-#[derive(prost::Message, Clone, PartialEq)]
-pub struct LamportsProto {
-    #[prost(uint64, tag = 1)]
-    pub amount: u64,
-}
-```
-
-```proto
-syntax = "proto3";
-package proto_dump;
-
-message Lamports {
-    uint64 amount = 1;
-}
-```
-
+## Dependencies
 
 Crate pulled dependencies:
 

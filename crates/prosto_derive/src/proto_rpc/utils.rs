@@ -1,73 +1,19 @@
-use std::collections::HashMap;
-
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::FnArg;
 use syn::ItemTrait;
-use syn::LitStr;
 use syn::PatType;
 use syn::ReturnType;
-use syn::Token;
 use syn::TraitItem;
 use syn::Type;
 use syn::TypePath;
-use syn::parse::Parse;
-use syn::parse::ParseStream;
-use syn::punctuated::Punctuated;
 
-/// Information about a method extracted from the trait
-pub struct MethodInfo {
-    pub name: syn::Ident,
-    pub _attrs: Vec<syn::Attribute>,
-    pub request_type: Box<Type>,
-    pub response_type: Box<Type>,
-    pub is_streaming: bool,
-    pub stream_type_name: Option<syn::Ident>,
-    pub inner_response_type: Option<Type>,
-    pub user_method_signature: TokenStream,
-}
-
-pub struct ProtoImports {
-    pub imports: HashMap<String, Vec<String>>,
-}
-
-impl Parse for ProtoImports {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut imports = HashMap::new();
-
-        while !input.is_empty() {
-            let package: syn::Ident = input.parse()?;
-            input.parse::<Token![=]>()?;
-
-            let content;
-            syn::bracketed!(content in input);
-            let types: Punctuated<LitStr, Token![,]> = content.parse_terminated(|buf| buf.parse::<LitStr>(), Token![,])?;
-
-            imports.insert(package.to_string(), types.iter().map(|s| s.value()).collect());
-
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-
-        Ok(ProtoImports { imports })
-    }
-}
+use crate::utils::MethodInfo;
 
 /// Extract methods and associated types from the trait definition
-pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<TokenStream>, HashMap<String, Vec<String>>) {
+pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<TokenStream>) {
     let mut methods = Vec::new();
     let mut user_associated_types = Vec::new();
-    let mut proto_imports = HashMap::new();
-
-    // Extract proto_imports from trait attributes
-    for attr in &input.attrs {
-        if attr.path().is_ident("proto_imports")
-            && let Ok(imports) = attr.parse_args::<ProtoImports>()
-        {
-            proto_imports = imports.imports;
-        }
-    }
 
     for item in &input.items {
         match item {
@@ -124,7 +70,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
         }
     }
 
-    (methods, user_associated_types, proto_imports)
+    (methods, user_associated_types)
 }
 
 fn generate_user_method_signature(

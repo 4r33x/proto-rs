@@ -1,10 +1,11 @@
 use proc_macro::TokenStream;
 
+mod emit_proto;
+mod parse;
 mod proto_dump;
 mod proto_import;
 mod proto_message;
 mod proto_rpc;
-
 mod utils;
 mod write_file;
 
@@ -56,9 +57,7 @@ pub fn inject_proto_import(input: TokenStream) -> TokenStream {
 /// - With package: `/my_package.MyService/Ping`
 #[proc_macro_attribute]
 pub fn proto_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let attr2 = proc_macro2::TokenStream::from(attr);
-    let item2 = proc_macro2::TokenStream::from(item);
-    let output = proto_rpc::proto_rpc_impl(attr2, item2);
+    let output = proto_rpc::proto_rpc_impl(attr, item);
     TokenStream::from(output)
 }
 

@@ -4,25 +4,6 @@ package show;
 
 import "google.protobuf.proto";
 
-message Address {
-  string street = 1;
-  string city = 2;
-  string country = 3;
-}
-
-message Payment {
-  uint64 id = 1;
-  uint64 amount = 2;
-  PaymentMethod method = 3;
-  int64 created_at = 4;
-}
-
-message Transaction {
-  uint64 id = 1;
-  int64 created_at = 2;
-  int64 updated_at = 3;
-}
-
 enum Status {
   PENDING = 0;
   ACTIVE = 1;
@@ -30,9 +11,108 @@ enum Status {
   COMPLETED = 3;
 }
 
-message User {
+message Address {
+  string street = 1;
+  string city = 2;
+  string country = 3;
+}
+
+message Attr {
+  repeated string id_vec = 1;
+  optional string id_opt = 2;
+  Status status = 3;
+  optional Status status_opt = 4;
+  repeated Status status_vec = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  repeated google.protobuf.Timestamp timestamp_vec = 7;
+  optional google.protobuf.Timestamp timestamp_opt = 8;
+  google.protobuf.TestEnum test_enum = 9;
+  optional google.protobuf.TestEnum test_enum_opt = 10;
+  repeated google.protobuf.TestEnum test_enum_vec = 11;
+  int64 updated_at = 12;
+}
+
+message ComplexConversions {
   uint64 id = 1;
-  string name = 2;
+  int64 timestamp = 2;
+  string metadata = 3;
+  Status status = 4;
+  string name = 5;
+}
+
+message Empty {
+}
+
+message FieldNumbering {
+  uint64 field1 = 1;
+  string field2 = 2;
+  uint32 field3 = 3;
+  bool field4 = 4;
+}
+
+message FileData {
+  string name = 1;
+  bytes content = 2;
+  uint64 size = 3;
+}
+
+message Invoice {
+  uint64 id = 1;
+  Person customer = 2;
+  repeated Payment payments = 3;
+  Status status = 4;
+}
+
+message MixedAnnotations {
+  uint64 id = 1;
+  int64 created_at = 2;
+  Address address = 3;
+}
+
+message MyMessage {
+  uint64 id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  repeated Timestamp timestamp_vec = 3;
+  optional Timestamp timestamp_opt = 4;
+  string name = 5;
+  TestEnum test_enum = 6;
+  optional TestEnum test_enum_opt = 7;
+  repeated TestEnum test_enum_vec = 8;
+}
+
+message NumericTypes {
+  uint32 uint32_field = 1;
+  uint64 uint64_field = 2;
+  int32 int32_field = 3;
+  int64 int64_field = 4;
+  float float_field = 5;
+  double double_field = 6;
+}
+
+message OptionalComplex {
+  uint64 id = 1;
+  optional Address address = 2;
+  optional QuoteLamports quote = 3;
+  optional Status status = 4;
+}
+
+message OptionalFields {
+  uint64 id = 1;
+  optional string email = 2;
+  optional uint32 age = 3;
+}
+
+message Order {
+  uint64 id = 1;
+  uint64 amount = 2;
+  QuoteLamports quote = 3;
+}
+
+message Payment {
+  uint64 id = 1;
+  uint64 amount = 2;
+  PaymentMethod method = 3;
+  int64 created_at = 4;
 }
 
 message PaymentMethodProto {
@@ -43,12 +123,63 @@ message PaymentMethodProto {
 }
 }
 
-message ComplexConversions {
+message Person {
   uint64 id = 1;
-  int64 timestamp = 2;
-  string metadata = 3;
-  Status status = 4;
-  string name = 5;
+  string name = 2;
+  Address address = 3;
+}
+
+message QuoteLamportsProto {
+  oneof value {
+    uint64 lamports = 1;
+    uint64 wsol = 2;
+    uint64 usdc = 3;
+    uint64 usdt = 4;
+}
+}
+
+message RepeatedComplex {
+  uint64 id = 1;
+  repeated Address addresses = 2;
+  repeated Order orders = 3;
+  repeated Status statuses = 4;
+  optional Status status_opt = 5;
+}
+
+message SimpleMessage {
+  uint64 id = 1;
+  string name = 2;
+  bool active = 3;
+}
+
+message SingleField {
+  uint64 value = 1;
+}
+
+message Transaction {
+  uint64 id = 1;
+  int64 created_at = 2;
+  int64 updated_at = 3;
+}
+
+message User {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message UserList {
+  repeated uint64 ids = 1;
+  repeated string names = 2;
+}
+
+message UserWithDefaults {
+  uint64 id = 1;
+  string name = 2;
+}
+
+message UserWithMetadata {
+  uint64 id = 1;
+  string name = 2;
 }
 
 message VeryComplexProtoFirst {}
@@ -91,136 +222,5 @@ message VeryComplexProto {
     VeryComplexProtoOption option = 5;
     VeryComplexProtoAttr attr = 6;
 }
-}
-
-message UserWithMetadata {
-  uint64 id = 1;
-  string name = 2;
-}
-
-message Empty {
-}
-
-message Attr {
-  repeated string id_vec = 1;
-  optional string id_opt = 2;
-  Status status = 3;
-  optional Status status_opt = 4;
-  repeated Status status_vec = 5;
-  google.protobuf.Timestamp timestamp = 6;
-  repeated google.protobuf.Timestamp timestamp_vec = 7;
-  optional google.protobuf.Timestamp timestamp_opt = 8;
-  google.protobuf.TestEnum test_enum = 9;
-  optional google.protobuf.TestEnum test_enum_opt = 10;
-  repeated google.protobuf.TestEnum test_enum_vec = 11;
-  int64 updated_at = 12;
-}
-
-message QuoteLamportsProto {
-  oneof value {
-    uint64 lamports = 1;
-    uint64 wsol = 2;
-    uint64 usdc = 3;
-    uint64 usdt = 4;
-}
-}
-
-message NumericTypes {
-  uint32 uint32_field = 1;
-  uint64 uint64_field = 2;
-  int32 int32_field = 3;
-  int64 int64_field = 4;
-  float float_field = 5;
-  double double_field = 6;
-}
-
-message RepeatedComplex {
-  uint64 id = 1;
-  repeated Address addresses = 2;
-  repeated Order orders = 3;
-  repeated Status statuses = 4;
-  optional Status status_opt = 5;
-}
-
-message MixedAnnotations {
-  uint64 id = 1;
-  int64 created_at = 2;
-  Address address = 3;
-}
-
-message SimpleMessage {
-  uint64 id = 1;
-  string name = 2;
-  bool active = 3;
-}
-
-message MyMessage {
-  uint64 id = 1;
-  google.protobuf.Timestamp timestamp = 2;
-  repeated Timestamp timestamp_vec = 3;
-  optional Timestamp timestamp_opt = 4;
-  string name = 5;
-  TestEnum test_enum = 6;
-  optional TestEnum test_enum_opt = 7;
-  repeated TestEnum test_enum_vec = 8;
-}
-
-message FileData {
-  string name = 1;
-  bytes content = 2;
-  uint64 size = 3;
-}
-
-message SingleField {
-  uint64 value = 1;
-}
-
-message FieldNumbering {
-  uint64 field1 = 1;
-  string field2 = 2;
-  uint32 field3 = 3;
-  bool field4 = 4;
-}
-
-message UserList {
-  repeated uint64 ids = 1;
-  repeated string names = 2;
-}
-
-message OptionalFields {
-  uint64 id = 1;
-  optional string email = 2;
-  optional uint32 age = 3;
-}
-
-message UserWithDefaults {
-  uint64 id = 1;
-  string name = 2;
-}
-
-message Invoice {
-  uint64 id = 1;
-  Person customer = 2;
-  repeated Payment payments = 3;
-  Status status = 4;
-}
-
-message Order {
-  uint64 id = 1;
-  uint64 amount = 2;
-  QuoteLamports quote = 3;
-}
-
-message Person {
-  uint64 id = 1;
-  string name = 2;
-  Address address = 3;
-}
-
-message OptionalComplex {
-  uint64 id = 1;
-  optional Address address = 2;
-  optional QuoteLamports quote = 3;
-  optional Status status = 4;
 }
 

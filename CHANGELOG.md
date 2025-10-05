@@ -1,6 +1,14 @@
-## [0.1.2]
+# Changelog
+
+## [0.2.0] - HUGE REFACTOR
+
 ### Added
+- `proto_imports` attribute for any macro
+- Changed `file` attribute to `proto_path`
+- Add ability to control auto-emission of .proto files with `PROTO_EMIT_FILE` env var and `emit-proto-files` cargo feature
+- Add ability to collect and build .proto from single crate from ALL DEPENDENCIES that use proto_rs
 - Fastnum proto conversions via feature flag (`D128Proto` and `UD128Proto`)
+- stable format to prevent random ordering
 
 ## [0.1.1]
 

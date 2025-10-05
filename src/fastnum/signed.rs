@@ -1,9 +1,10 @@
 use fastnum::D128;
-use prosto_derive::proto_dump;
 
 use crate::HasProto;
+use crate::proto_dump;
+extern crate self as proto_rs;
 
-#[proto_dump(file = "protos/fastnum.proto")]
+#[proto_dump(proto_path = "protos/fastnum.proto")]
 #[derive(prost::Message, Clone, PartialEq, Copy)]
 pub struct D128Proto {
     #[prost(uint64, tag = 1)]

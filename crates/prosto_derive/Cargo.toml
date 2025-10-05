@@ -1,6 +1,6 @@
 [package]
 name = "prosto_derive"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 
 
@@ -11,6 +11,11 @@ proc-macro = true
 proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", features = ["full"] }
+
+[features]
+# Emission control - checked in utils.rs during macro expansion
+emit-proto-files = []
+
 
 [lints]
 workspace = true

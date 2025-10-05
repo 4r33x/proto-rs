@@ -7,9 +7,9 @@ use proto_rs::proto_message;
 use serde::Deserialize;
 use serde::Serialize;
 
-inject_proto_import!("test.proto", "google/protobuf/timestamp", "common/types");
+inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
-#[proto_dump(file = "protos/proto_dump.proto")]
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
 #[derive(prost::Message, Clone, PartialEq)]
 pub struct LamportsProto {
     #[prost(uint64, tag = 1)]
@@ -29,7 +29,7 @@ fn compute_hash_for_struct(proto: &AttrProto) -> String {
     format!("hash_{}_{}", proto.status, proto.status)
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub enum Status {
     Pending,
@@ -39,7 +39,7 @@ pub enum Status {
     Completed,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub enum VeryComplex {
     First,
     Second(Address),
@@ -89,7 +89,7 @@ pub enum VeryComplex {
     },
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub struct Attr {
     #[proto(skip)]
     id_skip: Vec<i64>,
@@ -134,7 +134,7 @@ pub enum TestEnum {
     Test = 0i32,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub struct User {
     pub id: u64,
     pub name: String,
@@ -144,7 +144,7 @@ pub struct User {
     pub created_at: DateTime<Utc>, // Will call get_current_timestamp(&proto)
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub struct MyMessage {
     pub id: u64,
     #[proto(import_path = "google.protobuf")]
@@ -166,7 +166,7 @@ pub struct MyMessage {
 // ============================================================================
 // Test 1: Simple struct - no shadow needed
 // ============================================================================
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SimpleMessage {
     pub id: u64,
@@ -174,7 +174,7 @@ pub struct SimpleMessage {
     pub active: bool,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct FileData {
     pub name: String,
@@ -182,14 +182,14 @@ pub struct FileData {
     pub size: u64,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct UserList {
     pub ids: Vec<u64>,
     pub names: Vec<String>,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct OptionalFields {
     pub id: u64,
@@ -197,7 +197,7 @@ pub struct OptionalFields {
     pub age: Option<u32>,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, Serialize, Deserialize)]
 pub enum QuoteLamports {
     Lamports(u64),
@@ -209,7 +209,7 @@ pub enum QuoteLamports {
 // ============================================================================
 // Test 7: Struct with complex enum field - needs shadow
 // ============================================================================
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Order {
     pub id: u64,
@@ -217,7 +217,7 @@ pub struct Order {
     pub quote: QuoteLamports, // Complex type - needs shadow
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, PartialEq)]
 pub struct Address {
     pub street: String,
@@ -225,7 +225,7 @@ pub struct Address {
     pub country: String,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Person {
     pub id: u64,
@@ -241,7 +241,7 @@ fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(ts, 0).unwrap()
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct UserWithMetadata {
     pub id: u64,
@@ -252,7 +252,7 @@ pub struct UserWithMetadata {
     pub computed_value: u64,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Transaction {
     pub id: u64,
@@ -262,7 +262,7 @@ pub struct Transaction {
     pub updated_at: DateTime<Utc>,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub enum PaymentMethod {
     Cash(u64),
@@ -270,7 +270,7 @@ pub enum PaymentMethod {
     Crypto(QuoteLamports),
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Payment {
     pub id: u64,
@@ -280,7 +280,7 @@ pub struct Payment {
     pub created_at: DateTime<Utc>,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Invoice {
     pub id: u64,
@@ -292,7 +292,7 @@ pub struct Invoice {
     pub internal_notes: String,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct NumericTypes {
     pub uint32_field: u32,
@@ -303,7 +303,7 @@ pub struct NumericTypes {
     pub double_field: f64,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct OptionalComplex {
     pub id: u64,
@@ -313,7 +313,7 @@ pub struct OptionalComplex {
     pub status: Option<Status>,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct RepeatedComplex {
     pub id: u64,
@@ -325,7 +325,7 @@ pub struct RepeatedComplex {
     pub status_opt: Option<Status>,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct MixedAnnotations {
     pub id: u64,
@@ -338,17 +338,17 @@ pub struct MixedAnnotations {
     pub dirty_flag: bool,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Empty {}
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct SingleField {
     pub value: u64,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct UserWithDefaults {
     pub id: u64,
@@ -367,7 +367,7 @@ fn deserialize_json(value: String) -> serde_json::Value {
     serde_json::from_str(&value).unwrap_or(serde_json::Value::Null)
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct ComplexConversions {
     pub id: u64,
@@ -392,7 +392,7 @@ pub struct ComplexConversions {
     pub name: String,
 }
 
-#[proto_message(file = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct FieldNumbering {
     pub field1: u64, // tag = 1
