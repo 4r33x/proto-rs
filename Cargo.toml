@@ -1,8 +1,32 @@
 [package]
 name = "proto_rs"
 version = "0.2.0"
-edition = "2024"
+description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
+documentation = "https://docs.rs/proto_rs"
+readme = "README.md"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
+[workspace.package]
+edition = "2024"
+authors = ["Ivan Auwers <vonauwers@gmail.com>"]
+description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/4r33x/proto_rs"
+homepage = "https://github.com/4r33x/proto_rs"
+readme = "README.md"
+keywords = ["grpc", "protobufs", "proto", "tonic", "prost"]
+categories = [
+  "network-programming",
+  "development-tools",
+  "development-tools::build-utils",
+  "rust-patterns",
+]
 
 [workspace]
 members = [
@@ -14,8 +38,8 @@ members = [
 resolver = "3"
 
 [workspace.dependencies]
-prosto_derive = { version = "*", path = "crates/prosto_derive" }
-proto_rs = { version = "*", path = "./" }
+prosto_derive = { version = "0.2.0", path = "crates/prosto_derive" }
+proto_rs = { version = "0.2.0", path = "./" }
 prost = "0.14.1"
 
 
@@ -43,6 +67,10 @@ tokio-stream = "0.1.17"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 chrono = "0.4.42"
+
+
+[package.metadata.docs.rs]
+all-features = true
 
 
 [workspace.lints.rust]

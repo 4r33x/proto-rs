@@ -1,8 +1,16 @@
 [package]
 name = "prosto_derive"
 version = "0.2.0"
-edition = "2024"
-
+description = "Procedural macros for proto_rs, Rust as a first-class citizen in the protobuf ecosystem"
+documentation = "https://docs.rs/prosto_derive"
+readme = "../../README.md"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lib]
 proc-macro = true
