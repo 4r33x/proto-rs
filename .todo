@@ -1,1 +1,3 @@
-Publish to crates.io
+Get rid of prost in favour of better codegen (also in-place init on send)
+Add more transports and investigate better codegen (better than tonic) for server\client service (drop-in, no codechanges)
+Add more codecs (drop-in, no codechanges)
