@@ -343,19 +343,23 @@ Crate pulled dependencies:
 
 ```
 01:04:53 ➜ cargo tree
-proto_rs v0.1.0
-└── prost v0.14.1
-    ├── bytes v1.10.1
-    └── prost-derive v0.14.1 (proc-macro)
-        ├── anyhow v1.0.100
-        ├── itertools v0.14.0
-        │   └── either v1.15.0
-        ├── proc-macro2 v1.0.101
-        │   └── unicode-ident v1.0.19
-        ├── quote v1.0.41
-        │   └── proc-macro2 v1.0.101 (*)
-        └── syn v2.0.106
-            ├── proc-macro2 v1.0.101 (*)
-            ├── quote v1.0.41 (*)
-            └── unicode-ident v1.0.19
+proto_rs v0.2.0
+├── prost v0.14.1
+│   ├── bytes v1.10.1
+│   └── prost-derive v0.14.1 (proc-macro)
+│       ├── anyhow v1.0.100
+│       ├── itertools v0.14.0
+│       │   └── either v1.15.0
+│       ├── proc-macro2 v1.0.101
+│       │   └── unicode-ident v1.0.19
+│       ├── quote v1.0.41
+│       │   └── proc-macro2 v1.0.101 (*)
+│       └── syn v2.0.106
+│           ├── proc-macro2 v1.0.101 (*)
+│           ├── quote v1.0.41 (*)
+│           └── unicode-ident v1.0.19
+└── prosto_derive v0.2.0 (proc-macro) 
+    ├── proc-macro2 v1.0.101 (*)
+    ├── quote v1.0.41 (*)
+    └── syn v2.0.106 (*)
 ```
