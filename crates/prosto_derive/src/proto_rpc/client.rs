@@ -5,7 +5,11 @@ use quote::quote;
 
 use crate::proto_rpc::rpc_common::client_module_name;
 use crate::proto_rpc::rpc_common::client_struct_name;
+use crate::proto_rpc::rpc_common::generate_client_with_interceptor;
 use crate::proto_rpc::rpc_common::generate_codec_init;
+use crate::proto_rpc::rpc_common::generate_native_to_proto_request_streaming;
+use crate::proto_rpc::rpc_common::generate_native_to_proto_request_unary;
+use crate::proto_rpc::rpc_common::generate_proto_to_native_response;
 use crate::proto_rpc::rpc_common::generate_ready_check;
 use crate::proto_rpc::rpc_common::generate_route_path;
 use crate::proto_rpc::rpc_common::generate_stream_conversion;
@@ -23,6 +27,7 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     let client_methods = methods.iter().map(|m| generate_client_method(m, package_name, trait_name)).collect::<Vec<_>>();
 
     let compression_methods = generate_client_compression_methods();
+    let with_interceptor = generate_client_with_interceptor(&client_struct);
 
     quote! {
         #vis mod #client_module {
@@ -69,22 +74,7 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                     Self { inner }
                 }
 
-                pub fn with_interceptor<F>(
-                    inner: T,
-                    interceptor: F,
-                ) -> #client_struct<InterceptedService<T, F>>
-                where
-                    F: tonic::service::Interceptor,
-                    T::ResponseBody: Default,
-                    T: tonic::codegen::Service<
-                        http::Request<tonic::body::Body>,
-                        Response = http::Response<<T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody>,
-                    >,
-                    <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error:
-                        Into<StdError> + std::marker::Send + std::marker::Sync,
-                {
-                    #client_struct::new(InterceptedService::new(inner, interceptor))
-                }
+                #with_interceptor
 
                 #compression_methods
 
@@ -114,6 +104,8 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
 
     let ready_check = generate_ready_check();
     let codec_init = generate_codec_init();
+    let request_conversion = generate_native_to_proto_request_unary();
+    let response_conversion = generate_proto_to_native_response(response_type);
 
     quote! {
         pub async fn #method_name(
@@ -124,27 +116,15 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
             #codec_init
             let path = http::uri::PathAndQuery::from_static(#route_path);
 
-            // Convert native request to proto
-            let req = request.into_request();
-            let (metadata, extensions, native_msg) = req.into_parts();
-            let proto_msg = native_msg.to_proto();
-            let mut proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
+            #request_conversion
 
             proto_req.extensions_mut().insert(
                 tonic::codegen::GrpcMethod::new(#package_name, stringify!(#method_name))
             );
 
-            // Make RPC call
             let response = self.inner.unary(proto_req, path, codec).await?;
 
-            // Convert proto response back to native
-            let (metadata, proto_response, extensions) = response.into_parts();
-            let native_response = #response_type::from_proto(proto_response)
-                .map_err(|e| tonic::Status::internal(
-                    format!("Failed to convert response: {}", e)
-                ))?;
-
-            Ok(tonic::Response::from_parts(metadata, native_response, extensions))
+            #response_conversion
         }
     }
 }
@@ -157,32 +137,22 @@ fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, tra
 
     let ready_check = generate_ready_check();
     let codec_init = generate_codec_init();
+    let request_conversion = generate_native_to_proto_request_streaming();
     let stream_conversion = generate_stream_conversion(inner_response_type);
 
     quote! {
         pub async fn #method_name(
             &mut self,
             request: impl tonic::IntoRequest<#request_type>,
-        ) -> std::result::Result<
-            tonic::Response<impl tonic::codegen::tokio_stream::Stream<
-                Item = Result<#inner_response_type, tonic::Status>
-            >>,
-            tonic::Status
-        > {
+        ) -> std::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = Result<#inner_response_type, tonic::Status>>>, tonic::Status> {
             #ready_check
             #codec_init
             let path = http::uri::PathAndQuery::from_static(#route_path);
 
-            // Convert native request to proto
-            let req = request.into_request();
-            let (metadata, extensions, native_msg) = req.into_parts();
-            let proto_msg = native_msg.to_proto();
-            let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
+            #request_conversion
 
-            // Make streaming RPC call
             let response = self.inner.server_streaming(proto_req, path, codec).await?;
 
-            // Convert proto stream to native stream
             #stream_conversion
         }
     }

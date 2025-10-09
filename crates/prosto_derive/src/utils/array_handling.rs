@@ -76,7 +76,7 @@ impl<'a> ArrayFieldHandler<'a> {
             is_option: false,
             is_repeated: true,
             is_message_like: false,
-            proto_rust_type: parse_field_type(&*self.type_array.elem).proto_rust_type,
+            proto_rust_type: parse_field_type(&self.type_array.elem).proto_rust_type,
         };
 
         (prost, parsed)

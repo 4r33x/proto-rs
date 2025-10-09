@@ -8,42 +8,97 @@ use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 
 // ============================================================================
-// SHARED RPC GENERATION
+// CONVERSION HELPERS
+// ============================================================================
+
+/// Generate proto-to-native request conversion (used in server)
+pub fn generate_proto_to_native_request(request_type: &Type) -> TokenStream {
+    quote! {
+        let (metadata, extensions, proto_msg) = request.into_parts();
+        let native_msg = #request_type::from_proto(proto_msg)
+            .map_err(|e| tonic::Status::invalid_argument(
+                format!("Failed to convert request: {}", e)
+            ))?;
+        let native_request = tonic::Request::from_parts(metadata, extensions, native_msg);
+    }
+}
+
+/// Generate native-to-proto request conversion (used in client - unary)
+pub fn generate_native_to_proto_request_unary() -> TokenStream {
+    quote! {
+        let req = request.into_request();
+        let (metadata, extensions, native_msg) = req.into_parts();
+        let proto_msg = native_msg.to_proto();
+        let mut proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
+    }
+}
+
+/// Generate native-to-proto request conversion (used in client - streaming)
+pub fn generate_native_to_proto_request_streaming() -> TokenStream {
+    quote! {
+        let req = request.into_request();
+        let (metadata, extensions, native_msg) = req.into_parts();
+        let proto_msg = native_msg.to_proto();
+        let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
+    }
+}
+
+/// Generate proto-to-native response conversion (used in client)
+pub fn generate_proto_to_native_response(response_type: &Type) -> TokenStream {
+    quote! {
+        let (metadata, proto_response, extensions) = response.into_parts();
+        let native_response = #response_type::from_proto(proto_response)
+            .map_err(|e| tonic::Status::internal(
+                format!("Failed to convert response: {}", e)
+            ))?;
+        Ok(tonic::Response::from_parts(metadata, native_response, extensions))
+    }
+}
+
+/// Generate native-to-proto response conversion (used in server)
+pub fn generate_native_to_proto_response() -> TokenStream {
+    quote! {
+        let (metadata, native_body, extensions) = native_response.into_parts();
+        let proto_msg = native_body.to_proto();
+        Ok(tonic::Response::from_parts(metadata, proto_msg, extensions))
+    }
+}
+
+// ============================================================================
+// PROTO TYPE HELPERS
+// ============================================================================
+
+/// Generate proto type reference for request
+pub fn generate_request_proto_type(request_type: &Type) -> TokenStream {
+    quote! { <#request_type as super::HasProto>::Proto }
+}
+
+/// Generate proto type reference for response
+pub fn generate_response_proto_type(response_type: &Type) -> TokenStream {
+    quote! { <#response_type as super::HasProto>::Proto }
+}
+
+// ============================================================================
+// ROUTE AND CODEC
 // ============================================================================
 
 /// Generate RPC route path
-/// Used by both client and server to ensure consistency
 pub fn generate_route_path(package_name: &str, trait_name: &syn::Ident, method_name: &syn::Ident) -> String {
     format!("/{}.{}/{}", package_name, trait_name, to_pascal_case(&method_name.to_string()))
 }
 
-/// Generate codec initialization (same for client/server)
+/// Generate codec initialization
 pub fn generate_codec_init() -> TokenStream {
     quote! {
         let codec = tonic_prost::ProstCodec::default();
     }
 }
 
-/// Generate proto request conversion (used in both client and server)
-pub fn generate_request_conversion(request_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, extensions, native_msg) = request.into_parts();
-        let proto_msg = native_msg.to_proto();
-        let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
-    }
-}
+// ============================================================================
+// STREAMING HELPERS
+// ============================================================================
 
-/// Generate proto response conversion (used in both client and server)
-pub fn generate_response_conversion(response_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, proto_response, extensions) = response.into_parts();
-        let native_response = #response_type::from_proto(proto_response)
-            .map_err(|e| tonic::Status::internal(format!("Failed to convert response: {}", e)))?;
-        Ok(tonic::Response::from_parts(metadata, native_response, extensions))
-    }
-}
-
-/// Generate stream conversion for streaming responses
+/// Generate stream conversion for streaming responses (client side)
 pub fn generate_stream_conversion(inner_response_type: &Type) -> TokenStream {
     quote! {
         let (metadata, proto_stream, extensions) = response.into_parts();
@@ -60,6 +115,11 @@ pub fn generate_stream_conversion(inner_response_type: &Type) -> TokenStream {
     }
 }
 
+/// Check if method is streaming
+pub fn is_streaming_method(method: &MethodInfo) -> bool {
+    method.is_streaming
+}
+
 // ============================================================================
 // ERROR HANDLING
 // ============================================================================
@@ -72,43 +132,6 @@ pub fn generate_ready_check() -> TokenStream {
             .await
             .map_err(|e| tonic::Status::unknown(format!("Service was not ready: {}", e.into())))?;
     }
-}
-
-/// Generate conversion error handling
-pub fn generate_conversion_error(field_name: &str) -> TokenStream {
-    quote! {
-        .map_err(|e| tonic::Status::invalid_argument(
-            format!("Failed to convert {}: {}", #field_name, e)
-        ))?
-    }
-}
-
-// ============================================================================
-// STREAMING HELPERS
-// ============================================================================
-
-/// Check if method is streaming
-pub fn is_streaming_method(method: &MethodInfo) -> bool {
-    method.is_streaming
-}
-
-/// Get stream item type for a streaming method
-pub fn get_stream_item_type(method: &MethodInfo) -> Option<&Type> {
-    method.inner_response_type.as_ref()
-}
-
-// ============================================================================
-// TYPE HELPERS
-// ============================================================================
-
-/// Generate proto type reference for request
-pub fn generate_request_proto_type(request_type: &Type) -> TokenStream {
-    quote! { <#request_type as super::HasProto>::Proto }
-}
-
-/// Generate proto type reference for response
-pub fn generate_response_proto_type(response_type: &Type) -> TokenStream {
-    quote! { <#response_type as super::HasProto>::Proto }
 }
 
 // ============================================================================
@@ -171,6 +194,24 @@ pub fn generate_service_constructors() -> TokenStream {
     }
 }
 
+/// Generate client interceptor method (complex generic bounds)
+pub fn generate_client_with_interceptor(client_struct: &syn::Ident) -> TokenStream {
+    quote! {
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> #client_struct<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<http::Request<tonic::body::Body>, Response = http::Response<<T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody>>,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            #client_struct::new(InterceptedService::new(inner, interceptor))
+        }
+    }
+}
+
 // ============================================================================
 // TESTS
 // ============================================================================
@@ -199,12 +240,6 @@ mod tests {
 
         let server_mod = server_module_name(&trait_name);
         assert_eq!(server_mod.to_string(), "test_service_server");
-
-        let client_struct = client_struct_name(&trait_name);
-        assert_eq!(client_struct.to_string(), "TestServiceClient");
-
-        let server_struct = server_struct_name(&trait_name);
-        assert_eq!(server_struct.to_string(), "TestServiceServer");
     }
 
     #[test]

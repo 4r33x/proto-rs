@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn test_enum_type_from_field_proto_enum() {
         let ty: Type = parse_quote! { StatusProto };
-        let mut config = FieldConfig {
+        let config = FieldConfig {
             is_proto_enum: true,
             ..Default::default()
         };

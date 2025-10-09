@@ -1,0 +1,11 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package generated;
+
+import "goon_types.proto";
+import "rizz_types.proto";
+
+service SigmaRpc {
+  rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
+}

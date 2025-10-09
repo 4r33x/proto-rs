@@ -1,4 +1,4 @@
-//! String manipulation utilities - centralized to eliminate duplication
+//! String manipulation utilities
 
 /// Convert identifier to UPPER_SNAKE_CASE for proto enums
 pub fn to_upper_snake_case(s: &str) -> String {
@@ -59,12 +59,6 @@ pub fn derive_package_name(file_path: &str) -> String {
 /// Format import statement
 pub fn format_import(import_path: &str) -> String {
     format!("import \"{}.proto\";\n", import_path)
-}
-
-/// Sanitize identifier for proto field names
-pub fn sanitize_field_name(name: &str) -> String {
-    // Proto field names must be lowercase with underscores
-    to_snake_case(name)
 }
 
 #[cfg(test)]

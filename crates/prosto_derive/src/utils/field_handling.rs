@@ -11,6 +11,8 @@ use super::enum_handling::EnumType;
 use super::type_info::*;
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
+use crate::utils::generate_field_error;
+use crate::utils::generate_missing_field_error;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 
@@ -40,27 +42,22 @@ impl<'a> FieldHandler<'a> {
     pub fn generate(&self) -> FieldGenerationResult {
         let field_ty = &self.field.ty;
 
-        // Handle skip
         if self.field_config.skip {
             return self.handle_skip_field();
         }
 
-        // Handle custom conversion
         if self.is_custom_conversion() {
             return self.handle_custom_conversion();
         }
 
-        // Handle arrays
         if let Type::Array(type_array) = field_ty {
             return self.handle_array_field(type_array);
         }
 
-        // Handle enums (rust_enum or proto_enum)
         if let Some(enum_type) = EnumType::from_field(field_ty, &self.field_config) {
             return self.handle_enum_field(enum_type, field_ty);
         }
 
-        // Handle standard field
         self.handle_standard_field(field_ty)
     }
 
@@ -158,11 +155,8 @@ impl<'a> FieldHandler<'a> {
         let error_name = self.error_name;
 
         let parsed = parse_field_type(field_ty);
-
-        // Generate proto field type
         let proto_field_ty = self.get_proto_field_type(&parsed, field_ty);
 
-        // Generate prost attribute
         let prost_attr = if parsed.is_repeated {
             let prost_type = &parsed.prost_type;
             quote! { #[prost(#prost_type, repeated, tag = #field_tag)] }
@@ -271,26 +265,22 @@ impl<'a> FieldHandler<'a> {
                 if is_bytes_vec(field_ty) || self.field_config.is_message {
                     return quote! { #field_name: proto.#field_name };
                 } else if is_complex_type(&inner_ty) {
+                    let error_handler = generate_field_error(field_name, error_name);
                     return quote! {
                         #field_name: proto.#field_name
                             .into_iter()
                             .map(|v| v.try_into())
                             .collect::<Result<_, _>>()
-                            .map_err(|e| #error_name::FieldConversion {
-                                field: stringify!(#field_name).to_string(),
-                                source: Box::new(e),
-                            })?
+                            #error_handler
                     };
                 } else if needs_try_into_conversion(&inner_ty) {
+                    let error_handler = generate_field_error(field_name, error_name);
                     return quote! {
                         #field_name: proto.#field_name
                             .iter()
                             .map(|v| (*v).try_into())
                             .collect::<Result<_, _>>()
-                            .map_err(|e| #error_name::FieldConversion {
-                                field: stringify!(#field_name).to_string(),
-                                source: Box::new(e),
-                            })?
+                            #error_handler
                     };
                 }
             }
@@ -299,47 +289,30 @@ impl<'a> FieldHandler<'a> {
             let inner_ty = extract_option_inner_type(field_ty);
             if self.field_config.is_message {
                 return quote! { #field_name: proto.#field_name };
-            } else if is_complex_type(inner_ty) {
+            } else if is_complex_type(inner_ty) || needs_try_into_conversion(inner_ty) {
+                let error_handler = generate_field_error(field_name, error_name);
                 return quote! {
                     #field_name: proto.#field_name
                         .map(|v| v.try_into())
                         .transpose()
-                        .map_err(|e| #error_name::FieldConversion {
-                            field: stringify!(#field_name).to_string(),
-                            source: Box::new(e),
-                        })?
-                };
-            } else if needs_try_into_conversion(inner_ty) {
-                return quote! {
-                    #field_name: proto.#field_name
-                        .map(|v| v.try_into())
-                        .transpose()
-                        .map_err(|e| #error_name::FieldConversion {
-                            field: stringify!(#field_name).to_string(),
-                            source: Box::new(e),
-                        })?
+                        #error_handler
                 };
             }
             return quote! { #field_name: proto.#field_name };
         } else if parsed.is_message_like {
+            let missing_error = generate_missing_field_error(field_name, error_name);
             if self.field_config.is_message {
                 return quote! {
                     #field_name: proto.#field_name
-                        .ok_or_else(|| #error_name::MissingField {
-                            field: stringify!(#field_name).to_string()
-                        })?
+                        #missing_error
                 };
             } else {
+                let conversion_error = generate_field_error(field_name, error_name);
                 return quote! {
                     #field_name: proto.#field_name
-                        .ok_or_else(|| #error_name::MissingField {
-                            field: stringify!(#field_name).to_string()
-                        })?
+                        #missing_error
                         .try_into()
-                        .map_err(|e| #error_name::FieldConversion {
-                            field: stringify!(#field_name).to_string(),
-                            source: Box::new(e),
-                        })?
+                        #conversion_error
                 };
             }
         }

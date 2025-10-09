@@ -1,5 +1,4 @@
 //! Centralized utilities for proto macro code generation
-//! This module consolidates all common utilities to eliminate duplication
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -145,8 +144,6 @@ fn parse_array_type(type_array: &syn::TypeArray) -> ParsedFieldType {
 }
 
 fn parse_path_type(type_path: &TypePath, ty: &Type) -> ParsedFieldType {
-    use syn::parse_quote;
-
     let segment = type_path.path.segments.last().unwrap();
     let type_name = segment.ident.to_string();
 
@@ -232,11 +229,6 @@ fn is_u8_type(ty: &Type) -> bool {
 // ============================================================================
 // ERROR HELPERS
 // ============================================================================
-
-/// Generate field context for error messages
-pub fn field_context(field_name: &syn::Ident) -> String {
-    field_name.to_string()
-}
 
 /// Generate error conversion code
 pub fn generate_field_error(field_name: &syn::Ident, error_name: &syn::Ident) -> TokenStream {

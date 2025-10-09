@@ -1,5 +1,4 @@
 //! Unified type analysis and conversion
-//! Consolidates type_analysis.rs and type_conversion.rs to eliminate duplication
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -36,27 +35,12 @@ pub fn is_option_type(ty: &Type) -> bool {
     is_wrapper_type(ty, "Option")
 }
 
-/// Check if type is Vec<T>
-pub fn is_vec_type(ty: &Type) -> bool {
-    is_wrapper_type(ty, "Vec")
-}
-
-/// Check if type is Box<T>
-pub fn is_box_type(ty: &Type) -> bool {
-    is_wrapper_type(ty, "Box")
-}
-
 fn is_wrapper_type(ty: &Type, wrapper_name: &str) -> bool {
     if let Type::Path(TypePath { path, .. }) = ty {
         path.segments.last().map(|s| s.ident == wrapper_name).unwrap_or(false)
     } else {
         false
     }
-}
-
-/// Check if type is an array
-pub fn is_array_type(ty: &Type) -> bool {
-    matches!(ty, Type::Array(_))
 }
 
 /// Check if type is a complex (non-primitive) type
@@ -72,7 +56,7 @@ pub fn is_complex_type(ty: &Type) -> bool {
 
             // Handle wrappers recursively
             if matches!(type_name.as_str(), "Option" | "Vec" | "Box") {
-                return extract_inner_from_generic(segment).map(|inner| is_complex_type(inner)).unwrap_or(false);
+                return extract_inner_from_generic(segment).map(is_complex_type).unwrap_or(false);
             }
 
             // Primitives are NOT complex
@@ -80,11 +64,6 @@ pub fn is_complex_type(ty: &Type) -> bool {
         }
         _ => true,
     }
-}
-
-/// Check if type is a primitive
-pub fn is_primitive_type(ty: &Type) -> bool {
-    !is_complex_type(ty)
 }
 
 fn is_primitive_name(type_name: &str) -> bool {
@@ -101,16 +80,6 @@ fn is_primitive_name(type_name: &str) -> bool {
 /// Extract inner type from Option<T>
 pub fn extract_option_inner_type(ty: &Type) -> &Type {
     extract_wrapper_inner_type(ty, "Option").unwrap_or(ty)
-}
-
-/// Extract inner type from Vec<T>
-pub fn extract_vec_inner_type(ty: &Type) -> &Type {
-    extract_wrapper_inner_type(ty, "Vec").unwrap_or(ty)
-}
-
-/// Extract inner type from Box<T>
-pub fn extract_box_inner_type(ty: &Type) -> &Type {
-    extract_wrapper_inner_type(ty, "Box").unwrap_or(ty)
 }
 
 fn extract_wrapper_inner_type<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
@@ -137,25 +106,9 @@ pub fn vec_inner_type(ty: &Type) -> Option<Type> {
     extract_wrapper_inner_type(ty, "Vec").cloned()
 }
 
-/// Extract inner type from Option<T> (returns Option<Type>)
-pub fn option_inner_type(ty: &Type) -> Option<Type> {
-    extract_wrapper_inner_type(ty, "Option").cloned()
-}
-
 /// Get array element type
 pub fn array_elem_type(ty: &Type) -> Option<Type> {
     if let Type::Array(type_array) = ty { Some((*type_array.elem).clone()) } else { None }
-}
-
-/// Extract wrapper info: (base_type, is_option, is_repeated)
-pub fn extract_wrapper_info(ty: &Type) -> (Type, bool, bool) {
-    if let Some(inner) = option_inner_type(ty) {
-        (inner, true, false)
-    } else if let Some(inner) = vec_inner_type(ty) {
-        (inner, false, true)
-    } else {
-        (ty.clone(), false, false)
-    }
 }
 
 /// Get the last identifier from a type path (handles nested generics)
@@ -267,6 +220,8 @@ pub fn generate_primitive_to_proto(ident: &syn::Ident, ty: &Type) -> TokenStream
 
 /// Generate from_proto conversion for primitives
 pub fn generate_primitive_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Ident) -> TokenStream {
+    use crate::utils::generate_field_error;
+
     // Handle arrays
     if let Type::Array(_) = ty {
         return generate_array_from_proto(ident, ty, error_name);
@@ -274,12 +229,10 @@ pub fn generate_primitive_from_proto(ident: &syn::Ident, ty: &Type, error_name: 
 
     // Handle primitives
     if needs_try_into_conversion(ty) {
+        let error_handler = generate_field_error(ident, error_name);
         quote! {
             #ident: proto.#ident.try_into()
-                .map_err(|e| #error_name::FieldConversion {
-                    field: stringify!(#ident).to_string(),
-                    source: Box::new(e),
-                })?
+                #error_handler
         }
     } else {
         quote! { #ident: proto.#ident }
@@ -287,6 +240,8 @@ pub fn generate_primitive_from_proto(ident: &syn::Ident, ty: &Type, error_name: 
 }
 
 fn generate_array_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Ident) -> TokenStream {
+    use crate::utils::generate_field_error;
+
     let array_error = quote! {
         .map_err(|_| #error_name::FieldConversion {
             field: stringify!(#ident).to_string(),
@@ -306,15 +261,13 @@ fn generate_array_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Id
     if let Some(elem_ty) = array_elem_type(ty)
         && needs_try_into_conversion(&elem_ty)
     {
+        let error_handler = generate_field_error(ident, error_name);
         return quote! {
             #ident: {
                 let vec: Vec<_> = proto.#ident.iter()
                     .map(|v| (*v).try_into())
                     .collect::<Result<_, _>>()
-                    .map_err(|e| #error_name::FieldConversion {
-                        field: stringify!(#ident).to_string(),
-                        source: Box::new(e),
-                    })?;
+                    #error_handler;
                 vec.as_slice().try_into() #array_error
             }
         };
@@ -322,38 +275,6 @@ fn generate_array_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Id
 
     quote! {
         #ident: proto.#ident.as_slice().try_into() #array_error
-    }
-}
-
-/// Convert field type to Proto equivalent (add Proto suffix to custom types)
-pub fn convert_field_type_to_proto(ty: &Type) -> Type {
-    match ty {
-        Type::Path(type_path) => {
-            let segment = match type_path.path.segments.last() {
-                Some(s) => s,
-                None => return ty.clone(),
-            };
-
-            let type_name = segment.ident.to_string();
-
-            // Handle wrappers
-            if matches!(type_name.as_str(), "Option" | "Vec")
-                && let Some(inner) = extract_inner_from_generic(segment)
-            {
-                let inner_proto = convert_field_type_to_proto(inner);
-                let container = syn::Ident::new(&type_name, segment.ident.span());
-                return syn::parse_quote! { #container<#inner_proto> };
-            }
-
-            // Add Proto suffix to complex types
-            if is_complex_type(ty) && !type_name.ends_with("Proto") {
-                let proto_ident = syn::Ident::new(&format!("{}Proto", type_name), segment.ident.span());
-                return syn::parse_quote! { #proto_ident };
-            }
-
-            ty.clone()
-        }
-        _ => ty.clone(),
     }
 }
 
@@ -385,9 +306,6 @@ mod tests {
     fn test_wrapper_detection() {
         let ty: Type = parse_quote! { Option<u32> };
         assert!(is_option_type(&ty));
-
-        let ty: Type = parse_quote! { Vec<String> };
-        assert!(is_vec_type(&ty));
     }
 
     #[test]
