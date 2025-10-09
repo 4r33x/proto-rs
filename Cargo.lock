@@ -766,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "prosto_derive"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -788,7 +788,7 @@ dependencies = [
 
 [[package]]
 name = "proto_rs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "fastnum",
@@ -797,6 +797,7 @@ dependencies = [
  "prosto_derive",
  "serde",
  "serde_json",
+ "solana-address",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -992,6 +993,12 @@ dependencies = [
  "libc",
  "windows-sys",
 ]
+
+[[package]]
+name = "solana-address"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a7a457086457ea9db9a5199d719dc8734dc2d0342fad0d8f77633c31eb62f19"
 
 [[package]]
 name = "syn"

@@ -2,9 +2,7 @@
 syntax = "proto3";
 package goon_types;
 
-message GoonPong {
-}
+message GoonPong {}
 
-message RizzPing {
-}
+message RizzPing {}
 

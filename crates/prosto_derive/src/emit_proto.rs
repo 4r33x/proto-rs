@@ -28,6 +28,59 @@ pub fn generate_simple_enum_proto(name: &str, data: &syn::DataEnum) -> String {
 }
 
 pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
+    match fields {
+        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named),
+        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed),
+        Fields::Unit => format!("message {} {{}}\n\n", name),
+    }
+}
+fn generate_tuple_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
+    let mut proto_fields = String::new();
+
+    for (idx, field) in fields.iter().enumerate() {
+        let field_num = idx + 1;
+        let field_name = format!("field_{}", idx);
+        let ty = &field.ty;
+
+        if is_bytes_array(ty) {
+            proto_fields.push_str(&format!("  bytes {} = {};\n", field_name, field_num));
+            continue;
+        }
+
+        if is_bytes_vec(ty) {
+            proto_fields.push_str(&format!("  bytes {} = {};\n", field_name, field_num));
+            continue;
+        }
+
+        // Handle other arrays as repeated
+        if let Type::Array(type_array) = ty {
+            let elem_ty = &*type_array.elem;
+            let parsed = parse_field_type(elem_ty);
+            let proto_ty_str = if parsed.is_message_like {
+                let rust_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
+                strip_proto_suffix(&rust_name)
+            } else {
+                parsed.proto_type.clone()
+            };
+            proto_fields.push_str(&format!("  repeated {} {} = {};\n", proto_ty_str, field_name, field_num));
+            continue;
+        }
+
+        let parsed = parse_field_type(ty);
+        let proto_ty_str = if parsed.is_message_like {
+            let rust_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
+            strip_proto_suffix(&rust_name)
+        } else {
+            parsed.proto_type.clone()
+        };
+
+        proto_fields.push_str(&format!("  {} {} = {};\n", proto_ty_str, field_name, field_num));
+    }
+
+    format!("message {} {{\n{}}}\n\n", name, proto_fields)
+}
+
+pub fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
     let mut proto_fields = String::new();
     let mut field_num = 0;
 
@@ -48,7 +101,7 @@ pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
         };
 
         // Special handling for Vec<u8> -> bytes
-        if is_bytes_vec(&ty) {
+        if is_bytes_vec(&ty) || is_bytes_array(&ty) {
             proto_fields.push_str(&format!("  bytes {} = {};\n", ident, field_num));
             continue;
         }
@@ -74,6 +127,10 @@ pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
             }
         } else if let Some(inner) = vec_inner_type(&ty) {
             (false, true, inner)
+        } else if let Type::Array(type_array) = &ty {
+            // Handle arrays [T; N] as repeated
+            let elem_ty = (*type_array.elem).clone();
+            (false, true, elem_ty)
         } else {
             (false, false, ty.clone())
         };
@@ -81,8 +138,14 @@ pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
         // Determine the proto type string
         let proto_ty_str = if let Some(ref import_path) = config.import_path {
             // Use the import path prefix
-            let base_name = rust_type_path_ident(&inner_type).to_string();
-            format!("{}.{}", import_path, base_name)
+            let base_name = if let Type::Path(_) = &inner_type {
+                rust_type_path_ident(&inner_type).to_string()
+            } else {
+                // For non-path types (like primitives in arrays), parse directly
+                let parsed = parse_field_type(&inner_type);
+                parsed.proto_type.clone()
+            };
+            if let Type::Path(_) = &inner_type { format!("{}.{}", import_path, base_name) } else { base_name }
         } else if config.is_rust_enum {
             // For Rust enums converted to proto, get the type name
             rust_type_path_ident(&inner_type).to_string()
@@ -142,6 +205,12 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
                 }
 
                 let field_ty = &fields.unnamed.first().unwrap().ty;
+
+                if is_bytes_array(field_ty) || is_bytes_vec(field_ty) {
+                    proto_fields.push_str(&format!("    bytes {} = {};\n", field_name_snake, tag));
+                    continue;
+                }
+
                 let parsed = parse_field_type(field_ty);
 
                 let proto_type_str = if parsed.is_message_like {
@@ -174,6 +243,11 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
                     } else {
                         field.ty.clone()
                     };
+
+                    if is_bytes_array(&ty_for_parsing) || is_bytes_vec(&ty_for_parsing) {
+                        nested_proto_fields.push_str(&format!("  bytes {} = {};\n", field_name, field_tag));
+                        continue;
+                    }
 
                     let parsed = parse_field_type(&ty_for_parsing);
 

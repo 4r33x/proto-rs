@@ -9,6 +9,287 @@ use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct StructU16 {
+    inner: u16,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct StructU8 {
+    inner: u8,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct TupleStructTest(u64, u8);
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct TupleStruct2Test([u8; 32], [u16; 32]);
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTest {
+    pub amount: [u8; 32],
+}
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTest2([u8; 32]);
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub enum ArrayTest3 {
+    Test,
+    Test1([u8; 32]),
+    Test2 { test: [u8; 32] },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTestMessageU16 {
+    pub amount: [u16; 32],
+}
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTestU16 {
+    pub amount: [u16; 32],
+}
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTest2U64([u16; 32]);
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub enum ArrayTest3U64 {
+    Test,
+    Test1([u16; 32]),
+    Test2 { test: [u16; 32] },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTestMessageCustom {
+    pub amount: [ArrayTestMessageU16; 32],
+}
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct VecTestMessageCustom {
+    pub amount: Vec<ArrayTestMessageU16>,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct VecTestMessageU64 {
+    pub amount: Vec<u64>,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub enum ArrayTest3Custom {
+    Test,
+    Test1([ArrayTestMessageU16; 32]),
+    Test2 { test: [ArrayTestMessageU16; 32] },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct StructFailU16 {
+    pub amount_2: u16,
+    pub amount: Option<u16>,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct VecTestMessageU16 {
+    pub amount: Vec<u16>,
+    pub amount_opt: Option<u16>,
+    pub amount_plain: u16,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumArrayMessageAttributeFailTest {
+    Fail {
+        #[proto(message)]
+        timestamp_array: [Timestamp; 8],
+    },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumArrayRustEnumAttributeFailTest {
+    Fail {
+        #[proto(rust_enum)]
+        timestamp_array: [Status; 8],
+    },
+}
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumArrayProstEnumAttributeFailTest {
+    Fail {
+        #[proto(enum)]
+        timestamp_array: [TestEnum; 8],
+    },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumArrayMessageAttributeFailTest2 {
+    Fail(#[proto(message)] [Timestamp; 8]),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumArrayRustEnumAttributeFailTest2 {
+    Fail(#[proto(rust_enum)] [Status; 8]),
+}
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumArrayProstEnumAttributeFailTest2 {
+    Fail(#[proto(enum)] [TestEnum; 8]),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub enum VecTestEnumU16 {
+    Test,
+    Test1(Vec<u16>),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub enum FailingOptionCustomTupleVariant {
+    Test,
+    Test1(Option<User>),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub enum VecTestEnumU64 {
+    Test,
+    Test1(Vec<u64>),
+    Test2 { test: Vec<u64> },
+    Test3(Option<User>),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone)]
+pub enum VecTestEnumCustom {
+    Test,
+    Test0(#[proto(rust_enum)] Status),
+    Test1(#[proto(rust_enum)] Vec<Status>),
+    Test2 {
+        #[proto(rust_enum)]
+        test1: Vec<Status>,
+        #[proto(rust_enum)]
+        test2: Option<Status>,
+        #[proto(rust_enum)]
+        test3: Status,
+    },
+    Test3(#[proto(rust_enum)] Option<Status>),
+    Test4 {
+        #[proto(enum)]
+        test1: Vec<TestEnum>,
+        #[proto(enum)]
+        test2: Option<TestEnum>,
+        #[proto(enum)]
+        test3: TestEnum,
+    },
+    Test5(#[proto(enum)] Option<TestEnum>),
+    Test6(#[proto(enum)] TestEnum),
+    Test7(User),
+    Test8(Option<User>),
+    Test9(Vec<User>),
+    Test10 {
+        test: Vec<User>,
+        test1: Option<User>,
+        test3: User,
+    },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone)]
+pub enum VecTestEnumCustom2 {
+    Test0(#[proto(rust_enum)] Status),
+    Test1(#[proto(rust_enum)] Vec<Status>),
+    Test2 {
+        #[proto(rust_enum)]
+        test1: Vec<Status>,
+        #[proto(rust_enum)]
+        test2: Option<Status>,
+        #[proto(rust_enum)]
+        test3: Status,
+    },
+    Test3(#[proto(rust_enum)] Option<Status>),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone)]
+pub enum VecFailingTestEnum {
+    Test2 {
+        #[proto(rust_enum)]
+        test1: Vec<Status>,
+        #[proto(rust_enum)]
+        test2: Option<Status>,
+        #[proto(rust_enum)]
+        test3: Status,
+    },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum EnumFailTest {
+    Option {
+        id: Option<u64>,
+        address: Option<Address>,
+        #[proto(message)]
+        timestamp_vec: Vec<Timestamp>,
+        #[proto(message)]
+        timestamp_opt: Option<Timestamp>,
+        #[proto(message)]
+        timestamp: Timestamp,
+    },
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+pub enum Status {
+    Pending,
+    #[default]
+    Active,
+    Inactive,
+    Completed,
+}
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct User {
+    pub id: u64,
+    pub name: String,
+    #[proto(skip = "compute_hash")]
+    pub hash: String, // Will call compute_hash(&proto)
+    #[proto(skip = "get_current_timestamp")]
+    pub created_at: DateTime<Utc>, // Will call get_current_timestamp(&proto)
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub enum VecTestEnumU8 {
+    Test,
+    Test1(Vec<u8>),
+    Test2 { test: Vec<u8> },
+}
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTestMessageCustomDump {
+    pub amount: [ArrayTestMessageU16; 32],
+}
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub enum ArrayTest3CustomDump {
+    Test,
+    Test1([ArrayTestMessageU16; 32]),
+    Test2 { test: [ArrayTestMessageU16; 32] },
+}
+
 #[proto_dump(proto_path = "protos/proto_dump.proto")]
 #[derive(prost::Message, Clone, PartialEq)]
 pub struct LamportsProto {
@@ -27,16 +308,6 @@ fn compute_hash_for_enum(proto: &VeryComplexProtoAttr) -> String {
 }
 fn compute_hash_for_struct(proto: &AttrProto) -> String {
     format!("hash_{}_{}", proto.status, proto.status)
-}
-
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub enum Status {
-    Pending,
-    #[default]
-    Active,
-    Inactive,
-    Completed,
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -132,16 +403,6 @@ pub struct Timestamp {}
 #[repr(i32)]
 pub enum TestEnum {
     Test = 0i32,
-}
-
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub struct User {
-    pub id: u64,
-    pub name: String,
-    #[proto(skip = "compute_hash")]
-    pub hash: String, // Will call compute_hash(&proto)
-    #[proto(skip = "get_current_timestamp")]
-    pub created_at: DateTime<Utc>, // Will call get_current_timestamp(&proto)
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]

@@ -2,9 +2,7 @@
 syntax = "proto3";
 package rizz_types;
 
-message BarSub {
-}
+message BarSub {}
 
-message FooResponse {
-}
+message FooResponse {}
 

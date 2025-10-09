@@ -1,0 +1,8 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package solana;
+
+message Address {
+  bytes inner = 1;
+}
+

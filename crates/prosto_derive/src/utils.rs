@@ -176,6 +176,38 @@ pub struct ParsedFieldType {
 }
 pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
     match ty {
+        Type::Array(type_array) => {
+            // Handle array types [T; N]
+            let elem_ty = &*type_array.elem;
+
+            // [u8; N] is handled separately as bytes
+            if let Type::Path(elem_path) = elem_ty
+                && let Some(segment) = elem_path.path.segments.last()
+                && segment.ident == "u8"
+            {
+                return ParsedFieldType {
+                    rust_type: ty.clone(),
+                    proto_type: "bytes".to_string(),
+                    prost_type: quote! { bytes },
+                    is_option: false,
+                    is_repeated: false,
+                    is_message_like: false,
+                    proto_rust_type: parse_quote! { Vec<u8> },
+                };
+            }
+
+            // Other arrays are treated as repeated
+            let inner_parsed = parse_field_type(elem_ty);
+            ParsedFieldType {
+                rust_type: ty.clone(),
+                proto_type: inner_parsed.proto_type.clone(),
+                prost_type: inner_parsed.prost_type.clone(),
+                is_option: false,
+                is_repeated: true, // Arrays are like repeated fields
+                is_message_like: inner_parsed.is_message_like,
+                proto_rust_type: parse_quote! { Vec<#elem_ty> },
+            }
+        }
         Type::Path(TypePath { path, .. }) => {
             let segment = path.segments.last().unwrap();
             let type_name = segment.ident.to_string();
@@ -217,7 +249,8 @@ pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
                     }
                     panic!("Invalid Vec type");
                 }
-
+                "u8" => ParsedFieldType::primitive(ty.clone(), "uint32", quote! { uint32 }),
+                "u16" => ParsedFieldType::primitive(ty.clone(), "uint32", quote! { uint32 }),
                 "u64" => ParsedFieldType::primitive(ty.clone(), "uint64", quote! { uint64 }),
                 "u32" => ParsedFieldType::primitive(ty.clone(), "uint32", quote! { uint32 }),
                 "i64" => ParsedFieldType::primitive(ty.clone(), "int64", quote! { int64 }),
@@ -279,11 +312,30 @@ pub fn to_upper_snake_case(s: &str) -> String {
     result
 }
 
-pub fn rust_type_path_ident(ty: &Type) -> &syn::Ident {
-    if let Type::Path(type_path) = ty {
-        &type_path.path.segments.last().unwrap().ident
-    } else {
-        panic!("Expected Type::Path, got {:?}", ty.to_token_stream());
+pub fn rust_type_path_ident(ty: &syn::Type) -> &syn::Ident {
+    match ty {
+        syn::Type::Path(type_path) => {
+            let last_segment = type_path.path.segments.last().unwrap();
+            let ident = &last_segment.ident;
+
+            match ident.to_string().as_str() {
+                // Recursively unwrap Vec<T>, Option<T>, Box<T>, etc.
+                "Vec" | "Option" | "Box" => {
+                    if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments
+                        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+                    {
+                        return rust_type_path_ident(inner_ty);
+                    }
+                    ident
+                }
+                _ => ident,
+            }
+        }
+        syn::Type::Array(arr) => rust_type_path_ident(&arr.elem),
+        syn::Type::Reference(r) => rust_type_path_ident(&r.elem),
+        syn::Type::Group(g) => rust_type_path_ident(&g.elem),
+        // fallback — this shouldn't happen in your macro context
+        _ => panic!("Unsupported type structure in rust_type_path_ident: {:?}", ty.to_token_stream().to_string()),
     }
 }
 
@@ -375,4 +427,22 @@ pub struct MethodInfo {
     pub stream_type_name: Option<syn::Ident>,
     pub inner_response_type: Option<Type>,
     pub user_method_signature: TokenStream,
+}
+
+pub fn is_bytes_array(ty: &Type) -> bool {
+    if let Type::Array(type_array) = ty
+        && let Type::Path(elem_type) = &*type_array.elem
+        && let Some(segment) = elem_type.path.segments.first()
+    {
+        return segment.ident == "u8";
+    }
+    false
+}
+
+pub fn is_array_type(ty: &Type) -> bool {
+    matches!(ty, Type::Array(_))
+}
+
+pub fn array_elem_type(ty: &Type) -> Option<Type> {
+    if let Type::Array(type_array) = ty { Some((*type_array.elem).clone()) } else { None }
 }

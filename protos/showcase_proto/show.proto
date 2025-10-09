@@ -17,6 +17,28 @@ message Address {
   string country = 3;
 }
 
+message ArrayTest3CustomProtoTest {}
+
+message ArrayTest3CustomProtoTest2 {
+  repeated ArrayTestMessageU16 test = 1;
+}
+
+message ArrayTest3CustomProto {
+  oneof value {
+    ArrayTest3CustomProtoTest test = 1;
+    ArrayTestMessageU16 test1 = 2;
+    ArrayTest3CustomProtoTest2 test2 = 3;
+}
+}
+
+message ArrayTestMessageCustom {
+  repeated ArrayTestMessageU16 amount = 1;
+}
+
+message ArrayTestMessageU16 {
+  repeated uint32 amount = 1;
+}
+
 message Attr {
   repeated string id_vec = 1;
   optional string id_opt = 2;
@@ -41,6 +63,77 @@ message ComplexConversions {
 }
 
 message Empty {
+}
+
+message EnumArrayMessageAttributeFailTest2Proto {
+  oneof value {
+    Timestamp fail = 1;
+}
+}
+
+message EnumArrayMessageAttributeFailTestProtoFail {
+  repeated Timestamp timestamp_array = 1;
+}
+
+message EnumArrayMessageAttributeFailTestProto {
+  oneof value {
+    EnumArrayMessageAttributeFailTestProtoFail fail = 1;
+}
+}
+
+message EnumArrayProstEnumAttributeFailTest2Proto {
+  oneof value {
+    TestEnum fail = 1;
+}
+}
+
+message EnumArrayProstEnumAttributeFailTestProtoFail {
+  repeated TestEnum timestamp_array = 1;
+}
+
+message EnumArrayProstEnumAttributeFailTestProto {
+  oneof value {
+    EnumArrayProstEnumAttributeFailTestProtoFail fail = 1;
+}
+}
+
+message EnumArrayRustEnumAttributeFailTest2Proto {
+  oneof value {
+    Status fail = 1;
+}
+}
+
+message EnumArrayRustEnumAttributeFailTestProtoFail {
+  repeated Status timestamp_array = 1;
+}
+
+message EnumArrayRustEnumAttributeFailTestProto {
+  oneof value {
+    EnumArrayRustEnumAttributeFailTestProtoFail fail = 1;
+}
+}
+
+message EnumFailTestProtoOption {
+  optional uint64 id = 1;
+  optional Address address = 2;
+  repeated Timestamp timestamp_vec = 3;
+  optional Timestamp timestamp_opt = 4;
+  Timestamp timestamp = 5;
+}
+
+message EnumFailTestProto {
+  oneof value {
+    EnumFailTestProtoOption option = 1;
+}
+}
+
+message FailingOptionCustomTupleVariantProtoTest {}
+
+message FailingOptionCustomTupleVariantProto {
+  oneof value {
+    FailingOptionCustomTupleVariantProtoTest test = 1;
+    User test1 = 2;
+}
 }
 
 message FieldNumbering {
@@ -156,10 +249,33 @@ message SingleField {
   uint64 value = 1;
 }
 
+message StructFailU16 {
+  uint32 amount_2 = 1;
+  optional uint32 amount = 2;
+}
+
+message StructU16 {
+  uint32 inner = 1;
+}
+
+message StructU8 {
+  uint32 inner = 1;
+}
+
 message Transaction {
   uint64 id = 1;
   int64 created_at = 2;
   int64 updated_at = 3;
+}
+
+message TupleStruct2Test {
+  bytes field_0 = 1;
+  repeated uint32 field_1 = 2;
+}
+
+message TupleStructTest {
+  uint64 field_0 = 1;
+  uint32 field_1 = 2;
 }
 
 message User {
@@ -182,6 +298,122 @@ message UserWithMetadata {
   string name = 2;
 }
 
+message VecFailingTestEnumProtoTest2 {
+  repeated Status test1 = 1;
+  optional Status test2 = 2;
+  Status test3 = 3;
+}
+
+message VecFailingTestEnumProto {
+  oneof value {
+    VecFailingTestEnumProtoTest2 test2 = 1;
+}
+}
+
+message VecTestEnumCustom2ProtoTest2 {
+  repeated Status test1 = 1;
+  optional Status test2 = 2;
+  Status test3 = 3;
+}
+
+message VecTestEnumCustom2Proto {
+  oneof value {
+    Status test0 = 1;
+    Status test1 = 2;
+    VecTestEnumCustom2ProtoTest2 test2 = 3;
+    Status test3 = 4;
+}
+}
+
+message VecTestEnumCustomProtoTest {}
+
+message VecTestEnumCustomProtoTest2 {
+  repeated Status test1 = 1;
+  optional Status test2 = 2;
+  Status test3 = 3;
+}
+
+message VecTestEnumCustomProtoTest4 {
+  repeated TestEnum test1 = 1;
+  optional TestEnum test2 = 2;
+  TestEnum test3 = 3;
+}
+
+message VecTestEnumCustomProtoTest10 {
+  repeated User test = 1;
+  optional User test1 = 2;
+  User test3 = 3;
+}
+
+message VecTestEnumCustomProto {
+  oneof value {
+    VecTestEnumCustomProtoTest test = 1;
+    Status test0 = 2;
+    Status test1 = 3;
+    VecTestEnumCustomProtoTest2 test2 = 4;
+    Status test3 = 5;
+    VecTestEnumCustomProtoTest4 test4 = 6;
+    TestEnum test5 = 7;
+    TestEnum test6 = 8;
+    User test7 = 9;
+    User test8 = 10;
+    User test9 = 11;
+    VecTestEnumCustomProtoTest10 test10 = 12;
+}
+}
+
+message VecTestEnumU16ProtoTest {}
+
+message VecTestEnumU16Proto {
+  oneof value {
+    VecTestEnumU16ProtoTest test = 1;
+    uint32 test1 = 2;
+}
+}
+
+message VecTestEnumU64ProtoTest {}
+
+message VecTestEnumU64ProtoTest2 {
+  repeated uint64 test = 1;
+}
+
+message VecTestEnumU64Proto {
+  oneof value {
+    VecTestEnumU64ProtoTest test = 1;
+    uint64 test1 = 2;
+    VecTestEnumU64ProtoTest2 test2 = 3;
+    User test3 = 4;
+}
+}
+
+message VecTestEnumU8ProtoTest {}
+
+message VecTestEnumU8ProtoTest2 {
+  bytes test = 1;
+}
+
+message VecTestEnumU8Proto {
+  oneof value {
+    VecTestEnumU8ProtoTest test = 1;
+    bytes test1 = 2;
+    VecTestEnumU8ProtoTest2 test2 = 3;
+}
+}
+
+message VecTestMessageCustom {
+  repeated ArrayTestMessageU16 amount = 1;
+}
+
+message VecTestMessageU16 {
+  repeated uint32 amount = 1;
+  optional uint32 amount_opt = 2;
+  uint32 amount_plain = 3;
+}
+
+message VecTestMessageU64 {
+  repeated uint64 amount = 1;
+}
+
 message VeryComplexProtoFirst {}
 
 message VeryComplexProtoThird {
@@ -196,7 +428,7 @@ message VeryComplexProtoRepeated {
 
 message VeryComplexProtoOption {
   optional uint64 id = 1;
-  optional Option address = 2;
+  optional Address address = 2;
 }
 
 message VeryComplexProtoAttr {
