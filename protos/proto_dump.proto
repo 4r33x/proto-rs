@@ -10,7 +10,7 @@ message ArrayTest2 {
   bytes field_0 = 1;
 }
 
-message ArrayTest2U64 {
+message ArrayTest2U16 {
   repeated uint32 field_0 = 1;
 }
 
@@ -19,13 +19,12 @@ message ArrayTest3CustomDumpProtoTest {}
 message ArrayTest3CustomDumpProtoTest2 {
   repeated ArrayTestMessageU16 test = 1;
 }
-
 message ArrayTest3CustomDumpProto {
   oneof value {
     ArrayTest3CustomDumpProtoTest test = 1;
     ArrayTestMessageU16 test1 = 2;
     ArrayTest3CustomDumpProtoTest2 test2 = 3;
-}
+  }
 }
 
 message ArrayTest3ProtoTest {}
@@ -33,13 +32,12 @@ message ArrayTest3ProtoTest {}
 message ArrayTest3ProtoTest2 {
   bytes test = 1;
 }
-
 message ArrayTest3Proto {
   oneof value {
     ArrayTest3ProtoTest test = 1;
     bytes test1 = 2;
     ArrayTest3ProtoTest2 test2 = 3;
-}
+  }
 }
 
 message ArrayTest3U64ProtoTest {}
@@ -47,13 +45,16 @@ message ArrayTest3U64ProtoTest {}
 message ArrayTest3U64ProtoTest2 {
   repeated uint32 test = 1;
 }
-
 message ArrayTest3U64Proto {
   oneof value {
     ArrayTest3U64ProtoTest test = 1;
     uint32 test1 = 2;
     ArrayTest3U64ProtoTest2 test2 = 3;
+  }
 }
+
+message ArrayTest4U64 {
+  repeated uint64 field_0 = 1;
 }
 
 message ArrayTestMessageCustomDump {

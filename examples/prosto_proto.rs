@@ -20,6 +20,12 @@ pub struct StructU16 {
 pub struct StructU8 {
     inner: u8,
 }
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq)]
+pub struct StructU816 {
+    inner: u8,
+    inner2: u64,
+}
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, PartialEq)]
@@ -60,7 +66,7 @@ pub struct ArrayTestU16 {
 
 #[proto_dump(proto_path = "protos/proto_dump.proto")]
 #[derive(Clone, PartialEq)]
-pub struct ArrayTest2U64([u16; 32]);
+pub struct ArrayTest2U16([u16; 32]);
 
 #[proto_dump(proto_path = "protos/proto_dump.proto")]
 #[derive(Clone, PartialEq)]
@@ -69,6 +75,10 @@ pub enum ArrayTest3U64 {
     Test1([u16; 32]),
     Test2 { test: [u16; 32] },
 }
+
+#[proto_dump(proto_path = "protos/proto_dump.proto")]
+#[derive(Clone, PartialEq)]
+pub struct ArrayTest4U64([u64; 32]);
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, PartialEq)]
@@ -168,6 +178,12 @@ pub enum VecTestEnumU64 {
     Test1(Vec<u64>),
     Test2 { test: Vec<u64> },
     Test3(Option<User>),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone)]
+pub enum VecTestEnumProst {
+    Test10 { test3: User },
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -306,8 +322,26 @@ fn compute_hash(proto: &UserProto) -> String {
 fn compute_hash_for_enum(proto: &VeryComplexProtoAttr) -> String {
     format!("hash_{}_{}", proto.status, proto.status)
 }
+fn compute_hash_for_enum_test(_proto: &VeryComplexTestSkipProtoAttr) -> String {
+    "hash".to_owned()
+}
+fn compute_hash_for_enum_test_2(_proto: &VeryComplexTestSkipProtoTuple) -> String {
+    "hash".to_owned()
+}
 fn compute_hash_for_struct(proto: &AttrProto) -> String {
     format!("hash_{}_{}", proto.status, proto.status)
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub enum VeryComplexTestSkip {
+    Attr {
+        #[proto(skip = "compute_hash_for_enum_test")]
+        hash: String,
+        #[proto(skip)]
+        hash_2: String,
+    },
+    Tuple(#[proto(skip = "compute_hash_for_enum_test_2")] String),
+    Tuple2(#[proto(skip)] String),
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]

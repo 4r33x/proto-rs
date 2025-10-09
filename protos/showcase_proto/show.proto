@@ -4,6 +4,46 @@ package show;
 
 import "google.protobuf.proto";
 
+
+message EnumArrayMessageAttributeFailTest2Proto {
+  oneof value {
+    Timestamp fail = 1;
+  }
+}
+
+
+message EnumArrayProstEnumAttributeFailTest2Proto {
+  oneof value {
+    TestEnum fail = 1;
+  }
+}
+
+
+message EnumArrayRustEnumAttributeFailTest2Proto {
+  oneof value {
+    Status fail = 1;
+  }
+}
+
+
+message PaymentMethodProto {
+  oneof value {
+    uint64 cash = 1;
+    string card = 2;
+    QuoteLamports crypto = 3;
+  }
+}
+
+
+message QuoteLamportsProto {
+  oneof value {
+    uint64 lamports = 1;
+    uint64 wsol = 2;
+    uint64 usdc = 3;
+    uint64 usdt = 4;
+  }
+}
+
 enum Status {
   PENDING = 0;
   ACTIVE = 1;
@@ -22,13 +62,12 @@ message ArrayTest3CustomProtoTest {}
 message ArrayTest3CustomProtoTest2 {
   repeated ArrayTestMessageU16 test = 1;
 }
-
 message ArrayTest3CustomProto {
   oneof value {
     ArrayTest3CustomProtoTest test = 1;
     ArrayTestMessageU16 test1 = 2;
     ArrayTest3CustomProtoTest2 test2 = 3;
-}
+  }
 }
 
 message ArrayTestMessageCustom {
@@ -63,54 +102,34 @@ message ComplexConversions {
 }
 
 message Empty {
-}
 
-message EnumArrayMessageAttributeFailTest2Proto {
-  oneof value {
-    Timestamp fail = 1;
-}
 }
 
 message EnumArrayMessageAttributeFailTestProtoFail {
   repeated Timestamp timestamp_array = 1;
 }
-
 message EnumArrayMessageAttributeFailTestProto {
   oneof value {
     EnumArrayMessageAttributeFailTestProtoFail fail = 1;
-}
-}
-
-message EnumArrayProstEnumAttributeFailTest2Proto {
-  oneof value {
-    TestEnum fail = 1;
-}
+  }
 }
 
 message EnumArrayProstEnumAttributeFailTestProtoFail {
   repeated TestEnum timestamp_array = 1;
 }
-
 message EnumArrayProstEnumAttributeFailTestProto {
   oneof value {
     EnumArrayProstEnumAttributeFailTestProtoFail fail = 1;
-}
-}
-
-message EnumArrayRustEnumAttributeFailTest2Proto {
-  oneof value {
-    Status fail = 1;
-}
+  }
 }
 
 message EnumArrayRustEnumAttributeFailTestProtoFail {
   repeated Status timestamp_array = 1;
 }
-
 message EnumArrayRustEnumAttributeFailTestProto {
   oneof value {
     EnumArrayRustEnumAttributeFailTestProtoFail fail = 1;
-}
+  }
 }
 
 message EnumFailTestProtoOption {
@@ -120,20 +139,18 @@ message EnumFailTestProtoOption {
   optional Timestamp timestamp_opt = 4;
   Timestamp timestamp = 5;
 }
-
 message EnumFailTestProto {
   oneof value {
     EnumFailTestProtoOption option = 1;
-}
+  }
 }
 
 message FailingOptionCustomTupleVariantProtoTest {}
-
 message FailingOptionCustomTupleVariantProto {
   oneof value {
     FailingOptionCustomTupleVariantProtoTest test = 1;
     User test1 = 2;
-}
+  }
 }
 
 message FieldNumbering {
@@ -145,7 +162,7 @@ message FieldNumbering {
 
 message FileData {
   string name = 1;
-  bytes content = 2;
+  repeated uint32 content = 2;
   uint64 size = 3;
 }
 
@@ -208,27 +225,10 @@ message Payment {
   int64 created_at = 4;
 }
 
-message PaymentMethodProto {
-  oneof value {
-    uint64 cash = 1;
-    string card = 2;
-    QuoteLamports crypto = 3;
-}
-}
-
 message Person {
   uint64 id = 1;
   string name = 2;
   Address address = 3;
-}
-
-message QuoteLamportsProto {
-  oneof value {
-    uint64 lamports = 1;
-    uint64 wsol = 2;
-    uint64 usdc = 3;
-    uint64 usdt = 4;
-}
 }
 
 message RepeatedComplex {
@@ -260,6 +260,11 @@ message StructU16 {
 
 message StructU8 {
   uint32 inner = 1;
+}
+
+message StructU816 {
+  uint32 inner = 1;
+  uint64 inner2 = 2;
 }
 
 message Transaction {
@@ -303,11 +308,10 @@ message VecFailingTestEnumProtoTest2 {
   optional Status test2 = 2;
   Status test3 = 3;
 }
-
 message VecFailingTestEnumProto {
   oneof value {
     VecFailingTestEnumProtoTest2 test2 = 1;
-}
+  }
 }
 
 message VecTestEnumCustom2ProtoTest2 {
@@ -315,14 +319,13 @@ message VecTestEnumCustom2ProtoTest2 {
   optional Status test2 = 2;
   Status test3 = 3;
 }
-
 message VecTestEnumCustom2Proto {
   oneof value {
     Status test0 = 1;
     Status test1 = 2;
     VecTestEnumCustom2ProtoTest2 test2 = 3;
     Status test3 = 4;
-}
+  }
 }
 
 message VecTestEnumCustomProtoTest {}
@@ -344,7 +347,6 @@ message VecTestEnumCustomProtoTest10 {
   optional User test1 = 2;
   User test3 = 3;
 }
-
 message VecTestEnumCustomProto {
   oneof value {
     VecTestEnumCustomProtoTest test = 1;
@@ -359,16 +361,24 @@ message VecTestEnumCustomProto {
     User test8 = 10;
     User test9 = 11;
     VecTestEnumCustomProtoTest10 test10 = 12;
+  }
 }
+
+message VecTestEnumProstProtoTest10 {
+  User test3 = 1;
+}
+message VecTestEnumProstProto {
+  oneof value {
+    VecTestEnumProstProtoTest10 test10 = 1;
+  }
 }
 
 message VecTestEnumU16ProtoTest {}
-
 message VecTestEnumU16Proto {
   oneof value {
     VecTestEnumU16ProtoTest test = 1;
     uint32 test1 = 2;
-}
+  }
 }
 
 message VecTestEnumU64ProtoTest {}
@@ -376,28 +386,26 @@ message VecTestEnumU64ProtoTest {}
 message VecTestEnumU64ProtoTest2 {
   repeated uint64 test = 1;
 }
-
 message VecTestEnumU64Proto {
   oneof value {
     VecTestEnumU64ProtoTest test = 1;
     uint64 test1 = 2;
     VecTestEnumU64ProtoTest2 test2 = 3;
     User test3 = 4;
-}
+  }
 }
 
 message VecTestEnumU8ProtoTest {}
 
 message VecTestEnumU8ProtoTest2 {
-  bytes test = 1;
+  repeated uint32 test = 1;
 }
-
 message VecTestEnumU8Proto {
   oneof value {
     VecTestEnumU8ProtoTest test = 1;
     bytes test1 = 2;
     VecTestEnumU8ProtoTest2 test2 = 3;
-}
+  }
 }
 
 message VecTestMessageCustom {
@@ -444,7 +452,6 @@ message VeryComplexProtoAttr {
   optional google.protobuf.TestEnum test_enum_opt = 10;
   repeated google.protobuf.TestEnum test_enum_vec = 11;
 }
-
 message VeryComplexProto {
   oneof value {
     VeryComplexProtoFirst first = 1;
@@ -453,6 +460,17 @@ message VeryComplexProto {
     VeryComplexProtoRepeated repeated = 4;
     VeryComplexProtoOption option = 5;
     VeryComplexProtoAttr attr = 6;
+  }
 }
+
+message VeryComplexTestSkipProtoAttr {
+
+}
+message VeryComplexTestSkipProto {
+  oneof value {
+    VeryComplexTestSkipProtoAttr attr = 1;
+    string tuple = 2;
+    string tuple2 = 3;
+  }
 }
 

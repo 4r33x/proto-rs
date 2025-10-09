@@ -9,19 +9,19 @@ use tonic::Request;
 use tonic::Response;
 use tonic::Status;
 
-#[proto_message(proto_path ="protos/gen_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/gen_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing;
 
-#[proto_message(proto_path ="protos/gen_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/gen_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong;
 
-#[proto_message(proto_path ="protos/gen_proto/rizz_types.proto")]
+#[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct FooResponse;
 
-#[proto_message(proto_path ="protos/gen_proto/rizz_types.proto")]
+#[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarSub;
 

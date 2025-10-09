@@ -1,19 +1,38 @@
+//! Client generation - refactored to use common RPC utilities
+
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::proto_rpc::rpc_common::client_module_name;
+use crate::proto_rpc::rpc_common::client_struct_name;
+use crate::proto_rpc::rpc_common::generate_codec_init;
+use crate::proto_rpc::rpc_common::generate_ready_check;
+use crate::proto_rpc::rpc_common::generate_route_path;
+use crate::proto_rpc::rpc_common::generate_stream_conversion;
+use crate::proto_rpc::rpc_common::is_streaming_method;
 use crate::utils::MethodInfo;
-use crate::utils::to_pascal_case;
-use crate::utils::to_snake_case;
+
+// ============================================================================
+// CLIENT MODULE GENERATION
+// ============================================================================
 
 pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo]) -> TokenStream {
-    let client_module = syn::Ident::new(&format!("{}_client", to_snake_case(&trait_name.to_string())), trait_name.span());
-    let client_struct = syn::Ident::new(&format!("{}Client", trait_name), trait_name.span());
+    let client_module = client_module_name(trait_name);
+    let client_struct = client_struct_name(trait_name);
 
-    let client_methods: Vec<_> = methods.iter().map(|method| generate_client_method(method, package_name, trait_name)).collect();
+    let client_methods = methods.iter().map(|m| generate_client_method(m, package_name, trait_name)).collect::<Vec<_>>();
+
+    let compression_methods = generate_client_compression_methods();
 
     quote! {
         #vis mod #client_module {
-            #![allow(unused_variables, dead_code, missing_docs, clippy::wildcard_imports, clippy::let_unit_value)]
+            #![allow(
+                unused_variables,
+                dead_code,
+                missing_docs,
+                clippy::wildcard_imports,
+                clippy::let_unit_value
+            )]
             use tonic::codegen::*;
             use super::*;
 
@@ -67,29 +86,7 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                     #client_struct::new(InterceptedService::new(inner, interceptor))
                 }
 
-                #[must_use]
-                pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
-                    self.inner = self.inner.send_compressed(encoding);
-                    self
-                }
-
-                #[must_use]
-                pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
-                    self.inner = self.inner.accept_compressed(encoding);
-                    self
-                }
-
-                #[must_use]
-                pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
-                    self.inner = self.inner.max_decoding_message_size(limit);
-                    self
-                }
-
-                #[must_use]
-                pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
-                    self.inner = self.inner.max_encoding_message_size(limit);
-                    self
-                }
+                #compression_methods
 
                 #(#client_methods)*
             }
@@ -97,81 +94,151 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     }
 }
 
+// ============================================================================
+// CLIENT METHOD GENERATION
+// ============================================================================
+
 fn generate_client_method(method: &MethodInfo, package_name: &str, trait_name: &syn::Ident) -> TokenStream {
+    if is_streaming_method(method) {
+        generate_streaming_client_method(method, package_name, trait_name)
+    } else {
+        generate_unary_client_method(method, package_name, trait_name)
+    }
+}
+
+fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_name: &syn::Ident) -> TokenStream {
     let method_name = &method.name;
     let request_type = &method.request_type;
-    let route_path = format!("/{}.{}/{}", package_name, trait_name, to_pascal_case(&method_name.to_string()));
+    let response_type = &method.response_type;
+    let route_path = generate_route_path(package_name, trait_name, method_name);
 
-    if method.is_streaming {
-        let inner_response_type = method.inner_response_type.as_ref().unwrap();
+    let ready_check = generate_ready_check();
+    let codec_init = generate_codec_init();
 
-        quote! {
-            pub async fn #method_name(
-                &mut self,
-                request: impl tonic::IntoRequest<#request_type>,
-            ) -> std::result::Result<
-                tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = Result<#inner_response_type, tonic::Status>>>,
-                tonic::Status
-            > {
-                self.inner
-                    .ready()
-                    .await
-                    .map_err(|e| tonic::Status::unknown(format!("Service was not ready: {}", e.into())))?;
+    quote! {
+        pub async fn #method_name(
+            &mut self,
+            request: impl tonic::IntoRequest<#request_type>,
+        ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status> {
+            #ready_check
+            #codec_init
+            let path = http::uri::PathAndQuery::from_static(#route_path);
 
-                let codec = tonic_prost::ProstCodec::default();
-                let path = http::uri::PathAndQuery::from_static(#route_path);
+            // Convert native request to proto
+            let req = request.into_request();
+            let (metadata, extensions, native_msg) = req.into_parts();
+            let proto_msg = native_msg.to_proto();
+            let mut proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
 
-                let req = request.into_request();
-                let (metadata, extensions, native_msg) = req.into_parts();
-                let proto_msg = native_msg.to_proto();
-                let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
+            proto_req.extensions_mut().insert(
+                tonic::codegen::GrpcMethod::new(#package_name, stringify!(#method_name))
+            );
 
-                let response = self.inner.server_streaming(proto_req, path, codec).await?;
-                let (metadata, proto_stream, extensions) = response.into_parts();
+            // Make RPC call
+            let response = self.inner.unary(proto_req, path, codec).await?;
 
-                use tonic::codegen::tokio_stream::StreamExt;
-                let native_stream = proto_stream.map(|result| {
-                    result.and_then(|proto_item| {
-                        #inner_response_type::from_proto(proto_item)
-                            .map_err(|e| tonic::Status::internal(format!("Failed to convert response: {}", e)))
-                    })
-                });
+            // Convert proto response back to native
+            let (metadata, proto_response, extensions) = response.into_parts();
+            let native_response = #response_type::from_proto(proto_response)
+                .map_err(|e| tonic::Status::internal(
+                    format!("Failed to convert response: {}", e)
+                ))?;
 
-                Ok(tonic::Response::from_parts(metadata, native_stream, extensions))
-            }
+            Ok(tonic::Response::from_parts(metadata, native_response, extensions))
         }
-    } else {
-        let response_type = &method.response_type;
+    }
+}
 
-        quote! {
-            pub async fn #method_name(
-                &mut self,
-                request: impl tonic::IntoRequest<#request_type>,
-            ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status> {
-                self.inner
-                    .ready()
-                    .await
-                    .map_err(|e| tonic::Status::unknown(format!("Service was not ready: {}", e.into())))?;
+fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, trait_name: &syn::Ident) -> TokenStream {
+    let method_name = &method.name;
+    let request_type = &method.request_type;
+    let inner_response_type = method.inner_response_type.as_ref().unwrap();
+    let route_path = generate_route_path(package_name, trait_name, method_name);
 
-                let codec = tonic_prost::ProstCodec::default();
-                let path = http::uri::PathAndQuery::from_static(#route_path);
+    let ready_check = generate_ready_check();
+    let codec_init = generate_codec_init();
+    let stream_conversion = generate_stream_conversion(inner_response_type);
 
-                let req = request.into_request();
-                let (metadata, extensions, native_msg) = req.into_parts();
-                let proto_msg = native_msg.to_proto();
-                let mut proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
+    quote! {
+        pub async fn #method_name(
+            &mut self,
+            request: impl tonic::IntoRequest<#request_type>,
+        ) -> std::result::Result<
+            tonic::Response<impl tonic::codegen::tokio_stream::Stream<
+                Item = Result<#inner_response_type, tonic::Status>
+            >>,
+            tonic::Status
+        > {
+            #ready_check
+            #codec_init
+            let path = http::uri::PathAndQuery::from_static(#route_path);
 
-                proto_req.extensions_mut().insert(
-                    tonic::codegen::GrpcMethod::new(#package_name, stringify!(#method_name))
-                );
+            // Convert native request to proto
+            let req = request.into_request();
+            let (metadata, extensions, native_msg) = req.into_parts();
+            let proto_msg = native_msg.to_proto();
+            let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
 
-                let response = self.inner.unary(proto_req, path, codec).await?;
-                let (metadata, proto_response, extensions) = response.into_parts();
-                let native_response = #response_type::from_proto(proto_response)
-                    .map_err(|e| tonic::Status::internal(format!("Failed to convert response: {}", e)))?;
+            // Make streaming RPC call
+            let response = self.inner.server_streaming(proto_req, path, codec).await?;
 
-                Ok(tonic::Response::from_parts(metadata, native_response, extensions))
-            }
+            // Convert proto stream to native stream
+            #stream_conversion
         }
+    }
+}
+
+// ============================================================================
+// CLIENT COMPRESSION METHODS
+// ============================================================================
+pub fn generate_client_compression_methods() -> TokenStream {
+    quote! {
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+    }
+}
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn test_client_module_generation() {
+        let trait_name: syn::Ident = parse_quote! { TestService };
+        let vis: syn::Visibility = parse_quote! { pub };
+        let methods = vec![];
+
+        let module = generate_client_module(&trait_name, &vis, "test_package", &methods);
+
+        let module_str = module.to_string();
+        assert!(module_str.contains("test_service_client"));
+        assert!(module_str.contains("TestServiceClient"));
     }
 }

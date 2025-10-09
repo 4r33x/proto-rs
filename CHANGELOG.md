@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] - [0.4.0] - HUGE REFACTOR 2
+
+- Refactored code to eliminate duplication and improve logic.
+- Added support for:
+  - Arrays
+  - Byte arrays
+  - Arrays in tuples
+  - Named enum fields
+  - Skipping fields in tuple enums
+  - Other miscellaneous types
+- Added proto shadows for Solana native types under the `solana` feature (currently only `Address`).
+- Improved formatting for generated `.proto` files.
+
 ## [0.2.0] - HUGE REFACTOR
 
 ### Added

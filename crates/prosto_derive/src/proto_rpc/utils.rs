@@ -1,3 +1,5 @@
+//! Utilities for extracting method information from trait definitions
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::FnArg;
@@ -32,10 +34,9 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                             if let TraitItem::Type(type_item) = item
                                 && type_item.ident == stream_name
                             {
-                                Some(extract_inner_type_from_bounds(&type_item.bounds))
-                            } else {
-                                None
+                                return Some(extract_inner_type_from_bounds(&type_item.bounds));
                             }
+                            None
                         })
                         .unwrap_or_else(|| panic!("Could not find associated type definition for {}", stream_name));
                     (Some(stream_name), Some(inner_type))
@@ -73,6 +74,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
     (methods, user_associated_types)
 }
 
+/// Generate user-facing method signature for the trait
 fn generate_user_method_signature(
     attrs: &[syn::Attribute],
     method_name: &syn::Ident,
@@ -88,7 +90,11 @@ fn generate_user_method_signature(
             fn #method_name<'life0, 'async_trait>(
                 &'life0 self,
                 request: tonic::Request<#request_type>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = Result<tonic::Response<Self::#stream_name>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> ::core::pin::Pin<Box<
+                dyn ::core::future::Future<
+                    Output = Result<tonic::Response<Self::#stream_name>, tonic::Status>
+                > + ::core::marker::Send + 'async_trait
+            >>
             where
                 'life0: 'async_trait,
                 Self: 'async_trait;
@@ -99,7 +105,11 @@ fn generate_user_method_signature(
             fn #method_name<'life0, 'async_trait>(
                 &'life0 self,
                 request: tonic::Request<#request_type>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = Result<tonic::Response<#response_type>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> ::core::pin::Pin<Box<
+                dyn ::core::future::Future<
+                    Output = Result<tonic::Response<#response_type>, tonic::Status>
+                > + ::core::marker::Send + 'async_trait
+            >>
             where
                 'life0: 'async_trait,
                 Self: 'async_trait;
@@ -107,10 +117,12 @@ fn generate_user_method_signature(
     }
 }
 
+/// Extract request and response types from method signature
 pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>) {
     let mut request_type = None;
     let mut response_type = None;
 
+    // Extract request type from arguments
     for arg in &sig.inputs {
         if let FnArg::Typed(PatType { ty, .. }) = arg
             && let Type::Path(TypePath { path, .. }) = &**ty
@@ -123,6 +135,7 @@ pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>) {
         }
     }
 
+    // Extract response type from return type
     if let ReturnType::Type(_, ty) = &sig.output
         && let Type::Path(TypePath { path, .. }) = &**ty
         && let Some(segment) = path.segments.last()
@@ -140,6 +153,7 @@ pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>) {
     (request_type.expect("Could not extract request type"), response_type.expect("Could not extract response type"))
 }
 
+/// Check if the response type is a stream
 pub fn is_stream_response(sig: &syn::Signature) -> bool {
     if let ReturnType::Type(_, ty) = &sig.output {
         let type_string = quote!(#ty).to_string();
@@ -149,6 +163,7 @@ pub fn is_stream_response(sig: &syn::Signature) -> bool {
     }
 }
 
+/// Extract the stream type name from response type
 pub fn extract_stream_type_name(response_type: &Type) -> syn::Ident {
     if let Type::Path(TypePath { path, .. }) = response_type
         && let Some(segment) = path.segments.last()
@@ -158,6 +173,7 @@ pub fn extract_stream_type_name(response_type: &Type) -> syn::Ident {
     panic!("Could not extract stream type name from response type");
 }
 
+/// Extract inner type from Stream trait bounds
 pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Plus>) -> Type {
     for bound in bounds {
         if let syn::TypeParamBound::Trait(trait_bound) = bound {
@@ -182,4 +198,53 @@ pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::
         }
     }
     panic!("Could not extract inner type from Stream bounds");
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn test_extract_types() {
+        let sig: syn::Signature = parse_quote! {
+            async fn test_method(
+                &self,
+                request: tonic::Request<MyRequest>
+            ) -> Result<tonic::Response<MyResponse>, tonic::Status>
+        };
+
+        let (req_type, resp_type) = extract_types(&sig);
+        assert_eq!(quote!(#req_type).to_string(), "MyRequest");
+        assert_eq!(quote!(#resp_type).to_string(), "MyResponse");
+    }
+
+    #[test]
+    fn test_is_stream_response() {
+        let streaming_sig: syn::Signature = parse_quote! {
+            async fn stream_method(
+                &self,
+                request: tonic::Request<MyRequest>
+            ) -> Result<tonic::Response<Self::MyStream>, tonic::Status>
+        };
+
+        assert!(is_stream_response(&streaming_sig));
+
+        let unary_sig: syn::Signature = parse_quote! {
+            async fn unary_method(
+                &self,
+                request: tonic::Request<MyRequest>
+            ) -> Result<tonic::Response<MyResponse>, tonic::Status>
+        };
+
+        assert!(!is_stream_response(&unary_sig));
+    }
+
+    #[test]
+    fn test_extract_stream_type_name() {
+        let ty: Type = parse_quote! { Self::MyStream };
+        let name = extract_stream_type_name(&ty);
+        assert_eq!(name.to_string(), "MyStream");
+    }
 }

@@ -4,12 +4,13 @@ use quote::quote;
 use syn::ItemTrait;
 
 mod client;
+pub mod rpc_common;
 mod server;
-pub mod utils;
+pub mod utils; // Add this
 
 use client::generate_client_module;
 use server::generate_server_module;
-use utils::extract_methods_and_types;
+use utils::extract_methods_and_types; // Add this import
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
@@ -19,7 +20,6 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let trait_name = &input.ident;
     let ty_ident = trait_name.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input);
-
     let vis = &input.vis;
     let package_name = config.get_rpc_package().to_owned();
 
@@ -28,7 +28,6 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 
     // Generate .proto file if requested
     let service_content = generate_service_content(trait_name, &methods, &config.type_imports);
-
     config.register_and_emit_proto(&ty_ident, &service_content);
     let proto = config.imports_mat;
 
