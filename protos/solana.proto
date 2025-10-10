@@ -6,3 +6,7 @@ message Address {
   bytes inner = 1;
 }
 
+message Signature {
+  bytes inner = 1;
+}
+

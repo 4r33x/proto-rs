@@ -3,11 +3,9 @@ use quote::quote;
 use syn::DeriveInput;
 use syn::Fields;
 use syn::Index;
-use syn::Type;
 
 use crate::utils::field_handling::FieldHandler;
 use crate::utils::field_handling::FromProtoConversion;
-use crate::utils::parse_field_type;
 
 pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     match &data.fields {
@@ -95,7 +93,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
 
     // Use FieldHandler for each field
     for (idx, field) in fields.unnamed.iter().enumerate() {
-        let field_num = (idx + 1) as usize;
+        let field_num = idx + 1;
         let field_name = syn::Ident::new(&format!("field_{}", idx), name.span());
         let tuple_idx = Index::from(idx);
 

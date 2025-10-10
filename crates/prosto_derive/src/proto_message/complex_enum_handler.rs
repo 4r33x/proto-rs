@@ -349,33 +349,33 @@ fn handle_unnamed_variant(
     }
 
     // Special case: [u8; N] can be directly in oneof
-    if let Type::Array(type_array) = field_ty {
-        if is_bytes_array(field_ty) {
-            oneof_variants.push(quote! {
-                #[prost(bytes, tag = #tag)]
-                #variant_ident(::std::vec::Vec<u8>)
-            });
+    if let Type::Array(_type_array) = field_ty
+        && is_bytes_array(field_ty)
+    {
+        oneof_variants.push(quote! {
+            #[prost(bytes, tag = #tag)]
+            #variant_ident(::std::vec::Vec<u8>)
+        });
 
-            to_proto_arms.push(quote! {
-                #name::#variant_ident(inner) =>
-                    #oneof_mod_name::#oneof_enum_name::#variant_ident(inner.to_vec())
-            });
+        to_proto_arms.push(quote! {
+            #name::#variant_ident(inner) =>
+                #oneof_mod_name::#oneof_enum_name::#variant_ident(inner.to_vec())
+        });
 
-            from_proto_arms.push(quote! {
-                #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
-                    let converted = inner.as_slice().try_into()
-                        .map_err(|_| #error_name::VariantConversion {
-                            variant: stringify!(#variant_ident).to_string(),
-                            source: Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "Invalid byte array length"
-                            )),
-                        })?;
-                    #name::#variant_ident(converted)
-                }
-            });
-            return;
-        }
+        from_proto_arms.push(quote! {
+            #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
+                let converted = inner.as_slice().try_into()
+                    .map_err(|_| #error_name::VariantConversion {
+                        variant: stringify!(#variant_ident).to_string(),
+                        source: Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "Invalid byte array length"
+                        )),
+                    })?;
+                #name::#variant_ident(converted)
+            }
+        });
+        return;
     }
 
     // For all other cases, create a nested message wrapper
@@ -601,7 +601,7 @@ fn extract_and_adjust_value(conversion: &TokenStream, field_name: &syn::Ident, t
             adjusted
         };
 
-        adjusted.parse().unwrap_or_else(|_| target)
+        adjusted.parse().unwrap_or(target)
     } else {
         target
     }
@@ -621,7 +621,7 @@ fn extract_conversion_value_adjusted(conversion: &TokenStream, field_name: &syn:
             .replace(&format!("proto . {}", field_str), &target.to_string())
             .replace(&format!("proto.{}", field_str), &target.to_string());
 
-        adjusted.parse().unwrap_or_else(|_| target)
+        adjusted.parse().unwrap_or(target)
     } else {
         target
     }

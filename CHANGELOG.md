@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.0]
+- Added solana-signature shadow
+- Fix solana-address shadow (now properly implements HasProto)
+- Relaxed HasProto bounds
+- resolve Clippy lints 
+
 ## [0.3.0] - [0.4.0] - HUGE REFACTOR 2
 
 - Refactored code to eliminate duplication and improve logic.

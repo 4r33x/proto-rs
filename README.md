@@ -57,7 +57,7 @@ This is possible because of this trait, that handles all conversions automagical
 
 ```rust
 pub trait HasProto {
-    type Proto: Clone + prost::Message + PartialEq;
+    type Proto: prost::Message;
     fn to_proto(&self) -> Self::Proto;
     fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>>
     where

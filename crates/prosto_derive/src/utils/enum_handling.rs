@@ -214,17 +214,17 @@ mod tests {
     #[test]
     fn test_extract_wrapper_info() {
         let ty: Type = parse_quote! { Status };
-        let (base, is_opt, is_rep) = extract_wrapper_info(&ty);
+        let (_base, is_opt, is_rep) = extract_wrapper_info(&ty);
         assert!(!is_opt);
         assert!(!is_rep);
 
         let ty: Type = parse_quote! { Option<Status> };
-        let (base, is_opt, is_rep) = extract_wrapper_info(&ty);
+        let (_base, is_opt, is_rep) = extract_wrapper_info(&ty);
         assert!(is_opt);
         assert!(!is_rep);
 
         let ty: Type = parse_quote! { Vec<Status> };
-        let (base, is_opt, is_rep) = extract_wrapper_info(&ty);
+        let (_base, is_opt, is_rep) = extract_wrapper_info(&ty);
         assert!(!is_opt);
         assert!(is_rep);
     }
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn test_enum_type_from_field_rust_enum() {
         let ty: Type = parse_quote! { Status };
-        let mut config = FieldConfig {
+        let config = FieldConfig {
             is_rust_enum: true,
             ..Default::default()
         };

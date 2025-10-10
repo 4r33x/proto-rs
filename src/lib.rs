@@ -7,7 +7,7 @@ mod types;
 pub use types::*;
 
 pub trait HasProto {
-    type Proto: Clone + prost::Message + PartialEq;
+    type Proto: prost::Message;
     fn to_proto(&self) -> Self::Proto;
     fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>>
     where
