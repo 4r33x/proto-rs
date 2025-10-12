@@ -994,6 +994,7 @@ dependencies = [
  "fastnum",
  "inventory",
  "proptest",
+ "prost",
  "prosto_derive",
  "rand",
  "serde",
