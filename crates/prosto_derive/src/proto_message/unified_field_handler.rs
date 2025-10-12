@@ -197,6 +197,30 @@ fn scalar_codec(parsed: &ParsedFieldType) -> Option<Ident> {
     }
 }
 
+fn needs_numeric_widening(parsed: &ParsedFieldType) -> bool {
+    if !parsed.is_numeric_scalar {
+        return false;
+    }
+
+    let elem = &parsed.elem_type;
+    let proto = &parsed.proto_rust_type;
+    quote!(#elem).to_string() != quote!(#proto).to_string()
+}
+
+fn decode_numeric_with_widening(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, codec: &Ident) -> TokenStream {
+    let proto_ty = &parsed.proto_rust_type;
+    let target_ty = &parsed.elem_type;
+
+    quote! {
+        if #tag == tag {
+            let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+            ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+            self.#access = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
+                .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+        }
+    }
+}
+
 fn encode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let Some(codec) = scalar_codec(parsed) else {
         return quote! {};
@@ -210,8 +234,18 @@ fn encode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
         };
     }
 
-    quote! {
-        ::proto_rs::encoding::#codec::encode(#tag, &self.#access, buf);
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            {
+                let __value: #proto_ty = self.#access as #proto_ty;
+                ::proto_rs::encoding::#codec::encode(#tag, &__value, buf);
+            }
+        }
+    } else {
+        quote! {
+            ::proto_rs::encoding::#codec::encode(#tag, &self.#access, buf);
+        }
     }
 }
 
@@ -220,8 +254,18 @@ fn encode_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldType) 
         return quote! {};
     };
 
-    quote! {
-        ::proto_rs::encoding::#codec::encode(#tag, &#value, buf);
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            {
+                let __value: #proto_ty = (#value) as #proto_ty;
+                ::proto_rs::encoding::#codec::encode(#tag, &__value, buf);
+            }
+        }
+    } else {
+        quote! {
+            ::proto_rs::encoding::#codec::encode(#tag, &#value, buf);
+        }
     }
 }
 
@@ -230,9 +274,13 @@ fn decode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
         return quote! {};
     };
 
-    quote! {
-        if #tag == tag {
-            ::proto_rs::encoding::#codec::merge(wire_type, &mut self.#access, buf, ctx.clone())?;
+    if needs_numeric_widening(parsed) {
+        decode_numeric_with_widening(access, tag, parsed, &codec)
+    } else {
+        quote! {
+            if #tag == tag {
+                ::proto_rs::encoding::#codec::merge(wire_type, &mut self.#access, buf, ctx.clone())?;
+            }
         }
     }
 }
@@ -242,7 +290,17 @@ fn encoded_len_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) 
         return quote! { 0 };
     };
 
-    quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &self.#access) }
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            {
+                let __value: #proto_ty = self.#access as #proto_ty;
+                ::proto_rs::encoding::#codec::encoded_len(#tag, &__value)
+            }
+        }
+    } else {
+        quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &self.#access) }
+    }
 }
 
 fn encoded_len_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
@@ -250,7 +308,17 @@ fn encoded_len_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldT
         return quote! { 0 };
     };
 
-    quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &#value) }
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            {
+                let __value: #proto_ty = (#value) as #proto_ty;
+                ::proto_rs::encoding::#codec::encoded_len(#tag, &__value)
+            }
+        }
+    } else {
+        quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &#value) }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -337,9 +405,19 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
         return quote! {};
     };
 
-    quote! {
-        for __value in self.#access.iter() {
-            ::proto_rs::encoding::#codec::encode(#tag, __value, buf);
+    if needs_numeric_widening(&elem_parsed) {
+        let proto_ty = &elem_parsed.proto_rust_type;
+        quote! {
+            for __value in self.#access.iter() {
+                let __converted: #proto_ty = (*__value) as #proto_ty;
+                ::proto_rs::encoding::#codec::encode(#tag, &__converted, buf);
+            }
+        }
+    } else {
+        quote! {
+            for __value in self.#access.iter() {
+                ::proto_rs::encoding::#codec::encode(#tag, __value, buf);
+            }
         }
     }
 }
@@ -368,31 +446,66 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
     };
 
     let wire = scalar_wire_type(&elem_parsed);
+    let target_ty = &elem_parsed.elem_type;
 
-    quote! {
-        if #tag == tag {
-            let mut __i = 0usize;
-            match wire_type {
-                ::proto_rs::encoding::WireType::LengthDelimited => {
-                    let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                    let mut __limited = buf.take(__len);
-                    while __limited.has_remaining() {
+    if needs_numeric_widening(&elem_parsed) {
+        let proto_ty = &elem_parsed.proto_rust_type;
+        quote! {
+            if #tag == tag {
+                let mut __i = 0usize;
+                match wire_type {
+                    ::proto_rs::encoding::WireType::LengthDelimited => {
+                        let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                        let mut __limited = buf.take(__len);
+                        while __limited.has_remaining() {
+                            if __i >= self.#access.len() {
+                                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                            }
+                            let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                            ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
+                            self.#access[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
+                                .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+                            __i += 1;
+                        }
+                    }
+                    _ => {
+                        if __i >= self.#access.len() {
+                            return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                        }
+                        let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                        ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                        self.#access[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
+                            .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {
+            if #tag == tag {
+                let mut __i = 0usize;
+                match wire_type {
+                    ::proto_rs::encoding::WireType::LengthDelimited => {
+                        let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                        let mut __limited = buf.take(__len);
+                        while __limited.has_remaining() {
+                            if __i >= self.#access.len() {
+                                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                            }
+                            let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                            ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
+                            self.#access[__i] = __tmp;
+                            __i += 1;
+                        }
+                    }
+                    _ => {
                         if __i >= self.#access.len() {
                             return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                         }
                         let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-                        ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
+                        ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                         self.#access[__i] = __tmp;
-                        __i += 1;
                     }
-                }
-                _ => {
-                    if __i >= self.#access.len() {
-                        return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                    }
-                    let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-                    ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                    self.#access[__i] = __tmp;
                 }
             }
         }
@@ -419,13 +532,27 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
         return quote! { 0 };
     };
 
-    quote! {
-        {
-            let mut __total = 0usize;
-            for __value in self.#access.iter() {
-                __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
+    if needs_numeric_widening(&elem_parsed) {
+        let proto_ty = &elem_parsed.proto_rust_type;
+        quote! {
+            {
+                let mut __total = 0usize;
+                for __value in self.#access.iter() {
+                    let __converted: #proto_ty = (*__value) as #proto_ty;
+                    __total += ::proto_rs::encoding::#codec::encoded_len(#tag, &__converted);
+                }
+                __total
             }
-            __total
+        }
+    } else {
+        quote! {
+            {
+                let mut __total = 0usize;
+                for __value in self.#access.iter() {
+                    __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
+                }
+                __total
+            }
         }
     }
 }
@@ -443,7 +570,20 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
     };
 
     if parsed.is_numeric_scalar {
-        quote! { ::proto_rs::encoding::#codec::encode_packed(#tag, &self.#access, buf); }
+        if needs_numeric_widening(parsed) {
+            let proto_ty = &parsed.proto_rust_type;
+            quote! {
+                if !self.#access.is_empty() {
+                    let mut __tmp: ::std::vec::Vec<#proto_ty> = ::std::vec::Vec::with_capacity(self.#access.len());
+                    for value in self.#access.iter() {
+                        __tmp.push((*value) as #proto_ty);
+                    }
+                    ::proto_rs::encoding::#codec::encode_packed(#tag, &__tmp, buf);
+                }
+            }
+        } else {
+            quote! { ::proto_rs::encoding::#codec::encode_packed(#tag, &self.#access, buf); }
+        }
     } else {
         quote! { ::proto_rs::encoding::#codec::encode_repeated(#tag, &self.#access, buf); }
     }
@@ -462,9 +602,24 @@ fn decode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
         return quote! {};
     };
 
-    quote! {
-        if #tag == tag {
-            ::proto_rs::encoding::#codec::merge_repeated(wire_type, &mut self.#access, buf, ctx.clone())?;
+    if parsed.is_numeric_scalar && needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        let elem_ty = &parsed.elem_type;
+        quote! {
+            if #tag == tag {
+                let mut __tmp: ::std::vec::Vec<#proto_ty> = ::std::vec::Vec::new();
+                ::proto_rs::encoding::#codec::merge_repeated(wire_type, &mut __tmp, buf, ctx.clone())?;
+                for value in __tmp {
+                    self.#access.push(<#elem_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(value)
+                        .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?);
+                }
+            }
+        }
+    } else {
+        quote! {
+            if #tag == tag {
+                ::proto_rs::encoding::#codec::merge_repeated(wire_type, &mut self.#access, buf, ctx.clone())?;
+            }
         }
     }
 }
@@ -479,7 +634,20 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
     };
 
     if parsed.is_numeric_scalar {
-        quote! { ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &self.#access) }
+        if needs_numeric_widening(parsed) {
+            let proto_ty = &parsed.proto_rust_type;
+            quote! {
+                {
+                    let mut __tmp: ::std::vec::Vec<#proto_ty> = ::std::vec::Vec::with_capacity(self.#access.len());
+                    for value in self.#access.iter() {
+                        __tmp.push((*value) as #proto_ty);
+                    }
+                    ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &__tmp)
+                }
+            }
+        } else {
+            quote! { ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &self.#access) }
+        }
     } else {
         quote! { ::proto_rs::encoding::#codec::encoded_len_repeated(#tag, &self.#access) }
     }
@@ -501,9 +669,19 @@ fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
         return quote! {};
     };
 
-    quote! {
-        if let Some(value) = &self.#access {
-            ::proto_rs::encoding::#codec::encode(#tag, value, buf);
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            if let Some(value) = &self.#access {
+                let __value: #proto_ty = (*value) as #proto_ty;
+                ::proto_rs::encoding::#codec::encode(#tag, &__value, buf);
+            }
+        }
+    } else {
+        quote! {
+            if let Some(value) = &self.#access {
+                ::proto_rs::encoding::#codec::encode(#tag, value, buf);
+            }
         }
     }
 }
@@ -525,11 +703,24 @@ fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
         return quote! {};
     };
 
-    quote! {
-        if #tag == tag {
-            let mut __tmp: #inner_ty = <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
-            ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-            self.#access = Some(__tmp);
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            if #tag == tag {
+                let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                let __converted = <#inner_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
+                    .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+                self.#access = Some(__converted);
+            }
+        }
+    } else {
+        quote! {
+            if #tag == tag {
+                let mut __tmp: #inner_ty = <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
+                ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                self.#access = Some(__tmp);
+            }
         }
     }
 }
@@ -547,10 +738,20 @@ fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) 
         return quote! { 0 };
     };
 
-    quote! {
-        self.#access
-            .as_ref()
-            .map_or(0, |value| ::proto_rs::encoding::#codec::encoded_len(#tag, value))
+    if needs_numeric_widening(parsed) {
+        let proto_ty = &parsed.proto_rust_type;
+        quote! {
+            self.#access.as_ref().map_or(0, |value| {
+                let __value: #proto_ty = (*value) as #proto_ty;
+                ::proto_rs::encoding::#codec::encoded_len(#tag, &__value)
+            })
+        }
+    } else {
+        quote! {
+            self.#access
+                .as_ref()
+                .map_or(0, |value| ::proto_rs::encoding::#codec::encoded_len(#tag, value))
+        }
     }
 }
 
