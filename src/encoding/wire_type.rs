@@ -27,9 +27,7 @@ impl TryFrom<u64> for WireType {
             3 => Ok(WireType::StartGroup),
             4 => Ok(WireType::EndGroup),
             5 => Ok(WireType::ThirtyTwoBit),
-            _ => Err(DecodeError::new(format!(
-                "invalid wire type value: {value}"
-            ))),
+            _ => Err(DecodeError::new(format!("invalid wire type value: {value}"))),
         }
     }
 }
@@ -39,9 +37,7 @@ impl TryFrom<u64> for WireType {
 #[inline]
 pub fn check_wire_type(expected: WireType, actual: WireType) -> Result<(), DecodeError> {
     if expected != actual {
-        return Err(DecodeError::new(format!(
-            "invalid wire type: {actual:?} (expected {expected:?})"
-        )));
+        return Err(DecodeError::new(format!("invalid wire type: {actual:?} (expected {expected:?})")));
     }
     Ok(())
 }

@@ -126,6 +126,8 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 *self = Self::proto_default();
             }
         }
+
+        impl #generics ::proto_rs::MessageField for #name #generics {}
     }
 }
 

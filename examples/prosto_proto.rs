@@ -462,7 +462,6 @@ pub struct OptionalComplex {
     pub id: u64,
     pub address: Option<Address>,
     pub quote: Option<QuoteLamports>,
-    #[proto(rust_enum)]
     pub status: Option<Status>,
 }
 
@@ -472,9 +471,7 @@ pub struct RepeatedComplex {
     pub id: u64,
     pub addresses: Vec<Address>,
     pub orders: Vec<Order>,
-    #[proto(rust_enum)]
     pub statuses: Vec<Status>,
-    #[proto(rust_enum)]
     pub status_opt: Option<Status>,
 }
 

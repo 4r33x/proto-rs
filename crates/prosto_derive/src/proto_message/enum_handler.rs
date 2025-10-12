@@ -102,6 +102,72 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
         }
+
+        impl #generics ::proto_rs::RepeatedField for #name #generics {
+            fn encode_repeated_field(
+                tag: u32,
+                values: &[Self],
+                buf: &mut impl ::bytes::BufMut,
+            ) {
+                for value in values {
+                    let raw = *value as i32;
+                    ::proto_rs::encoding::int32::encode(tag, &raw, buf);
+                }
+            }
+
+            fn merge_repeated_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                values: &mut ::std::vec::Vec<Self>,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                let mut raw = ::std::vec::Vec::<i32>::new();
+                ::proto_rs::encoding::int32::merge_repeated(wire_type, &mut raw, buf, ctx.clone())?;
+                for value in raw {
+                    values.push(Self::try_from(value)?);
+                }
+                Ok(())
+            }
+
+            fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+                let mut total = 0usize;
+                for value in values {
+                    let raw = *value as i32;
+                    total += ::proto_rs::encoding::int32::encoded_len(tag, &raw);
+                }
+                total
+            }
+        }
+
+        impl #generics ::proto_rs::SingularField for #name #generics {
+            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl ::bytes::BufMut) {
+                let raw: i32 = (*value) as i32;
+                if raw != 0 {
+                    ::proto_rs::encoding::int32::encode(tag, &raw, buf);
+                }
+            }
+
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                let mut raw: i32 = 0;
+                ::proto_rs::encoding::int32::merge(wire_type, &mut raw, buf, ctx)?;
+                *value = Self::try_from(raw)?;
+                Ok(())
+            }
+
+            fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
+                let raw: i32 = (*value) as i32;
+                if raw != 0 {
+                    ::proto_rs::encoding::int32::encoded_len(tag, &raw)
+                } else {
+                    0
+                }
+            }
+        }
     }
 }
 

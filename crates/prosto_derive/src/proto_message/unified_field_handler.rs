@@ -18,7 +18,6 @@ use crate::utils::ParsedFieldType;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::type_info::is_bytes_array;
-use crate::utils::type_info::is_bytes_vec;
 
 // ---------------------------------------------------------------------------
 // Field access abstraction (named field, tuple index)
@@ -62,10 +61,10 @@ pub fn generate_field_encode(field: &Field, access: FieldAccess, tag: u32) -> To
             quote! { <#into_ty as ::core::convert::From<_>>::from(self.#access_tokens.clone()) }
         };
 
-        return encode_scalar_value(&value, tag, &parse_field_type(&into_ty));
+        return encode_scalar_value(&value, tag, &into_ty);
     }
 
-    if cfg.is_rust_enum || cfg.is_proto_enum {
+    if (cfg.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
         return encode_enum(&access_tokens, tag);
     }
 
@@ -81,11 +80,11 @@ pub fn generate_field_encode(field: &Field, access: FieldAccess, tag: u32) -> To
         return encode_option(&access_tokens, tag, &parsed);
     }
 
-    if parsed.is_message_like || cfg.is_message {
+    if cfg.is_message {
         return encode_message(&access_tokens, tag);
     }
 
-    encode_scalar(&access_tokens, tag, &parsed)
+    encode_scalar(&access_tokens, tag, ty)
 }
 
 pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
@@ -118,7 +117,7 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
         };
     }
 
-    if cfg.is_rust_enum || cfg.is_proto_enum {
+    if (cfg.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
         return decode_enum(&access_tokens, tag, ty);
     }
 
@@ -134,11 +133,11 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
         return decode_option(&access_tokens, tag, &parsed);
     }
 
-    if parsed.is_message_like {
+    if cfg.is_message {
         return decode_message(&access_tokens, tag);
     }
 
-    decode_scalar(&access_tokens, tag, &parsed)
+    decode_scalar(&access_tokens, tag, ty)
 }
 
 pub fn generate_field_encoded_len(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
@@ -161,10 +160,10 @@ pub fn generate_field_encoded_len(field: &Field, access: FieldAccess, tag: u32) 
             quote! { <#into_ty as ::core::convert::From<_>>::from(self.#access_tokens.clone()) }
         };
 
-        return encoded_len_scalar_value(&value, tag, &parse_field_type(&into_ty));
+        return encoded_len_scalar_value(&value, tag, &into_ty);
     }
 
-    if cfg.is_rust_enum || cfg.is_proto_enum {
+    if (cfg.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
         return encoded_len_enum(&access_tokens, tag);
     }
 
@@ -180,11 +179,11 @@ pub fn generate_field_encoded_len(field: &Field, access: FieldAccess, tag: u32) 
         return encoded_len_option(&access_tokens, tag, &parsed);
     }
 
-    if parsed.is_message_like {
+    if cfg.is_message {
         return encoded_len_message(&access_tokens, tag);
     }
 
-    encoded_len_scalar(&access_tokens, tag, &parsed)
+    encoded_len_scalar(&access_tokens, tag, ty)
 }
 
 // ---------------------------------------------------------------------------
@@ -207,117 +206,46 @@ fn needs_numeric_widening(parsed: &ParsedFieldType) -> bool {
     quote!(#elem).to_string() != quote!(#proto).to_string()
 }
 
-fn decode_numeric_with_widening(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, codec: &Ident) -> TokenStream {
-    let proto_ty = &parsed.proto_rust_type;
-    let target_ty = &parsed.elem_type;
+fn encode_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    quote! {
+        <#ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &self.#access, buf);
+    }
+}
 
+fn encode_scalar_value(value: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    quote! {
+        {
+            let __value: #ty = #value;
+            <#ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &__value, buf);
+        }
+    }
+}
+
+fn decode_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
     quote! {
         if #tag == tag {
-            let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
-            ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-            self.#access = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
-                .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+            <#ty as ::proto_rs::SingularField>::merge_singular_field(
+                wire_type,
+                &mut self.#access,
+                buf,
+                ctx.clone(),
+            )?;
         }
     }
 }
 
-fn encode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if is_bytes_vec(&parsed.rust_type) {
-        return quote! {
-            if !self.#access.is_empty() {
-                ::proto_rs::encoding::#codec::encode(#tag, &self.#access, buf);
-            }
-        };
-    }
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            {
-                let __value: #proto_ty = self.#access as #proto_ty;
-                ::proto_rs::encoding::#codec::encode(#tag, &__value, buf);
-            }
-        }
-    } else {
-        quote! {
-            ::proto_rs::encoding::#codec::encode(#tag, &self.#access, buf);
-        }
+fn encoded_len_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    quote! {
+        <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &self.#access)
     }
 }
 
-fn encode_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            {
-                let __value: #proto_ty = (#value) as #proto_ty;
-                ::proto_rs::encoding::#codec::encode(#tag, &__value, buf);
-            }
+fn encoded_len_scalar_value(value: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    quote! {
+        {
+            let __value: #ty = #value;
+            <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &__value)
         }
-    } else {
-        quote! {
-            ::proto_rs::encoding::#codec::encode(#tag, &#value, buf);
-        }
-    }
-}
-
-fn decode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if needs_numeric_widening(parsed) {
-        decode_numeric_with_widening(access, tag, parsed, &codec)
-    } else {
-        quote! {
-            if #tag == tag {
-                ::proto_rs::encoding::#codec::merge(wire_type, &mut self.#access, buf, ctx.clone())?;
-            }
-        }
-    }
-}
-
-fn encoded_len_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! { 0 };
-    };
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            {
-                let __value: #proto_ty = self.#access as #proto_ty;
-                ::proto_rs::encoding::#codec::encoded_len(#tag, &__value)
-            }
-        }
-    } else {
-        quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &self.#access) }
-    }
-}
-
-fn encoded_len_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! { 0 };
-    };
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            {
-                let __value: #proto_ty = (#value) as #proto_ty;
-                ::proto_rs::encoding::#codec::encoded_len(#tag, &__value)
-            }
-        }
-    } else {
-        quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &#value) }
     }
 }
 
@@ -561,95 +489,30 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
 // Repeated helpers (Vec<T>)
 
 fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    if parsed.is_message_like {
-        return quote! { ::proto_rs::encoding::message::encode_repeated(#tag, &self.#access, buf); };
-    }
-
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if parsed.is_numeric_scalar {
-        if needs_numeric_widening(parsed) {
-            let proto_ty = &parsed.proto_rust_type;
-            quote! {
-                if !self.#access.is_empty() {
-                    let mut __tmp: ::std::vec::Vec<#proto_ty> = ::std::vec::Vec::with_capacity(self.#access.len());
-                    for value in self.#access.iter() {
-                        __tmp.push((*value) as #proto_ty);
-                    }
-                    ::proto_rs::encoding::#codec::encode_packed(#tag, &__tmp, buf);
-                }
-            }
-        } else {
-            quote! { ::proto_rs::encoding::#codec::encode_packed(#tag, &self.#access, buf); }
-        }
-    } else {
-        quote! { ::proto_rs::encoding::#codec::encode_repeated(#tag, &self.#access, buf); }
+    let elem_ty = &parsed.elem_type;
+    quote! {
+        <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, &self.#access, buf);
     }
 }
 
 fn decode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    if parsed.is_message_like {
-        return quote! {
-            if #tag == tag {
-                ::proto_rs::encoding::message::merge_repeated(wire_type, &mut self.#access, buf, ctx.clone())?;
-            }
-        };
-    }
-
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if parsed.is_numeric_scalar && needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        let elem_ty = &parsed.elem_type;
-        quote! {
-            if #tag == tag {
-                let mut __tmp: ::std::vec::Vec<#proto_ty> = ::std::vec::Vec::new();
-                ::proto_rs::encoding::#codec::merge_repeated(wire_type, &mut __tmp, buf, ctx.clone())?;
-                for value in __tmp {
-                    self.#access.push(<#elem_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(value)
-                        .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?);
-                }
-            }
-        }
-    } else {
-        quote! {
-            if #tag == tag {
-                ::proto_rs::encoding::#codec::merge_repeated(wire_type, &mut self.#access, buf, ctx.clone())?;
-            }
+    let elem_ty = &parsed.elem_type;
+    quote! {
+        if #tag == tag {
+            <#elem_ty as ::proto_rs::RepeatedField>::merge_repeated_field(
+                wire_type,
+                &mut self.#access,
+                buf,
+                ctx.clone(),
+            )?;
         }
     }
 }
 
 fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    if parsed.is_message_like {
-        return quote! { ::proto_rs::encoding::message::encoded_len_repeated(#tag, &self.#access) };
-    }
-
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! { 0 };
-    };
-
-    if parsed.is_numeric_scalar {
-        if needs_numeric_widening(parsed) {
-            let proto_ty = &parsed.proto_rust_type;
-            quote! {
-                {
-                    let mut __tmp: ::std::vec::Vec<#proto_ty> = ::std::vec::Vec::with_capacity(self.#access.len());
-                    for value in self.#access.iter() {
-                        __tmp.push((*value) as #proto_ty);
-                    }
-                    ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &__tmp)
-                }
-            }
-        } else {
-            quote! { ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &self.#access) }
-        }
-    } else {
-        quote! { ::proto_rs::encoding::#codec::encoded_len_repeated(#tag, &self.#access) }
+    let elem_ty = &parsed.elem_type;
+    quote! {
+        <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &self.#access)
     }
 }
 
@@ -657,101 +520,30 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
 // Option helpers
 
 fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    if parsed.is_message_like {
-        return quote! {
-            if let Some(value) = &self.#access {
-                ::proto_rs::encoding::message::encode(#tag, value, buf);
-            }
-        };
-    }
-
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            if let Some(value) = &self.#access {
-                let __value: #proto_ty = (*value) as #proto_ty;
-                ::proto_rs::encoding::#codec::encode(#tag, &__value, buf);
-            }
-        }
-    } else {
-        quote! {
-            if let Some(value) = &self.#access {
-                ::proto_rs::encoding::#codec::encode(#tag, value, buf);
-            }
-        }
+    let inner_ty = &parsed.elem_type;
+    quote! {
+        <#inner_ty as ::proto_rs::SingularField>::encode_option_field(#tag, &self.#access, buf);
     }
 }
 
 fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let inner_ty = &parsed.elem_type;
-
-    if parsed.is_message_like {
-        return quote! {
-            if #tag == tag {
-                let mut __tmp: #inner_ty = <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
-                ::proto_rs::encoding::message::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                self.#access = Some(__tmp);
-            }
-        };
-    }
-
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! {};
-    };
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            if #tag == tag {
-                let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
-                ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                let __converted = <#inner_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
-                    .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
-                self.#access = Some(__converted);
-            }
-        }
-    } else {
-        quote! {
-            if #tag == tag {
-                let mut __tmp: #inner_ty = <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
-                ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                self.#access = Some(__tmp);
-            }
+    quote! {
+        if #tag == tag {
+            <#inner_ty as ::proto_rs::SingularField>::merge_option_field(
+                wire_type,
+                &mut self.#access,
+                buf,
+                ctx.clone(),
+            )?;
         }
     }
 }
 
 fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    if parsed.is_message_like {
-        return quote! {
-            self.#access
-                .as_ref()
-                .map_or(0, |value| ::proto_rs::encoding::message::encoded_len(#tag, value))
-        };
-    }
-
-    let Some(codec) = scalar_codec(parsed) else {
-        return quote! { 0 };
-    };
-
-    if needs_numeric_widening(parsed) {
-        let proto_ty = &parsed.proto_rust_type;
-        quote! {
-            self.#access.as_ref().map_or(0, |value| {
-                let __value: #proto_ty = (*value) as #proto_ty;
-                ::proto_rs::encoding::#codec::encoded_len(#tag, &__value)
-            })
-        }
-    } else {
-        quote! {
-            self.#access
-                .as_ref()
-                .map_or(0, |value| ::proto_rs::encoding::#codec::encoded_len(#tag, value))
-        }
+    let inner_ty = &parsed.elem_type;
+    quote! {
+        <#inner_ty as ::proto_rs::SingularField>::encoded_len_option_field(#tag, &self.#access)
     }
 }
 

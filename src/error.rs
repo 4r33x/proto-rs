@@ -54,10 +54,7 @@ impl DecodeError {
 
 impl fmt::Debug for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DecodeError")
-            .field("description", &self.inner.description)
-            .field("stack", &self.inner.stack)
-            .finish()
+        f.debug_struct("DecodeError").field("description", &self.inner.description).field("stack", &self.inner.stack).finish()
     }
 }
 
@@ -95,10 +92,7 @@ pub struct EncodeError {
 impl EncodeError {
     /// Creates a new `EncodeError`.
     pub(crate) fn new(required: usize, remaining: usize) -> EncodeError {
-        EncodeError {
-            required,
-            remaining,
-        }
+        EncodeError { required, remaining }
     }
 
     /// Returns the required buffer capacity to encode the message.
@@ -159,10 +153,7 @@ mod test {
         decode_error.push("Foo bad", "bar.foo");
         decode_error.push("Baz bad", "bar.baz");
 
-        assert_eq!(
-            decode_error.to_string(),
-            "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed"
-        );
+        assert_eq!(decode_error.to_string(), "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed");
     }
 
     #[cfg(feature = "std")]
@@ -172,9 +163,6 @@ mod test {
         let std_io_error = std::io::Error::from(decode_error);
 
         assert_eq!(std_io_error.kind(), std::io::ErrorKind::InvalidData);
-        assert_eq!(
-            std_io_error.to_string(),
-            "failed to decode Protobuf message: something failed"
-        );
+        assert_eq!(std_io_error.to_string(), "failed to decode Protobuf message: something failed");
     }
 }
