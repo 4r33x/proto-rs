@@ -21,7 +21,6 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
         match item {
             TraitItem::Fn(method) => {
                 let method_name = method.sig.ident.clone();
-                let method_attrs = method.attrs.clone();
                 let (request_type, response_type) = extract_types(&method.sig);
                 let is_streaming = is_stream_response(&method.sig);
 
@@ -44,11 +43,10 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                     (None, None)
                 };
 
-                let user_method_signature = generate_user_method_signature(&method_attrs, &method_name, &request_type, &response_type, is_streaming, stream_type_name.as_ref());
+                let user_method_signature = generate_user_method_signature(&method.attrs, &method_name, &request_type, &response_type, is_streaming, stream_type_name.as_ref());
 
                 methods.push(MethodInfo {
                     name: method_name,
-                    _attrs: method_attrs,
                     request_type,
                     response_type,
                     is_streaming,

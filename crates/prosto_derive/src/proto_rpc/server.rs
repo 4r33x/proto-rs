@@ -212,7 +212,7 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
 
     for method in methods {
         if is_streaming_method(method) {
-            blanket_types.push(generate_blanket_stream_type(method));
+            blanket_types.push(generate_blanket_stream_type(method, trait_name));
         }
         blanket_methods.push(generate_blanket_method(method, trait_name));
     }
@@ -220,14 +220,9 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
     (blanket_types, blanket_methods)
 }
 
-fn generate_blanket_stream_type(method: &MethodInfo) -> TokenStream {
+fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
-    let inner_type = method.inner_response_type.as_ref().unwrap();
-    let response_proto = generate_response_proto_type(inner_type);
-
-    quote! {
-        type #stream_name = std::pin::Pin<Box<dyn tonic::codegen::tokio_stream::Stream<Item = std::result::Result<#response_proto, tonic::Status>> + std::marker::Send>>;
-    }
+    quote! { type #stream_name = <Self as super::#trait_name>::#stream_name; }
 }
 
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {

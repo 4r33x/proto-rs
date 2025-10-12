@@ -132,7 +132,6 @@ pub fn is_complex_type(ty: &Type) -> bool {
 
 pub struct MethodInfo {
     pub name: syn::Ident,
-    pub _attrs: Vec<syn::Attribute>,
     pub request_type: Box<Type>,
     pub response_type: Box<Type>,
     pub is_streaming: bool,
