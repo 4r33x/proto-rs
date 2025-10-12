@@ -1,374 +1,545 @@
-//! Unified field handling for structs and enums
+//! field_handling.rs
+//! Unified generators for encode/decode/len of a single field.  syn v2 / quote v1 safe.
 
+use proc_macro2::Span;
 use proc_macro2::TokenStream;
+use quote::format_ident;
 use quote::quote;
 use syn::Field;
+use syn::Ident;
+use syn::Index;
 use syn::Type;
 use syn::TypeArray;
 
-use super::array_handling::ArrayFieldHandler;
-use super::enum_handling::EnumType;
-use super::type_info::*;
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
-use crate::utils::generate_field_error;
-use crate::utils::generate_missing_field_error;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 
-pub struct FieldHandler<'a> {
-    field: &'a Field,
-    field_name: &'a syn::Ident,
-    field_tag: usize,
-    field_config: FieldConfig,
-    error_name: &'a syn::Ident,
-    context: String,
+// ————————————————————————————————————————————————————————————————————————
+// Field access
+
+#[derive(Clone)]
+pub enum FieldAccess {
+    Named(Ident),
+    Tuple(Index),
+}
+impl FieldAccess {
+    fn to_tokens(&self) -> TokenStream {
+        match self {
+            FieldAccess::Named(id) => quote!( #id ),
+            FieldAccess::Tuple(ix) => quote!( #ix ),
+        }
+    }
 }
 
-impl<'a> FieldHandler<'a> {
-    pub fn new(field: &'a Field, field_name: &'a syn::Ident, field_tag: usize, error_name: &'a syn::Ident, context: String) -> Self {
-        let field_config = parse_field_config(field);
-        Self {
-            field,
-            field_name,
-            field_tag,
-            field_config,
-            error_name,
-            context,
-        }
+// ————————————————————————————————————————————————————————————————————————
+// Public entry points
+
+pub fn generate_field_encode(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
+    let cfg: FieldConfig = parse_field_config(field);
+    let ty: &Type = &field.ty;
+    let parsed: ParsedFieldType = parse_field_type(ty);
+    let fa = access.to_tokens();
+
+    // Skip (do not encode)
+    if cfg.skip {
+        return quote! {};
     }
 
-    /// Generate complete field handling (prost field + conversions)
-    pub fn generate(&self) -> FieldGenerationResult {
-        let field_ty = &self.field.ty;
-
-        if self.field_config.skip {
-            return self.handle_skip_field();
-        }
-
-        if self.is_custom_conversion() {
-            return self.handle_custom_conversion();
-        }
-
-        if let Type::Array(type_array) = field_ty {
-            return self.handle_array_field(type_array);
-        }
-
-        if let Some(enum_type) = EnumType::from_field(field_ty, &self.field_config) {
-            return self.handle_enum_field(enum_type, field_ty);
-        }
-
-        self.handle_standard_field(field_ty)
-    }
-
-    fn is_custom_conversion(&self) -> bool {
-        self.field_config.into_type.is_some() && self.field_config.into_fn.is_some() && self.field_config.from_fn.is_some()
-    }
-
-    fn handle_skip_field(&self) -> FieldGenerationResult {
-        let field_name = self.field_name;
-
-        if let Some(ref deser_fn) = self.field_config.skip_deser_fn {
-            let deser_fn_ident: syn::Ident = syn::parse_str(deser_fn).expect("Invalid deser function name");
-
-            FieldGenerationResult {
-                prost_field: None,
-                to_proto: None,
-                from_proto: FromProtoConversion::SkipWithFn {
-                    computation: quote! { let #field_name = #deser_fn_ident(&proto); },
-                    field_name: field_name.clone(),
-                },
-            }
+    // Custom "into" conversion
+    if let Some(into_ty_str) = &cfg.into_type {
+        let into_ty: Type = syn::parse_str(into_ty_str).expect("invalid #[proto(into = ...)] type");
+        let val_expr: TokenStream = if let Some(fun_name) = &cfg.into_fn {
+            let fun = format_ident!("{}", fun_name);
+            quote! { #fun(&self.#fa) }
         } else {
-            FieldGenerationResult {
-                prost_field: None,
-                to_proto: None,
-                from_proto: FromProtoConversion::SkipDefault(field_name.clone()),
-            }
-        }
-    }
-
-    fn handle_custom_conversion(&self) -> FieldGenerationResult {
-        let field_name = self.field_name;
-        let field_tag = self.field_tag;
-
-        let into_type: Type = syn::parse_str(self.field_config.into_type.as_ref().unwrap()).expect("Invalid into type");
-
-        let into_fn: syn::Ident = syn::parse_str(self.field_config.into_fn.as_ref().unwrap()).expect("Invalid into_fn");
-
-        let from_fn: syn::Ident = syn::parse_str(self.field_config.from_fn.as_ref().unwrap()).expect("Invalid from_fn");
-
-        let parsed = parse_field_type(&into_type);
-        let prost_type_tokens = &parsed.prost_type;
-
-        let prost_field = quote! {
-            #[prost(#prost_type_tokens, tag = #field_tag)]
-            pub #field_name: #into_type
+            quote! { <#into_ty as ::core::convert::From<_>>::from(self.#fa.clone()) }
         };
-
-        let to_proto = quote! { #field_name: #into_fn(&self.#field_name) };
-        let from_proto = quote! { #field_name: #from_fn(proto.#field_name) };
-
-        FieldGenerationResult {
-            prost_field: Some(prost_field),
-            to_proto: Some(to_proto),
-            from_proto: FromProtoConversion::Normal(from_proto),
-        }
+        return encode_scalar_like(&val_expr, tag, &into_ty);
     }
 
-    fn handle_array_field(&self, type_array: &TypeArray) -> FieldGenerationResult {
-        let handler = ArrayFieldHandler::new(self.field_name, self.field_tag, type_array, &self.field_config, self.error_name, self.context.clone());
-
-        let (prost_field, parsed) = handler.generate_prost_field();
-        let to_proto = handler.generate_to_proto(&parsed);
-        let from_proto = handler.generate_from_proto(&parsed);
-
-        FieldGenerationResult {
-            prost_field: Some(prost_field),
-            to_proto: Some(to_proto),
-            from_proto: FromProtoConversion::Normal(from_proto),
-        }
+    // Enums (prost-style i32 on the wire)
+    if cfg.is_rust_enum || cfg.is_proto_enum {
+        return quote! {
+            let __v: i32 = self.#fa as i32;
+            if __v != 0 {
+                encoding::int32::encode(#tag, &__v, buf);
+            }
+        };
     }
 
-    fn handle_enum_field(&self, enum_type: EnumType, field_ty: &Type) -> FieldGenerationResult {
-        let field_name = self.field_name;
-        let field_tag = self.field_tag;
-        let error_name = self.error_name;
-        let context = &self.context;
-
-        let (_, is_option, is_repeated) = super::enum_handling::extract_wrapper_info(field_ty);
-
-        let prost_field = enum_type.generate_prost_field(field_name, field_tag, is_option, is_repeated);
-        let to_proto = enum_type.generate_to_proto(field_name, is_option, is_repeated);
-        let from_proto = enum_type.generate_from_proto(field_name, is_option, is_repeated, error_name, context);
-
-        FieldGenerationResult {
-            prost_field: Some(prost_field),
-            to_proto: Some(to_proto),
-            from_proto: FromProtoConversion::Normal(from_proto),
-        }
+    // Arrays
+    if let Type::Array(arr) = ty {
+        return encode_array(&fa, tag, arr);
     }
 
-    fn handle_standard_field(&self, field_ty: &Type) -> FieldGenerationResult {
-        let field_name = self.field_name;
-        let field_tag = self.field_tag;
-        let error_name = self.error_name;
+    // Repeated
+    if parsed.is_repeated {
+        return encode_repeated(&fa, tag, &parsed);
+    }
 
-        let parsed = parse_field_type(field_ty);
-        let proto_field_ty = self.get_proto_field_type(&parsed, field_ty);
-
-        let prost_attr = if parsed.is_repeated {
-            let prost_type = &parsed.prost_type;
-            quote! { #[prost(#prost_type, repeated, tag = #field_tag)] }
-        } else if parsed.is_option || parsed.is_message_like {
-            let prost_type = &parsed.prost_type;
-            quote! { #[prost(#prost_type, optional, tag = #field_tag)] }
+    // Option<T> — if Some, encode exactly like T (prost elides None)
+    if parsed.is_option {
+        // NB: We do not invoke Option<T>:ProtoExt; we call inner T encode
+        if parsed.is_message_like {
+            return quote! {
+                if let Some(__m) = (&self.#fa).as_ref() {
+                    let __l = ::crate::ProtoExt::encoded_len(__m);
+                    if __l != 0 {
+                        encoding::encode_key(#tag, WireType::LengthDelimited, buf);
+                        encoding::encode_varint(__l as u64, buf);
+                        ::crate::ProtoExt::encode_raw(__m, buf);
+                    }
+                }
+            };
         } else {
-            let prost_type = &parsed.prost_type;
-            quote! { #[prost(#prost_type, tag = #field_tag)] }
+            let enc_ident = scalar_codec_ident(&parsed.elem_type);
+            return quote! {
+                if let Some(__v) = (&self.#fa).as_ref() {
+                    encoding::#enc_ident::encode(#tag, __v, buf);
+                }
+            };
+        }
+    }
+
+    // Message-like scalar
+    if parsed.is_message_like {
+        return quote! {
+            let __m = &self.#fa;
+            let __l = ::crate::ProtoExt::encoded_len(__m);
+            if __l != 0 {
+                encoding::encode_key(#tag, WireType::LengthDelimited, buf);
+                encoding::encode_varint(__l as u64, buf);
+                ::crate::ProtoExt::encode_raw(__m, buf);
+            }
         };
+    }
 
-        let prost_field = quote! {
-            #prost_attr
-            pub #field_name: #proto_field_ty
+    // Plain scalar (string/bytes/numeric/bool)
+    encode_scalar_like(&quote!( self.#fa ), tag, ty)
+}
+
+pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
+    let cfg: FieldConfig = parse_field_config(field);
+    let ty: &Type = &field.ty;
+    let parsed: ParsedFieldType = parse_field_type(ty);
+    let fa = access.to_tokens();
+
+    // Skip on wire; will be post-filled by struct/enum handler if `skip = "fn"`
+    if cfg.skip {
+        return quote! { /* skipped at wire level */ };
+    }
+
+    // Custom "from" conversion
+    if let Some(from_ty_str) = &cfg.from_type {
+        let from_ty: Type = syn::parse_str(from_ty_str).expect("invalid #[proto(from = ...)] type");
+        let assign_expr: TokenStream = if let Some(fun_name) = &cfg.from_fn {
+            let fun = format_ident!("{}", fun_name);
+            quote! { #fun(__tmp) }
+        } else {
+            quote! { <_ as ::core::convert::From<_>>::from(__tmp) }
         };
+        return quote! {
+            if #tag == tag {
+                let mut __tmp: #from_ty = ::core::default::Default::default();
+                <#from_ty as ::crate::ProtoExt>::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
+                self.#fa = #assign_expr;
+            }
+        };
+    }
 
-        let to_proto = self.generate_standard_to_proto(&parsed, field_ty);
-        let from_proto = self.generate_standard_from_proto(&parsed, field_ty, error_name);
+    // Enums (prost i32)
+    if cfg.is_rust_enum || cfg.is_proto_enum {
+        return quote! {
+            if #tag == tag {
+                let mut __raw: i32 = 0;
+                encoding::int32::merge(wire_type, &mut __raw, buf, ctx.clone())?;
+                // Optionally validate here by match; we keep prost-like semantics:
+                self.#fa = unsafe { ::core::mem::transmute(__raw) };
+            }
+        };
+    }
 
-        FieldGenerationResult {
-            prost_field: Some(prost_field),
-            to_proto: Some(to_proto),
-            from_proto: FromProtoConversion::Normal(from_proto),
+    // Arrays
+    if let Type::Array(arr) = ty {
+        return decode_array(&fa, tag, arr);
+    }
+
+    // Repeated (Vec<T>): accept both packed and unpacked for numeric scalars
+    if parsed.is_repeated {
+        return decode_repeated(&fa, tag, &parsed);
+    }
+
+    // Option<T>
+    if parsed.is_option {
+        if parsed.is_message_like {
+            return quote! {
+                if #tag == tag {
+                    if wire_type != WireType::LengthDelimited {
+                        return Err(DecodeError::new("expected length-delimited for message"));
+                    }
+                    let __len = encoding::decode_varint(buf)? as usize;
+                    let mut __limited = buf.take(__len);
+                    let mut __inner = <_ as ::crate::ProtoExt>::proto_default();
+                    ::crate::ProtoExt::merge(&mut __inner, &mut __limited)?;
+                    if __limited.has_remaining() {
+                        return Err(DecodeError::new("message overrun"));
+                    }
+                    self.#fa = Some(__inner);
+                }
+            };
+        } else {
+            let enc_ident = scalar_codec_ident(&parsed.elem_type);
+            return quote! {
+                if #tag == tag {
+                    let mut __tmp = ::core::default::Default::default();
+                    encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                    self.#fa = Some(__tmp);
+                }
+            };
         }
     }
 
-    fn get_proto_field_type(&self, parsed: &ParsedFieldType, field_ty: &Type) -> TokenStream {
-        if parsed.is_repeated {
-            if let Some(inner_ty) = vec_inner_type(field_ty) {
-                if is_bytes_vec(field_ty) {
-                    return quote! { ::std::vec::Vec<u8> };
-                } else if self.field_config.is_message {
-                    return quote! { ::std::vec::Vec<#inner_ty> };
-                } else if is_complex_type(&inner_ty) {
-                    let inner_proto = &parsed.proto_rust_type;
-                    return quote! { ::std::vec::Vec<#inner_proto> };
-                } else {
-                    let inner_proto = get_proto_rust_type(&inner_ty);
-                    return quote! { ::std::vec::Vec<#inner_proto> };
+    // Message-like (non-option)
+    if parsed.is_message_like {
+        return quote! {
+            if #tag == tag {
+                if wire_type != WireType::LengthDelimited {
+                    return Err(DecodeError::new("expected length-delimited for message"));
+                }
+                let __len = encoding::decode_varint(buf)? as usize;
+                let mut __limited = buf.take(__len);
+                ::crate::ProtoExt::merge(&mut self.#fa, &mut __limited)?;
+                if __limited.has_remaining() {
+                    return Err(DecodeError::new("message overrun"));
                 }
             }
-        } else if parsed.is_option {
-            let inner_ty = extract_option_inner_type(field_ty);
-            if self.field_config.is_message {
-                return quote! { ::core::option::Option<#inner_ty> };
-            } else if is_complex_type(inner_ty) {
-                let inner_parsed = parse_field_type(inner_ty);
-                let inner_proto = &inner_parsed.proto_rust_type;
-                return quote! { ::core::option::Option<#inner_proto> };
-            } else {
-                let proto_inner = get_proto_rust_type(inner_ty);
-                return quote! { ::core::option::Option<#proto_inner> };
-            }
-        } else if parsed.is_message_like {
-            if self.field_config.is_message {
-                return quote! { ::core::option::Option<#field_ty> };
-            } else {
-                let proto_type = &parsed.proto_rust_type;
-                return quote! { ::core::option::Option<#proto_type> };
-            }
-        }
-
-        get_proto_rust_type(field_ty)
+        };
     }
 
-    fn generate_standard_to_proto(&self, parsed: &ParsedFieldType, field_ty: &Type) -> TokenStream {
-        let field_name = self.field_name;
-
-        if parsed.is_repeated {
-            if let Some(inner_ty) = vec_inner_type(field_ty) {
-                if is_bytes_vec(field_ty) || self.field_config.is_message {
-                    return quote! { #field_name: self.#field_name.clone() };
-                } else if is_complex_type(&inner_ty) {
-                    return quote! { #field_name: self.#field_name.iter().map(|v| v.to_proto()).collect() };
-                } else if needs_into_conversion(&inner_ty) {
-                    return quote! { #field_name: self.#field_name.iter().map(|v| (*v).into()).collect() };
-                }
-            }
-            return quote! { #field_name: self.#field_name.clone() };
-        } else if parsed.is_option {
-            let inner_ty = extract_option_inner_type(field_ty);
-            if self.field_config.is_message {
-                return quote! { #field_name: self.#field_name.clone() };
-            } else if is_complex_type(inner_ty) {
-                return quote! { #field_name: self.#field_name.as_ref().map(|v| v.to_proto()) };
-            } else if needs_into_conversion(inner_ty) {
-                return quote! { #field_name: self.#field_name.map(|v| v.into()) };
-            }
-            return quote! { #field_name: self.#field_name.clone() };
-        } else if parsed.is_message_like {
-            if self.field_config.is_message {
-                return quote! { #field_name: Some(self.#field_name.clone()) };
-            } else {
-                return quote! { #field_name: Some(self.#field_name.to_proto()) };
-            }
+    // Plain scalar (string/bytes/numeric/bool)
+    let enc_ident = scalar_codec_ident(ty);
+    quote! {
+        if #tag == tag {
+            encoding::#enc_ident::merge(wire_type, &mut self.#fa, buf, ctx.clone())?;
         }
-
-        generate_primitive_to_proto(field_name, field_ty)
-    }
-
-    fn generate_standard_from_proto(&self, parsed: &ParsedFieldType, field_ty: &Type, error_name: &syn::Ident) -> TokenStream {
-        let field_name = self.field_name;
-
-        if parsed.is_repeated {
-            if let Some(inner_ty) = vec_inner_type(field_ty) {
-                if is_bytes_vec(field_ty) || self.field_config.is_message {
-                    return quote! { #field_name: proto.#field_name };
-                } else if is_complex_type(&inner_ty) {
-                    let error_handler = generate_field_error(field_name, error_name);
-                    return quote! {
-                        #field_name: proto.#field_name
-                            .into_iter()
-                            .map(|v| v.try_into())
-                            .collect::<Result<_, _>>()
-                            #error_handler
-                    };
-                } else if needs_try_into_conversion(&inner_ty) {
-                    let error_handler = generate_field_error(field_name, error_name);
-                    return quote! {
-                        #field_name: proto.#field_name
-                            .iter()
-                            .map(|v| (*v).try_into())
-                            .collect::<Result<_, _>>()
-                            #error_handler
-                    };
-                }
-            }
-            return quote! { #field_name: proto.#field_name };
-        } else if parsed.is_option {
-            let inner_ty = extract_option_inner_type(field_ty);
-            if self.field_config.is_message {
-                return quote! { #field_name: proto.#field_name };
-            } else if is_complex_type(inner_ty) || needs_try_into_conversion(inner_ty) {
-                let error_handler = generate_field_error(field_name, error_name);
-                return quote! {
-                    #field_name: proto.#field_name
-                        .map(|v| v.try_into())
-                        .transpose()
-                        #error_handler
-                };
-            }
-            return quote! { #field_name: proto.#field_name };
-        } else if parsed.is_message_like {
-            let missing_error = generate_missing_field_error(field_name, error_name);
-            if self.field_config.is_message {
-                return quote! {
-                    #field_name: proto.#field_name
-                        #missing_error
-                };
-            } else {
-                let conversion_error = generate_field_error(field_name, error_name);
-                return quote! {
-                    #field_name: proto.#field_name
-                        #missing_error
-                        .try_into()
-                        #conversion_error
-                };
-            }
-        }
-
-        generate_primitive_from_proto(field_name, field_ty, error_name)
     }
 }
 
-pub struct FieldGenerationResult {
-    pub prost_field: Option<TokenStream>,
-    pub to_proto: Option<TokenStream>,
-    pub from_proto: FromProtoConversion,
-}
-
-pub enum FromProtoConversion {
-    Normal(TokenStream),
-    SkipDefault(syn::Ident),
-    SkipWithFn { computation: TokenStream, field_name: syn::Ident },
-}
-
-#[cfg(test)]
-mod tests {
-    use syn::parse_quote;
-
-    use super::*;
-
-    #[test]
-    fn test_field_handler_primitive() {
-        let field: Field = parse_quote! {
-            pub id: u64
-        };
-        let field_name: syn::Ident = parse_quote! { id };
-        let error_name: syn::Ident = parse_quote! { MyError };
-
-        let handler = FieldHandler::new(&field, &field_name, 1, &error_name, "id".to_string());
-        let result = handler.generate();
-
-        assert!(result.prost_field.is_some());
-        assert!(result.to_proto.is_some());
+pub fn generate_field_encoded_len(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
+    let cfg: FieldConfig = parse_field_config(field);
+    if cfg.skip {
+        return quote!(0);
     }
 
-    #[test]
-    fn test_field_handler_skip() {
-        let field: Field = parse_quote! {
-            #[proto(skip)]
-            pub internal: String
+    let ty: &Type = &field.ty;
+    let parsed: ParsedFieldType = parse_field_type(ty);
+    let fa = access.to_tokens();
+
+    // into conversion affects encoded len
+    if let Some(into_ty_str) = &cfg.into_type {
+        let into_ty: Type = syn::parse_str(into_ty_str).expect("invalid #[proto(into = ...)] type");
+        let val_expr: TokenStream = if let Some(fun_name) = &cfg.into_fn {
+            let fun = format_ident!("{}", fun_name);
+            quote! { #fun(&self.#fa) }
+        } else {
+            quote! { <#into_ty as ::core::convert::From<_>>::from(self.#fa.clone()) }
         };
-        let field_name: syn::Ident = parse_quote! { internal };
-        let error_name: syn::Ident = parse_quote! { MyError };
+        return encoded_len_scalar_like(&val_expr, tag, &into_ty);
+    }
 
-        let handler = FieldHandler::new(&field, &field_name, 1, &error_name, "internal".to_string());
-        let result = handler.generate();
+    if cfg.is_rust_enum || cfg.is_proto_enum {
+        return quote! {
+            if (self.#fa as i32) != 0 {
+                encoding::int32::encoded_len(#tag, &(self.#fa as i32))
+            } else { 0 }
+        };
+    }
 
-        assert!(result.prost_field.is_none());
-        assert!(result.to_proto.is_none());
+    if let Type::Array(arr) = ty {
+        return encoded_len_array(&fa, tag, arr);
+    }
 
-        matches!(result.from_proto, FromProtoConversion::SkipDefault(_));
+    if parsed.is_repeated {
+        return encoded_len_repeated(&fa, tag, &parsed);
+    }
+
+    if parsed.is_option {
+        if parsed.is_message_like {
+            return quote! {
+                match (&self.#fa) {
+                    Some(__m) => {
+                        let __l = ::crate::ProtoExt::encoded_len(__m);
+                        if __l == 0 { 0 } else { encoding::encoded_len_key(#tag) + encoding::encoded_len_varint(__l as u64) + __l }
+                    }
+                    None => 0
+                }
+            };
+        } else {
+            let enc_ident = scalar_codec_ident(&parsed.elem_type);
+            return quote! {
+                match (&self.#fa) {
+                    Some(__v) => encoding::#enc_ident::encoded_len(#tag, __v),
+                    None => 0,
+                }
+            };
+        }
+    }
+
+    if parsed.is_message_like {
+        return quote! {
+            {
+                let __l = ::crate::ProtoExt::encoded_len(&self.#fa);
+                if __l == 0 { 0 } else { encoding::encoded_len_key(#tag) + encoding::encoded_len_varint(__l as u64) + __l }
+            }
+        };
+    }
+
+    let enc_ident = scalar_codec_ident(ty);
+    quote! {
+        encoding::#enc_ident::encoded_len(#tag, &self.#fa)
+    }
+}
+
+// ————————————————————————————————————————————————————————————————————————
+// Helpers (pure TokenStream building; all branching before quoting)
+
+fn scalar_codec_ident(ty: &Type) -> Ident {
+    // Map Rust type -> encoding module ident used in `crate::encoding`
+    let name = match ty {
+        Type::Path(tp) => {
+            if let Some(seg) = tp.path.segments.last() {
+                match seg.ident.to_string().as_str() {
+                    "i32" => "int32",
+                    "i64" => "int64",
+                    "u32" => "uint32",
+                    "u64" => "uint64",
+                    "bool" => "bool",
+                    "f32" => "float",
+                    "f64" => "double",
+                    "String" => "string",
+                    "Bytes" => "bytes",
+                    "Vec" => {
+                        // Only Vec<u8> is allowed here; other Vec<T> handled earlier
+                        "bytes"
+                    }
+                    _ => "string", // fallback; messages handled before
+                }
+            } else {
+                "string"
+            }
+        }
+        _ => "string",
+    };
+    Ident::new(name, Span::call_site())
+}
+
+fn encode_scalar_like(val_expr: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    if is_bytes_vec(ty) {
+        return quote! {
+            if !(#val_expr).is_empty() {
+                encoding::bytes::encode(#tag, &(#val_expr), buf);
+            }
+        };
+    }
+    let enc_ident = scalar_codec_ident(ty);
+    quote! {
+        encoding::#enc_ident::encode(#tag, &(#val_expr), buf);
+    }
+}
+
+fn encoded_len_scalar_like(val_expr: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    let enc_ident = scalar_codec_ident(ty);
+    quote! {
+        encoding::#enc_ident::encoded_len(#tag, &(#val_expr))
+    }
+}
+
+// ————————————————————————————————————————————————————————————————————————
+// Arrays
+
+fn encode_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
+    let elem = &*arr.elem;
+
+    // [u8; N] -> bytes (single length-delimited)
+    if match elem {
+        Type::Path(p) => p.path.segments.last().map(|s| s.ident == "u8").unwrap_or(false),
+        _ => false,
+    } {
+        return quote! {
+            if !(#fa).is_empty() {
+                encoding::encode_key(#tag, WireType::LengthDelimited, buf);
+                encoding::encode_varint((#fa).len() as u64, buf);
+                buf.put_slice(&#fa[..]);
+            }
+        };
+    }
+
+    // Other [T;N] -> repeated unpacked scalar/message
+    let enc_ident = scalar_codec_ident(elem);
+    quote! {
+        for __x in (#fa).iter() {
+            encoding::#enc_ident::encode(#tag, __x, buf);
+        }
+    }
+}
+
+fn decode_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
+    let elem = &*arr.elem;
+    let enc_ident = scalar_codec_ident(elem);
+
+    // Accept packed for numeric arrays, otherwise element-wise
+    quote! {
+        if #tag == tag {
+            match wire_type {
+                WireType::LengthDelimited if matches!(#enc_ident, _) => {
+                    // packed numeric path
+                    let __len = encoding::decode_varint(buf)? as usize;
+                    let mut __limited = buf.take(__len);
+                    let mut __i = 0usize;
+                    while __limited.has_remaining() {
+                        if __i >= (#fa).len() { return Err(DecodeError::new("too many elements for fixed array")); }
+                        let mut __tmp = ::core::default::Default::default();
+                        // For packed numerics merged as varint/fixed per codec; rely on codec to enforce wire
+                        encoding::#enc_ident::merge(WireType::Varint, &mut __tmp, &mut __limited, ctx.clone())?;
+                        (#fa)[__i] = __tmp;
+                        __i += 1;
+                    }
+                }
+                _ => {
+                    // one element
+                    let mut __tmp = ::core::default::Default::default();
+                    encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                    // shift-left insert (append semantics): find first zero slot
+                    let mut __i = 0usize;
+                    while __i < (#fa).len() && true { // we don't know sentinel; just place at first available
+                        if __i == (#fa).len() { break; }
+                        __i += 1;
+                    }
+                    let __i = (__i - 1).min((#fa).len() - 1);
+                    (#fa)[__i] = __tmp;
+                }
+            }
+        }
+    }
+}
+
+fn encoded_len_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
+    let elem = &*arr.elem;
+    // [u8;N] -> bytes
+    if match elem {
+        Type::Path(p) => p.path.segments.last().map(|s| s.ident == "u8").unwrap_or(false),
+        _ => false,
+    } {
+        return quote! {
+            if (#fa).is_empty() { 0 } else {
+                let l = (#fa).len();
+                encoding::encoded_len_key(#tag) + encoding::encoded_len_varint(l as u64) + l
+            }
+        };
+    }
+
+    let enc_ident = scalar_codec_ident(elem);
+    quote! {
+        {
+            let mut __sum = 0usize;
+            for __x in (#fa).iter() {
+                __sum += encoding::#enc_ident::encoded_len(#tag, __x);
+            }
+            __sum
+        }
+    }
+}
+
+// ————————————————————————————————————————————————————————————————————————
+// Repeated Vec<T>
+
+fn encode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_numeric_scalar {
+        let enc_ident = scalar_codec_ident(&parsed.elem_type);
+        return quote! {
+            if !(#fa).is_empty() {
+                encoding::encode_key(#tag, WireType::LengthDelimited, buf);
+                let mut __payload = 0usize;
+                for __x in (#fa).iter() {
+                    __payload += encoding::#enc_ident::encoded_len_no_tag(__x);
+                }
+                encoding::encode_varint(__payload as u64, buf);
+                for __x in (#fa).iter() {
+                    encoding::#enc_ident::encode_no_tag(__x, buf);
+                }
+            }
+        };
+    }
+
+    let enc_ident = scalar_codec_ident(&parsed.elem_type);
+    quote! {
+        for __x in (#fa).iter() {
+            encoding::#enc_ident::encode(#tag, __x, buf);
+        }
+    }
+}
+
+fn decode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let enc_ident = scalar_codec_ident(&parsed.elem_type);
+    if parsed.is_numeric_scalar {
+        return quote! {
+            if #tag == tag {
+                match wire_type {
+                    WireType::LengthDelimited => {
+                        // packed
+                        let __len = encoding::decode_varint(buf)? as usize;
+                        let mut __limited = buf.take(__len);
+                        while __limited.has_remaining() {
+                            let mut __tmp = ::core::default::Default::default();
+                            encoding::#enc_ident::merge(WireType::Varint, &mut __tmp, &mut __limited, ctx.clone())?;
+                            (#fa).push(__tmp);
+                        }
+                    }
+                    _ => {
+                        // unpacked
+                        let mut __tmp = ::core::default::Default::default();
+                        encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                        (#fa).push(__tmp);
+                    }
+                }
+            }
+        };
+    }
+
+    // Non-numeric: always element-wise
+    quote! {
+        if #tag == tag {
+            let mut __tmp = ::core::default::Default::default();
+            encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+            (#fa).push(__tmp);
+        }
+    }
+}
+
+fn encoded_len_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_numeric_scalar {
+        let enc_ident = scalar_codec_ident(&parsed.elem_type);
+        return quote! {
+            if (#fa).is_empty() { 0 } else {
+                let mut __payload = 0usize;
+                for __x in (#fa).iter() {
+                    __payload += encoding::#enc_ident::encoded_len_no_tag(__x);
+                }
+                encoding::encoded_len_key(#tag) + encoding::encoded_len_varint(__payload as u64) + __payload
+            }
+        };
+    }
+
+    let enc_ident = scalar_codec_ident(&parsed.elem_type);
+    quote! {
+        {
+            let mut __sum = 0usize;
+            for __x in (#fa).iter() {
+                __sum += encoding::#enc_ident::encoded_len(#tag, __x);
+            }
+            __sum
+        }
     }
 }

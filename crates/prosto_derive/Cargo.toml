@@ -23,6 +23,10 @@ syn = { version = "2", features = ["full"] }
 [features]
 # Emission control - checked in utils.rs during macro expansion
 emit-proto-files = []
+# Enable shadow type gen and HasProto impl
+shadow_gen = []
+# Enable direct ProtoExt impl 
+direct_gen = []
 
 
 [lints]

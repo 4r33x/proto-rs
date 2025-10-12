@@ -1,4 +1,4 @@
-//! Handler for simple enums (unit variants only)
+//! Handler for simple enums (unit variants only) with ProtoExt support
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -7,8 +7,9 @@ use syn::DeriveInput;
 
 pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
-    let proto_name = syn::Ident::new(&format!("{}Proto", name), name.span());
-    let error_name = syn::Ident::new(&format!("{}ConversionError", name), name.span());
+    let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
+    let vis = &input.vis;
+    let generics = &input.generics;
 
     // Build original variants (without proto attributes)
     let original_variants: Vec<_> = data
@@ -24,96 +25,81 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         })
         .collect();
 
-    // Build proto enum variants with explicit values
-    let proto_variants: Vec<_> = data
+    // Generate TryFrom arms
+    let try_from_arms: Vec<_> = data
         .variants
         .iter()
         .enumerate()
         .map(|(i, v)| {
             let ident = &v.ident;
             let i = i as i32;
-            quote! { #ident = #i }
+            quote! { #i => Ok(Self::#ident) }
         })
         .collect();
 
-    // Build to_proto conversion arms
-    let to_proto_arms: Vec<_> = data
-        .variants
-        .iter()
-        .map(|v| {
-            let ident = &v.ident;
-            quote! { #name::#ident => #proto_name::#ident }
-        })
-        .collect();
-
-    // Build from_proto conversion arms
-    let from_proto_arms: Vec<_> = data
-        .variants
-        .iter()
-        .map(|v| {
-            let ident = &v.ident;
-            quote! { #proto_name::#ident => Ok(#name::#ident) }
-        })
-        .collect();
-
-    let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
-    let vis = &input.vis;
-    let generics = &input.generics;
+    // First variant is the default
+    let first_variant = &data.variants.first().expect("Enum must have at least one variant").ident;
 
     quote! {
-        // Original Rust enum (without proto attributes)
         #(#attrs)*
         #vis enum #name #generics {
             #(#original_variants),*
         }
 
-        // Proto enum (prost-compatible)
-        #[derive(::prost::Enumeration, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        #[repr(i32)]
-        #vis enum #proto_name #generics {
-            #(#proto_variants),*
-        }
-
-        // Conversion error type
-        #[derive(Debug)]
-        #vis enum #error_name {
-            InvalidValue(i32),
-        }
-
-        impl std::fmt::Display for #error_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::InvalidValue(v) => write!(f, "Invalid value for enum {}: {}", stringify!(#name), v),
-                }
+        impl #generics ::proto_rs::ProtoExt for #name #generics {
+            #[inline]
+            fn proto_default() -> Self {
+                Self::#first_variant
             }
-        }
 
-        impl std::error::Error for #error_name {}
-
-        // Conversion methods
-        impl #name {
-            pub fn to_proto(&self) -> #proto_name {
-                match self {
-                    #(#to_proto_arms),*
+            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+                let value = *self as i32;
+                if value != 0 {
+                    ::proto_rs::encoding::int32::encode(1, &value, buf);
                 }
             }
 
-            pub fn from_proto(proto: #proto_name) -> Result<Self, Box<dyn std::error::Error>> {
-                match proto {
-                    #(#from_proto_arms),*
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                match tag {
+                    1 => {
+                        let mut value: i32 = 0;
+                        ::proto_rs::encoding::int32::merge(wire_type, &mut value, buf, ctx)?;
+                        *self = Self::try_from(value)
+                            .map_err(|_| ::proto_rs::DecodeError::new("Invalid enum value"))?;
+                        Ok(())
+                    }
+                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
+            }
+
+            fn encoded_len(&self) -> usize {
+                let value = *self as i32;
+                if value != 0 {
+                    ::proto_rs::encoding::int32::encoded_len(1, &value)
+                } else {
+                    0
+                }
+            }
+
+            fn clear(&mut self) {
+                *self = Self::proto_default();
             }
         }
 
-        // TryFrom<i32> for convenient conversion
-        impl TryFrom<i32> for #name {
-            type Error = #error_name;
+        impl #generics TryFrom<i32> for #name #generics {
+            type Error = ::proto_rs::DecodeError;
 
             fn try_from(value: i32) -> Result<Self, Self::Error> {
-                let proto = #proto_name::try_from(value)
-                    .map_err(|_| #error_name::InvalidValue(value))?;
-                Self::from_proto(proto)
-                    .map_err(|_| #error_name::InvalidValue(value))
+                match value {
+                    #(#try_from_arms,)*
+                    _ => Err(::proto_rs::DecodeError::new("Invalid enum value")),
+                }
             }
         }
     }
@@ -144,16 +130,7 @@ mod tests {
         let output = handle_enum(input, &data);
         let output_str = output.to_string();
 
-        // Check that original enum is preserved
         assert!(output_str.contains("enum Status"));
         assert!(output_str.contains("Pending"));
-
-        // Check that proto enum is generated
-        assert!(output_str.contains("enum StatusProto"));
-        assert!(output_str.contains(":: prost :: Enumeration"));
-
-        // Check conversion methods exist
-        assert!(output_str.contains("fn to_proto"));
-        assert!(output_str.contains("fn from_proto"));
     }
 }

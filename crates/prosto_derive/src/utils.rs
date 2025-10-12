@@ -3,11 +3,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Field;
-use syn::GenericArgument;
 use syn::Lit;
-use syn::PathArguments;
 use syn::Type;
-use syn::TypePath;
 
 // Re-export modular utilities
 pub mod array_handling;
@@ -30,15 +27,16 @@ pub struct FieldConfig {
     pub into_fn: Option<String>,
     pub from_fn: Option<String>,
     pub skip: bool,
-    pub skip_deser_fn: Option<String>,
-    pub is_rust_enum: bool,
+    pub skip_deser_fn: Option<String>, // run after full decode
+    pub is_rust_enum: bool,            // treat T as Rust enum -> i32 on wire
+    pub is_message: bool,              // force message semantics
+    pub is_proto_enum: bool,           // prost-like enum (i32 backing)
     pub import_path: Option<String>,
-    pub is_message: bool,
-    pub is_proto_enum: bool,
+    pub custom_tag: Option<usize>,
 }
 
-pub fn parse_field_config(field: &Field) -> FieldConfig {
-    let mut config = FieldConfig::default();
+pub fn parse_field_config(field: &syn::Field) -> FieldConfig {
+    let mut cfg = FieldConfig::default();
 
     for attr in &field.attrs {
         if !attr.path().is_ident("proto") {
@@ -46,25 +44,34 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
         }
 
         let _ = attr.parse_nested_meta(|meta| {
-            let ident = meta.path.get_ident().map(|i| i.to_string());
+            let key = meta.path.get_ident().map(|i| i.to_string());
 
-            match ident.as_deref() {
-                Some("skip") => parse_skip_attribute(&meta, &mut config),
-                Some("rust_enum") => config.is_rust_enum = true,
-                Some("enum") => config.is_proto_enum = true,
-                Some("message") => config.is_message = true,
-                Some("into") => config.into_type = parse_string_value(&meta),
-                Some("from") => config.from_type = parse_string_value(&meta),
-                Some("into_fn") => config.into_fn = parse_string_value(&meta),
-                Some("from_fn") => config.from_fn = parse_string_value(&meta),
-                Some("import_path") => config.import_path = parse_string_value(&meta),
+            match key.as_deref() {
+                Some("skip") => {
+                    cfg.skip = true;
+                    // allow #[proto(skip = "fn_name")]
+                    if meta.input.peek(syn::Token![=]) {
+                        if let Some(fun) = parse_string_value(&meta) {
+                            cfg.skip_deser_fn = Some(fun);
+                        }
+                    }
+                }
+                Some("rust_enum") => cfg.is_rust_enum = true,
+                Some("enum") => cfg.is_proto_enum = true,
+                Some("message") => cfg.is_message = true,
+                Some("into") => cfg.into_type = parse_string_value(&meta),
+                Some("from") => cfg.from_type = parse_string_value(&meta),
+                Some("into_fn") => cfg.into_fn = parse_string_value(&meta),
+                Some("from_fn") => cfg.from_fn = parse_string_value(&meta),
+                Some("import_path") => cfg.import_path = parse_string_value(&meta),
+                Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
                 _ => {}
             }
             Ok(())
         });
     }
 
-    config
+    cfg
 }
 
 fn parse_skip_attribute(meta: &syn::meta::ParseNestedMeta, config: &mut FieldConfig) {
@@ -79,10 +86,17 @@ fn parse_skip_attribute(meta: &syn::meta::ParseNestedMeta, config: &mut FieldCon
 fn parse_string_value(meta: &syn::meta::ParseNestedMeta) -> Option<String> {
     meta.value()
         .ok()
-        .and_then(|v| v.parse::<Lit>().ok())
-        .and_then(|lit| if let Lit::Str(s) = lit { Some(s.value()) } else { None })
+        .and_then(|v| v.parse::<syn::Lit>().ok())
+        .and_then(|lit| if let syn::Lit::Str(s) = lit { Some(s.value()) } else { None })
 }
 
+fn parse_usize_value(meta: &syn::meta::ParseNestedMeta) -> Option<usize> {
+    meta.value().ok().and_then(|v| v.parse::<syn::Lit>().ok()).and_then(|lit| match lit {
+        syn::Lit::Int(i) => i.base10_parse::<usize>().ok(),
+        syn::Lit::Str(s) => s.value().parse::<usize>().ok(),
+        _ => None,
+    })
+}
 // ============================================================================
 // PARSED FIELD TYPE
 // ============================================================================
@@ -143,7 +157,7 @@ fn parse_array_type(type_array: &syn::TypeArray) -> ParsedFieldType {
     }
 }
 
-fn parse_path_type(type_path: &TypePath, ty: &Type) -> ParsedFieldType {
+fn parse_path_type(type_path: &syn::TypePath, ty: &Type) -> ParsedFieldType {
     let segment = type_path.path.segments.last().unwrap();
     let type_name = segment.ident.to_string();
 
@@ -155,6 +169,9 @@ fn parse_path_type(type_path: &TypePath, ty: &Type) -> ParsedFieldType {
 }
 
 fn parse_option_type(segment: &syn::PathSegment, ty: &Type) -> ParsedFieldType {
+    use syn::GenericArgument;
+    use syn::PathArguments;
+
     if let PathArguments::AngleBracketed(args) = &segment.arguments
         && let Some(GenericArgument::Type(inner_ty)) = args.args.first()
     {
@@ -167,6 +184,8 @@ fn parse_option_type(segment: &syn::PathSegment, ty: &Type) -> ParsedFieldType {
 }
 
 fn parse_vec_type(segment: &syn::PathSegment) -> ParsedFieldType {
+    use syn::GenericArgument;
+    use syn::PathArguments;
     use syn::parse_quote;
 
     if let PathArguments::AngleBracketed(args) = &segment.arguments

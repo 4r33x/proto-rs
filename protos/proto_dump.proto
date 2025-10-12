@@ -65,7 +65,3 @@ message ArrayTestU16 {
   repeated uint32 amount = 1;
 }
 
-message Lamports {
-  uint64 amount = 1;
-}
-

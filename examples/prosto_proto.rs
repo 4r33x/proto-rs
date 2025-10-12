@@ -1,7 +1,6 @@
 use chrono::DateTime;
 use chrono::Utc;
 use prosto_derive::proto_dump;
-use proto_rs::HasProto;
 use proto_rs::inject_proto_import;
 use proto_rs::proto_message;
 use serde::Deserialize;
@@ -10,7 +9,7 @@ use serde::Serialize;
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct StructU16 {
     inner: u16,
 }
@@ -121,11 +120,13 @@ pub struct VecTestMessageU16 {
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub enum EnumArrayMessageAttributeFailTest {
-    Fail {
-        #[proto(message)]
-        timestamp_array: [Timestamp; 8],
-    },
+#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize, Copy)]
+pub enum Status {
+    Pending,
+    #[default]
+    Active,
+    Inactive,
+    Completed,
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -135,26 +136,10 @@ pub enum EnumArrayRustEnumAttributeFailTest {
         timestamp_array: [Status; 8],
     },
 }
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub enum EnumArrayProstEnumAttributeFailTest {
-    Fail {
-        #[proto(enum)]
-        timestamp_array: [TestEnum; 8],
-    },
-}
-
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub enum EnumArrayMessageAttributeFailTest2 {
-    Fail(#[proto(message)] [Timestamp; 8]),
-}
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub enum EnumArrayRustEnumAttributeFailTest2 {
     Fail(#[proto(rust_enum)] [Status; 8]),
-}
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub enum EnumArrayProstEnumAttributeFailTest2 {
-    Fail(#[proto(enum)] [TestEnum; 8]),
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -201,16 +186,7 @@ pub enum VecTestEnumCustom {
         test3: Status,
     },
     Test3(#[proto(rust_enum)] Option<Status>),
-    Test4 {
-        #[proto(enum)]
-        test1: Vec<TestEnum>,
-        #[proto(enum)]
-        test2: Option<TestEnum>,
-        #[proto(enum)]
-        test3: TestEnum,
-    },
-    Test5(#[proto(enum)] Option<TestEnum>),
-    Test6(#[proto(enum)] TestEnum),
+
     Test7(User),
     Test8(Option<User>),
     Test9(Vec<User>),
@@ -251,29 +227,6 @@ pub enum VecFailingTestEnum {
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub enum EnumFailTest {
-    Option {
-        id: Option<u64>,
-        address: Option<Address>,
-        #[proto(message)]
-        timestamp_vec: Vec<Timestamp>,
-        #[proto(message)]
-        timestamp_opt: Option<Timestamp>,
-        #[proto(message)]
-        timestamp: Timestamp,
-    },
-}
-
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-#[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
-pub enum Status {
-    Pending,
-    #[default]
-    Active,
-    Inactive,
-    Completed,
-}
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct User {
     pub id: u64,
@@ -304,32 +257,6 @@ pub enum ArrayTest3CustomDump {
     Test,
     Test1([ArrayTestMessageU16; 32]),
     Test2 { test: [ArrayTestMessageU16; 32] },
-}
-
-#[proto_dump(proto_path = "protos/proto_dump.proto")]
-#[derive(prost::Message, Clone, PartialEq)]
-pub struct LamportsProto {
-    #[prost(uint64, tag = 1)]
-    pub amount: u64,
-}
-
-fn get_current_timestamp(_proto: &UserProto) -> DateTime<Utc> {
-    Utc::now()
-}
-fn compute_hash(proto: &UserProto) -> String {
-    format!("hash_{}_{}", proto.id, proto.name)
-}
-fn compute_hash_for_enum(proto: &VeryComplexProtoAttr) -> String {
-    format!("hash_{}_{}", proto.status, proto.status)
-}
-fn compute_hash_for_enum_test(_proto: &VeryComplexTestSkipProtoAttr) -> String {
-    "hash".to_owned()
-}
-fn compute_hash_for_enum_test_2(_proto: &VeryComplexTestSkipProtoTuple) -> String {
-    "hash".to_owned()
-}
-fn compute_hash_for_struct(proto: &AttrProto) -> String {
-    format!("hash_{}_{}", proto.status, proto.status)
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -373,24 +300,6 @@ pub enum VeryComplex {
         status_vec: Vec<Status>,
         #[proto(skip = "compute_hash_for_enum")]
         hash: String,
-        #[proto(import_path = "google.protobuf")]
-        #[proto(message)]
-        timestamp: Timestamp,
-        #[proto(message)]
-        #[proto(import_path = "google.protobuf")]
-        timestamp_vec: Vec<Timestamp>,
-        #[proto(message)]
-        #[proto(import_path = "google.protobuf")]
-        timestamp_opt: Option<Timestamp>,
-        #[proto(enum)]
-        #[proto(import_path = "google.protobuf")]
-        test_enum: TestEnum,
-        #[proto(enum)]
-        #[proto(import_path = "google.protobuf")]
-        test_enum_opt: Option<TestEnum>,
-        #[proto(enum)]
-        #[proto(import_path = "google.protobuf")]
-        test_enum_vec: Vec<TestEnum>,
     },
 }
 
@@ -408,54 +317,9 @@ pub struct Attr {
     status_vec: Vec<Status>,
     #[proto(skip = "compute_hash_for_struct")]
     hash: String,
-    #[proto(import_path = "google.protobuf")]
-    #[proto(message)]
-    timestamp: Timestamp,
-    #[proto(message)]
-    #[proto(import_path = "google.protobuf")]
-    timestamp_vec: Vec<Timestamp>,
-    #[proto(message)]
-    #[proto(import_path = "google.protobuf")]
-    timestamp_opt: Option<Timestamp>,
-    #[proto(enum)]
-    #[proto(import_path = "google.protobuf")]
-    test_enum: TestEnum,
-    #[proto(enum)]
-    #[proto(import_path = "google.protobuf")]
-    test_enum_opt: Option<TestEnum>,
-    #[proto(enum)]
-    #[proto(import_path = "google.protobuf")]
-    test_enum_vec: Vec<TestEnum>,
+
     #[proto(into = "i64", into_fn = "datetime_to_i64", from_fn = "i64_to_datetime")]
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(::prost::Message, Clone, PartialEq)]
-pub struct Timestamp {}
-
-#[derive(::prost::Enumeration, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(i32)]
-pub enum TestEnum {
-    Test = 0i32,
-}
-
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-pub struct MyMessage {
-    pub id: u64,
-    #[proto(import_path = "google.protobuf")]
-    #[proto(message)]
-    pub timestamp: Timestamp,
-    #[proto(message)]
-    pub timestamp_vec: Vec<Timestamp>,
-    #[proto(message)]
-    pub timestamp_opt: Option<Timestamp>,
-    pub name: String,
-    #[proto(enum)]
-    pub test_enum: TestEnum,
-    #[proto(enum)]
-    pub test_enum_opt: Option<TestEnum>,
-    #[proto(enum)]
-    pub test_enum_vec: Vec<TestEnum>,
 }
 
 // ============================================================================

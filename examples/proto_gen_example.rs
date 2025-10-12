@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use proto_rs::HasProto;
+use proto_rs::ProtoExt;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -10,19 +10,19 @@ use tonic::Response;
 use tonic::Status;
 
 #[proto_message(proto_path = "protos/gen_proto/goon_types.proto")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct RizzPing;
 
 #[proto_message(proto_path = "protos/gen_proto/goon_types.proto")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct GoonPong;
 
 #[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct FooResponse;
 
 #[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct BarSub;
 
 // Define trait with the proto_rpc macro

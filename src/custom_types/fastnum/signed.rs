@@ -1,48 +1,45 @@
 use fastnum::D128;
 
-use crate::HasProto;
+use crate::ProtoExt;
 use crate::proto_dump;
 extern crate self as proto_rs;
 
 #[proto_dump(proto_path = "protos/fastnum.proto")]
-#[derive(prost::Message, Clone, PartialEq, Copy)]
-pub struct D128Proto {
-    #[prost(uint64, tag = 1)]
+struct D128Proto {
+    #[proto(tag = 1)]
     /// Lower 64 bits of the digits
     pub lo: u64,
-    #[prost(uint64, tag = 2)]
+    #[proto(tag = 2)]
     /// Upper 64 bits of the digits
     pub hi: u64,
-    #[prost(int32, tag = 3)]
+    #[proto(tag = 3)]
     /// Fractional digits count (can be negative for scientific notation)
     pub fractional_digits_count: i32,
-    #[prost(bool, tag = 4)]
+    #[proto(tag = 4)]
     /// Sign bit: true for negative, false for positive/zero
     pub is_negative: bool,
 }
 
-impl HasProto for D128 {
-    type Proto = D128Proto;
-
-    fn to_proto(&self) -> Self::Proto {
-        let digits: u128 = self.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
+impl From<D128> for D128Proto {
+    fn from(v: D128) -> Self {
+        let digits: u128 = v.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
         let lo = digits as u64;
         let hi = (digits >> 64) as u64;
-        let fractional_digits_count = self.fractional_digits_count() as i32;
-        let is_negative = self.is_sign_negative();
-
-        D128Proto {
+        let fractional_digits_count = v.fractional_digits_count() as i32;
+        let is_negative = v.is_sign_negative();
+        Self {
             lo,
             hi,
             fractional_digits_count,
             is_negative,
         }
     }
+}
 
-    fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        Self: Sized,
-    {
+//we dont need it, its just reference how we should convert back
+impl TryFrom<D128Proto> for D128 {
+    type Error = Box<dyn std::error::Error>;
+    fn try_from(proto: D128Proto) -> Result<D128, Self::Error> {
         // Reconstruct u128 from two u64 parts
         let digits = ((proto.hi as u128) << 64) | (proto.lo as u128);
 
@@ -62,6 +59,30 @@ impl HasProto for D128 {
         }
 
         Ok(result)
+    }
+}
+
+impl ProtoExt for D128 {
+    fn encode_raw(&self, buf: &mut impl bytes::BufMut)
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), crate::DecodeError>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+
+    fn encoded_len(&self) -> usize {
+        todo!()
+    }
+
+    fn clear(&mut self) {
+        todo!()
     }
 }
 

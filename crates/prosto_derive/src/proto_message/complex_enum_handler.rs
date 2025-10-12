@@ -1,90 +1,20 @@
-//! Handler for complex enums (with associated data)
+//! Handler for complex enums (with associated data) with ProtoExt support
 
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DataEnum;
 use syn::DeriveInput;
 use syn::Fields;
-use syn::FieldsNamed;
-use syn::FieldsUnnamed;
-use syn::Type;
 
-use crate::utils::field_handling::FieldHandler;
-use crate::utils::field_handling::FromProtoConversion;
-use crate::utils::parse_field_config;
-use crate::utils::type_info::*;
+use crate::utils::get_proto_rust_type;
+use crate::utils::is_bytes_vec;
+use crate::utils::is_complex_type;
+use crate::utils::needs_into_conversion;
+use crate::utils::parse_field_type;
+use crate::utils::vec_inner_type;
 
 pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
-    let proto_name = syn::Ident::new(&format!("{}Proto", name), name.span());
-    let error_name = syn::Ident::new(&format!("{}ConversionError", name), name.span());
-
-    let oneof_mod_name = syn::Ident::new(&crate::utils::to_snake_case(&proto_name.to_string()), name.span());
-    let oneof_enum_name = syn::Ident::new("Value", name.span());
-
-    // Collections for generated code
-    let mut oneof_variants = Vec::new();
-    let mut tags = Vec::new();
-    let mut to_proto_arms = Vec::new();
-    let mut from_proto_arms = Vec::new();
-    let mut nested_message_structs = Vec::new();
-
-    // Process each variant
-    for (idx, variant) in data.variants.iter().enumerate() {
-        let tag = idx + 1;
-        tags.push(tag);
-
-        match &variant.fields {
-            Fields::Unit => {
-                handle_unit_variant(
-                    name,
-                    &proto_name,
-                    &oneof_mod_name,
-                    &oneof_enum_name,
-                    variant,
-                    tag,
-                    &mut nested_message_structs,
-                    &mut oneof_variants,
-                    &mut to_proto_arms,
-                    &mut from_proto_arms,
-                );
-            }
-            Fields::Unnamed(fields_unnamed) => {
-                handle_unnamed_variant(
-                    name,
-                    &proto_name,
-                    &oneof_mod_name,
-                    &oneof_enum_name,
-                    &error_name,
-                    variant,
-                    fields_unnamed,
-                    tag,
-                    &mut nested_message_structs,
-                    &mut oneof_variants,
-                    &mut to_proto_arms,
-                    &mut from_proto_arms,
-                );
-            }
-            Fields::Named(fields_named) => {
-                handle_named_variant(
-                    name,
-                    &proto_name,
-                    &oneof_mod_name,
-                    &oneof_enum_name,
-                    &error_name,
-                    variant,
-                    fields_named,
-                    tag,
-                    &mut nested_message_structs,
-                    &mut oneof_variants,
-                    &mut to_proto_arms,
-                    &mut from_proto_arms,
-                );
-            }
-        }
-    }
-
-    // Build original enum variants
     let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
     let vis = &input.vis;
     let generics = &input.generics;
@@ -129,584 +59,507 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         })
         .collect();
 
-    let tags_str = tags.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
-    let oneof_path = format!("{}::Value", crate::utils::to_snake_case(&proto_name.to_string()));
+    // Collect variant data for encoding/decoding
+    let (encode_arms, decode_arms, encoded_len_arms) = generate_variant_arms(name, data);
+    let last_variant = &data.variants.first().expect("Enum must have at least one variant");
+    let last_variant_ident = &last_variant.ident;
 
-    // Generate final code
+    let default_value = match &last_variant.fields {
+        Fields::Unit => quote! { Self::#last_variant_ident },
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            quote! { Self::#last_variant_ident(::proto_rs::ProtoExt::proto_default()) }
+        }
+        Fields::Named(fields) => {
+            let field_defaults: Vec<_> = fields
+                .named
+                .iter()
+                .map(|f| {
+                    let ident = f.ident.as_ref().unwrap();
+                    quote! { #ident: ::proto_rs::ProtoExt::proto_default() }
+                })
+                .collect();
+            quote! { Self::#last_variant_ident { #(#field_defaults),* } }
+        }
+        _ => panic!("Unsupported variant structure"),
+    };
+
     quote! {
-        // Nested message structs (for unit and named variants)
-        #(#nested_message_structs)*
-
-        // Original enum (without proto attributes)
         #(#attrs)*
         #vis enum #name #generics {
             #(#original_variants),*
         }
 
-        // Proto message with oneof
-        #[derive(::prost::Message, Clone, PartialEq)]
-        #vis struct #proto_name #generics {
-            #[prost(oneof = #oneof_path, tags = #tags_str)]
-            pub value: ::core::option::Option<#oneof_mod_name::#oneof_enum_name #generics>
-        }
-
-        // Oneof enum module
-        pub mod #oneof_mod_name {
-            #[derive(::prost::Oneof, Clone, PartialEq)]
-            pub enum #oneof_enum_name {
-                #(#oneof_variants),*
+        impl #generics ::proto_rs::ProtoExt for #name #generics {
+            #[inline]
+            fn proto_default() -> Self {
+                #default_value
             }
-        }
 
-        // Error type
-        #[derive(Debug)]
-        #vis enum #error_name {
-            MissingValue,
-            MissingField { field: String },
-            VariantConversion { variant: String, source: Box<dyn std::error::Error> },
-            FieldConversion { field: String, source: Box<dyn std::error::Error> },
-        }
-
-        impl std::fmt::Display for #error_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
                 match self {
-                    Self::MissingValue => write!(f, "Missing oneof value in Proto message"),
-                    Self::MissingField { field } => write!(f, "Missing required field: {}", field),
-                    Self::VariantConversion { variant, source } =>
-                        write!(f, "Error converting variant {}: {}", variant, source),
-                    Self::FieldConversion { field, source } =>
-                        write!(f, "Error converting field {}: {}", field, source),
+                    #(#encode_arms)*
                 }
             }
-        }
 
-        impl std::error::Error for #error_name {}
-
-        // HasProto implementation
-        impl #generics HasProto for #name #generics {
-            type Proto = #proto_name #generics;
-
-            fn to_proto(&self) -> Self::Proto {
-                let value = match self {
-                    #(#to_proto_arms),*
-                };
-                #proto_name { value: Some(value) }
-            }
-
-            fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>> {
-                match proto.value {
-                    Some(oneof_value) => Ok(match oneof_value {
-                        #(#from_proto_arms),*
-                    }),
-                    None => Err(Box::new(#error_name::MissingValue)),
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                match tag {
+                    #(#decode_arms,)*
+                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
             }
-        }
 
-        impl #generics From<#name #generics> for #proto_name #generics {
-            fn from(value: #name #generics) -> Self {
-                value.to_proto()
+            fn encoded_len(&self) -> usize {
+                match self {
+                    #(#encoded_len_arms)*
+                }
+            }
+
+            fn clear(&mut self) {
+                *self = Self::proto_default();
             }
         }
+    }
+}
 
-        impl #generics TryFrom<#proto_name #generics> for #name #generics {
-            type Error = #error_name;
+fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>) {
+    let mut encode_arms = Vec::new();
+    let mut decode_arms = Vec::new();
+    let mut encoded_len_arms = Vec::new();
 
-            fn try_from(proto: #proto_name #generics) -> Result<Self, Self::Error> {
-                Self::from_proto(proto).map_err(|e| {
-                    if let Some(conv_err) = e.downcast_ref::<#error_name>() {
-                        match conv_err {
-                            #error_name::MissingValue => #error_name::MissingValue,
-                            #error_name::MissingField { field } => #error_name::MissingField {
-                                field: field.clone(),
-                            },
-                            #error_name::VariantConversion { variant, .. } =>
-                                #error_name::VariantConversion {
-                                    variant: variant.clone(),
-                                    source: Box::new(std::io::Error::new(
-                                        std::io::ErrorKind::InvalidData,
-                                        "Conversion error"
-                                    )),
-                                },
-                            #error_name::FieldConversion { field, .. } =>
-                                #error_name::FieldConversion {
-                                    field: field.clone(),
-                                    source: Box::new(std::io::Error::new(
-                                        std::io::ErrorKind::InvalidData,
-                                        "Conversion error"
-                                    )),
-                                },
-                        }
-                    } else {
-                        #error_name::MissingValue
+    // Process each variant
+    for (idx, variant) in data.variants.iter().enumerate() {
+        let tag = (idx + 1) as u32;
+        let variant_ident = &variant.ident;
+
+        match &variant.fields {
+            Fields::Unit => {
+                // Unit variant - encode as empty message
+                encode_arms.push(quote! {
+                    #name::#variant_ident => {
+                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                        ::proto_rs::encoding::encode_varint(0, buf);
                     }
-                })
+                });
+
+                decode_arms.push(quote! {
+                    #tag => {
+                        let len = ::proto_rs::encoding::decode_varint(buf)?;
+                        if len != 0 {
+                            return Err(::proto_rs::DecodeError::new("Expected empty message for unit variant"));
+                        }
+                        *self = #name::#variant_ident;
+                        Ok(())
+                    }
+                });
+
+                encoded_len_arms.push(quote! {
+                    #name::#variant_ident => {
+                        ::proto_rs::encoding::key_len(#tag) + 1
+                    }
+                });
+            }
+            Fields::Unnamed(fields_unnamed) if fields_unnamed.unnamed.len() == 1 => {
+                let field = fields_unnamed.unnamed.first().unwrap();
+                let field_ty = &field.ty;
+
+                // Check if this is a Vec, Option, or Array that needs special handling
+                if is_vec_or_array_type(field_ty) {
+                    generate_repeated_variant_arms(name, variant_ident, tag, field_ty, &mut encode_arms, &mut decode_arms, &mut encoded_len_arms);
+                } else {
+                    // Regular message type
+                    encode_arms.push(quote! {
+                        #name::#variant_ident(inner) => {
+                            ::proto_rs::encoding::message::encode(#tag, inner, buf);
+                        }
+                    });
+
+                    decode_arms.push(quote! {
+                        #tag => {
+                            let mut temp = ::proto_rs::ProtoExt::proto_default();
+                            ::proto_rs::encoding::message::merge(wire_type, &mut temp, buf, ctx)?;
+                            *self = #name::#variant_ident(temp);
+                            Ok(())
+                        }
+                    });
+
+                    encoded_len_arms.push(quote! {
+                        #name::#variant_ident(inner) => {
+                            ::proto_rs::encoding::message::encoded_len(#tag, inner)
+                        }
+                    });
+                }
+            }
+            Fields::Named(fields_named) => {
+                // Named fields - encode as nested message (existing logic)
+                generate_named_variant_arms(name, variant_ident, tag, fields_named, &mut encode_arms, &mut decode_arms, &mut encoded_len_arms);
+            }
+            _ => {
+                panic!("Complex enum variants must have exactly one unnamed field or multiple named fields");
             }
         }
     }
+
+    (encode_arms, decode_arms, encoded_len_arms)
 }
 
-/// Handle unit variants (Variant)
-#[allow(clippy::too_many_arguments)]
-fn handle_unit_variant(
-    name: &syn::Ident,
-    proto_name: &syn::Ident,
-    oneof_mod_name: &syn::Ident,
-    oneof_enum_name: &syn::Ident,
-    variant: &syn::Variant,
-    tag: usize,
-    nested_message_structs: &mut Vec<TokenStream>,
-    oneof_variants: &mut Vec<TokenStream>,
-    to_proto_arms: &mut Vec<TokenStream>,
-    from_proto_arms: &mut Vec<TokenStream>,
-) {
-    let variant_ident = &variant.ident;
-    let empty_msg_name = format!("{}{}", proto_name, variant_ident);
-    let empty_msg_ident = syn::Ident::new(&empty_msg_name, variant_ident.span());
-
-    nested_message_structs.push(quote! {
-        #[derive(::prost::Message, Clone, PartialEq)]
-        pub struct #empty_msg_ident {}
-    });
-
-    oneof_variants.push(quote! {
-        #[prost(message, tag = #tag)]
-        #variant_ident(super::#empty_msg_ident)
-    });
-
-    to_proto_arms.push(quote! {
-        #name::#variant_ident => #oneof_mod_name::#oneof_enum_name::#variant_ident(#empty_msg_ident {})
-    });
-
-    from_proto_arms.push(quote! {
-        #oneof_mod_name::#oneof_enum_name::#variant_ident(_) => #name::#variant_ident
-    });
-}
-
-/// Handle unnamed variants - properly using FieldHandler
-#[allow(clippy::too_many_arguments)]
-fn handle_unnamed_variant(
-    name: &syn::Ident,
-    proto_name: &syn::Ident,
-    oneof_mod_name: &syn::Ident,
-    oneof_enum_name: &syn::Ident,
-    error_name: &syn::Ident,
-    variant: &syn::Variant,
-    fields: &FieldsUnnamed,
-    tag: usize,
-    nested_message_structs: &mut Vec<TokenStream>,
-    oneof_variants: &mut Vec<TokenStream>,
-    to_proto_arms: &mut Vec<TokenStream>,
-    from_proto_arms: &mut Vec<TokenStream>,
-) {
-    if fields.unnamed.len() != 1 {
-        panic!("Complex enum unnamed variants must have exactly one field");
-    }
-
-    let variant_ident = &variant.ident;
-    let field = fields.unnamed.first().unwrap();
-    let field_ty = &field.ty;
-    let field_config = parse_field_config(field);
-
-    // Handle skip fields in unnamed variants
-    if field_config.skip {
-        // For skip fields, generate an empty nested message
-        let nested_msg_name = format!("{}{}", proto_name, variant_ident);
-        let nested_msg_ident = syn::Ident::new(&nested_msg_name, variant_ident.span());
-
-        nested_message_structs.push(quote! {
-            #[derive(::prost::Message, Clone, PartialEq)]
-            pub struct #nested_msg_ident {}
-        });
-
-        oneof_variants.push(quote! {
-            #[prost(message, tag = #tag)]
-            #variant_ident(super::#nested_msg_ident)
-        });
-
-        // to_proto: Don't pass the field value
-        to_proto_arms.push(quote! {
-            #name::#variant_ident(_) =>
-                #oneof_mod_name::#oneof_enum_name::#variant_ident(#nested_msg_ident {})
-        });
-
-        // from_proto: Use skip function or Default
-        if let Some(ref skip_fn) = field_config.skip_deser_fn {
-            let skip_fn_ident: syn::Ident = syn::parse_str(skip_fn).expect("Invalid skip function name");
-            from_proto_arms.push(quote! {
-                #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
-                    let value = #skip_fn_ident(&inner);
-                    #name::#variant_ident(value)
-                }
-            });
-        } else {
-            from_proto_arms.push(quote! {
-                #oneof_mod_name::#oneof_enum_name::#variant_ident(_) =>
-                    #name::#variant_ident(Default::default())
-            });
-        }
-        return;
-    }
-
-    // Special case: [u8; N] can be directly in oneof
-    if let Type::Array(_type_array) = field_ty
-        && is_bytes_array(field_ty)
-    {
-        oneof_variants.push(quote! {
-            #[prost(bytes, tag = #tag)]
-            #variant_ident(::std::vec::Vec<u8>)
-        });
-
-        to_proto_arms.push(quote! {
-            #name::#variant_ident(inner) =>
-                #oneof_mod_name::#oneof_enum_name::#variant_ident(inner.to_vec())
-        });
-
-        from_proto_arms.push(quote! {
-            #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
-                let converted = inner.as_slice().try_into()
-                    .map_err(|_| #error_name::VariantConversion {
-                        variant: stringify!(#variant_ident).to_string(),
-                        source: Box::new(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "Invalid byte array length"
-                        )),
-                    })?;
-                #name::#variant_ident(converted)
-            }
-        });
-        return;
-    }
-
-    // For all other cases, create a nested message wrapper
-    let nested_msg_name = format!("{}{}", proto_name, variant_ident);
-    let nested_msg_ident = syn::Ident::new(&nested_msg_name, variant_ident.span());
-    let value_ident = syn::Ident::new("value", variant_ident.span());
-
-    // Use FieldHandler to properly handle the field
-    let handler = FieldHandler::new(
-        field,
-        &value_ident,
-        1, // tag inside nested message
-        error_name,
-        format!("{}::value", variant_ident),
-    );
-
-    let result = handler.generate();
-
-    // Create nested message with the proto field
-    if let Some(prost_field) = result.prost_field {
-        nested_message_structs.push(quote! {
-            #[derive(::prost::Message, Clone, PartialEq)]
-            pub struct #nested_msg_ident {
-                #prost_field,
-            }
-        });
-    }
-
-    // Add to oneof
-    oneof_variants.push(quote! {
-        #[prost(message, tag = #tag)]
-        #variant_ident(super::#nested_msg_ident)
-    });
-
-    // Generate to_proto conversion
-    if let Some(to_proto) = result.to_proto {
-        // Extract value expression and replace self.value with inner
-        let to_value = extract_and_adjust_value(&to_proto, &value_ident, quote! { inner });
-
-        to_proto_arms.push(quote! {
-            #name::#variant_ident(inner) => #oneof_mod_name::#oneof_enum_name::#variant_ident(
-                #nested_msg_ident { value: #to_value }
-            )
-        });
-    }
-
-    // Generate from_proto conversion
-    match result.from_proto {
-        FromProtoConversion::Normal(from_proto) => {
-            // Extract value expression and adjust proto.value to inner.value
-            let from_value = extract_conversion_value_adjusted(&from_proto, &value_ident, quote! { inner.value });
-
-            from_proto_arms.push(quote! {
-                #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
-                    #name::#variant_ident(#from_value)
-                }
-            });
-        }
-        _ => panic!("Enum variants don't support skip attributes"),
-    }
-}
-
-/// Handle named variants - properly using FieldHandler for each field
-#[allow(clippy::too_many_arguments)]
-fn handle_named_variant(
-    name: &syn::Ident,
-    proto_name: &syn::Ident,
-    oneof_mod_name: &syn::Ident,
-    oneof_enum_name: &syn::Ident,
-    error_name: &syn::Ident,
-    variant: &syn::Variant,
-    fields_named: &FieldsNamed,
-    tag: usize,
-    nested_message_structs: &mut Vec<TokenStream>,
-    oneof_variants: &mut Vec<TokenStream>,
-    to_proto_arms: &mut Vec<TokenStream>,
-    from_proto_arms: &mut Vec<TokenStream>,
-) {
-    let variant_ident = &variant.ident;
-    let nested_msg_name = format!("{}{}", proto_name, variant_ident);
-    let nested_msg_ident = syn::Ident::new(&nested_msg_name, variant_ident.span());
-
-    let mut proto_fields = Vec::new();
-    let mut to_proto_conversions = Vec::new();
-    let mut from_proto_conversions = Vec::new();
-    let mut skip_computations = Vec::new(); // For skip with function
-    let mut pattern_bindings = Vec::new(); // For match pattern
-
-    // Use FieldHandler for each field
-    for (idx, field) in fields_named.named.iter().enumerate() {
-        let field_ident = field.ident.as_ref().unwrap();
-        let field_num = idx + 1;
-
-        let handler = FieldHandler::new(field, field_ident, field_num, error_name, format!("{}::{}", variant_ident, field_ident));
-
-        let result = handler.generate();
-
-        // Determine pattern binding based on whether field is skipped
-        let is_skipped = result.prost_field.is_none();
-        if is_skipped {
-            // Use _ for skipped fields to avoid unused variable warnings
-            pattern_bindings.push(quote! { #field_ident: _ });
-        } else {
-            // Use field name for non-skipped fields
-            pattern_bindings.push(quote! { #field_ident });
-        }
-
-        // Add proto field (skip fields won't have this)
-        if let Some(prost_field) = result.prost_field {
-            proto_fields.push(prost_field);
-        }
-
-        // Generate to_proto conversion (skip fields won't have this)
-        if let Some(to_proto) = result.to_proto {
-            // Adjust self.field to just field (no self in enum variants)
-            let adjusted = adjust_for_enum_variant(&to_proto, field_ident);
-            to_proto_conversions.push(adjusted);
-        }
-
-        // Generate from_proto conversion
-        match result.from_proto {
-            FromProtoConversion::Normal(from_proto) => {
-                // Adjust proto.field to inner.field
-                let adjusted = adjust_from_proto_for_variant(&from_proto, field_ident);
-                from_proto_conversions.push(quote! { #field_ident: #adjusted });
-            }
-            FromProtoConversion::SkipDefault(_) => {
-                from_proto_conversions.push(quote! { #field_ident: Default::default() });
-            }
-            FromProtoConversion::SkipWithFn { computation, field_name: _ } => {
-                // For enum variants, we need to compute before the variant construction
-                // Adjust proto references to inner
-                let comp_str = computation.to_string();
-                let adjusted_comp = comp_str.replace("proto", "inner");
-                let adjusted_computation: TokenStream = adjusted_comp.parse().unwrap_or(computation);
-
-                skip_computations.push(adjusted_computation);
-                from_proto_conversions.push(quote! { #field_ident });
-            }
-        }
-    }
-
-    // Create nested message struct
-    nested_message_structs.push(quote! {
-        #[derive(::prost::Message, Clone, PartialEq)]
-        pub struct #nested_msg_ident {
-            #(#proto_fields,)*
-        }
-    });
-
-    // Add to oneof
-    oneof_variants.push(quote! {
-        #[prost(message, tag = #tag)]
-        #variant_ident(super::#nested_msg_ident)
-    });
-
-    // Generate to_proto arm
-    to_proto_arms.push(quote! {
-        #name::#variant_ident { #(#pattern_bindings),* } => {
-            #oneof_mod_name::#oneof_enum_name::#variant_ident(
-                #nested_msg_ident {
-                    #(#to_proto_conversions),*
-                }
-            )
-        }
-    });
-
-    // Generate from_proto arm
-    let from_proto_arm = if skip_computations.is_empty() {
-        quote! {
-            #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
-                #name::#variant_ident {
-                    #(#from_proto_conversions),*
-                }
-            }
-        }
-    } else {
-        quote! {
-            #oneof_mod_name::#oneof_enum_name::#variant_ident(inner) => {
-                #(#skip_computations)*
-                #name::#variant_ident {
-                    #(#from_proto_conversions),*
-                }
-            }
-        }
-    };
-
-    from_proto_arms.push(from_proto_arm);
-}
-
-/// Extract value from field assignment and adjust reference
-/// Converts "field: self.field.clone()" with target "inner" to "inner.clone()"
-/// Also adds dereference for direct casts since fields are borrowed in patterns
-fn extract_and_adjust_value(conversion: &TokenStream, field_name: &syn::Ident, target: TokenStream) -> TokenStream {
-    let conv_str = conversion.to_string();
-
-    // Find colon and extract RHS
-    if let Some(colon_pos) = conv_str.find(':') {
-        let rhs = conv_str[colon_pos + 1..].trim();
-
-        // Replace self.field_name with target
-        let field_str = field_name.to_string();
-        let target_str = target.to_string();
-        let adjusted = rhs.replace(&format!("self . {}", field_str), &target_str).replace(&format!("self.{}", field_str), &target_str);
-
-        // For direct casts in enum variants, we need to dereference
-        // Check if we have pattern like "inner as i32"
-        let cast_pattern = format!("{} as ", target_str);
-        let adjusted = if adjusted.contains(&cast_pattern) {
-            // Check it's not inside a closure
-            let target_pos = adjusted.find(&cast_pattern).unwrap();
-            let before = &adjusted[..target_pos];
-
-            let in_closure = before.contains("map (") || before.contains("map(") || before.contains("|") || before.contains("* ");
-
-            if !in_closure {
-                // Direct cast, add dereference
-                adjusted.replace(&cast_pattern, &format!("(* {}) as ", target_str))
+fn is_vec_or_array_type(ty: &syn::Type) -> bool {
+    match ty {
+        syn::Type::Array(_) => true,
+        syn::Type::Path(type_path) => {
+            if let Some(segment) = type_path.path.segments.last() {
+                segment.ident == "Vec" || segment.ident == "Option"
             } else {
-                adjusted
+                false
             }
-        } else {
-            adjusted
-        };
-
-        adjusted.parse().unwrap_or(target)
-    } else {
-        target
+        }
+        _ => false,
     }
 }
 
-/// Extract conversion value and adjust proto reference
-fn extract_conversion_value_adjusted(conversion: &TokenStream, field_name: &syn::Ident, target: TokenStream) -> TokenStream {
-    let conv_str = conversion.to_string();
+fn generate_repeated_variant_arms(
+    name: &syn::Ident,
+    variant_ident: &syn::Ident,
+    tag: u32,
+    field_ty: &syn::Type,
+    encode_arms: &mut Vec<TokenStream>,
+    decode_arms: &mut Vec<TokenStream>,
+    encoded_len_arms: &mut Vec<TokenStream>,
+) {
+    let parsed = parse_field_type(field_ty);
 
-    // Find colon and extract RHS
-    if let Some(colon_pos) = conv_str.find(':') {
-        let rhs = conv_str[colon_pos + 1..].trim();
+    // For Vec<T>
+    if parsed.is_repeated {
+        if is_bytes_vec(field_ty) {
+            // Vec<u8> is bytes
+            encode_arms.push(quote! {
+                #name::#variant_ident(inner) => {
+                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                    ::proto_rs::encoding::encode_varint(inner.len() as u64, buf);
+                    // Encode length-delimited wrapper
+                    let len = inner.len();
+                    ::proto_rs::encoding::encode_varint(len as u64, buf);
+                    buf.put_slice(inner);
+                }
+            });
 
-        // Replace proto.field_name with target
-        let field_str = field_name.to_string();
-        let adjusted = rhs
-            .replace(&format!("proto . {}", field_str), &target.to_string())
-            .replace(&format!("proto.{}", field_str), &target.to_string());
+            decode_arms.push(quote! {
+                #tag => {
+                    let outer_len = ::proto_rs::encoding::decode_varint(buf)?;
+                    if outer_len > buf.remaining() as u64 {
+                        return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                    }
 
-        adjusted.parse().unwrap_or(target)
+                    let mut temp = Vec::new();
+                    ::proto_rs::encoding::bytes::merge(wire_type, &mut temp, buf, ctx)?;
+                    *self = #name::#variant_ident(temp);
+                    Ok(())
+                }
+            });
+
+            encoded_len_arms.push(quote! {
+                #name::#variant_ident(inner) => {
+                    let len = inner.len();
+                    ::proto_rs::encoding::key_len(#tag) +
+                    ::proto_rs::encoding::encoded_len_varint(len as u64) +
+                    len
+                }
+            });
+        } else {
+            // Vec<T> where T is a primitive or message
+            let inner_ty = vec_inner_type(field_ty).unwrap();
+            let encoding_type = get_encoding_type(&parsed);
+
+            if is_complex_type(&inner_ty) {
+                // Vec<Message>
+                encode_arms.push(quote! {
+                    #name::#variant_ident(inner) => {
+                        // Encode as length-delimited list of messages
+                        let mut msg_buf = Vec::new();
+                        for item in inner {
+                            ::proto_rs::encoding::message::encode(1, item, &mut msg_buf);
+                        }
+                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                        ::proto_rs::encoding::encode_varint(msg_buf.len() as u64, buf);
+                        buf.put_slice(&msg_buf);
+                    }
+                });
+
+                decode_arms.push(quote! {
+                    #tag => {
+                        let len = ::proto_rs::encoding::decode_varint(buf)?;
+                        if len > buf.remaining() as u64 {
+                            return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                        }
+
+                        let mut temp = Vec::new();
+                        let remaining = buf.remaining();
+                        let limit = remaining - len as usize;
+
+                        while buf.remaining() > limit {
+                            let msg_len = ::proto_rs::encoding::decode_varint(buf)?;
+                            if msg_len > buf.remaining() as u64 {
+                                return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                            }
+                            let mut msg_buf = buf.copy_to_bytes(msg_len as usize);
+                            let msg = ::proto_rs::ProtoExt::decode(&mut msg_buf)?;
+                            temp.push(msg);
+                        }
+
+                        *self = #name::#variant_ident(temp);
+                        Ok(())
+                    }
+                });
+
+                encoded_len_arms.push(quote! {
+                    #name::#variant_ident(inner) => {
+                        let mut total = 0;
+                        for item in inner {
+                            total += ::proto_rs::ProtoExt::encoded_len(item);
+                        }
+                        ::proto_rs::encoding::key_len(#tag) +
+                        ::proto_rs::encoding::encoded_len_varint(total as u64) +
+                        total
+                    }
+                });
+            } else if needs_into_conversion(&inner_ty) {
+                // Vec<u16> etc - needs conversion
+                let target_type = get_proto_rust_type(&inner_ty);
+
+                encode_arms.push(quote! {
+                    #name::#variant_ident(inner) => {
+                        let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
+
+                        // Encode as packed repeated or length-delimited
+                        let mut packed_buf = Vec::new();
+                        ::proto_rs::encoding::#encoding_type::encode_repeated(1, &converted, &mut packed_buf);
+
+                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                        ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
+                        buf.put_slice(&packed_buf);
+                    }
+                });
+
+                decode_arms.push(quote! {
+                    #tag => {
+                        let len = ::proto_rs::encoding::decode_varint(buf)?;
+                        if len > buf.remaining() as u64 {
+                            return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                        }
+
+                        let mut temp_converted: Vec<#target_type> = Vec::new();
+                        let mut limited_buf = buf.take(len as usize);
+
+                        while limited_buf.has_remaining() {
+                            let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
+                            ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp_converted, &mut limited_buf, ctx)?;
+                        }
+
+                        let temp: Vec<#inner_ty> = temp_converted.iter()
+                            .map(|v| (*v).try_into())
+                            .collect::<Result<_, _>>()
+                            .map_err(|_| ::proto_rs::DecodeError::new("Type conversion error"))?;
+
+                        *self = #name::#variant_ident(temp);
+                        Ok(())
+                    }
+                });
+
+                encoded_len_arms.push(quote! {
+                    #name::#variant_ident(inner) => {
+                        let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
+                        let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, &converted);
+                        ::proto_rs::encoding::key_len(#tag) +
+                        ::proto_rs::encoding::encoded_len_varint(packed_len as u64) +
+                        packed_len
+                    }
+                });
+            } else {
+                // Vec<u32>, Vec<i32>, etc - no conversion needed
+                encode_arms.push(quote! {
+                    #name::#variant_ident(inner) => {
+                        let mut packed_buf = Vec::new();
+                        ::proto_rs::encoding::#encoding_type::encode_repeated(1, inner, &mut packed_buf);
+
+                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                        ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
+                        buf.put_slice(&packed_buf);
+                    }
+                });
+
+                decode_arms.push(quote! {
+                    #tag => {
+                        let len = ::proto_rs::encoding::decode_varint(buf)?;
+                        if len > buf.remaining() as u64 {
+                            return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                        }
+
+                        let mut temp = Vec::new();
+                        let mut limited_buf = buf.take(len as usize);
+
+                        while limited_buf.has_remaining() {
+                            let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
+                            ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp, &mut limited_buf, ctx)?;
+                        }
+
+                        *self = #name::#variant_ident(temp);
+                        Ok(())
+                    }
+                });
+
+                encoded_len_arms.push(quote! {
+                    #name::#variant_ident(inner) => {
+                        let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, inner);
+                        ::proto_rs::encoding::key_len(#tag) +
+                        ::proto_rs::encoding::encoded_len_varint(packed_len as u64) +
+                        packed_len
+                    }
+                });
+            }
+        }
     } else {
-        target
+        // Not a Vec - treat as message
+        encode_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                ::proto_rs::encoding::message::encode(#tag, inner, buf);
+            }
+        });
+
+        decode_arms.push(quote! {
+            #tag => {
+                let mut temp = ::proto_rs::ProtoExt::proto_default();
+                ::proto_rs::encoding::message::merge(wire_type, &mut temp, buf, ctx)?;
+                *self = #name::#variant_ident(temp);
+                Ok(())
+            }
+        });
+
+        encoded_len_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                ::proto_rs::encoding::message::encoded_len(#tag, inner)
+            }
+        });
     }
 }
 
-/// Adjust to_proto conversion for enum variant context
-/// Converts "field: self.field.value" to "field: field.value"
-/// Also adds dereference for direct casts since fields are borrowed in patterns
-fn adjust_for_enum_variant(conversion: &TokenStream, field_name: &syn::Ident) -> TokenStream {
-    let conv_str = conversion.to_string();
-    let field_str = field_name.to_string();
+fn generate_named_variant_arms(
+    name: &syn::Ident,
+    variant_ident: &syn::Ident,
+    tag: u32,
+    fields_named: &syn::FieldsNamed,
+    encode_arms: &mut Vec<TokenStream>,
+    decode_arms: &mut Vec<TokenStream>,
+    encoded_len_arms: &mut Vec<TokenStream>,
+) {
+    // Named fields - encode as nested message
+    let field_bindings: Vec<_> = fields_named
+        .named
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            quote! { #ident }
+        })
+        .collect();
 
-    // Replace self.field with field
-    let adjusted = conv_str.replace(&format!("self . {}", field_str), &field_str).replace(&format!("self.{}", field_str), &field_str);
+    let field_encodes: Vec<_> = fields_named
+        .named
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let ident = f.ident.as_ref().unwrap();
+            let field_tag = (i + 1) as u32;
+            quote! {
+                ::proto_rs::encoding::message::encode(#field_tag, #ident, buf);
+            }
+        })
+        .collect();
 
-    // For direct casts in enum variants, we need to dereference
-    // Pattern: "field as i32" should become "(*field) as i32"
-    // But NOT "v as i32" in closures like "map(|v| v as i32)"
-    // Check if we have a direct cast: "{field} as " where field is our field name
-    let direct_cast_pattern = format!("{} as ", field_str);
-    let adjusted = if adjusted.contains(&direct_cast_pattern) {
-        // Check it's not inside a closure (not preceded by "|v|" or similar)
-        // Simple heuristic: if "map(" appears before our field, it's in a closure
-        let field_pos = adjusted.find(&direct_cast_pattern).unwrap();
-        let before = &adjusted[..field_pos];
+    encode_arms.push(quote! {
+        #name::#variant_ident { #(#field_bindings),* } => {
+            let msg_len = 0 #(+ ::proto_rs::ProtoExt::encoded_len(#field_bindings))*;
 
-        // If there's a map/closure before our field, don't dereference
-        let in_closure = before.contains("map (") || before.contains("map(") || before.contains("|") || before.contains("* ");
-
-        if !in_closure {
-            // Direct cast, add dereference
-            adjusted.replace(&direct_cast_pattern, &format!("(* {}) as ", field_str))
-        } else {
-            adjusted
+            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+            ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
+            #(#field_encodes)*
         }
-    } else {
-        adjusted
-    };
+    });
 
-    adjusted.parse().unwrap_or_else(|_| conversion.clone())
+    let field_decodes: Vec<_> = fields_named
+        .named
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let ident = f.ident.as_ref().unwrap();
+            let field_tag = (i + 1) as u32;
+            quote! {
+                #field_tag => {
+                    ::proto_rs::encoding::message::merge(wire_type, &mut #ident, buf, ctx)?;
+                }
+            }
+        })
+        .collect();
+
+    let field_defaults: Vec<_> = fields_named
+        .named
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            let ty = &f.ty;
+            quote! { let mut #ident = <#ty as ::proto_rs::ProtoExt>::proto_default(); }
+        })
+        .collect();
+
+    decode_arms.push(quote! {
+        #tag => {
+            let len = ::proto_rs::encoding::decode_varint(buf)?;
+            let remaining = buf.remaining();
+            if len > remaining as u64 {
+                return Err(::proto_rs::DecodeError::new("buffer underflow"));
+            }
+
+            let limit = remaining - len as usize;
+            #(#field_defaults)*
+
+            while buf.remaining() > limit {
+                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
+                match field_tag {
+                    #(#field_decodes)*
+                    _ => ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx)?,
+                }
+            }
+
+            *self = #name::#variant_ident { #(#field_bindings),* };
+            Ok(())
+        }
+    });
+
+    encoded_len_arms.push(quote! {
+        #name::#variant_ident { #(#field_bindings),* } => {
+            let msg_len = 0 #(+ ::proto_rs::ProtoExt::encoded_len(#field_bindings))*;
+            ::proto_rs::encoding::key_len(#tag) +
+            ::proto_rs::encoding::encoded_len_varint(msg_len as u64) +
+            msg_len
+        }
+    });
 }
 
-/// Adjust from_proto conversion for enum variant context
-/// Extracts value expression and adjusts proto.field to inner.field
-fn adjust_from_proto_for_variant(conversion: &TokenStream, field_name: &syn::Ident) -> TokenStream {
-    let conv_str = conversion.to_string();
-    let field_str = field_name.to_string();
-
-    // The conversion comes as "field_name: <value_expression>"
-    // We need to extract just the value expression and adjust references
-
-    // Strategy: Look for the pattern at the START of the string
-    // Match "field_name :" or "field_name:" at the beginning (after trimming)
-    let trimmed = conv_str.trim();
-
-    let value_expr = if trimmed.starts_with(&format!("{} :", field_str)) {
-        // Pattern: "field_name :"
-        trimmed[field_str.len() + 2..].trim()
-    } else if trimmed.starts_with(&format!("{}:", field_str)) {
-        // Pattern: "field_name:"
-        trimmed[field_str.len() + 1..].trim()
-    } else {
-        // Fallback: try to find ": " and take everything after it
-        if let Some(colon_space_pos) = trimmed.find(": ") {
-            trimmed[colon_space_pos + 2..].trim()
-        } else if let Some(colon_pos) = trimmed.find(':') {
-            trimmed[colon_pos + 1..].trim()
-        } else {
-            trimmed
-        }
+fn get_encoding_type(parsed: &crate::utils::ParsedFieldType) -> syn::Ident {
+    let type_str = match parsed.proto_type.as_str() {
+        "uint32" => "uint32",
+        "uint64" => "uint64",
+        "int32" => "int32",
+        "int64" => "int64",
+        "float" => "float",
+        "double" => "double",
+        "bool" => "bool",
+        "string" => "string",
+        "bytes" => "bytes",
+        _ => "message",
     };
-
-    // Now replace proto references with inner references
-    let adjusted = value_expr
-        .replace(&format!("proto . {}", field_str), &format!("inner . {}", field_str))
-        .replace(&format!("proto.{}", field_str), &format!("inner.{}", field_str))
-        // Also handle generic proto references
-        .replace("proto .", "inner.");
-
-    adjusted.parse().unwrap_or_else(|e| {
-        eprintln!("Failed to parse adjusted conversion:");
-        eprintln!("  Original: {}", conv_str);
-        eprintln!("  Extracted: {}", value_expr);
-        eprintln!("  Adjusted: {}", adjusted);
-        eprintln!("  Error: {:?}", e);
-        conversion.clone()
-    })
+    syn::Ident::new(type_str, proc_macro2::Span::call_site())
 }

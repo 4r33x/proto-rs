@@ -3,9 +3,13 @@ use quote::quote;
 use syn::DeriveInput;
 use syn::Fields;
 use syn::Index;
+use syn::Type;
 
-use crate::utils::field_handling::FieldHandler;
-use crate::utils::field_handling::FromProtoConversion;
+use super::unified_field_handler::FieldAccess;
+use super::unified_field_handler::generate_field_decode;
+use super::unified_field_handler::generate_field_encode;
+use super::unified_field_handler::generate_field_encoded_len;
+use crate::utils::parse_field_config;
 
 pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     match &data.fields {
@@ -15,11 +19,57 @@ pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream 
     }
 }
 
+fn strip_proto_attrs(attrs: &[syn::Attribute]) -> Vec<syn::Attribute> {
+    attrs.iter().filter(|a| !a.path().is_ident("proto_message") && !a.path().is_ident("proto")).cloned().collect()
+}
+
+/// Generate smart default value for a field type
+fn generate_field_default(field_ty: &Type) -> TokenStream {
+    if let Type::Path(type_path) = field_ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            let ident = &segment.ident;
+
+            // Handle Option<T> - always None
+            if ident == "Option" {
+                return quote! { None };
+            }
+
+            // Handle Vec<T> - always Vec::new()
+            if ident == "Vec" {
+                return quote! { Vec::new() };
+            }
+        }
+    }
+
+    // Default case - use ProtoExt::proto_default()
+    quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
+}
+
+/// Generate smart clear for a field
+fn generate_field_clear(field_ident: &dyn quote::ToTokens, field_ty: &Type) -> TokenStream {
+    if let Type::Path(type_path) = field_ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            let ident = &segment.ident;
+
+            // Handle Option<T>
+            if ident == "Option" {
+                return quote! { self.#field_ident = None; };
+            }
+
+            // Handle Vec<T>
+            if ident == "Vec" {
+                return quote! { self.#field_ident.clear(); };
+            }
+        }
+    }
+
+    // Default case
+    quote! { self.#field_ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); }
+}
+
 fn handle_unit_struct(input: DeriveInput) -> TokenStream {
     let name = &input.ident;
-    let proto_name = syn::Ident::new(&format!("{}Proto", name), name.span());
-    let error_name = syn::Ident::new(&format!("{}ConversionError", name), name.span());
-    let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
+    let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
     let generics = &input.generics;
 
@@ -27,339 +77,227 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
         #(#attrs)*
         #vis struct #name #generics;
 
-        #[derive(Debug)]
-        #vis enum #error_name {
-            MissingField { field: String },
-            FieldConversion { field: String, source: Box<dyn std::error::Error> },
-        }
-
-        impl std::fmt::Display for #error_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::MissingField { field } => write!(f, "Missing required field: {}", field),
-                    Self::FieldConversion { field, source } =>
-                        write!(f, "Error converting field {}: {}", field, source),
-                }
-            }
-        }
-        impl std::error::Error for #error_name {}
-
-        #[derive(::prost::Message, Clone, PartialEq)]
-        #vis struct #proto_name #generics {}
-
-        impl HasProto for #name #generics {
-            type Proto = #proto_name #generics;
-
-            fn to_proto(&self) -> Self::Proto {
-                #proto_name {}
+        impl #generics ::proto_rs::ProtoExt for #name #generics {
+            #[inline]
+            fn proto_default() -> Self {
+                Self
             }
 
-            fn from_proto(_proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>> {
-                Ok(Self)
-            }
-        }
+            fn encode_raw(&self, _buf: &mut impl ::bytes::BufMut) {}
 
-        impl From<#name #generics> for #proto_name #generics {
-            fn from(value: #name #generics) -> Self {
-                value.to_proto()
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
             }
-        }
 
-        impl TryFrom<#proto_name #generics> for #name #generics {
-            type Error = #error_name;
-
-            fn try_from(proto: #proto_name #generics) -> Result<Self, Self::Error> {
-                Self::from_proto(proto).map_err(|e| #error_name::FieldConversion {
-                    field: "unknown".to_string(),
-                    source: e,
-                })
+            fn encoded_len(&self) -> usize {
+                0
             }
+
+            fn clear(&mut self) {}
         }
     }
 }
 
 fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     let name = &input.ident;
-    let proto_name = syn::Ident::new(&format!("{}Proto", name), name.span());
-    let error_name = syn::Ident::new(&format!("{}ConversionError", name), name.span());
+    let attrs = strip_proto_attrs(&input.attrs);
+    let vis = &input.vis;
+    let generics = &input.generics;
 
     let Fields::Unnamed(fields) = &data.fields else {
         panic!("Expected unnamed fields");
     };
 
-    let mut proto_fields = Vec::new();
-    let mut to_proto_conversions = Vec::new();
-    let mut from_proto_conversions = Vec::new();
+    let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
 
-    // Use FieldHandler for each field
+    // Generate smart defaults
+    let default_values: Vec<_> = field_types.iter().map(|ty| generate_field_default(ty)).collect();
+
+    let mut encode_fields = Vec::new();
+    let mut decode_fields = Vec::new();
+    let mut encoded_len_fields = Vec::new();
+    let mut clear_fields = Vec::new();
+
     for (idx, field) in fields.unnamed.iter().enumerate() {
-        let field_num = idx + 1;
-        let field_name = syn::Ident::new(&format!("field_{}", idx), name.span());
+        let field_config = parse_field_config(field);
+        let field_num = field_config.custom_tag.unwrap_or(idx + 1);
         let tuple_idx = Index::from(idx);
+        let field_ty = &field.ty;
 
-        // Use FieldHandler to generate proper conversions
-        let handler = FieldHandler::new(field, &field_name, field_num, &error_name, format!("field_{}", idx));
+        if !field_config.skip {
+            let tag_u32 = field_num as u32;
+            let field_access = FieldAccess::Indexed(&tuple_idx);
 
-        let result = handler.generate();
+            encode_fields.push(generate_field_encode(field_access.clone(), tag_u32, field_ty, &field_config));
 
-        // Add proto field
-        if let Some(prost_field) = result.prost_field {
-            proto_fields.push(prost_field);
-        }
-
-        // Extract to_proto value expression
-        if let Some(to_proto) = result.to_proto {
-            // The to_proto is like: "field_name: expression"
-            // We need to replace self.field_name with self.N
-            let to_proto_value = extract_field_value(&to_proto, &field_name, &tuple_idx);
-            to_proto_conversions.push(quote! {
-                #field_name: #to_proto_value
+            let decode_body = generate_field_decode(field_access.clone(), tag_u32, field_ty, &field_config);
+            decode_fields.push(quote! {
+                #tag_u32 => {
+                    #decode_body
+                    Ok(())
+                }
             });
-        }
 
-        // Extract from_proto value expression
-        match result.from_proto {
-            FromProtoConversion::Normal(from_proto) => {
-                // Extract just the value part (RHS of field: value)
-                let from_proto_value = extract_conversion_value(&from_proto);
-                from_proto_conversions.push(from_proto_value);
-            }
-            _ => panic!("Tuple structs don't support skip attributes"),
+            encoded_len_fields.push(generate_field_encoded_len(field_access, tag_u32, field_ty, &field_config));
+
+            clear_fields.push(generate_field_clear(&tuple_idx, field_ty));
         }
     }
-
-    let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
-    let vis = &input.vis;
-    let generics = &input.generics;
-    let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
 
     quote! {
         #(#attrs)*
         #vis struct #name #generics(#(pub #field_types),*);
 
-        #[derive(Debug)]
-        #vis enum #error_name {
-            MissingField { field: String },
-            FieldConversion { field: String, source: Box<dyn std::error::Error> },
-        }
-
-        impl std::fmt::Display for #error_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::MissingField { field } => write!(f, "Missing required field: {}", field),
-                    Self::FieldConversion { field, source } =>
-                        write!(f, "Error converting field {}: {}", field, source),
-                }
+        impl #generics ::proto_rs::ProtoExt for #name #generics {
+            #[inline]
+            fn proto_default() -> Self {
+                Self(#(#default_values),*)
             }
-        }
-        impl std::error::Error for #error_name {}
 
-        #[derive(::prost::Message, Clone, PartialEq)]
-        #vis struct #proto_name #generics {
-            #(#proto_fields,)*
-        }
+            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+                #(#encode_fields)*
+            }
 
-        impl HasProto for #name #generics {
-            type Proto = #proto_name #generics;
-
-            fn to_proto(&self) -> Self::Proto {
-                #proto_name {
-                    #(#to_proto_conversions),*
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                match tag {
+                    #(#decode_fields,)*
+                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
             }
 
-            fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>> {
-                Ok(Self(
-                    #(#from_proto_conversions),*
-                ))
+            fn encoded_len(&self) -> usize {
+                0 #(+ #encoded_len_fields)*
             }
-        }
 
-        impl From<#name #generics> for #proto_name #generics {
-            fn from(value: #name #generics) -> Self {
-                value.to_proto()
-            }
-        }
-
-        impl TryFrom<#proto_name #generics> for #name #generics {
-            type Error = #error_name;
-
-            fn try_from(proto: #proto_name #generics) -> Result<Self, Self::Error> {
-                Self::from_proto(proto).map_err(|e| #error_name::FieldConversion {
-                    field: "unknown".to_string(),
-                    source: e,
-                })
+            fn clear(&mut self) {
+                #(#clear_fields)*
             }
         }
     }
 }
 
-/// Extract the value expression from a to_proto field assignment
-/// Converts "field_name: self.field_name.clone()" to "self.N.clone()"
-fn extract_field_value(to_proto: &TokenStream, field_name: &syn::Ident, tuple_idx: &Index) -> TokenStream {
-    // Parse the TokenStream to find the value expression
-    let tokens_str = to_proto.to_string();
-
-    // Find the colon and extract everything after it
-    if let Some(colon_pos) = tokens_str.find(':') {
-        let value_part = tokens_str[colon_pos + 1..].trim();
-
-        // Replace field_name references with tuple index
-        let field_name_str = field_name.to_string();
-        let tuple_idx_str = tuple_idx.index.to_string(); // Extract the u32 from Index
-        let replaced = value_part
-            .replace(&format!("self . {}", field_name_str), &format!("self . {}", tuple_idx_str))
-            .replace(&format!("self.{}", field_name_str), &format!("self.{}", tuple_idx_str));
-
-        replaced.parse().unwrap()
-    } else {
-        to_proto.clone()
-    }
-}
-
-/// Extract conversion value from from_proto assignment
-/// Converts "field_name: proto.field_name" to "proto.field_name"
-fn extract_conversion_value(from_proto: &TokenStream) -> TokenStream {
-    let tokens_str = from_proto.to_string();
-
-    // Find the colon and extract everything after it
-    if let Some(colon_pos) = tokens_str.find(':') {
-        let value_part = tokens_str[colon_pos + 1..].trim();
-        value_part.parse().unwrap()
-    } else {
-        from_proto.clone()
-    }
-}
-
-pub fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     let name = &input.ident;
-    let proto_name = syn::Ident::new(&format!("{}Proto", name), name.span());
-    let error_name = syn::Ident::new(&format!("{}ConversionError", name), name.span());
-
-    let mut proto_fields = Vec::new();
-    let mut to_proto_fields = Vec::new();
-    let mut from_proto_fields = Vec::new();
-    let mut skip_computations = Vec::new();
-
-    let mut field_num = 0;
-    if let Fields::Named(fields) = &data.fields {
-        for field in &fields.named {
-            let ident = field.ident.as_ref().unwrap();
-
-            let handler = FieldHandler::new(field, ident, field_num + 1, &error_name, ident.to_string());
-
-            let result = handler.generate();
-
-            if result.prost_field.is_some() {
-                field_num += 1;
-            }
-
-            if let Some(prost_field) = result.prost_field {
-                proto_fields.push(prost_field);
-            }
-
-            if let Some(to_proto) = result.to_proto {
-                to_proto_fields.push(to_proto);
-            }
-
-            match result.from_proto {
-                FromProtoConversion::Normal(from_proto) => {
-                    from_proto_fields.push(from_proto);
-                }
-                FromProtoConversion::SkipDefault(_field_name) => {
-                    from_proto_fields.push(quote! { #ident: Default::default() });
-                }
-                FromProtoConversion::SkipWithFn { computation, field_name: _field_name } => {
-                    skip_computations.push(computation);
-                    from_proto_fields.push(quote! { #ident });
-                }
-            }
-        }
-    }
-
-    let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
+    let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
     let generics = &input.generics;
+
+    let Fields::Named(fields) = &data.fields else {
+        panic!("Expected named fields");
+    };
 
     let mut fields_named_idents = Vec::new();
     let mut fields_named_attrs = Vec::new();
     let mut fields_named_types = Vec::new();
 
-    if let Fields::Named(fields) = &data.fields {
-        for field in &fields.named {
-            let ident = field.ident.as_ref().unwrap();
-            let ty = &field.ty;
-            let field_attrs: Vec<_> = field.attrs.iter().filter(|a| !a.path().is_ident("proto")).collect();
+    for field in &fields.named {
+        let ident = field.ident.as_ref().unwrap();
+        let ty = &field.ty;
+        let field_attrs = strip_proto_attrs(&field.attrs);
 
-            fields_named_idents.push(ident);
-            fields_named_attrs.push(field_attrs);
-            fields_named_types.push(ty);
+        fields_named_idents.push(ident);
+        fields_named_attrs.push(field_attrs);
+        fields_named_types.push(ty);
+    }
+
+    // Generate smart defaults
+    let default_field_values: Vec<_> = fields_named_idents
+        .iter()
+        .zip(fields_named_types.iter())
+        .map(|(ident, ty)| {
+            let default_value = generate_field_default(ty);
+            quote! { #ident: #default_value }
+        })
+        .collect();
+
+    let mut encode_fields = Vec::new();
+    let mut decode_fields = Vec::new();
+    let mut encoded_len_fields = Vec::new();
+    let mut clear_fields = Vec::new();
+    let mut field_num = 0usize;
+
+    for field in &fields.named {
+        let ident = field.ident.as_ref().unwrap();
+        let field_config = parse_field_config(field);
+
+        let tag = field_config.custom_tag.unwrap_or_else(|| {
+            field_num += 1;
+            field_num
+        });
+        let tag_u32 = tag as u32;
+
+        if !field_config.skip {
+            let field_ty = &field.ty;
+            let field_access = FieldAccess::Named(ident);
+
+            encode_fields.push(generate_field_encode(field_access.clone(), tag_u32, field_ty, &field_config));
+
+            let decode_body = generate_field_decode(field_access.clone(), tag_u32, field_ty, &field_config);
+            decode_fields.push(quote! {
+                #tag_u32 => {
+                    #decode_body
+                    Ok(())
+                }
+            });
+
+            encoded_len_fields.push(generate_field_encoded_len(field_access, tag_u32, field_ty, &field_config));
+
+            clear_fields.push(generate_field_clear(ident, field_ty));
         }
     }
 
     quote! {
-    #(#attrs)*
-    #vis struct #name #generics {
-        #(
-            #(#fields_named_attrs)*
-            pub #fields_named_idents: #fields_named_types,
-        )*
-    }
-
-        #[derive(Debug)]
-        #vis enum #error_name {
-            MissingField { field: String },
-            FieldConversion { field: String, source: Box<dyn std::error::Error> },
+        #(#attrs)*
+        #vis struct #name #generics {
+            #(
+                #(#fields_named_attrs)*
+                pub #fields_named_idents: #fields_named_types,
+            )*
         }
 
-        impl std::fmt::Display for #error_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::MissingField { field } => write!(f, "Missing required field: {}", field),
-                    Self::FieldConversion { field, source } =>
-                        write!(f, "Error converting field {}: {}", field, source),
-                }
-            }
-        }
-        impl std::error::Error for #error_name {}
-
-        #[derive(::prost::Message, Clone, PartialEq)]
-        #vis struct #proto_name #generics {
-            #(#proto_fields,)*
-        }
-
-        impl HasProto for #name #generics {
-            type Proto = #proto_name #generics;
-
-            fn to_proto(&self) -> Self::Proto {
-                #proto_name {
-                    #(#to_proto_fields),*
+        impl #generics ::proto_rs::ProtoExt for #name #generics {
+            #[inline]
+            fn proto_default() -> Self {
+                Self {
+                    #(#default_field_values),*
                 }
             }
 
-            fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>> {
-                #(#skip_computations)*
-
-                Ok(Self {
-                    #(#from_proto_fields),*
-                })
+            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+                #(#encode_fields)*
             }
-        }
 
-        impl From<#name #generics> for #proto_name #generics {
-            fn from(value: #name #generics) -> Self {
-                value.to_proto()
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                match tag {
+                    #(#decode_fields,)*
+                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                }
             }
-        }
 
-        impl TryFrom<#proto_name #generics> for #name #generics {
-            type Error = #error_name;
+            fn encoded_len(&self) -> usize {
+                0 #(+ #encoded_len_fields)*
+            }
 
-            fn try_from(proto: #proto_name #generics) -> Result<Self, Self::Error> {
-                Self::from_proto(proto).map_err(|e| #error_name::FieldConversion {
-                    field: "unknown".to_string(),
-                    source: e,
-                })
+            fn clear(&mut self) {
+                #(#clear_fields)*
             }
         }
     }

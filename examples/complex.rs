@@ -1,6 +1,5 @@
 use std::pin::Pin;
 
-use proto_rs::HasProto;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -9,8 +8,8 @@ use tonic::Request;
 use tonic::Response;
 use tonic::Status;
 
-#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
-#[derive(Debug, Default, Clone, PartialEq)]
+#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum ServiceStatus {
     Pending,
     #[default]
@@ -19,13 +18,13 @@ pub enum ServiceStatus {
     Completed,
 }
 
-#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Id {
     pub id: u64,
 }
 
-#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing {
     id: Id,
@@ -33,7 +32,7 @@ pub struct RizzPing {
     status: ServiceStatus,
 }
 
-#[proto_message(proto_path ="protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
     id: Id,
@@ -41,11 +40,11 @@ pub struct GoonPong {
     status: ServiceStatus,
 }
 
-#[proto_message(proto_path ="protos/gen_complex_proto/rizz_types.proto")]
+#[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct FooResponse;
 
-#[proto_message(proto_path ="protos/gen_complex_proto/rizz_types.proto")]
+#[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarSub;
 

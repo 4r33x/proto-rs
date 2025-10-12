@@ -2,29 +2,6 @@
 syntax = "proto3";
 package show;
 
-import "google.protobuf.proto";
-
-
-message EnumArrayMessageAttributeFailTest2Proto {
-  oneof value {
-    Timestamp fail = 1;
-  }
-}
-
-
-message EnumArrayProstEnumAttributeFailTest2Proto {
-  oneof value {
-    TestEnum fail = 1;
-  }
-}
-
-
-message EnumArrayRustEnumAttributeFailTest2Proto {
-  oneof value {
-    Status fail = 1;
-  }
-}
-
 
 message PaymentMethodProto {
   oneof value {
@@ -57,19 +34,6 @@ message Address {
   string country = 3;
 }
 
-message ArrayTest3CustomProtoTest {}
-
-message ArrayTest3CustomProtoTest2 {
-  repeated ArrayTestMessageU16 test = 1;
-}
-message ArrayTest3CustomProto {
-  oneof value {
-    ArrayTest3CustomProtoTest test = 1;
-    ArrayTestMessageU16 test1 = 2;
-    ArrayTest3CustomProtoTest2 test2 = 3;
-  }
-}
-
 message ArrayTestMessageCustom {
   repeated ArrayTestMessageU16 amount = 1;
 }
@@ -84,13 +48,7 @@ message Attr {
   Status status = 3;
   optional Status status_opt = 4;
   repeated Status status_vec = 5;
-  google.protobuf.Timestamp timestamp = 6;
-  repeated google.protobuf.Timestamp timestamp_vec = 7;
-  optional google.protobuf.Timestamp timestamp_opt = 8;
-  google.protobuf.TestEnum test_enum = 9;
-  optional google.protobuf.TestEnum test_enum_opt = 10;
-  repeated google.protobuf.TestEnum test_enum_vec = 11;
-  int64 updated_at = 12;
+  int64 updated_at = 6;
 }
 
 message ComplexConversions {
@@ -105,43 +63,12 @@ message Empty {
 
 }
 
-message EnumArrayMessageAttributeFailTestProtoFail {
-  repeated Timestamp timestamp_array = 1;
-}
-message EnumArrayMessageAttributeFailTestProto {
-  oneof value {
-    EnumArrayMessageAttributeFailTestProtoFail fail = 1;
-  }
-}
-
-message EnumArrayProstEnumAttributeFailTestProtoFail {
-  repeated TestEnum timestamp_array = 1;
-}
-message EnumArrayProstEnumAttributeFailTestProto {
-  oneof value {
-    EnumArrayProstEnumAttributeFailTestProtoFail fail = 1;
-  }
-}
-
 message EnumArrayRustEnumAttributeFailTestProtoFail {
   repeated Status timestamp_array = 1;
 }
 message EnumArrayRustEnumAttributeFailTestProto {
   oneof value {
     EnumArrayRustEnumAttributeFailTestProtoFail fail = 1;
-  }
-}
-
-message EnumFailTestProtoOption {
-  optional uint64 id = 1;
-  optional Address address = 2;
-  repeated Timestamp timestamp_vec = 3;
-  optional Timestamp timestamp_opt = 4;
-  Timestamp timestamp = 5;
-}
-message EnumFailTestProto {
-  oneof value {
-    EnumFailTestProtoOption option = 1;
   }
 }
 
@@ -177,17 +104,6 @@ message MixedAnnotations {
   uint64 id = 1;
   int64 created_at = 2;
   Address address = 3;
-}
-
-message MyMessage {
-  uint64 id = 1;
-  google.protobuf.Timestamp timestamp = 2;
-  repeated Timestamp timestamp_vec = 3;
-  optional Timestamp timestamp_opt = 4;
-  string name = 5;
-  TestEnum test_enum = 6;
-  optional TestEnum test_enum_opt = 7;
-  repeated TestEnum test_enum_vec = 8;
 }
 
 message NumericTypes {
@@ -336,12 +252,6 @@ message VecTestEnumCustomProtoTest2 {
   Status test3 = 3;
 }
 
-message VecTestEnumCustomProtoTest4 {
-  repeated TestEnum test1 = 1;
-  optional TestEnum test2 = 2;
-  TestEnum test3 = 3;
-}
-
 message VecTestEnumCustomProtoTest10 {
   repeated User test = 1;
   optional User test1 = 2;
@@ -354,13 +264,10 @@ message VecTestEnumCustomProto {
     Status test1 = 3;
     VecTestEnumCustomProtoTest2 test2 = 4;
     Status test3 = 5;
-    VecTestEnumCustomProtoTest4 test4 = 6;
-    TestEnum test5 = 7;
-    TestEnum test6 = 8;
-    User test7 = 9;
-    User test8 = 10;
-    User test9 = 11;
-    VecTestEnumCustomProtoTest10 test10 = 12;
+    User test7 = 6;
+    User test8 = 7;
+    User test9 = 8;
+    VecTestEnumCustomProtoTest10 test10 = 9;
   }
 }
 
@@ -445,12 +352,6 @@ message VeryComplexProtoAttr {
   Status status = 3;
   optional Status status_opt = 4;
   repeated Status status_vec = 5;
-  google.protobuf.Timestamp timestamp = 6;
-  repeated google.protobuf.Timestamp timestamp_vec = 7;
-  optional google.protobuf.Timestamp timestamp_opt = 8;
-  google.protobuf.TestEnum test_enum = 9;
-  optional google.protobuf.TestEnum test_enum_opt = 10;
-  repeated google.protobuf.TestEnum test_enum_vec = 11;
 }
 message VeryComplexProto {
   oneof value {

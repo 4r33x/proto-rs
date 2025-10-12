@@ -11,8 +11,10 @@ use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
 
 mod complex_enum_handler;
+mod encoding;
 mod enum_handler;
 mod struct_handler;
+mod unified_field_handler;
 
 pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);

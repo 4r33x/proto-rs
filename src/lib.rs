@@ -3,16 +3,36 @@ pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
 pub use prosto_derive::proto_rpc;
 
-mod types;
-pub use types::*;
+#[cfg(not(feature = "no-recursion-limit"))]
+const RECURSION_LIMIT: u32 = 100;
 
-pub trait HasProto {
-    type Proto: prost::Message;
-    fn to_proto(&self) -> Self::Proto;
-    fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        Self: Sized;
-}
+mod arrays;
+mod custom_types;
+
+pub use custom_types::*;
+
+#[doc(hidden)]
+pub extern crate alloc;
+
+// Re-export the bytes crate for use within derived code.
+pub use bytes;
+
+mod error;
+mod message;
+mod name;
+mod types;
+
+#[doc(hidden)]
+pub mod encoding;
+
+pub use crate::encoding::length_delimiter::decode_length_delimiter;
+pub use crate::encoding::length_delimiter::encode_length_delimiter;
+pub use crate::encoding::length_delimiter::length_delimiter_len;
+pub use crate::error::DecodeError;
+pub use crate::error::EncodeError;
+pub use crate::error::UnknownEnumValue;
+pub use crate::message::ProtoExt;
+pub use crate::name::Name;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled
