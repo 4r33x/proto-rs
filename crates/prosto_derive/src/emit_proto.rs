@@ -38,7 +38,7 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
 }
 
 pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
-    let proto_name = format!("{}Proto", name);
+    let proto_name = name.to_string();
 
     let mut nested_messages = Vec::new();
     let mut oneof_fields = Vec::new();
