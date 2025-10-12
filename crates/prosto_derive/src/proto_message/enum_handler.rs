@@ -92,6 +92,8 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
             }
         }
 
+        impl #generics ::proto_rs::MessageField for #name #generics {}
+
         impl #generics TryFrom<i32> for #name #generics {
             type Error = ::proto_rs::DecodeError;
 

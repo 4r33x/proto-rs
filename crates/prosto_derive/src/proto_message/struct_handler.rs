@@ -101,6 +101,8 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
 
             fn clear(&mut self) {}
         }
+
+        impl #generics ::proto_rs::MessageField for #name #generics {}
     }
 }
 
@@ -186,6 +188,8 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 #(#clear_fields)*
             }
         }
+
+        impl #generics ::proto_rs::MessageField for #name #generics {}
     }
 }
 
@@ -302,5 +306,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 #(#clear_fields)*
             }
         }
+
+        impl #generics ::proto_rs::MessageField for #name #generics {}
     }
 }

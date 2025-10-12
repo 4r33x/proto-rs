@@ -145,6 +145,35 @@ impl Name for u64 {
     }
 }
 
+impl ProtoExt for Vec<u64> {
+    #[inline]
+    fn proto_default() -> Self {
+        Vec::new()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        if !self.is_empty() {
+            uint64::encode_repeated(1, self, buf);
+        }
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            uint64::merge_repeated(wire_type, self, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        if self.is_empty() { 0 } else { uint64::encoded_len_repeated(1, self) }
+    }
+
+    fn clear(&mut self) {
+        self.clear();
+    }
+}
+
 /// `google.protobuf.Int32Value`
 impl ProtoExt for i32 {
     #[inline]
