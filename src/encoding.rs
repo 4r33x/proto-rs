@@ -721,7 +721,9 @@ pub mod message {
         merge_loop(msg, buf, ctx.enter_recursion(), |msg: &mut M, buf: &mut B, ctx| {
             let (tag, wire_type) = decode_key(buf)?;
             msg.merge_field(tag, wire_type, buf, ctx)
-        })
+        })?;
+        msg.post_decode();
+        Ok(())
     }
 
     pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
@@ -787,6 +789,7 @@ pub mod group {
                 if field_tag != tag {
                     return Err(DecodeError::new("unexpected end group tag"));
                 }
+                msg.post_decode();
                 return Ok(());
             }
 

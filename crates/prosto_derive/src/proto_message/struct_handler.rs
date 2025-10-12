@@ -37,12 +37,7 @@ fn generate_field_default(field: &syn::Field) -> TokenStream {
     }
 
     let cfg = parse_field_config(field);
-    if cfg.into_type.is_some()
-        || cfg.from_type.is_some()
-        || cfg.into_fn.is_some()
-        || cfg.from_fn.is_some()
-        || cfg.skip
-    {
+    if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
         quote! { ::core::default::Default::default() }
     } else {
         quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
@@ -63,12 +58,7 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     }
 
     let cfg = parse_field_config(field);
-    if cfg.into_type.is_some()
-        || cfg.from_type.is_some()
-        || cfg.into_fn.is_some()
-        || cfg.from_fn.is_some()
-        || cfg.skip
-    {
+    if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
         quote! { #access_tokens = ::core::default::Default::default(); }
     } else {
         quote! { #access_tokens = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); }
@@ -127,11 +117,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
 
     // Generate smart defaults
-    let default_values: Vec<_> = fields
-        .unnamed
-        .iter()
-        .map(generate_field_default)
-        .collect();
+    let default_values: Vec<_> = fields.unnamed.iter().map(generate_field_default).collect();
 
     let mut encode_fields = Vec::new();
     let mut decode_fields = Vec::new();
@@ -161,7 +147,6 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
-                    __handled = true;
                     #decode_body
                     Ok(())
                 }
@@ -172,6 +157,16 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
 
         clear_fields.push(generate_field_clear(field, &field_access));
     }
+
+    let post_decode_impl = if post_decode_hooks.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn post_decode(&mut self) {
+                #(#post_decode_hooks)*
+            }
+        }
+    };
 
     quote! {
         #(#attrs)*
@@ -195,15 +190,10 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 use ::bytes::Buf;
-                let mut __handled = false;
-                let __result = match tag {
+                match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                };
-                if __handled {
-                    #(#post_decode_hooks)*
                 }
-                __result
             }
 
             fn encoded_len(&self) -> usize {
@@ -213,6 +203,8 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             fn clear(&mut self) {
                 #(#clear_fields)*
             }
+
+            #post_decode_impl
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
@@ -288,7 +280,6 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
-                    __handled = true;
                     #decode_body
                     Ok(())
                 }
@@ -299,6 +290,16 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
 
         clear_fields.push(generate_field_clear(field, &field_access));
     }
+
+    let post_decode_impl = if post_decode_hooks.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn post_decode(&mut self) {
+                #(#post_decode_hooks)*
+            }
+        }
+    };
 
     quote! {
         #(#attrs)*
@@ -329,15 +330,10 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 use ::bytes::Buf;
-                let mut __handled = false;
-                let __result = match tag {
+                match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                };
-                if __handled {
-                    #(#post_decode_hooks)*
                 }
-                __result
             }
 
             fn encoded_len(&self) -> usize {
@@ -347,6 +343,8 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             fn clear(&mut self) {
                 #(#clear_fields)*
             }
+
+            #post_decode_impl
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}

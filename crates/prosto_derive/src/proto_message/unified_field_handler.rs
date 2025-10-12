@@ -104,11 +104,7 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
         return quote! { /* skipped during decode */ };
     }
 
-    if let Some(from_ty) = cfg
-        .from_type
-        .as_ref()
-        .or(cfg.into_type.as_ref())
-    {
+    if let Some(from_ty) = cfg.from_type.as_ref().or(cfg.into_type.as_ref()) {
         let from_ty: Type = syn::parse_str(from_ty).expect("invalid from type");
         let conv_fn = cfg.from_fn.as_deref().map(|f| format_ident!("{}", f));
         let field_ty = ty.clone();
