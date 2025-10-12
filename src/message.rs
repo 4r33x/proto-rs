@@ -169,6 +169,25 @@ pub trait ProtoExt {
 /// implementations for collections of nested messages.
 pub trait MessageField: ProtoExt {}
 
+/// Marker trait for enums encoded as plain `int32` values on the wire.
+///
+/// Derive macros mark unit enums with this trait so other generated code can
+/// reliably treat them as scalar fields. Manual implementations can opt in to
+/// the same behaviour by providing the conversions required here alongside the
+/// appropriate [`ProtoExt`], [`SingularField`], and [`RepeatedField`]
+/// implementations.
+pub trait ProtoEnum: Copy + Sized {
+    /// Default value used when decoding absent fields.
+    const DEFAULT_VALUE: Self;
+
+    /// Convert a raw `i32` value into the enum, returning a [`DecodeError`]
+    /// when the value is not recognised.
+    fn from_i32(value: i32) -> Result<Self, DecodeError>;
+
+    /// Convert the enum into its raw `i32` representation.
+    fn to_i32(self) -> i32;
+}
+
 /// Trait describing how to encode, decode, and size a single field value.
 ///
 /// Implementations exist for all scalar protobuf types, as well as the message

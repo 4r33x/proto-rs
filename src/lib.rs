@@ -32,7 +32,7 @@ pub use crate::encoding::length_delimiter::length_delimiter_len;
 pub use crate::error::DecodeError;
 pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
-pub use crate::message::{MessageField, ProtoExt, RepeatedField, SingularField};
+pub use crate::message::{MessageField, ProtoEnum, ProtoExt, RepeatedField, SingularField};
 pub use crate::name::Name;
 pub use crate::tonic::ProtoCodec;
 

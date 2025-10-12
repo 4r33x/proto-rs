@@ -81,13 +81,13 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
                 Self
             }
 
-            fn encode_raw(&self, _buf: &mut impl ::bytes::BufMut) {}
+            fn encode_raw(&self, _buf: &mut impl ::proto_rs::bytes::BufMut) {}
 
             fn merge_field(
                 &mut self,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
@@ -142,9 +142,10 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         } else {
             let tag_u32 = field_num as u32;
 
-            encode_fields.push(generate_field_encode(field, field_access.clone(), tag_u32));
+            let access_expr = field_access.self_tokens();
+            encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
 
-            let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
+            let decode_body = generate_field_decode(field, access_expr.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
                     #decode_body
@@ -152,7 +153,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field, field_access.clone(), tag_u32));
+            encoded_len_fields.push(generate_field_encoded_len(field, access_expr, tag_u32));
         }
 
         clear_fields.push(generate_field_clear(field, &field_access));
@@ -178,7 +179,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 Self(#(#default_values),*)
             }
 
-            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 #(#encode_fields)*
             }
 
@@ -186,10 +187,10 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 &mut self,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                use ::bytes::Buf;
+                use ::proto_rs::bytes::Buf;
                 match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
@@ -275,9 +276,10 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         let tag_u32 = tag as u32;
 
         if !field_config.skip {
-            encode_fields.push(generate_field_encode(field, field_access.clone(), tag_u32));
+            let access_expr = field_access.self_tokens();
+            encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
 
-            let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
+            let decode_body = generate_field_decode(field, access_expr.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
                     #decode_body
@@ -285,7 +287,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field, field_access.clone(), tag_u32));
+            encoded_len_fields.push(generate_field_encoded_len(field, access_expr, tag_u32));
         }
 
         clear_fields.push(generate_field_clear(field, &field_access));
@@ -318,7 +320,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             }
 
-            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 #(#encode_fields)*
             }
 
@@ -326,10 +328,10 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 &mut self,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                use ::bytes::Buf;
+                use ::proto_rs::bytes::Buf;
                 match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),

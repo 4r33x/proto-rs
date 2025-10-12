@@ -1,18 +1,16 @@
 //! Handler for complex enums (with associated data) with ProtoExt support
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::DataEnum;
 use syn::DeriveInput;
 use syn::Fields;
 
-use crate::utils::get_proto_rust_type;
-use crate::utils::is_bytes_array;
-use crate::utils::is_bytes_vec;
-use crate::utils::is_complex_type;
-use crate::utils::needs_into_conversion;
-use crate::utils::parse_field_type;
-use crate::utils::vec_inner_type;
+use crate::utils::parse_field_config;
+
+use super::unified_field_handler::generate_field_decode;
+use super::unified_field_handler::generate_field_encode;
+use super::unified_field_handler::generate_field_encoded_len;
 
 pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
@@ -96,7 +94,7 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 #default_value
             }
 
-            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 match self {
                     #(#encode_arms)*
                 }
@@ -106,10 +104,10 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 &mut self,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                use ::bytes::Buf;
+                use ::proto_rs::bytes::Buf;
                 match tag {
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
@@ -136,14 +134,12 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream
     let mut decode_arms = Vec::new();
     let mut encoded_len_arms = Vec::new();
 
-    // Process each variant
     for (idx, variant) in data.variants.iter().enumerate() {
         let tag = (idx + 1) as u32;
         let variant_ident = &variant.ident;
 
         match &variant.fields {
             Fields::Unit => {
-                // Unit variant - encode as empty message
                 encode_arms.push(quote! {
                     #name::#variant_ident => {
                         ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
@@ -168,638 +164,254 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream
                     }
                 });
             }
-            Fields::Unnamed(fields_unnamed) if fields_unnamed.unnamed.len() == 1 => {
-                let field = fields_unnamed.unnamed.first().unwrap();
-                let field_ty = &field.ty;
-
-                // Check if this is a Vec, Option, or Array that needs special handling
-                if is_vec_or_array_type(field_ty) {
-                    generate_repeated_variant_arms(name, variant_ident, tag, field_ty, &mut encode_arms, &mut decode_arms, &mut encoded_len_arms);
-                } else {
-                    // Regular message type
-                    encode_arms.push(quote! {
-                        #name::#variant_ident(inner) => {
-                            ::proto_rs::encoding::message::encode(#tag, inner, buf);
-                        }
-                    });
-
-                    decode_arms.push(quote! {
-                        #tag => {
-                            let mut temp = ::proto_rs::ProtoExt::proto_default();
-                            ::proto_rs::encoding::message::merge(wire_type, &mut temp, buf, ctx)?;
-                            *self = #name::#variant_ident(temp);
-                            Ok(())
-                        }
-                    });
-
-                    encoded_len_arms.push(quote! {
-                        #name::#variant_ident(inner) => {
-                            ::proto_rs::encoding::message::encoded_len(#tag, inner)
-                        }
-                    });
-                }
+            Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                let (encode_arm, decode_arm, encoded_len_arm) = generate_tuple_variant_arms(name, variant_ident, tag, &fields.unnamed[0]);
+                encode_arms.push(encode_arm);
+                decode_arms.push(decode_arm);
+                encoded_len_arms.push(encoded_len_arm);
             }
             Fields::Named(fields_named) => {
-                // Named fields - encode as nested message (existing logic)
-                generate_named_variant_arms(name, variant_ident, tag, fields_named, &mut encode_arms, &mut decode_arms, &mut encoded_len_arms);
+                let (encode_arm, decode_arm, encoded_len_arm) = generate_named_variant_arms(name, variant_ident, tag, fields_named);
+                encode_arms.push(encode_arm);
+                decode_arms.push(decode_arm);
+                encoded_len_arms.push(encoded_len_arm);
             }
-            _ => {
-                panic!("Complex enum variants must have exactly one unnamed field or multiple named fields");
-            }
+            _ => panic!("Complex enum variants must have exactly one unnamed field or multiple named fields"),
         }
     }
 
     (encode_arms, decode_arms, encoded_len_arms)
 }
 
-fn generate_array_variant_arms(
-    name: &syn::Ident,
-    variant_ident: &syn::Ident,
-    tag: u32,
-    array_ty: &syn::TypeArray,
-    encode_arms: &mut Vec<TokenStream>,
-    decode_arms: &mut Vec<TokenStream>,
-    encoded_len_arms: &mut Vec<TokenStream>,
-) {
-    let array_type = syn::Type::Array(array_ty.clone());
-    let elem_ty = &*array_ty.elem;
-    let len_expr = &array_ty.len;
-    let elem_parsed = parse_field_type(elem_ty);
-    let encoding_type = get_encoding_type(&elem_parsed);
+fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, field: &syn::Field) -> (TokenStream, TokenStream, TokenStream) {
+    let binding_ident = syn::Ident::new("inner", Span::call_site());
+    let access_expr = quote! { #binding_ident };
+    let cfg = parse_field_config(field);
+    let field_tag = cfg.custom_tag.unwrap_or(1) as u32;
+    let field_ty = &field.ty;
 
-    if is_bytes_array(&array_type) {
-        encode_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                if inner.iter().any(|&b| b != 0u8) {
-                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                    ::proto_rs::encoding::encode_varint(inner.len() as u64, buf);
-                    buf.put_slice(inner);
-                }
-            }
-        });
+    let encoded_len_expr = generate_field_encoded_len(field, access_expr.clone(), field_tag);
+    let encoded_len_expr_for_encode = encoded_len_expr.clone();
+    let encoded_len_expr_for_len = encoded_len_expr.clone();
 
-        decode_arms.push(quote! {
-            #tag => {
-                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                if len > buf.remaining() {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
+    let mut encode_fields = Vec::new();
+    let mut decode_match = Vec::new();
 
-                let mut temp = [0u8; #len_expr];
-                let copy_len = ::core::cmp::min(len, temp.len());
-                buf.copy_to_slice(&mut temp[..copy_len]);
-                if len > temp.len() {
-                    buf.advance(len - temp.len());
-                }
-
-                *self = #name::#variant_ident(temp);
+    if !cfg.skip {
+        encode_fields.push(generate_field_encode(field, access_expr.clone(), field_tag));
+        let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
+        decode_match.push(quote! {
+            #field_tag => {
+                #decode_body
                 Ok(())
             }
         });
-
-        encoded_len_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                if inner.iter().all(|&b| b == 0u8) {
-                    0
-                } else {
-                    let l = inner.len();
-                    ::proto_rs::encoding::key_len(#tag)
-                        + ::proto_rs::encoding::encoded_len_varint(l as u64)
-                        + l
-                }
-            }
-        });
-        return;
     }
 
-    if elem_parsed.is_message_like {
-        encode_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                let mut msg_buf = Vec::new();
-                for item in inner.iter() {
-                    ::proto_rs::encoding::message::encode(1, item, &mut msg_buf);
+    let mut post_hooks = Vec::new();
+    if cfg.skip {
+        if let Some(fun) = &cfg.skip_deser_fn {
+            let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+            let skip_binding = syn::Ident::new("__value", Span::call_site());
+            let computed_ident = syn::Ident::new("__skip_value", Span::call_site());
+            post_hooks.push(quote! {
+                let #computed_ident = #fun_path(&variant_value);
+                if let #name::#variant_ident(ref mut #skip_binding) = variant_value {
+                    *#skip_binding = #computed_ident;
                 }
+            });
+        }
+    }
+
+    let encode_arm = {
+        let encode_body = encode_fields.clone();
+        let msg_len_expr = encoded_len_expr_for_encode;
+        quote! {
+            #name::#variant_ident(#binding_ident) => {
+                let msg_len = #msg_len_expr;
                 ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                ::proto_rs::encoding::encode_varint(msg_buf.len() as u64, buf);
-                buf.put_slice(&msg_buf);
-            }
-        });
-
-        decode_arms.push(quote! {
-            #tag => {
-                let len = ::proto_rs::encoding::decode_varint(buf)?;
-                if len > buf.remaining() as u64 {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
-
-                let mut temp_vec = Vec::new();
-                let remaining = buf.remaining();
-                let limit = remaining - len as usize;
-
-                while buf.remaining() > limit {
-                    let msg_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                    if msg_len > buf.remaining() {
-                        return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                    }
-                    let mut msg_buf = buf.copy_to_bytes(msg_len);
-                    let msg = ::proto_rs::ProtoExt::decode(&mut msg_buf)?;
-                    temp_vec.push(msg);
-                }
-
-                if temp_vec.len() > #len_expr {
-                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                }
-
-                let mut temp_array: [#elem_ty; #len_expr] = ::core::array::from_fn(|_| <#elem_ty as ::proto_rs::ProtoExt>::proto_default());
-                for (idx, value) in temp_vec.into_iter().enumerate() {
-                    temp_array[idx] = value;
-                }
-
-                *self = #name::#variant_ident(temp_array);
-                Ok(())
-            }
-        });
-
-        encoded_len_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                let mut total = 0usize;
-                for item in inner.iter() {
-                    total += ::proto_rs::ProtoExt::encoded_len(item);
-                }
-                ::proto_rs::encoding::key_len(#tag)
-                    + ::proto_rs::encoding::encoded_len_varint(total as u64)
-                    + total
-            }
-        });
-        return;
-    }
-
-    if needs_into_conversion(elem_ty) {
-        let target_type = get_proto_rust_type(elem_ty);
-
-        encode_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
-
-                let mut packed_buf = Vec::new();
-                ::proto_rs::encoding::#encoding_type::encode_repeated(1, &converted, &mut packed_buf);
-
-                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
-                buf.put_slice(&packed_buf);
-            }
-        });
-
-        decode_arms.push(quote! {
-            #tag => {
-                let len = ::proto_rs::encoding::decode_varint(buf)?;
-                if len > buf.remaining() as u64 {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
-
-                let mut temp_converted: Vec<#target_type> = Vec::new();
-                let mut limited_buf = buf.take(len as usize);
-
-                while limited_buf.has_remaining() {
-                    let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
-                    ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp_converted, &mut limited_buf, ctx.clone())?;
-                }
-
-                if temp_converted.len() > #len_expr {
-                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                }
-
-                let mut temp_array: [#elem_ty; #len_expr] = ::core::array::from_fn(|_| <#elem_ty as ::proto_rs::ProtoExt>::proto_default());
-                for (idx, value) in temp_converted.into_iter().enumerate() {
-                    temp_array[idx] = value
-                        .try_into()
-                        .map_err(|_| ::proto_rs::DecodeError::new("Type conversion error"))?;
-                }
-
-                *self = #name::#variant_ident(temp_array);
-                Ok(())
-            }
-        });
-
-        encoded_len_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
-                let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, &converted);
-                ::proto_rs::encoding::key_len(#tag)
-                    + ::proto_rs::encoding::encoded_len_varint(packed_len as u64)
-                    + packed_len
-            }
-        });
-        return;
-    }
-
-    encode_arms.push(quote! {
-        #name::#variant_ident(inner) => {
-            let mut packed_buf = Vec::new();
-            ::proto_rs::encoding::#encoding_type::encode_repeated(1, inner.as_slice(), &mut packed_buf);
-
-            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-            ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
-            buf.put_slice(&packed_buf);
-        }
-    });
-
-    decode_arms.push(quote! {
-        #tag => {
-            let len = ::proto_rs::encoding::decode_varint(buf)?;
-            if len > buf.remaining() as u64 {
-                return Err(::proto_rs::DecodeError::new("buffer underflow"));
-            }
-
-            let mut temp = Vec::new();
-            let mut limited_buf = buf.take(len as usize);
-
-            while limited_buf.has_remaining() {
-                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
-                ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp, &mut limited_buf, ctx.clone())?;
-            }
-
-            if temp.len() > #len_expr {
-                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-            }
-
-            let mut temp_array: [#elem_ty; #len_expr] = ::core::array::from_fn(|_| <#elem_ty as ::proto_rs::ProtoExt>::proto_default());
-            for (idx, value) in temp.into_iter().enumerate() {
-                temp_array[idx] = value;
-            }
-
-            *self = #name::#variant_ident(temp_array);
-            Ok(())
-        }
-    });
-
-    encoded_len_arms.push(quote! {
-        #name::#variant_ident(inner) => {
-            let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, inner.as_slice());
-            ::proto_rs::encoding::key_len(#tag)
-                + ::proto_rs::encoding::encoded_len_varint(packed_len as u64)
-                + packed_len
-        }
-    });
-}
-
-fn is_vec_or_array_type(ty: &syn::Type) -> bool {
-    match ty {
-        syn::Type::Array(_) => true,
-        syn::Type::Path(type_path) => {
-            if let Some(segment) = type_path.path.segments.last() {
-                segment.ident == "Vec" || segment.ident == "Option"
-            } else {
-                false
+                ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
+                #(#encode_body)*
             }
         }
-        _ => false,
-    }
-}
+    };
 
-fn generate_repeated_variant_arms(
-    name: &syn::Ident,
-    variant_ident: &syn::Ident,
-    tag: u32,
-    field_ty: &syn::Type,
-    encode_arms: &mut Vec<TokenStream>,
-    decode_arms: &mut Vec<TokenStream>,
-    encoded_len_arms: &mut Vec<TokenStream>,
-) {
-    if let syn::Type::Array(array_ty) = field_ty {
-        generate_array_variant_arms(name, variant_ident, tag, array_ty, encode_arms, decode_arms, encoded_len_arms);
-        return;
-    }
-
-    let parsed = parse_field_type(field_ty);
-
-    // For Vec<T>
-    if parsed.is_repeated {
-        if is_bytes_vec(field_ty) {
-            // Vec<u8> is bytes
-            encode_arms.push(quote! {
-                #name::#variant_ident(inner) => {
-                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                    ::proto_rs::encoding::encode_varint(inner.len() as u64, buf);
-                    // Encode length-delimited wrapper
-                    let len = inner.len();
-                    ::proto_rs::encoding::encode_varint(len as u64, buf);
-                    buf.put_slice(inner);
-                }
-            });
-
-            decode_arms.push(quote! {
-                #tag => {
-                    let outer_len = ::proto_rs::encoding::decode_varint(buf)?;
-                    if outer_len > buf.remaining() as u64 {
-                        return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                    }
-
-                    let mut temp = Vec::new();
-                    ::proto_rs::encoding::bytes::merge(wire_type, &mut temp, buf, ctx)?;
-                    *self = #name::#variant_ident(temp);
-                    Ok(())
-                }
-            });
-
-            encoded_len_arms.push(quote! {
-                #name::#variant_ident(inner) => {
-                    let len = inner.len();
-                    ::proto_rs::encoding::key_len(#tag) +
-                    ::proto_rs::encoding::encoded_len_varint(len as u64) +
-                    len
-                }
-            });
-        } else {
-            // Vec<T> where T is a primitive or message
-            let inner_ty = vec_inner_type(field_ty).unwrap();
-            let encoding_type = get_encoding_type(&parsed);
-
-            if is_complex_type(&inner_ty) {
-                // Vec<Message>
-                encode_arms.push(quote! {
-                    #name::#variant_ident(inner) => {
-                        // Encode as length-delimited list of messages
-                        let mut msg_buf = Vec::new();
-                        for item in inner {
-                            ::proto_rs::encoding::message::encode(1, item, &mut msg_buf);
-                        }
-                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                        ::proto_rs::encoding::encode_varint(msg_buf.len() as u64, buf);
-                        buf.put_slice(&msg_buf);
-                    }
-                });
-
-                decode_arms.push(quote! {
-                    #tag => {
-                        let len = ::proto_rs::encoding::decode_varint(buf)?;
-                        if len > buf.remaining() as u64 {
-                            return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                        }
-
-                        let mut temp = Vec::new();
-                        let remaining = buf.remaining();
-                        let limit = remaining - len as usize;
-
-                        while buf.remaining() > limit {
-                            let msg_len = ::proto_rs::encoding::decode_varint(buf)?;
-                            if msg_len > buf.remaining() as u64 {
-                                return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                            }
-                            let mut msg_buf = buf.copy_to_bytes(msg_len as usize);
-                            let msg = ::proto_rs::ProtoExt::decode(&mut msg_buf)?;
-                            temp.push(msg);
-                        }
-
-                        *self = #name::#variant_ident(temp);
-                        Ok(())
-                    }
-                });
-
-                encoded_len_arms.push(quote! {
-                    #name::#variant_ident(inner) => {
-                        let mut total = 0;
-                        for item in inner {
-                            total += ::proto_rs::ProtoExt::encoded_len(item);
-                        }
-                        ::proto_rs::encoding::key_len(#tag) +
-                        ::proto_rs::encoding::encoded_len_varint(total as u64) +
-                        total
-                    }
-                });
-            } else if needs_into_conversion(&inner_ty) {
-                // Vec<u16> etc - needs conversion
-                let target_type = get_proto_rust_type(&inner_ty);
-
-                encode_arms.push(quote! {
-                    #name::#variant_ident(inner) => {
-                        let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
-
-                        // Encode as packed repeated or length-delimited
-                        let mut packed_buf = Vec::new();
-                        ::proto_rs::encoding::#encoding_type::encode_repeated(1, &converted, &mut packed_buf);
-
-                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                        ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
-                        buf.put_slice(&packed_buf);
-                    }
-                });
-
-                decode_arms.push(quote! {
-                    #tag => {
-                        let len = ::proto_rs::encoding::decode_varint(buf)?;
-                        if len > buf.remaining() as u64 {
-                            return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                        }
-
-                        let mut temp_converted: Vec<#target_type> = Vec::new();
-                        let mut limited_buf = buf.take(len as usize);
-
-                        while limited_buf.has_remaining() {
-                            let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
-                            ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp_converted, &mut limited_buf, ctx)?;
-                        }
-
-                        let temp: Vec<#inner_ty> = temp_converted.iter()
-                            .map(|v| (*v).try_into())
-                            .collect::<Result<_, _>>()
-                            .map_err(|_| ::proto_rs::DecodeError::new("Type conversion error"))?;
-
-                        *self = #name::#variant_ident(temp);
-                        Ok(())
-                    }
-                });
-
-                encoded_len_arms.push(quote! {
-                    #name::#variant_ident(inner) => {
-                        let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
-                        let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, &converted);
-                        ::proto_rs::encoding::key_len(#tag) +
-                        ::proto_rs::encoding::encoded_len_varint(packed_len as u64) +
-                        packed_len
-                    }
-                });
-            } else {
-                // Vec<u32>, Vec<i32>, etc - no conversion needed
-                encode_arms.push(quote! {
-                    #name::#variant_ident(inner) => {
-                        let mut packed_buf = Vec::new();
-                        ::proto_rs::encoding::#encoding_type::encode_repeated(1, inner, &mut packed_buf);
-
-                        ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                        ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
-                        buf.put_slice(&packed_buf);
-                    }
-                });
-
-                decode_arms.push(quote! {
-                    #tag => {
-                        let len = ::proto_rs::encoding::decode_varint(buf)?;
-                        if len > buf.remaining() as u64 {
-                            return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                        }
-
-                        let mut temp = Vec::new();
-                        let mut limited_buf = buf.take(len as usize);
-
-                        while limited_buf.has_remaining() {
-                            let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
-                            ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp, &mut limited_buf, ctx)?;
-                        }
-
-                        *self = #name::#variant_ident(temp);
-                        Ok(())
-                    }
-                });
-
-                encoded_len_arms.push(quote! {
-                    #name::#variant_ident(inner) => {
-                        let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, inner);
-                        ::proto_rs::encoding::key_len(#tag) +
-                        ::proto_rs::encoding::encoded_len_varint(packed_len as u64) +
-                        packed_len
-                    }
-                });
+    let decode_loop = if decode_match.is_empty() {
+        quote! {
+            while buf.remaining() > limit {
+                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
+                ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx.clone())?;
             }
         }
     } else {
-        // Not a Vec - treat as message
-        encode_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                ::proto_rs::encoding::message::encode(#tag, inner, buf);
-            }
-        });
-
-        decode_arms.push(quote! {
-            #tag => {
-                let mut temp = ::proto_rs::ProtoExt::proto_default();
-                ::proto_rs::encoding::message::merge(wire_type, &mut temp, buf, ctx)?;
-                *self = #name::#variant_ident(temp);
-                Ok(())
-            }
-        });
-
-        encoded_len_arms.push(quote! {
-            #name::#variant_ident(inner) => {
-                ::proto_rs::encoding::message::encoded_len(#tag, inner)
-            }
-        });
-    }
-}
-
-fn generate_named_variant_arms(
-    name: &syn::Ident,
-    variant_ident: &syn::Ident,
-    tag: u32,
-    fields_named: &syn::FieldsNamed,
-    encode_arms: &mut Vec<TokenStream>,
-    decode_arms: &mut Vec<TokenStream>,
-    encoded_len_arms: &mut Vec<TokenStream>,
-) {
-    // Named fields - encode as nested message
-    let field_bindings: Vec<_> = fields_named
-        .named
-        .iter()
-        .map(|f| {
-            let ident = f.ident.as_ref().unwrap();
-            quote! { #ident }
-        })
-        .collect();
-
-    let field_encodes: Vec<_> = fields_named
-        .named
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let ident = f.ident.as_ref().unwrap();
-            let field_tag = (i + 1) as u32;
-            quote! {
-                ::proto_rs::encoding::message::encode(#field_tag, #ident, buf);
-            }
-        })
-        .collect();
-
-    encode_arms.push(quote! {
-        #name::#variant_ident { #(#field_bindings),* } => {
-            let msg_len = 0 #(+ ::proto_rs::ProtoExt::encoded_len(#field_bindings))*;
-
-            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-            ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
-            #(#field_encodes)*
-        }
-    });
-
-    let field_decodes: Vec<_> = fields_named
-        .named
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let ident = f.ident.as_ref().unwrap();
-            let field_tag = (i + 1) as u32;
-            quote! {
-                #field_tag => {
-                    ::proto_rs::encoding::message::merge(wire_type, &mut #ident, buf, ctx)?;
-                }
-            }
-        })
-        .collect();
-
-    let field_defaults: Vec<_> = fields_named
-        .named
-        .iter()
-        .map(|f| {
-            let ident = f.ident.as_ref().unwrap();
-            let ty = &f.ty;
-            quote! { let mut #ident = <#ty as ::proto_rs::ProtoExt>::proto_default(); }
-        })
-        .collect();
-
-    decode_arms.push(quote! {
-        #tag => {
-            let len = ::proto_rs::encoding::decode_varint(buf)?;
-            let remaining = buf.remaining();
-            if len > remaining as u64 {
-                return Err(::proto_rs::DecodeError::new("buffer underflow"));
-            }
-
-            let limit = remaining - len as usize;
-            #(#field_defaults)*
-
+        quote! {
             while buf.remaining() > limit {
                 let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
                 match field_tag {
-                    #(#field_decodes)*
-                    _ => ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx)?,
-                }
+                    #(#decode_match,)*
+                    _ => {
+                        ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx.clone())?;
+                        Ok(())
+                    }
+                }?;
             }
-
-            *self = #name::#variant_ident { #(#field_bindings),* };
-            Ok(())
         }
-    });
+    };
 
-    encoded_len_arms.push(quote! {
-        #name::#variant_ident { #(#field_bindings),* } => {
-            let msg_len = 0 #(+ ::proto_rs::ProtoExt::encoded_len(#field_bindings))*;
-            ::proto_rs::encoding::key_len(#tag) +
-            ::proto_rs::encoding::encoded_len_varint(msg_len as u64) +
-            msg_len
+    let decode_arm = {
+        let post_decode_hooks = post_hooks.clone();
+        quote! {
+            #tag => {
+                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let remaining = buf.remaining();
+                if len > remaining {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+                let limit = remaining - len;
+
+                let mut #binding_ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default();
+
+                #decode_loop
+
+                let mut variant_value = #name::#variant_ident(#binding_ident);
+                #(#post_decode_hooks)*
+                *self = variant_value;
+                Ok(())
+            }
         }
-    });
+    };
+
+    let encoded_len_arm = {
+        let msg_len_expr = encoded_len_expr_for_len;
+        quote! {
+            #name::#variant_ident(#binding_ident) => {
+                let msg_len = #msg_len_expr;
+                ::proto_rs::encoding::key_len(#tag)
+                    + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
+                    + msg_len
+            }
+        }
+    };
+
+    (encode_arm, decode_arm, encoded_len_arm)
 }
 
-fn get_encoding_type(parsed: &crate::utils::ParsedFieldType) -> syn::Ident {
-    let type_str = match parsed.proto_type.as_str() {
-        "uint32" => "uint32",
-        "uint64" => "uint64",
-        "int32" => "int32",
-        "int64" => "int64",
-        "float" => "float",
-        "double" => "double",
-        "bool" => "bool",
-        "string" => "string",
-        "bytes" => "bytes",
-        _ => "message",
+fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, fields_named: &syn::FieldsNamed) -> (TokenStream, TokenStream, TokenStream) {
+    let mut field_bindings = Vec::new();
+    let mut field_defaults = Vec::new();
+    let mut encode_fields = Vec::new();
+    let mut decode_match = Vec::new();
+    let mut encoded_len_exprs = Vec::new();
+    let mut post_hooks = Vec::new();
+
+    for (index, field) in fields_named.named.iter().enumerate() {
+        let ident = field.ident.as_ref().unwrap();
+        field_bindings.push(quote! { #ident });
+        let access_expr = quote! { #ident };
+        let cfg = parse_field_config(field);
+        let field_tag = cfg.custom_tag.unwrap_or(index + 1) as u32;
+        let field_ty = &field.ty;
+
+        field_defaults.push(quote! { let mut #ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); });
+
+        encoded_len_exprs.push(generate_field_encoded_len(field, access_expr.clone(), field_tag));
+
+        if !cfg.skip {
+            encode_fields.push(generate_field_encode(field, access_expr.clone(), field_tag));
+            let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
+            decode_match.push(quote! {
+                #field_tag => {
+                    #decode_body
+                    Ok(())
+                }
+            });
+        }
+
+        if cfg.skip {
+            if let Some(fun) = &cfg.skip_deser_fn {
+                let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+                let binding_name = format!("__{}_skip", ident);
+                let binding_ident = syn::Ident::new(&binding_name, Span::call_site());
+                let computed_name = format!("__{}_computed", ident);
+                let computed_ident = syn::Ident::new(&computed_name, Span::call_site());
+                post_hooks.push(quote! {
+                    let #computed_ident = #fun_path(&variant_value);
+                    if let #name::#variant_ident { #ident: ref mut #binding_ident, .. } = variant_value {
+                        *#binding_ident = #computed_ident;
+                    }
+                });
+            }
+        }
+    }
+
+    let field_bindings_for_encode = field_bindings.clone();
+    let field_bindings_for_decode = field_bindings.clone();
+    let field_bindings_for_len = field_bindings.clone();
+    let encoded_len_exprs_for_encode = encoded_len_exprs.clone();
+    let encoded_len_exprs_for_len = encoded_len_exprs.clone();
+    let encode_fields_body = encode_fields.clone();
+    let decode_match_arms = decode_match.clone();
+    let post_decode_hooks = post_hooks.clone();
+
+    let encode_arm = quote! {
+        #name::#variant_ident { #(#field_bindings_for_encode),* } => {
+            let msg_len = 0 #(+ #encoded_len_exprs_for_encode)*;
+            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+            ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
+            #(#encode_fields_body)*
+        }
     };
-    syn::Ident::new(type_str, proc_macro2::Span::call_site())
+
+    let decode_loop = if decode_match_arms.is_empty() {
+        quote! {
+            while buf.remaining() > limit {
+                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
+                ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx.clone())?;
+            }
+        }
+    } else {
+        quote! {
+            while buf.remaining() > limit {
+                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
+                match field_tag {
+                    #(#decode_match_arms,)*
+                    _ => {
+                        ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx.clone())?;
+                        Ok(())
+                    }
+                }?;
+            }
+        }
+    };
+
+    let decode_arm = quote! {
+        #tag => {
+            let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+            let remaining = buf.remaining();
+            if len > remaining {
+                return Err(::proto_rs::DecodeError::new("buffer underflow"));
+            }
+
+            let limit = remaining - len;
+            #(#field_defaults)*
+
+            #decode_loop
+
+            let mut variant_value = #name::#variant_ident { #(#field_bindings_for_decode),* };
+            #(#post_decode_hooks)*
+            *self = variant_value;
+            Ok(())
+        }
+    };
+
+    let encoded_len_arm = quote! {
+        #name::#variant_ident { #(#field_bindings_for_len),* } => {
+            let msg_len = 0 #(+ #encoded_len_exprs_for_len)*;
+            ::proto_rs::encoding::key_len(#tag)
+                + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
+                + msg_len
+        }
+    };
+
+    (encode_arm, decode_arm, encoded_len_arm)
 }

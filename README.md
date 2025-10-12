@@ -176,11 +176,8 @@ pub struct Attr {
     id_skip: Vec<i64>,
     id_vec: Vec<String>,
     id_opt: Option<String>,
-    #[proto(rust_enum)]
     status: Status,
-    #[proto(rust_enum)]
     status_opt: Option<Status>,
-    #[proto(rust_enum)]
     status_vec: Vec<Status>,
     #[proto(skip = "compute_hash_for_struct")]
     hash: String,
@@ -250,11 +247,8 @@ pub enum VeryComplex {
         id_skip: Vec<i64>,
         id_vec: Vec<String>,
         id_opt: Option<String>,
-        #[proto(rust_enum)]
         status: Status,
-        #[proto(rust_enum)]
         status_opt: Option<Status>,
-        #[proto(rust_enum)]
         status_vec: Vec<Status>,
         #[proto(skip = "compute_hash_for_enum")]
         hash: String,

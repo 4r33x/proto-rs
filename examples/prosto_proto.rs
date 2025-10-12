@@ -131,15 +131,12 @@ pub enum Status {
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub enum EnumArrayRustEnumAttributeFailTest {
-    Fail {
-        #[proto(rust_enum)]
-        timestamp_array: [Status; 8],
-    },
+    Fail { timestamp_array: [Status; 8] },
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub enum EnumArrayRustEnumAttributeFailTest2 {
-    Fail(#[proto(rust_enum)] [Status; 8]),
+    Fail([Status; 8]),
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -175,55 +172,30 @@ pub enum VecTestEnumProst {
 #[derive(Clone)]
 pub enum VecTestEnumCustom {
     Test,
-    Test0(#[proto(rust_enum)] Status),
-    Test1(#[proto(rust_enum)] Vec<Status>),
-    Test2 {
-        #[proto(rust_enum)]
-        test1: Vec<Status>,
-        #[proto(rust_enum)]
-        test2: Option<Status>,
-        #[proto(rust_enum)]
-        test3: Status,
-    },
-    Test3(#[proto(rust_enum)] Option<Status>),
+    Test0(Status),
+    Test1(Vec<Status>),
+    Test2 { test1: Vec<Status>, test2: Option<Status>, test3: Status },
+    Test3(Option<Status>),
 
     Test7(User),
     Test8(Option<User>),
     Test9(Vec<User>),
-    Test10 {
-        test: Vec<User>,
-        test1: Option<User>,
-        test3: User,
-    },
+    Test10 { test: Vec<User>, test1: Option<User>, test3: User },
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub enum VecTestEnumCustom2 {
-    Test0(#[proto(rust_enum)] Status),
-    Test1(#[proto(rust_enum)] Vec<Status>),
-    Test2 {
-        #[proto(rust_enum)]
-        test1: Vec<Status>,
-        #[proto(rust_enum)]
-        test2: Option<Status>,
-        #[proto(rust_enum)]
-        test3: Status,
-    },
-    Test3(#[proto(rust_enum)] Option<Status>),
+    Test0(Status),
+    Test1(Vec<Status>),
+    Test2 { test1: Vec<Status>, test2: Option<Status>, test3: Status },
+    Test3(Option<Status>),
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub enum VecFailingTestEnum {
-    Test2 {
-        #[proto(rust_enum)]
-        test1: Vec<Status>,
-        #[proto(rust_enum)]
-        test2: Option<Status>,
-        #[proto(rust_enum)]
-        test3: Status,
-    },
+    Test2 { test1: Vec<Status>, test2: Option<Status>, test3: Status },
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -292,11 +264,8 @@ pub enum VeryComplex {
         id_skip: Vec<i64>,
         id_vec: Vec<String>,
         id_opt: Option<String>,
-        #[proto(rust_enum)]
         status: Status,
-        #[proto(rust_enum)]
         status_opt: Option<Status>,
-        #[proto(rust_enum)]
         status_vec: Vec<Status>,
         #[proto(skip = "compute_hash_for_enum")]
         hash: String,
@@ -309,11 +278,8 @@ pub struct Attr {
     id_skip: Vec<i64>,
     id_vec: Vec<String>,
     id_opt: Option<String>,
-    #[proto(rust_enum)]
     status: Status,
-    #[proto(rust_enum)]
     status_opt: Option<Status>,
-    #[proto(rust_enum)]
     status_vec: Vec<Status>,
     #[proto(skip = "compute_hash_for_struct")]
     hash: String,
@@ -340,6 +306,39 @@ fn compute_hash_for_struct(attr: &Attr) -> String {
     }
 
     format!("{}|{:?}|{:?}", parts, attr.status, attr.status_opt)
+}
+
+fn compute_hash_for_enum_test(value: &VeryComplexTestSkip) -> String {
+    match value {
+        VeryComplexTestSkip::Attr { hash_2, .. } => format!("enum-attr:{hash_2}"),
+        VeryComplexTestSkip::Tuple(inner) => format!("enum-tuple:{inner}"),
+        VeryComplexTestSkip::Tuple2(inner) => format!("enum-tuple2:{inner}"),
+    }
+}
+
+fn compute_hash_for_enum_test_2(value: &VeryComplexTestSkip) -> String {
+    match value {
+        VeryComplexTestSkip::Tuple(inner) => format!("tuple-only:{inner}"),
+        _ => compute_hash_for_enum_test(value),
+    }
+}
+
+fn compute_hash_for_enum(value: &VeryComplex) -> String {
+    match value {
+        VeryComplex::Attr {
+            id_vec, id_opt, status, status_opt, ..
+        } => {
+            let mut parts = id_vec.join("|");
+            if let Some(opt) = id_opt {
+                if !parts.is_empty() {
+                    parts.push('|');
+                }
+                parts.push_str(opt);
+            }
+            format!("{}|{:?}|{:?}", parts, status, status_opt)
+        }
+        _ => String::new(),
+    }
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -459,7 +458,6 @@ pub struct Invoice {
     pub id: u64,
     pub customer: Person,
     pub payments: Vec<Payment>,
-    #[proto(rust_enum)]
     pub status: Status,
     #[proto(skip)]
     pub internal_notes: String,
@@ -555,7 +553,6 @@ pub struct ComplexConversions {
     pub internal_state: String,
 
     // Simple enum
-    #[proto(rust_enum)]
     pub status: Status,
 
     // Regular field
