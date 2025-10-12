@@ -7,6 +7,7 @@ use syn::DeriveInput;
 use syn::Fields;
 
 use crate::utils::get_proto_rust_type;
+use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::is_complex_type;
 use crate::utils::needs_into_conversion;
@@ -108,6 +109,7 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 buf: &mut impl ::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
+                use ::bytes::Buf;
                 match tag {
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
@@ -208,6 +210,237 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream
     (encode_arms, decode_arms, encoded_len_arms)
 }
 
+fn generate_array_variant_arms(
+    name: &syn::Ident,
+    variant_ident: &syn::Ident,
+    tag: u32,
+    array_ty: &syn::TypeArray,
+    encode_arms: &mut Vec<TokenStream>,
+    decode_arms: &mut Vec<TokenStream>,
+    encoded_len_arms: &mut Vec<TokenStream>,
+) {
+    let array_type = syn::Type::Array(array_ty.clone());
+    let elem_ty = &*array_ty.elem;
+    let len_expr = &array_ty.len;
+    let elem_parsed = parse_field_type(elem_ty);
+    let encoding_type = get_encoding_type(&elem_parsed);
+
+    if is_bytes_array(&array_type) {
+        encode_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                if inner.iter().any(|&b| b != 0u8) {
+                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                    ::proto_rs::encoding::encode_varint(inner.len() as u64, buf);
+                    buf.put_slice(inner);
+                }
+            }
+        });
+
+        decode_arms.push(quote! {
+            #tag => {
+                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                if len > buf.remaining() {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+
+                let mut temp = [0u8; #len_expr];
+                let copy_len = ::core::cmp::min(len, temp.len());
+                buf.copy_to_slice(&mut temp[..copy_len]);
+                if len > temp.len() {
+                    buf.advance(len - temp.len());
+                }
+
+                *self = #name::#variant_ident(temp);
+                Ok(())
+            }
+        });
+
+        encoded_len_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                if inner.iter().all(|&b| b == 0u8) {
+                    0
+                } else {
+                    let l = inner.len();
+                    ::proto_rs::encoding::key_len(#tag)
+                        + ::proto_rs::encoding::encoded_len_varint(l as u64)
+                        + l
+                }
+            }
+        });
+        return;
+    }
+
+    if elem_parsed.is_message_like {
+        encode_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                let mut msg_buf = Vec::new();
+                for item in inner.iter() {
+                    ::proto_rs::encoding::message::encode(1, item, &mut msg_buf);
+                }
+                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint(msg_buf.len() as u64, buf);
+                buf.put_slice(&msg_buf);
+            }
+        });
+
+        decode_arms.push(quote! {
+            #tag => {
+                let len = ::proto_rs::encoding::decode_varint(buf)?;
+                if len > buf.remaining() as u64 {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+
+                let mut temp_vec = Vec::new();
+                let remaining = buf.remaining();
+                let limit = remaining - len as usize;
+
+                while buf.remaining() > limit {
+                    let msg_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                    if msg_len > buf.remaining() {
+                        return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                    }
+                    let mut msg_buf = buf.copy_to_bytes(msg_len);
+                    let msg = ::proto_rs::ProtoExt::decode(&mut msg_buf)?;
+                    temp_vec.push(msg);
+                }
+
+                if temp_vec.len() > #len_expr {
+                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                }
+
+                let mut temp_array: [#elem_ty; #len_expr] = ::core::array::from_fn(|_| <#elem_ty as ::proto_rs::ProtoExt>::proto_default());
+                for (idx, value) in temp_vec.into_iter().enumerate() {
+                    temp_array[idx] = value;
+                }
+
+                *self = #name::#variant_ident(temp_array);
+                Ok(())
+            }
+        });
+
+        encoded_len_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                let mut total = 0usize;
+                for item in inner.iter() {
+                    total += ::proto_rs::ProtoExt::encoded_len(item);
+                }
+                ::proto_rs::encoding::key_len(#tag)
+                    + ::proto_rs::encoding::encoded_len_varint(total as u64)
+                    + total
+            }
+        });
+        return;
+    }
+
+    if needs_into_conversion(elem_ty) {
+        let target_type = get_proto_rust_type(elem_ty);
+
+        encode_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
+
+                let mut packed_buf = Vec::new();
+                ::proto_rs::encoding::#encoding_type::encode_repeated(1, &converted, &mut packed_buf);
+
+                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
+                buf.put_slice(&packed_buf);
+            }
+        });
+
+        decode_arms.push(quote! {
+            #tag => {
+                let len = ::proto_rs::encoding::decode_varint(buf)?;
+                if len > buf.remaining() as u64 {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+
+                let mut temp_converted: Vec<#target_type> = Vec::new();
+                let mut limited_buf = buf.take(len as usize);
+
+                while limited_buf.has_remaining() {
+                    let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
+                    ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp_converted, &mut limited_buf, ctx.clone())?;
+                }
+
+                if temp_converted.len() > #len_expr {
+                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                }
+
+                let mut temp_array: [#elem_ty; #len_expr] = ::core::array::from_fn(|_| <#elem_ty as ::proto_rs::ProtoExt>::proto_default());
+                for (idx, value) in temp_converted.into_iter().enumerate() {
+                    temp_array[idx] = value
+                        .try_into()
+                        .map_err(|_| ::proto_rs::DecodeError::new("Type conversion error"))?;
+                }
+
+                *self = #name::#variant_ident(temp_array);
+                Ok(())
+            }
+        });
+
+        encoded_len_arms.push(quote! {
+            #name::#variant_ident(inner) => {
+                let converted: Vec<#target_type> = inner.iter().map(|v| (*v).into()).collect();
+                let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, &converted);
+                ::proto_rs::encoding::key_len(#tag)
+                    + ::proto_rs::encoding::encoded_len_varint(packed_len as u64)
+                    + packed_len
+            }
+        });
+        return;
+    }
+
+    encode_arms.push(quote! {
+        #name::#variant_ident(inner) => {
+            let mut packed_buf = Vec::new();
+            ::proto_rs::encoding::#encoding_type::encode_repeated(1, inner.as_slice(), &mut packed_buf);
+
+            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+            ::proto_rs::encoding::encode_varint(packed_buf.len() as u64, buf);
+            buf.put_slice(&packed_buf);
+        }
+    });
+
+    decode_arms.push(quote! {
+        #tag => {
+            let len = ::proto_rs::encoding::decode_varint(buf)?;
+            if len > buf.remaining() as u64 {
+                return Err(::proto_rs::DecodeError::new("buffer underflow"));
+            }
+
+            let mut temp = Vec::new();
+            let mut limited_buf = buf.take(len as usize);
+
+            while limited_buf.has_remaining() {
+                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(&mut limited_buf)?;
+                ::proto_rs::encoding::#encoding_type::merge_repeated(field_wire_type, &mut temp, &mut limited_buf, ctx.clone())?;
+            }
+
+            if temp.len() > #len_expr {
+                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+            }
+
+            let mut temp_array: [#elem_ty; #len_expr] = ::core::array::from_fn(|_| <#elem_ty as ::proto_rs::ProtoExt>::proto_default());
+            for (idx, value) in temp.into_iter().enumerate() {
+                temp_array[idx] = value;
+            }
+
+            *self = #name::#variant_ident(temp_array);
+            Ok(())
+        }
+    });
+
+    encoded_len_arms.push(quote! {
+        #name::#variant_ident(inner) => {
+            let packed_len = ::proto_rs::encoding::#encoding_type::encoded_len_repeated(1, inner.as_slice());
+            ::proto_rs::encoding::key_len(#tag)
+                + ::proto_rs::encoding::encoded_len_varint(packed_len as u64)
+                + packed_len
+        }
+    });
+}
+
 fn is_vec_or_array_type(ty: &syn::Type) -> bool {
     match ty {
         syn::Type::Array(_) => true,
@@ -231,6 +464,11 @@ fn generate_repeated_variant_arms(
     decode_arms: &mut Vec<TokenStream>,
     encoded_len_arms: &mut Vec<TokenStream>,
 ) {
+    if let syn::Type::Array(array_ty) = field_ty {
+        generate_array_variant_arms(name, variant_ident, tag, array_ty, encode_arms, decode_arms, encoded_len_arms);
+        return;
+    }
+
     let parsed = parse_field_type(field_ty);
 
     // For Vec<T>

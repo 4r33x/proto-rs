@@ -406,7 +406,7 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
                 0
             } else {
                 let l = self.#access.len();
-                ::proto_rs::encoding::encoded_len_key(#tag)
+                ::proto_rs::encoding::key_len(#tag)
                     + ::proto_rs::encoding::encoded_len_varint(l as u64)
                     + l
             }
