@@ -3,13 +3,14 @@ use quote::quote;
 use syn::DeriveInput;
 use syn::Fields;
 use syn::Index;
-use syn::Type;
 
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::generate_field_decode;
 use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
+use crate::utils::is_option_type;
 use crate::utils::parse_field_config;
+use crate::utils::vec_inner_type;
 
 pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     match &data.fields {
@@ -24,47 +25,54 @@ fn strip_proto_attrs(attrs: &[syn::Attribute]) -> Vec<syn::Attribute> {
 }
 
 /// Generate smart default value for a field type
-fn generate_field_default(field_ty: &Type) -> TokenStream {
-    if let Type::Path(type_path) = field_ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        let ident = &segment.ident;
+fn generate_field_default(field: &syn::Field) -> TokenStream {
+    let field_ty = &field.ty;
 
-        // Handle Option<T> - always None
-        if ident == "Option" {
-            return quote! { None };
-        }
-
-        // Handle Vec<T> - always Vec::new()
-        if ident == "Vec" {
-            return quote! { Vec::new() };
-        }
+    if is_option_type(field_ty) {
+        return quote! { None };
     }
 
-    // Default case - use ProtoExt::proto_default()
-    quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
+    if vec_inner_type(field_ty).is_some() {
+        return quote! { Vec::new() };
+    }
+
+    let cfg = parse_field_config(field);
+    if cfg.into_type.is_some()
+        || cfg.from_type.is_some()
+        || cfg.into_fn.is_some()
+        || cfg.from_fn.is_some()
+        || cfg.skip
+    {
+        quote! { ::core::default::Default::default() }
+    } else {
+        quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
+    }
 }
 
 /// Generate smart clear for a field
-fn generate_field_clear(field_ident: &dyn quote::ToTokens, field_ty: &Type) -> TokenStream {
-    if let Type::Path(type_path) = field_ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        let ident = &segment.ident;
+fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream {
+    let field_ty = &field.ty;
+    let access_tokens = access.self_tokens();
 
-        // Handle Option<T>
-        if ident == "Option" {
-            return quote! { self.#field_ident = None; };
-        }
-
-        // Handle Vec<T>
-        if ident == "Vec" {
-            return quote! { self.#field_ident.clear(); };
-        }
+    if is_option_type(field_ty) {
+        return quote! { #access_tokens = None; };
     }
 
-    // Default case
-    quote! { self.#field_ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); }
+    if vec_inner_type(field_ty).is_some() {
+        return quote! { #access_tokens.clear(); };
+    }
+
+    let cfg = parse_field_config(field);
+    if cfg.into_type.is_some()
+        || cfg.from_type.is_some()
+        || cfg.into_fn.is_some()
+        || cfg.from_fn.is_some()
+        || cfg.skip
+    {
+        quote! { #access_tokens = ::core::default::Default::default(); }
+    } else {
+        quote! { #access_tokens = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); }
+    }
 }
 
 fn handle_unit_struct(input: DeriveInput) -> TokenStream {
@@ -119,37 +127,50 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
 
     // Generate smart defaults
-    let default_values: Vec<_> = field_types.iter().map(|ty| generate_field_default(ty)).collect();
+    let default_values: Vec<_> = fields
+        .unnamed
+        .iter()
+        .map(generate_field_default)
+        .collect();
 
     let mut encode_fields = Vec::new();
     let mut decode_fields = Vec::new();
     let mut encoded_len_fields = Vec::new();
     let mut clear_fields = Vec::new();
+    let mut post_decode_hooks = Vec::new();
 
     for (idx, field) in fields.unnamed.iter().enumerate() {
         let field_config = parse_field_config(field);
         let field_num = field_config.custom_tag.unwrap_or(idx + 1);
         let tuple_idx = Index::from(idx);
-        let field_ty = &field.ty;
+        let field_access = FieldAccess::Tuple(tuple_idx.clone());
 
-        if !field_config.skip {
+        if field_config.skip {
+            if let Some(fun) = &field_config.skip_deser_fn {
+                let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+                let access_tokens = field_access.self_tokens();
+                post_decode_hooks.push(quote! {
+                    #access_tokens = #fun_path(self);
+                });
+            }
+        } else {
             let tag_u32 = field_num as u32;
-            let field_access = FieldAccess::Tuple(tuple_idx.clone());
 
             encode_fields.push(generate_field_encode(field, field_access.clone(), tag_u32));
 
             let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
+                    __handled = true;
                     #decode_body
                     Ok(())
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field, field_access, tag_u32));
-
-            clear_fields.push(generate_field_clear(&tuple_idx, field_ty));
+            encoded_len_fields.push(generate_field_encoded_len(field, field_access.clone(), tag_u32));
         }
+
+        clear_fields.push(generate_field_clear(field, &field_access));
     }
 
     quote! {
@@ -174,10 +195,15 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 use ::bytes::Buf;
-                match tag {
+                let mut __handled = false;
+                let __result = match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                };
+                if __handled {
+                    #(#post_decode_hooks)*
                 }
+                __result
             }
 
             fn encoded_len(&self) -> usize {
@@ -218,11 +244,12 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     }
 
     // Generate smart defaults
-    let default_field_values: Vec<_> = fields_named_idents
+    let default_field_values: Vec<_> = fields
+        .named
         .iter()
-        .zip(fields_named_types.iter())
-        .map(|(ident, ty)| {
-            let default_value = generate_field_default(ty);
+        .map(|field| {
+            let ident = field.ident.as_ref().unwrap();
+            let default_value = generate_field_default(field);
             quote! { #ident: #default_value }
         })
         .collect();
@@ -231,11 +258,23 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let mut decode_fields = Vec::new();
     let mut encoded_len_fields = Vec::new();
     let mut clear_fields = Vec::new();
+    let mut post_decode_hooks = Vec::new();
     let mut field_num = 0usize;
 
     for field in &fields.named {
         let ident = field.ident.as_ref().unwrap();
         let field_config = parse_field_config(field);
+        let field_access = FieldAccess::Named(ident.clone());
+
+        if field_config.skip {
+            if let Some(fun) = &field_config.skip_deser_fn {
+                let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+                let access_tokens = field_access.self_tokens();
+                post_decode_hooks.push(quote! {
+                    #access_tokens = #fun_path(self);
+                });
+            }
+        }
 
         let tag = field_config.custom_tag.unwrap_or_else(|| {
             field_num += 1;
@@ -244,23 +283,21 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         let tag_u32 = tag as u32;
 
         if !field_config.skip {
-            let field_ty = &field.ty;
-            let field_access = FieldAccess::Named(ident.clone());
-
             encode_fields.push(generate_field_encode(field, field_access.clone(), tag_u32));
 
             let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
+                    __handled = true;
                     #decode_body
                     Ok(())
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field, field_access, tag_u32));
-
-            clear_fields.push(generate_field_clear(ident, field_ty));
+            encoded_len_fields.push(generate_field_encoded_len(field, field_access.clone(), tag_u32));
         }
+
+        clear_fields.push(generate_field_clear(field, &field_access));
     }
 
     quote! {
@@ -292,10 +329,15 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 use ::bytes::Buf;
-                match tag {
+                let mut __handled = false;
+                let __result = match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                };
+                if __handled {
+                    #(#post_decode_hooks)*
                 }
+                __result
             }
 
             fn encoded_len(&self) -> usize {
