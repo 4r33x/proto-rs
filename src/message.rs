@@ -42,6 +42,13 @@ pub trait ProtoExt {
     where
         Self: Sized;
 
+    /// Hook that is invoked after a successful decode/merge pass completes.
+    ///
+    /// The default implementation is a no-op. Code generated via
+    /// `#[proto_message]` overrides this to run post-processing that depends on
+    /// all fields having been decoded.
+    fn post_decode(&mut self) {}
+
     /// Returns the encoded length of the message without a length delimiter.
     fn encoded_len(&self) -> usize;
 
@@ -137,6 +144,7 @@ pub trait ProtoExt {
             let (tag, wire_type) = decode_key(&mut buf)?;
             self.merge_field(tag, wire_type, &mut buf, ctx)?;
         }
+        self.post_decode();
         Ok(())
     }
 
