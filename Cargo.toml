@@ -47,6 +47,7 @@ bytes = "1.10"
 [dependencies]
 prosto_derive.workspace = true
 bytes.workspace = true
+tonic = "0.14.2"
 fastnum = { version = "0.7.2", optional = true }
 inventory = { version = "0.3.21", optional = true }
 solana-address = { version = "1", optional = true }
