@@ -735,10 +735,10 @@ pub mod message {
 
     pub fn merge_repeated<M>(wire_type: WireType, messages: &mut Vec<M>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
     where
-        M: ProtoExt + Default,
+        M: ProtoExt,
     {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
-        let mut msg = M::default();
+        let mut msg = M::proto_default();
         merge(WireType::LengthDelimited, &mut msg, buf, ctx)?;
         messages.push(msg);
         Ok(())
@@ -805,10 +805,10 @@ pub mod group {
 
     pub fn merge_repeated<M>(tag: u32, wire_type: WireType, messages: &mut Vec<M>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
     where
-        M: ProtoExt + Default,
+        M: ProtoExt,
     {
         check_wire_type(WireType::StartGroup, wire_type)?;
-        let mut msg = M::default();
+        let mut msg = M::proto_default();
         merge(tag, WireType::StartGroup, &mut msg, buf, ctx)?;
         messages.push(msg);
         Ok(())

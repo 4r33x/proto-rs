@@ -16,6 +16,7 @@ use ::bytes::Bytes;
 use crate::DecodeError;
 use crate::Name;
 use crate::ProtoExt;
+use crate::RepeatedField;
 use crate::encoding::DecodeContext;
 use crate::encoding::bool;
 use crate::encoding::bytes;
@@ -65,6 +66,20 @@ impl Name for bool {
     }
 }
 
+impl RepeatedField for bool {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        bool::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        bool::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        bool::encoded_len_repeated(tag, values)
+    }
+}
+
 /// `google.protobuf.UInt32Value`
 impl ProtoExt for u32 {
     #[inline]
@@ -102,6 +117,20 @@ impl Name for u32 {
 
     fn type_url() -> String {
         googleapis_type_url_for::<Self>()
+    }
+}
+
+impl RepeatedField for u32 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        uint32::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        uint32::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        uint32::encoded_len_repeated(tag, values)
     }
 }
 
@@ -145,6 +174,20 @@ impl Name for u64 {
     }
 }
 
+impl RepeatedField for u64 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        uint64::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        uint64::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        uint64::encoded_len_repeated(tag, values)
+    }
+}
+
 /// `google.protobuf.Int32Value`
 impl ProtoExt for i32 {
     #[inline]
@@ -182,6 +225,20 @@ impl Name for i32 {
 
     fn type_url() -> String {
         googleapis_type_url_for::<Self>()
+    }
+}
+
+impl RepeatedField for i32 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        int32::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        int32::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        int32::encoded_len_repeated(tag, values)
     }
 }
 
@@ -225,6 +282,20 @@ impl Name for i64 {
     }
 }
 
+impl RepeatedField for i64 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        int64::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        int64::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        int64::encoded_len_repeated(tag, values)
+    }
+}
+
 /// `google.protobuf.FloatValue`
 impl ProtoExt for f32 {
     #[inline]
@@ -262,6 +333,20 @@ impl Name for f32 {
 
     fn type_url() -> String {
         googleapis_type_url_for::<Self>()
+    }
+}
+
+impl RepeatedField for f32 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        float::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        float::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        float::encoded_len_repeated(tag, values)
     }
 }
 
@@ -305,6 +390,20 @@ impl Name for f64 {
     }
 }
 
+impl RepeatedField for f64 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        double::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        double::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        double::encoded_len_repeated(tag, values)
+    }
+}
+
 /// `google.protobuf.StringValue`
 impl ProtoExt for String {
     #[inline]
@@ -342,6 +441,20 @@ impl Name for String {
 
     fn type_url() -> String {
         googleapis_type_url_for::<Self>()
+    }
+}
+
+impl RepeatedField for String {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        string::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        string::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        string::encoded_len_repeated(tag, values)
     }
 }
 
@@ -385,6 +498,20 @@ impl Name for Vec<u8> {
     }
 }
 
+impl RepeatedField for Vec<u8> {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        bytes::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        bytes::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        bytes::encoded_len_repeated(tag, values)
+    }
+}
+
 /// `google.protobuf.BytesValue`
 impl ProtoExt for Bytes {
     #[inline]
@@ -422,6 +549,20 @@ impl Name for Bytes {
 
     fn type_url() -> String {
         googleapis_type_url_for::<Self>()
+    }
+}
+
+impl RepeatedField for Bytes {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        bytes::encode_repeated(tag, values, buf);
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        bytes::merge_repeated(wire_type, values, buf, ctx)
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        bytes::encoded_len_repeated(tag, values)
     }
 }
 
@@ -528,6 +669,34 @@ impl ProtoExt for u16 {
     }
 }
 
+impl RepeatedField for u16 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        for value in values {
+            let widened = u32::from(*value);
+            uint32::encode(tag, &widened, buf);
+        }
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut widened = Vec::<u32>::new();
+        uint32::merge_repeated(wire_type, &mut widened, buf, ctx)?;
+        for value in widened {
+            values.push(value.try_into().map_err(|_| DecodeError::new("u16 overflow"))?);
+        }
+        Ok(())
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        values
+            .iter()
+            .map(|value| {
+                let widened = u32::from(*value);
+                uint32::encoded_len(tag, &widened)
+            })
+            .sum()
+    }
+}
+
 /// Internal implementation for i8
 impl ProtoExt for i8 {
     #[inline]
@@ -561,6 +730,34 @@ impl ProtoExt for i8 {
     }
 }
 
+impl RepeatedField for i8 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        for value in values {
+            let widened = i32::from(*value);
+            int32::encode(tag, &widened, buf);
+        }
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut widened = Vec::<i32>::new();
+        int32::merge_repeated(wire_type, &mut widened, buf, ctx)?;
+        for value in widened {
+            values.push(value.try_into().map_err(|_| DecodeError::new("i8 overflow"))?);
+        }
+        Ok(())
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        values
+            .iter()
+            .map(|value| {
+                let widened = i32::from(*value);
+                int32::encoded_len(tag, &widened)
+            })
+            .sum()
+    }
+}
+
 /// Internal implementation for i16
 impl ProtoExt for i16 {
     #[inline]
@@ -591,6 +788,34 @@ impl ProtoExt for i16 {
 
     fn clear(&mut self) {
         *self = 0;
+    }
+}
+
+impl RepeatedField for i16 {
+    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+        for value in values {
+            let widened = i32::from(*value);
+            int32::encode(tag, &widened, buf);
+        }
+    }
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut widened = Vec::<i32>::new();
+        int32::merge_repeated(wire_type, &mut widened, buf, ctx)?;
+        for value in widened {
+            values.push(value.try_into().map_err(|_| DecodeError::new("i16 overflow"))?);
+        }
+        Ok(())
+    }
+
+    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+        values
+            .iter()
+            .map(|value| {
+                let widened = i32::from(*value);
+                int32::encoded_len(tag, &widened)
+            })
+            .sum()
     }
 }
 
