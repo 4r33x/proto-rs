@@ -13,6 +13,7 @@ use syn::TypeArray;
 
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
+use crate::utils::is_bytes_vec;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 
@@ -142,7 +143,7 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
         };
         return quote! {
             if #tag == tag {
-                let mut __tmp: #from_ty = ::core::default::Default::default();
+                let mut __tmp: #from_ty = <#from_ty as ::crate::ProtoExt>::proto_default();
                 <#from_ty as ::crate::ProtoExt>::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
                 self.#fa = #assign_expr;
             }
@@ -151,12 +152,12 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
 
     // Enums (prost i32)
     if cfg.is_rust_enum || cfg.is_proto_enum {
+        let enum_ty = ty.clone();
         return quote! {
             if #tag == tag {
                 let mut __raw: i32 = 0;
                 encoding::int32::merge(wire_type, &mut __raw, buf, ctx.clone())?;
-                // Optionally validate here by match; we keep prost-like semantics:
-                self.#fa = unsafe { ::core::mem::transmute(__raw) };
+                self.#fa = <#enum_ty as ::core::convert::TryFrom<i32>>::try_from(__raw)?;
             }
         };
     }
@@ -191,9 +192,10 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
             };
         } else {
             let enc_ident = scalar_codec_ident(&parsed.elem_type);
+            let inner_ty = parsed.elem_type.clone();
             return quote! {
                 if #tag == tag {
-                    let mut __tmp = ::core::default::Default::default();
+                    let mut __tmp: #inner_ty = <#inner_ty as ::crate::ProtoExt>::proto_default();
                     encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                     self.#fa = Some(__tmp);
                 }
@@ -388,6 +390,7 @@ fn encode_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
 fn decode_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
     let elem = &*arr.elem;
     let enc_ident = scalar_codec_ident(elem);
+    let elem_ty = (*arr.elem).clone();
 
     // Accept packed for numeric arrays, otherwise element-wise
     quote! {
@@ -400,7 +403,7 @@ fn decode_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
                     let mut __i = 0usize;
                     while __limited.has_remaining() {
                         if __i >= (#fa).len() { return Err(DecodeError::new("too many elements for fixed array")); }
-                        let mut __tmp = ::core::default::Default::default();
+                        let mut __tmp: #elem_ty = <#elem_ty as ::crate::ProtoExt>::proto_default();
                         // For packed numerics merged as varint/fixed per codec; rely on codec to enforce wire
                         encoding::#enc_ident::merge(WireType::Varint, &mut __tmp, &mut __limited, ctx.clone())?;
                         (#fa)[__i] = __tmp;
@@ -409,7 +412,7 @@ fn decode_array(fa: &TokenStream, tag: u32, arr: &TypeArray) -> TokenStream {
                 }
                 _ => {
                     // one element
-                    let mut __tmp = ::core::default::Default::default();
+                    let mut __tmp: #elem_ty = <#elem_ty as ::crate::ProtoExt>::proto_default();
                     encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                     // shift-left insert (append semantics): find first zero slot
                     let mut __i = 0usize;
@@ -483,6 +486,7 @@ fn encode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Toke
 
 fn decode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let enc_ident = scalar_codec_ident(&parsed.elem_type);
+    let elem_ty = parsed.elem_type.clone();
     if parsed.is_numeric_scalar {
         return quote! {
             if #tag == tag {
@@ -492,14 +496,14 @@ fn decode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Toke
                         let __len = encoding::decode_varint(buf)? as usize;
                         let mut __limited = buf.take(__len);
                         while __limited.has_remaining() {
-                            let mut __tmp = ::core::default::Default::default();
+                            let mut __tmp: #elem_ty = <#elem_ty as ::crate::ProtoExt>::proto_default();
                             encoding::#enc_ident::merge(WireType::Varint, &mut __tmp, &mut __limited, ctx.clone())?;
                             (#fa).push(__tmp);
                         }
                     }
                     _ => {
                         // unpacked
-                        let mut __tmp = ::core::default::Default::default();
+                        let mut __tmp: #elem_ty = <#elem_ty as ::crate::ProtoExt>::proto_default();
                         encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                         (#fa).push(__tmp);
                     }
@@ -511,7 +515,7 @@ fn decode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Toke
     // Non-numeric: always element-wise
     quote! {
         if #tag == tag {
-            let mut __tmp = ::core::default::Default::default();
+            let mut __tmp: #elem_ty = <#elem_ty as ::crate::ProtoExt>::proto_default();
             encoding::#enc_ident::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
             (#fa).push(__tmp);
         }

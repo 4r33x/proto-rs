@@ -1,5 +1,9 @@
-// unified_field_handler.rs
-//! Unified field handling for structs and enum variants (prost-compatible).
+//! Unified field handling for structs and enum variants.
+//!
+//! This module centralises the encode/decode/length generation logic so the
+//! struct and enum handlers only need to forward `syn::Field` information. The
+//! implementation intentionally mirrors prost's `Message` semantics to ensure we
+//! stay 100% wire compatible with the canonical protobuf encoding.
 
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
@@ -10,20 +14,21 @@ use syn::Ident;
 use syn::Index;
 use syn::Type;
 
-use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
-use crate::utils::is_bytes_array;
-use crate::utils::is_bytes_vec;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::type_info::is_bytes_array;
+use crate::utils::type_info::is_bytes_vec;
 
-// ————————————————————————————————————————————————————————————————————————
+// ---------------------------------------------------------------------------
 // Field access abstraction (named field, tuple index)
+
 #[derive(Clone)]
 pub enum FieldAccess {
     Named(Ident),
     Tuple(Index),
 }
+
 impl FieldAccess {
     pub fn to_tokens(&self) -> TokenStream {
         match self {
@@ -33,156 +38,107 @@ impl FieldAccess {
     }
 }
 
-// ————————————————————————————————————————————————————————————————————————
+// ---------------------------------------------------------------------------
 // Public entry points used by struct/enum handlers
 
 pub fn generate_field_encode(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
     let cfg = parse_field_config(field);
     let ty = &field.ty;
     let parsed = parse_field_type(ty);
-    let fa = access.to_tokens();
+    let access_tokens = access.to_tokens();
 
-    // Skipped fields aren't encoded
     if cfg.skip {
         return quote! {};
     }
 
-    // Custom "into" conversion
+    // Custom conversion via #[proto(into = "Type")] or #[proto(into_fn = "path")]
     if let Some(into_ty) = &cfg.into_type {
-        let conv = cfg.into_fn.as_deref().map(|f| format_ident!("{}", f));
         let into_ty: Type = syn::parse_str(into_ty).expect("invalid into type");
+        let conv_fn = cfg.into_fn.as_deref().map(|f| format_ident!("{}", f));
 
-        let val = if let Some(fun) = conv {
-            quote! { #fun(&self.#fa) }
+        let value = if let Some(fun) = conv_fn {
+            quote! { #fun(&self.#access_tokens) }
         } else {
-            quote! { <#into_ty as ::core::convert::From<_>>::from(self.#fa.clone()) }
+            quote! { <#into_ty as ::core::convert::From<_>>::from(self.#access_tokens.clone()) }
         };
-        return encode_scalar(&val, tag, &into_ty);
+
+        return encode_scalar_value(&value, tag, &parse_field_type(&into_ty));
     }
 
-    // Rust enum (backed i32)
     if cfg.is_rust_enum || cfg.is_proto_enum {
-        let val = quote! { (self.#fa as i32) };
-        return quote! {
-            if #val != 0 {
-                ::proto_rs::encoding::int32::encode(#tag, &#val, buf);
-            }
-        };
+        return encode_enum(&access_tokens, tag);
     }
 
-    // Arrays
-    if let Type::Array(arr) = ty {
-        return encode_array_no_alloc(&fa, tag, arr);
+    if let Type::Array(array) = ty {
+        return encode_array(&access_tokens, tag, array);
     }
 
-    // Repeated vs Optional vs Message vs Scalar
     if parsed.is_repeated {
-        return encode_repeated(&fa, tag, &parsed);
-    }
-    if parsed.is_option {
-        return encode_option(&fa, tag, &parsed);
-    }
-    if parsed.is_message_like || cfg.is_message {
-        return quote! {
-            let __inner = &self.#fa;
-            if ::proto_rs::encoding::Message::encoded_len(__inner) != 0 {
-                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                let __len = ::proto_rs::encoding::Message::encoded_len(__inner);
-                ::proto_rs::encoding::encode_varint(__len as u64, buf);
-                ::proto_rs::encoding::Message::encode_raw(__inner, buf);
-            }
-        };
+        return encode_repeated(&access_tokens, tag, &parsed);
     }
 
-    // Scalar fallback
-    encode_scalar(&quote! { self.#fa }, tag, ty)
+    if parsed.is_option {
+        return encode_option(&access_tokens, tag, &parsed);
+    }
+
+    if parsed.is_message_like || cfg.is_message {
+        return encode_message(&access_tokens, tag);
+    }
+
+    encode_scalar(&access_tokens, tag, &parsed)
 }
 
 pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
     let cfg = parse_field_config(field);
     let ty = &field.ty;
     let parsed = parse_field_type(ty);
-    let fa = access.to_tokens();
+    let access_tokens = access.to_tokens();
 
     if cfg.skip {
-        // We ignore the field on the wire; the value is filled after full decode (struct_handler hook).
-        return quote! {/* skip on wire */};
+        return quote! { /* skipped during decode */ };
     }
 
-    // Custom "from" conversion
     if let Some(from_ty) = &cfg.from_type {
-        let conv = cfg.from_fn.as_deref().map(|f| format_ident!("{}", f));
         let from_ty: Type = syn::parse_str(from_ty).expect("invalid from type");
+        let conv_fn = cfg.from_fn.as_deref().map(|f| format_ident!("{}", f));
+        let field_ty = ty.clone();
 
-        // merge source typed as from_ty, then convert
+        let assign_expr = if let Some(fun) = conv_fn {
+            quote! { #fun(__tmp) }
+        } else {
+            quote! { <#field_ty as ::core::convert::From<#from_ty>>::from(__tmp) }
+        };
+
         return quote! {
-            {
-                let mut __tmp: #from_ty = ::core::default::Default::default();
-                if let Err(e) = <#from_ty as ::proto_rs::ProtoExt>::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone()) {
-                    return Err(e);
-                }
-                self.#fa = {
-                    #( let _ = &__tmp; )*
-                    #{
-                        if let Some(fun) = #conv {
-                            quote!{ #fun(__tmp) }
-                        } else {
-                            quote!{ <_ as ::core::convert::From<_>>::from(__tmp) }
-                        }
-                    }
-                };
+            if #tag == tag {
+                let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
+                ::proto_rs::ProtoExt::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
+                self.#access_tokens = #assign_expr;
             }
         };
     }
 
     if cfg.is_rust_enum || cfg.is_proto_enum {
-        return quote! {
-            if #tag == tag {
-                let mut __tmp: i32 = 0;
-                ::proto_rs::encoding::int32::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                // Safety: user-defined enums are assumed repr(i32) prost-like
-                self.#fa = unsafe { ::core::mem::transmute(__tmp) };
-            }
-        };
+        return decode_enum(&access_tokens, tag, ty);
     }
 
-    if let Type::Array(arr) = ty {
-        return decode_array_no_alloc(&fa, tag, arr);
+    if let Type::Array(array) = ty {
+        return decode_array(&access_tokens, tag, array);
     }
 
     if parsed.is_repeated {
-        return decode_repeated(&fa, tag, &parsed);
+        return decode_repeated(&access_tokens, tag, &parsed);
     }
 
     if parsed.is_option {
-        // Option<T>: merge into an inner default then Some(...)
-        return quote! {
-            if #tag == tag {
-                let mut __tmp = <_ as ::proto_rs::ProtoExt>::proto_default();
-                <_ as ::proto_rs::ProtoExt>::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
-                self.#fa = Some(__tmp);
-            }
-        };
+        return decode_option(&access_tokens, tag, &parsed);
     }
 
     if parsed.is_message_like {
-        return quote! {
-            if #tag == tag {
-                let mut __ctx = ctx.clone();
-                if wire_type == ::proto_rs::encoding::WireType::LengthDelimited {
-                    let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                    let mut limited = buf.take(len);
-                    <_ as ::proto_rs::ProtoExt>::merge(&mut self.#fa, &mut limited)?;
-                    if limited.has_remaining() { return Err(::proto_rs::DecodeError::new("length-delimited message overrun")); }
-                } else {
-                    <_ as ::proto_rs::ProtoExt>::merge_field(&mut self.#fa, #tag, wire_type, buf, __ctx)?;
-                }
-            }
-        };
+        return decode_message(&access_tokens, tag);
     }
 
-    // Scalar merge fallback
-    decode_scalar_into(&quote! { self.#fa }, tag, ty)
+    decode_scalar(&access_tokens, tag, &parsed)
 }
 
 pub fn generate_field_encoded_len(field: &Field, access: FieldAccess, tag: u32) -> TokenStream {
@@ -193,282 +149,419 @@ pub fn generate_field_encoded_len(field: &Field, access: FieldAccess, tag: u32) 
 
     let ty = &field.ty;
     let parsed = parse_field_type(ty);
-    let fa = access.to_tokens();
+    let access_tokens = access.to_tokens();
 
     if let Some(into_ty) = &cfg.into_type {
-        let into_ty: Type = syn::parse_str(into_ty).unwrap();
-        let conv = cfg.into_fn.as_deref().map(|f| format_ident!("{}", f));
-        let val = if let Some(fun) = conv {
-            quote! { #fun(&self.#fa) }
+        let into_ty: Type = syn::parse_str(into_ty).expect("invalid into type");
+        let conv_fn = cfg.into_fn.as_deref().map(|f| format_ident!("{}", f));
+
+        let value = if let Some(fun) = conv_fn {
+            quote! { #fun(&self.#access_tokens) }
         } else {
-            quote! { <#into_ty as ::core::convert::From<_>>::from(self.#fa.clone()) }
+            quote! { <#into_ty as ::core::convert::From<_>>::from(self.#access_tokens.clone()) }
         };
-        return encoded_len_scalar(&val, tag, &into_ty);
+
+        return encoded_len_scalar_value(&value, tag, &parse_field_type(&into_ty));
     }
 
     if cfg.is_rust_enum || cfg.is_proto_enum {
-        return quote! {
-            if (self.#fa as i32) != 0 {
-                ::proto_rs::encoding::int32::encoded_len(#tag, &(self.#fa as i32))
-            } else { 0 }
-        };
+        return encoded_len_enum(&access_tokens, tag);
     }
 
-    if let Type::Array(arr) = ty {
-        return encoded_len_array_no_alloc(&fa, tag, arr);
+    if let Type::Array(array) = ty {
+        return encoded_len_array(&access_tokens, tag, array);
     }
 
     if parsed.is_repeated {
-        return encoded_len_repeated(&fa, tag, &parsed);
-    }
-    if parsed.is_option {
-        return quote! {
-            self.#fa.as_ref().map_or(0, |v| ::proto_rs::ProtoExt::encoded_len(v).saturating_add(::proto_rs::encoding::encoded_len_key(#tag)))
-        };
-    }
-    if parsed.is_message_like {
-        return quote! {
-            let l = ::proto_rs::ProtoExt::encoded_len(&self.#fa);
-            if l == 0 { 0 } else { ::proto_rs::encoding::encoded_len_key(#tag) + ::proto_rs::encoding::encoded_len_varint(l as u64) + l }
-        };
+        return encoded_len_repeated(&access_tokens, tag, &parsed);
     }
 
-    encoded_len_scalar(&quote! { self.#fa }, tag, ty)
+    if parsed.is_option {
+        return encoded_len_option(&access_tokens, tag, &parsed);
+    }
+
+    if parsed.is_message_like {
+        return encoded_len_message(&access_tokens, tag);
+    }
+
+    encoded_len_scalar(&access_tokens, tag, &parsed)
 }
 
-// ————————————————————————————————————————————————————————————————————————
-// Scalar helpers (no allocation, prost wire-compatible)
+// ---------------------------------------------------------------------------
+// Scalar helpers
 
-fn encode_scalar(val: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
-    use quote::quote;
-    if is_bytes_vec(ty) {
-        // Vec<u8> as bytes
+fn scalar_codec(parsed: &ParsedFieldType) -> Option<Ident> {
+    match parsed.proto_type.as_str() {
+        "message" => None,
+        other => Some(Ident::new(other, Span::call_site())),
+    }
+}
+
+fn encode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
+
+    if is_bytes_vec(&parsed.rust_type) {
         return quote! {
-            if !(#val).is_empty() {
-                ::proto_rs::encoding::bytes::encode(#tag, &#val, buf);
+            if !self.#access.is_empty() {
+                ::proto_rs::encoding::#codec::encode(#tag, &self.#access, buf);
             }
         };
     }
-    let w = scalar_codec_ident(ty);
+
     quote! {
-        let __v = #val;
-        // Zero/empty elision is handled by the codec's encode (prost-compatible)
-        ::proto_rs::encoding::#w::encode(#tag, &__v, buf);
+        ::proto_rs::encoding::#codec::encode(#tag, &self.#access, buf);
     }
 }
 
-fn decode_scalar_into(place: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
-    let w = scalar_codec_ident(ty);
+fn encode_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
+
+    quote! {
+        ::proto_rs::encoding::#codec::encode(#tag, &#value, buf);
+    }
+}
+
+fn decode_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
+
     quote! {
         if #tag == tag {
-            ::proto_rs::encoding::#w::merge(wire_type, &mut #place, buf, ctx.clone())?;
+            ::proto_rs::encoding::#codec::merge(wire_type, &mut self.#access, buf, ctx.clone())?;
         }
     }
 }
 
-fn encoded_len_scalar(val: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
-    let w = scalar_codec_ident(ty);
-    quote! {
-        ::proto_rs::encoding::#w::encoded_len(#tag, &#val)
-    }
-}
-
-fn scalar_codec_ident(ty: &Type) -> Ident {
-    // Map Rust type -> encoding module ident name used in your encoding.rs (int32,uint64,string,bytes,float,double,bool)
-    let i = match ty {
-        Type::Path(tp) => {
-            if let Some(seg) = tp.path.segments.last() {
-                let id = &seg.ident;
-                match id.to_string().as_str() {
-                    "i32" => "int32",
-                    "i64" => "int64",
-                    "u32" => "uint32",
-                    "u64" => "uint64",
-                    "bool" => "bool",
-                    "f32" => "float",
-                    "f64" => "double",
-                    "String" => "string",
-                    "Bytes" => "bytes",
-                    "Vec" => "bytes", // Vec<u8> handled higher but safe fallback
-                    _ => "string",    // message-like handled earlier; fallback
-                }
-            } else {
-                "string"
-            }
-        }
-        _ => "string",
+fn encoded_len_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! { 0 };
     };
-    Ident::new(i, Span::call_site())
+
+    quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &self.#access) }
 }
 
-// ————————————————————————————————————————————————————————————————————————
-// Arrays (no temporary allocation).
-// [u8; N] -> bytes. Other [T;N] -> repeated T (unpacked, prost will accept).
+fn encoded_len_scalar_value(value: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! { 0 };
+    };
 
-fn encode_array_no_alloc(fa: &TokenStream, tag: u32, arr: &syn::TypeArray) -> TokenStream {
-    let elem = &*arr.elem;
-    if is_bytes_array(&Type::Array(arr.clone())) {
+    quote! { ::proto_rs::encoding::#codec::encoded_len(#tag, &#value) }
+}
+
+// ---------------------------------------------------------------------------
+// Message helpers
+
+fn encode_message(access: &TokenStream, tag: u32) -> TokenStream {
+    quote! {
+        if ::proto_rs::ProtoExt::encoded_len(&self.#access) != 0 {
+            ::proto_rs::encoding::message::encode(#tag, &self.#access, buf);
+        }
+    }
+}
+
+fn decode_message(access: &TokenStream, tag: u32) -> TokenStream {
+    quote! {
+        if #tag == tag {
+            ::proto_rs::encoding::message::merge(wire_type, &mut self.#access, buf, ctx.clone())?;
+        }
+    }
+}
+
+fn encoded_len_message(access: &TokenStream, tag: u32) -> TokenStream {
+    quote! { ::proto_rs::encoding::message::encoded_len(#tag, &self.#access) }
+}
+
+// ---------------------------------------------------------------------------
+// Enum helpers (repr(i32))
+
+fn encode_enum(access: &TokenStream, tag: u32) -> TokenStream {
+    quote! {
+        let __value: i32 = self.#access as i32;
+        if __value != 0 {
+            ::proto_rs::encoding::int32::encode(#tag, &__value, buf);
+        }
+    }
+}
+
+fn decode_enum(access: &TokenStream, tag: u32, enum_ty: &Type) -> TokenStream {
+    quote! {
+        if #tag == tag {
+            let mut __tmp: i32 = 0;
+            ::proto_rs::encoding::int32::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+            self.#access = <#enum_ty as ::core::convert::TryFrom<i32>>::try_from(__tmp)?;
+        }
+    }
+}
+
+fn encoded_len_enum(access: &TokenStream, tag: u32) -> TokenStream {
+    quote! {
+        if (self.#access as i32) != 0 {
+            ::proto_rs::encoding::int32::encoded_len(#tag, &(self.#access as i32))
+        } else {
+            0
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Array helpers (fixed length, no allocations)
+
+fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
+    let elem_ty = &*array.elem;
+    let elem_parsed = parse_field_type(elem_ty);
+
+    if is_bytes_array(&Type::Array(array.clone())) {
         return quote! {
-            // bytes: single length-delimited field
-            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-            ::proto_rs::encoding::encode_varint((#fa).len() as u64, buf);
-            // direct slice view of array; no allocation
-            buf.put_slice(&#fa[..]);
+            if self.#access.iter().any(|&b| b != 0u8) {
+                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint(self.#access.len() as u64, buf);
+                buf.put_slice(&self.#access);
+            }
         };
     }
 
-    // Non-u8 arrays: emit as repeated T (unpacked)
-    let enc = scalar_codec_ident(elem);
+    if elem_parsed.is_message_like {
+        return quote! {
+            for __value in self.#access.iter() {
+                ::proto_rs::encoding::message::encode(#tag, __value, buf);
+            }
+        };
+    }
+
+    let Some(codec) = scalar_codec(&elem_parsed) else {
+        return quote! {};
+    };
+
     quote! {
-        for __x in (#fa).iter() {
-            ::proto_rs::encoding::#enc::encode(#tag, __x, buf);
+        for __value in self.#access.iter() {
+            ::proto_rs::encoding::#codec::encode(#tag, __value, buf);
         }
     }
 }
 
-fn decode_array_no_alloc(fa: &TokenStream, tag: u32, arr: &syn::TypeArray) -> TokenStream {
-    // We need to fill a fixed-size array without realloc.
-    // Strategy: decode into a local index; error if too many/too few.
-    let elem = &*arr.elem;
-    let enc = scalar_codec_ident(elem);
+fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
+    let elem_ty = &*array.elem;
+    let elem_parsed = parse_field_type(elem_ty);
+
+    if elem_parsed.is_message_like {
+        return quote! {
+            if #tag == tag {
+                let mut __i = 0usize;
+                if __i >= self.#access.len() {
+                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                }
+                let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                ::proto_rs::encoding::message::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                self.#access[__i] = __tmp;
+                __i += 1;
+            }
+        };
+    }
+
+    let Some(codec) = scalar_codec(&elem_parsed) else {
+        return quote! {};
+    };
+
+    let wire = scalar_wire_type(&elem_parsed);
+
     quote! {
         if #tag == tag {
             let mut __i = 0usize;
-            // accept packed and unpacked for numeric arrays
             match wire_type {
                 ::proto_rs::encoding::WireType::LengthDelimited => {
                     let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
                     let mut __limited = buf.take(__len);
                     while __limited.has_remaining() {
-                        if __i >= (#fa).len() { return Err(::proto_rs::DecodeError::new("too many elements for fixed array")); }
-                        let mut __tmp = ::core::default::Default::default();
-                        ::proto_rs::encoding::#enc::merge(::proto_rs::encoding::WireType::Varint, &mut __tmp, &mut __limited, ctx.clone())?;
-                        (#fa)[__i] = __tmp;
+                        if __i >= self.#access.len() {
+                            return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                        }
+                        let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                        ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
+                        self.#access[__i] = __tmp;
                         __i += 1;
                     }
                 }
                 _ => {
-                    if __i >= (#fa).len() { return Err(::proto_rs::DecodeError::new("too many elements for fixed array")); }
-                    let mut __tmp = ::core::default::Default::default();
-                    ::proto_rs::encoding::#enc::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                    (#fa)[__i] = __tmp;
-                    __i += 1;
+                    if __i >= self.#access.len() {
+                        return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                    }
+                    let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                    ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                    self.#access[__i] = __tmp;
                 }
             }
         }
     }
 }
 
-fn encoded_len_array_no_alloc(fa: &TokenStream, tag: u32, arr: &syn::TypeArray) -> TokenStream {
-    let elem = &*arr.elem;
-    if is_bytes_array(&Type::Array(arr.clone())) {
+fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
+    if is_bytes_array(&Type::Array(array.clone())) {
         return quote! {
-            let l = (#fa).len();
-            ::proto_rs::encoding::encoded_len_key(#tag) + ::proto_rs::encoding::encoded_len_varint(l as u64) + l
+            if self.#access.iter().all(|&b| b == 0u8) {
+                0
+            } else {
+                let l = self.#access.len();
+                ::proto_rs::encoding::encoded_len_key(#tag)
+                    + ::proto_rs::encoding::encoded_len_varint(l as u64)
+                    + l
+            }
         };
     }
-    let enc = scalar_codec_ident(elem);
+
+    let elem_ty = &*array.elem;
+    let elem_parsed = parse_field_type(elem_ty);
+    let Some(codec) = scalar_codec(&elem_parsed) else {
+        return quote! { 0 };
+    };
+
     quote! {
         {
-            let mut __sum = 0usize;
-            for __x in (#fa).iter() {
-                __sum += ::proto_rs::encoding::#enc::encoded_len(#tag, __x);
+            let mut __total = 0usize;
+            for __value in self.#access.iter() {
+                __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
             }
-            __sum
+            __total
         }
     }
 }
 
-// ————————————————————————————————————————————————————————————————————————
-// Repeated (Vec<T>) — emit packed for numeric, unpacked for messages/strings.
-// Decode accepts both packed and unpacked (prost-compatible).
+// ---------------------------------------------------------------------------
+// Repeated helpers (Vec<T>)
 
-fn encode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_message_like {
+        return quote! { ::proto_rs::encoding::message::encode_repeated(#tag, &self.#access, buf); };
+    }
+
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
+
     if parsed.is_numeric_scalar {
-        let enc = scalar_codec_ident(&parsed.proto_rust_type);
+        quote! { ::proto_rs::encoding::#codec::encode_packed(#tag, &self.#access, buf); }
+    } else {
+        quote! { ::proto_rs::encoding::#codec::encode_repeated(#tag, &self.#access, buf); }
+    }
+}
+
+fn decode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_message_like {
         return quote! {
-            if !(#fa).is_empty() {
-                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                // packed payload len
-                let mut __len = 0usize;
-                for __x in (#fa).iter() {
-                    __len += ::proto_rs::encoding::#enc::encoded_len_no_tag(__x);
-                }
-                ::proto_rs::encoding::encode_varint(__len as u64, buf);
-                for __x in (#fa).iter() {
-                    ::proto_rs::encoding::#enc::encode_no_tag(__x, buf);
-                }
+            if #tag == tag {
+                ::proto_rs::encoding::message::merge_repeated(wire_type, &mut self.#access, buf, ctx.clone())?;
             }
         };
     }
 
-    // strings, bytes, messages: one element = one full key+value
-    let enc = scalar_codec_ident(&parsed.proto_rust_type);
-    quote! {
-        for __x in (#fa).iter() {
-            ::proto_rs::encoding::#enc::encode(#tag, __x, buf);
-        }
-    }
-}
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
 
-fn decode_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
-    let enc = scalar_codec_ident(&parsed.proto_rust_type);
     quote! {
         if #tag == tag {
-            match wire_type {
-                ::proto_rs::encoding::WireType::LengthDelimited if #parsed.is_numeric_scalar => {
-                    // packed
-                    let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                    let mut __limited = buf.take(__len);
-                    while __limited.has_remaining() {
-                        let mut __tmp = ::core::default::Default::default();
-                        ::proto_rs::encoding::#enc::merge(::proto_rs::encoding::WireType::Varint, &mut __tmp, &mut __limited, ctx.clone())?;
-                        (#fa).push(__tmp);
-                    }
-                }
-                _ => {
-                    // unpacked element
-                    let mut __tmp = ::core::default::Default::default();
-                    ::proto_rs::encoding::#enc::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                    (#fa).push(__tmp);
-                }
-            }
+            ::proto_rs::encoding::#codec::merge_repeated(wire_type, &mut self.#access, buf, ctx.clone())?;
         }
     }
 }
 
-fn encoded_len_repeated(fa: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_message_like {
+        return quote! { ::proto_rs::encoding::message::encoded_len_repeated(#tag, &self.#access) };
+    }
+
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! { 0 };
+    };
+
     if parsed.is_numeric_scalar {
-        let enc = scalar_codec_ident(&parsed.proto_rust_type);
+        quote! { ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &self.#access) }
+    } else {
+        quote! { ::proto_rs::encoding::#codec::encoded_len_repeated(#tag, &self.#access) }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Option helpers
+
+fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_message_like {
         return quote! {
-            if (#fa).is_empty() { 0 } else {
-                let mut __payload = 0usize;
-                for __x in (#fa).iter() {
-                    __payload += ::proto_rs::encoding::#enc::encoded_len_no_tag(__x);
-                }
-                ::proto_rs::encoding::encoded_len_key(#tag) + ::proto_rs::encoding::encoded_len_varint(__payload as u64) + __payload
+            if let Some(value) = &self.#access {
+                ::proto_rs::encoding::message::encode(#tag, value, buf);
             }
         };
     }
-    let enc = scalar_codec_ident(&parsed.proto_rust_type);
+
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
+
     quote! {
-        {
-            let mut __sum = 0usize;
-            for __x in (#fa).iter() {
-                __sum += ::proto_rs::encoding::#enc::encoded_len(#tag, __x);
-            }
-            __sum
+        if let Some(value) = &self.#access {
+            ::proto_rs::encoding::#codec::encode(#tag, value, buf);
         }
     }
 }
 
-// ————————————————————————————————————————————————————————————————————————
-// Option<T>: if Some, encode just like T; prost elides None.
+fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let inner_ty = &parsed.elem_type;
 
-fn encode_option(fa: &TokenStream, tag: u32, _parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_message_like {
+        return quote! {
+            if #tag == tag {
+                let mut __tmp: #inner_ty = <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
+                ::proto_rs::encoding::message::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                self.#access = Some(__tmp);
+            }
+        };
+    }
+
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! {};
+    };
+
     quote! {
-        if let Some(__v) = (&self.#fa) {
-            ::proto_rs::ProtoExt::encode_raw(__v, buf); // __v is T; the T-impl will write the correct key/tag
+        if #tag == tag {
+            let mut __tmp: #inner_ty = <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
+            ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+            self.#access = Some(__tmp);
         }
+    }
+}
+
+fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_message_like {
+        return quote! {
+            self.#access
+                .as_ref()
+                .map_or(0, |value| ::proto_rs::encoding::message::encoded_len(#tag, value))
+        };
+    }
+
+    let Some(codec) = scalar_codec(parsed) else {
+        return quote! { 0 };
+    };
+
+    quote! {
+        self.#access
+            .as_ref()
+            .map_or(0, |value| ::proto_rs::encoding::#codec::encoded_len(#tag, value))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Utility helpers
+
+fn scalar_wire_type(parsed: &ParsedFieldType) -> TokenStream {
+    match parsed.proto_type.as_str() {
+        "float" | "fixed32" | "sfixed32" => quote! { ::proto_rs::encoding::WireType::ThirtyTwoBit },
+        "double" | "fixed64" | "sfixed64" => quote! { ::proto_rs::encoding::WireType::SixtyFourBit },
+        "string" | "bytes" => quote! { ::proto_rs::encoding::WireType::LengthDelimited },
+        _ => quote! { ::proto_rs::encoding::WireType::Varint },
     }
 }

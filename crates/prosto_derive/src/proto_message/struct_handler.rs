@@ -132,11 +132,11 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
 
         if !field_config.skip {
             let tag_u32 = field_num as u32;
-            let field_access = FieldAccess::Indexed(&tuple_idx);
+            let field_access = FieldAccess::Tuple(tuple_idx.clone());
 
-            encode_fields.push(generate_field_encode(field_access.clone(), tag_u32, field_ty, &field_config));
+            encode_fields.push(generate_field_encode(field, field_access.clone(), tag_u32));
 
-            let decode_body = generate_field_decode(field_access.clone(), tag_u32, field_ty, &field_config);
+            let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
                     #decode_body
@@ -144,7 +144,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field_access, tag_u32, field_ty, &field_config));
+            encoded_len_fields.push(generate_field_encoded_len(field, field_access, tag_u32));
 
             clear_fields.push(generate_field_clear(&tuple_idx, field_ty));
         }
@@ -240,11 +240,11 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
 
         if !field_config.skip {
             let field_ty = &field.ty;
-            let field_access = FieldAccess::Named(ident);
+            let field_access = FieldAccess::Named(ident.clone());
 
-            encode_fields.push(generate_field_encode(field_access.clone(), tag_u32, field_ty, &field_config));
+            encode_fields.push(generate_field_encode(field, field_access.clone(), tag_u32));
 
-            let decode_body = generate_field_decode(field_access.clone(), tag_u32, field_ty, &field_config);
+            let decode_body = generate_field_decode(field, field_access.clone(), tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
                     #decode_body
@@ -252,7 +252,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field_access, tag_u32, field_ty, &field_config));
+            encoded_len_fields.push(generate_field_encoded_len(field, field_access, tag_u32));
 
             clear_fields.push(generate_field_clear(ident, field_ty));
         }
