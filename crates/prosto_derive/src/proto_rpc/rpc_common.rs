@@ -12,56 +12,28 @@ use crate::utils::to_pascal_case;
 // ============================================================================
 
 /// Generate proto-to-native request conversion (used in server)
-pub fn generate_proto_to_native_request(request_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, extensions, proto_msg) = request.into_parts();
-        let native_msg = #request_type::from_proto(proto_msg)
-            .map_err(|e| tonic::Status::invalid_argument(
-                format!("Failed to convert request: {}", e)
-            ))?;
-        let native_request = tonic::Request::from_parts(metadata, extensions, native_msg);
-    }
+pub fn generate_proto_to_native_request(_request_type: &Type) -> TokenStream {
+    quote! { let native_request = request; }
 }
 
 /// Generate native-to-proto request conversion (used in client - unary)
 pub fn generate_native_to_proto_request_unary() -> TokenStream {
-    quote! {
-        let req = request.into_request();
-        let (metadata, extensions, native_msg) = req.into_parts();
-        let proto_msg = native_msg.to_proto();
-        let mut proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
-    }
+    quote! { let mut proto_req = request.into_request(); }
 }
 
 /// Generate native-to-proto request conversion (used in client - streaming)
 pub fn generate_native_to_proto_request_streaming() -> TokenStream {
-    quote! {
-        let req = request.into_request();
-        let (metadata, extensions, native_msg) = req.into_parts();
-        let proto_msg = native_msg.to_proto();
-        let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
-    }
+    quote! { let proto_req = request.into_request(); }
 }
 
 /// Generate proto-to-native response conversion (used in client)
-pub fn generate_proto_to_native_response(response_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, proto_response, extensions) = response.into_parts();
-        let native_response = #response_type::from_proto(proto_response)
-            .map_err(|e| tonic::Status::internal(
-                format!("Failed to convert response: {}", e)
-            ))?;
-        Ok(tonic::Response::from_parts(metadata, native_response, extensions))
-    }
+pub fn generate_proto_to_native_response(_response_type: &Type) -> TokenStream {
+    quote! { Ok(response) }
 }
 
 /// Generate native-to-proto response conversion (used in server)
 pub fn generate_native_to_proto_response() -> TokenStream {
-    quote! {
-        let (metadata, native_body, extensions) = native_response.into_parts();
-        let proto_msg = native_body.to_proto();
-        Ok(tonic::Response::from_parts(metadata, proto_msg, extensions))
-    }
+    quote! { Ok(native_response) }
 }
 
 // ============================================================================
@@ -70,12 +42,12 @@ pub fn generate_native_to_proto_response() -> TokenStream {
 
 /// Generate proto type reference for request
 pub fn generate_request_proto_type(request_type: &Type) -> TokenStream {
-    quote! { <#request_type as super::HasProto>::Proto }
+    quote! { #request_type }
 }
 
 /// Generate proto type reference for response
 pub fn generate_response_proto_type(response_type: &Type) -> TokenStream {
-    quote! { <#response_type as super::HasProto>::Proto }
+    quote! { #response_type }
 }
 
 // ============================================================================
@@ -89,9 +61,7 @@ pub fn generate_route_path(package_name: &str, trait_name: &syn::Ident, method_n
 
 /// Generate codec initialization
 pub fn generate_codec_init() -> TokenStream {
-    quote! {
-        let codec = tonic_prost::ProstCodec::default();
-    }
+    quote! { let codec = ::proto_rs::ProtoCodec::default(); }
 }
 
 // ============================================================================
@@ -99,20 +69,8 @@ pub fn generate_codec_init() -> TokenStream {
 // ============================================================================
 
 /// Generate stream conversion for streaming responses (client side)
-pub fn generate_stream_conversion(inner_response_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, proto_stream, extensions) = response.into_parts();
-
-        use tonic::codegen::tokio_stream::StreamExt;
-        let native_stream = proto_stream.map(|result| {
-            result.and_then(|proto_item| {
-                #inner_response_type::from_proto(proto_item)
-                    .map_err(|e| tonic::Status::internal(format!("Failed to convert response: {}", e)))
-            })
-        });
-
-        Ok(tonic::Response::from_parts(metadata, native_stream, extensions))
-    }
+pub fn generate_stream_conversion(_inner_response_type: &Type) -> TokenStream {
+    quote! { Ok(response) }
 }
 
 /// Check if method is streaming
@@ -247,7 +205,7 @@ mod tests {
         let ty: Type = parse_quote! { MyRequest };
         let proto_type = generate_request_proto_type(&ty);
 
-        let expected = quote! { <MyRequest as super::HasProto>::Proto };
+        let expected = quote! { MyRequest };
         assert_eq!(proto_type.to_string(), expected.to_string());
     }
 }
