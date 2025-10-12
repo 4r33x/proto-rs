@@ -69,6 +69,7 @@ chrono = "0.4.42"
 
 
 [features]
+std = []
 fastnum = ["dep:fastnum"]
 solana = ["dep:solana-address", "dep:solana-signature"]
 # Schema collection for build scripts
@@ -82,9 +83,8 @@ direct_gen = ["prosto_derive/direct_gen"]
 
 no-recursion-limit = []
 #TODO!
-#default = ["derive", "std"]
+default = ["std"]
 #derive = ["dep:prost-derive"]
-#std = []
 
 
 [package.metadata.docs.rs]

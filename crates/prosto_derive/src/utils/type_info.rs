@@ -72,10 +72,10 @@ pub fn is_bytes_vec(ty: &Type) -> bool {
                 if id == "Bytes" {
                     return true;
                 }
-                if id == "Vec" {
-                    if let Some(inner) = single_generic(path) {
-                        return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).map(|i| i == "u8").unwrap_or(false));
-                    }
+                if id == "Vec"
+                    && let Some(inner) = single_generic(path)
+                {
+                    return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).map(|i| i == "u8").unwrap_or(false));
                 }
             }
             false
@@ -195,7 +195,7 @@ fn numeric_scalar(rust: Type, proto: Type, name: &str) -> ParsedFieldType {
 fn parse_array_proto_suffix(ty: &Type) -> Type {
     match ty {
         Type::Array(array) => {
-            let inner = parse_array_proto_suffix(&*array.elem);
+            let inner = parse_array_proto_suffix(&array.elem);
             parse_quote! { [#inner] }
         }
         _ => with_proto_suffix(ty),
@@ -239,16 +239,5 @@ fn with_proto_suffix(ty: &Type) -> Type {
             Type::Path(cloned)
         }
         _ => ty.clone(),
-    }
-}
-
-trait ParsedFieldTypeExt {
-    fn with_repeated(self) -> Self;
-}
-
-impl ParsedFieldTypeExt for ParsedFieldType {
-    fn with_repeated(mut self) -> Self {
-        self.is_repeated = true;
-        self
     }
 }

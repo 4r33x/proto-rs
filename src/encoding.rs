@@ -150,7 +150,7 @@ where
 
     let limit = remaining - len as usize;
     while buf.remaining() > limit {
-        merge(value, buf, ctx.clone())?;
+        merge(value, buf, ctx)?;
     }
 
     if buf.remaining() != limit {
@@ -880,6 +880,7 @@ macro_rules! map {
         ///
         /// This is necessary because enumeration values can have a default value other
         /// than 0 in proto2.
+        #[allow(clippy::too_many_arguments)]
         pub fn encode_with_default<K, V, B, KE, KL, VE, VL>(key_encode: KE, key_encoded_len: KL, val_encode: VE, val_encoded_len: VL, val_default: &V, tag: u32, values: &$map_ty<K, V>, buf: &mut B)
         where
             K: Default + Eq + Hash + Ord,

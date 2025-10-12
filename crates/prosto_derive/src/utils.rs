@@ -2,7 +2,6 @@
 
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::quote;
 use syn::Field;
 use syn::GenericArgument;
 use syn::Lit;
@@ -10,21 +9,17 @@ use syn::PathArguments;
 use syn::Type;
 use syn::TypePath;
 
-// Re-export modular utilities
-pub mod array_handling;
-pub mod enum_handling;
-pub mod field_handling;
 pub mod string_helpers;
 pub mod type_conversion;
 pub mod type_info;
 
 pub use string_helpers::*;
-pub use type_conversion::{get_proto_rust_type, needs_into_conversion, needs_try_into_conversion};
-pub use type_info::{ParsedFieldType, is_bytes_array, is_bytes_vec, parse_field_type};
-
-// ============================================================================
-// FIELD CONFIGURATION
-// ============================================================================
+pub use type_conversion::get_proto_rust_type;
+pub use type_conversion::needs_into_conversion;
+pub use type_info::ParsedFieldType;
+pub use type_info::is_bytes_array;
+pub use type_info::is_bytes_vec;
+pub use type_info::parse_field_type;
 
 #[derive(Debug, Clone, Default)]
 pub struct FieldConfig {
@@ -56,10 +51,10 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("skip") => {
                     cfg.skip = true;
                     // allow #[proto(skip = "fn_name")]
-                    if meta.input.peek(syn::Token![=]) {
-                        if let Some(fun) = parse_string_value(&meta) {
-                            cfg.skip_deser_fn = Some(fun);
-                        }
+                    if meta.input.peek(syn::Token![=])
+                        && let Some(fun) = parse_string_value(&meta)
+                    {
+                        cfg.skip_deser_fn = Some(fun);
                     }
                 }
                 Some("rust_enum") => cfg.is_rust_enum = true,
@@ -95,10 +90,6 @@ fn parse_usize_value(meta: &syn::meta::ParseNestedMeta) -> Option<usize> {
     })
 }
 
-// ============================================================================
-// TYPE HELPERS
-// ============================================================================
-
 fn last_path_segment(ty: &Type) -> Option<&syn::PathSegment> {
     match ty {
         Type::Path(path) => path.path.segments.last(),
@@ -123,32 +114,14 @@ pub fn is_option_type(ty: &Type) -> bool {
     matches!(last_path_segment(ty), Some(seg) if seg.ident == "Option")
 }
 
-pub fn extract_option_inner_type(ty: &Type) -> Option<Type> {
-    if let Type::Path(path) = ty {
-        if let Some(seg) = path.path.segments.last() {
-            if seg.ident == "Option" {
-                if let PathArguments::AngleBracketed(args) = &seg.arguments {
-                    if let Some(GenericArgument::Type(inner)) = args.args.first() {
-                        return Some(inner.clone());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
 pub fn vec_inner_type(ty: &Type) -> Option<Type> {
-    if let Type::Path(path) = ty {
-        if let Some(seg) = path.path.segments.last() {
-            if seg.ident == "Vec" {
-                if let PathArguments::AngleBracketed(args) = &seg.arguments {
-                    if let Some(GenericArgument::Type(inner)) = args.args.first() {
-                        return Some(inner.clone());
-                    }
-                }
-            }
-        }
+    if let Type::Path(path) = ty
+        && let Some(seg) = path.path.segments.last()
+        && seg.ident == "Vec"
+        && let PathArguments::AngleBracketed(args) = &seg.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
     }
     None
 }
@@ -156,32 +129,6 @@ pub fn vec_inner_type(ty: &Type) -> Option<Type> {
 pub fn is_complex_type(ty: &Type) -> bool {
     parse_field_type(ty).is_message_like
 }
-// ============================================================================
-// ERROR HELPERS
-// ============================================================================
-
-/// Generate error conversion code
-pub fn generate_field_error(field_name: &syn::Ident, error_name: &syn::Ident) -> TokenStream {
-    quote! {
-        .map_err(|e| #error_name::FieldConversion {
-            field: stringify!(#field_name).to_string(),
-            source: Box::new(e),
-        })?
-    }
-}
-
-/// Generate missing field error
-pub fn generate_missing_field_error(field_name: &syn::Ident, error_name: &syn::Ident) -> TokenStream {
-    quote! {
-        .ok_or_else(|| #error_name::MissingField {
-            field: stringify!(#field_name).to_string()
-        })?
-    }
-}
-
-// ============================================================================
-// METHOD INFO
-// ============================================================================
 
 pub struct MethodInfo {
     pub name: syn::Ident,

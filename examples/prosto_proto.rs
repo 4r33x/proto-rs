@@ -322,9 +322,6 @@ pub struct Attr {
     pub updated_at: DateTime<Utc>,
 }
 
-// ============================================================================
-// Test 1: Simple struct - no shadow needed
-// ============================================================================
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SimpleMessage {
@@ -365,9 +362,6 @@ pub enum QuoteLamports {
     Usdt(u64),
 }
 
-// ============================================================================
-// Test 7: Struct with complex enum field - needs shadow
-// ============================================================================
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub struct Order {

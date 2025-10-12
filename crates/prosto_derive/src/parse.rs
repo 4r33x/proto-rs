@@ -16,10 +16,6 @@ use crate::utils::rust_type_path_ident;
 use crate::write_file::register_and_emit_proto_inner;
 use crate::write_file::register_imports;
 
-// ============================================================================
-// FIELD ATTRIBUTE PARSING TRAIT
-// ============================================================================
-
 pub trait ParseFieldAttr {
     fn extract_field_imports(&self, map: &mut BTreeMap<String, BTreeSet<String>>);
 }
@@ -53,10 +49,6 @@ impl ParseFieldAttr for () {
         // No fields to parse
     }
 }
-
-// ============================================================================
-// UNIFIED PROTO CONFIG
-// ============================================================================
 
 #[derive(Debug, Clone, Default)]
 pub struct UnifiedProtoConfig {
@@ -113,10 +105,6 @@ impl UnifiedProtoConfig {
         self.proto_path.as_deref().unwrap_or("protos/generated.proto")
     }
 }
-
-// ============================================================================
-// ATTRIBUTE PARSING HELPERS
-// ============================================================================
 
 fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     let parser = syn::meta::parser(|meta| {
@@ -225,10 +213,6 @@ fn merge_field_imports(dest: &mut BTreeMap<String, BTreeSet<String>>, src: HashM
         dest.entry(package).or_default().extend(types);
     }
 }
-
-// ============================================================================
-// TESTS
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

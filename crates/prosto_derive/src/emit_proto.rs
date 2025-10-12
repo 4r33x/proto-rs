@@ -23,10 +23,6 @@ use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
 use crate::utils::vec_inner_type;
 
-// ============================================================================
-// ENUM GENERATION
-// ============================================================================
-
 pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
     let variants: Vec<String> = data
         .variants
@@ -85,10 +81,6 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
         oneof_fields.join("\n")
     )
 }
-
-// ============================================================================
-// STRUCT GENERATION
-// ============================================================================
 
 pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
     match fields {
@@ -168,10 +160,6 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 
     proto_fields.join("\n")
 }
-
-// ============================================================================
-// FIELD TYPE HELPERS
-// ============================================================================
 
 /// Get proto type string for a field type
 fn get_field_proto_type(ty: &Type) -> String {
@@ -257,10 +245,6 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     parsed.proto_type
 }
 
-// ============================================================================
-// SERVICE GENERATION
-// ============================================================================
-
 pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo], proto_imports: &BTreeMap<String, BTreeSet<String>>) -> String {
     let mut lines = vec![format!("service {} {{", trait_name)];
 
@@ -303,10 +287,6 @@ fn extract_type_name(ty: &Type) -> String {
         "Unknown".to_string()
     }
 }
-
-// ============================================================================
-// TESTS
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

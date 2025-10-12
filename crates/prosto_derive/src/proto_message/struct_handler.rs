@@ -25,19 +25,19 @@ fn strip_proto_attrs(attrs: &[syn::Attribute]) -> Vec<syn::Attribute> {
 
 /// Generate smart default value for a field type
 fn generate_field_default(field_ty: &Type) -> TokenStream {
-    if let Type::Path(type_path) = field_ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            let ident = &segment.ident;
+    if let Type::Path(type_path) = field_ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        let ident = &segment.ident;
 
-            // Handle Option<T> - always None
-            if ident == "Option" {
-                return quote! { None };
-            }
+        // Handle Option<T> - always None
+        if ident == "Option" {
+            return quote! { None };
+        }
 
-            // Handle Vec<T> - always Vec::new()
-            if ident == "Vec" {
-                return quote! { Vec::new() };
-            }
+        // Handle Vec<T> - always Vec::new()
+        if ident == "Vec" {
+            return quote! { Vec::new() };
         }
     }
 
@@ -47,19 +47,19 @@ fn generate_field_default(field_ty: &Type) -> TokenStream {
 
 /// Generate smart clear for a field
 fn generate_field_clear(field_ident: &dyn quote::ToTokens, field_ty: &Type) -> TokenStream {
-    if let Type::Path(type_path) = field_ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            let ident = &segment.ident;
+    if let Type::Path(type_path) = field_ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        let ident = &segment.ident;
 
-            // Handle Option<T>
-            if ident == "Option" {
-                return quote! { self.#field_ident = None; };
-            }
+        // Handle Option<T>
+        if ident == "Option" {
+            return quote! { self.#field_ident = None; };
+        }
 
-            // Handle Vec<T>
-            if ident == "Vec" {
-                return quote! { self.#field_ident.clear(); };
-            }
+        // Handle Vec<T>
+        if ident == "Vec" {
+            return quote! { self.#field_ident.clear(); };
         }
     }
 

@@ -135,7 +135,7 @@ pub trait ProtoExt {
         let ctx = DecodeContext::default();
         while buf.has_remaining() {
             let (tag, wire_type) = decode_key(&mut buf)?;
-            self.merge_field(tag, wire_type, &mut buf, ctx.clone())?;
+            self.merge_field(tag, wire_type, &mut buf, ctx)?;
         }
         Ok(())
     }

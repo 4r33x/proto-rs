@@ -10,10 +10,6 @@ use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::skip_field;
 
-// ============================================================================
-// Generic array implementation for all ProtoExt types
-// ============================================================================
-
 impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
     #[inline]
     fn proto_default() -> Self {

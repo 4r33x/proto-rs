@@ -428,9 +428,7 @@ impl Name for Bytes {
 /// `google.protobuf.Empty`
 impl ProtoExt for () {
     #[inline]
-    fn proto_default() -> Self {
-        ()
-    }
+    fn proto_default() -> Self {}
 
     fn encode_raw(&self, _buf: &mut impl BufMut) {}
 

@@ -16,25 +16,13 @@ use quote::quote;
 use crate::utils::derive_package_name;
 use crate::utils::format_import;
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
 const IMPORT_PREFIX: &str = "__IMPORT__";
-
-// ============================================================================
-// GLOBAL REGISTRIES
-// ============================================================================
 
 /// Global registry: filename -> BTreeSet<proto definitions>
 static REGISTRY: LazyLock<Mutex<HashMap<String, BTreeSet<String>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Track initialized files
 static INITIALIZED_FILES: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(|| Mutex::new(BTreeSet::new()));
-
-// ============================================================================
-// EMISSION CONTROL
-// ============================================================================
 
 /// Determine if we should emit .proto files
 /// Priority: env var > feature flag > default (false)
@@ -45,10 +33,6 @@ pub fn should_emit_file() -> bool {
         _ => cfg!(feature = "emit-proto-files"),
     }
 }
-
-// ============================================================================
-// CODE GENERATION
-// ============================================================================
 
 /// Generate proto emission code (const + inventory registration)
 pub fn generate_proto_emission(file_name: &str, type_ident: &str, content: &str) -> TokenStream {
@@ -72,10 +56,6 @@ pub fn generate_proto_emission(file_name: &str, type_ident: &str, content: &str)
 fn format_const_name(file_name: &str, type_ident: &str) -> String {
     format!("PROTO_SCHEMA_{}_{}", file_name.to_uppercase().replace(['.', '/', '-'], "_"), type_ident.to_uppercase())
 }
-
-// ============================================================================
-// REGISTRATION
-// ============================================================================
 
 /// Register proto content and optionally write to file
 pub fn register_and_emit_proto_inner(file_name: &str, type_ident: &str, content: &str) -> TokenStream {
@@ -145,10 +125,6 @@ pub fn register_import(file: &str, imports: &[String]) -> TokenStream {
 
     emission_code
 }
-
-// ============================================================================
-// FILE WRITING
-// ============================================================================
 
 /// Write proto content to registry
 fn write_proto_file(file_name_path: &str, content: &str) {

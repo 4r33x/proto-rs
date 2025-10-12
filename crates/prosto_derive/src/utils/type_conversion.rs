@@ -1,7 +1,5 @@
 //! Centralized type conversion logic to eliminate duplication
 
-use proc_macro2::TokenStream;
-use quote::quote;
 use syn::Type;
 use syn::parse_quote;
 
@@ -21,25 +19,25 @@ pub fn get_proto_rust_type(ty: &Type) -> Type {
     }
 
     // Handle primitives with size conversions
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return match segment.ident.to_string().as_str() {
-                // Types that need conversion to larger proto types
-                "u8" | "u16" => parse_quote! { u32 },
-                "i8" | "i16" => parse_quote! { i32 },
-                "usize" => parse_quote! { u64 },
-                "isize" => parse_quote! { i64 },
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return match segment.ident.to_string().as_str() {
+            // Types that need conversion to larger proto types
+            "u8" | "u16" => parse_quote! { u32 },
+            "i8" | "i16" => parse_quote! { i32 },
+            "usize" => parse_quote! { u64 },
+            "isize" => parse_quote! { i64 },
 
-                // Types that are too large for proto primitives
-                "u128" | "i128" => parse_quote! { ::std::vec::Vec<u8> },
+            // Types that are too large for proto primitives
+            "u128" | "i128" => parse_quote! { ::std::vec::Vec<u8> },
 
-                // Types that don't need conversion - pass through as-is
-                "u32" | "u64" | "i32" | "i64" | "f32" | "f64" | "bool" | "String" => ty.clone(),
+            // Types that don't need conversion - pass through as-is
+            "u32" | "u64" | "i32" | "i64" | "f32" | "f64" | "bool" | "String" => ty.clone(),
 
-                // Custom types pass through
-                _ => ty.clone(),
-            };
-        }
+            // Custom types pass through
+            _ => ty.clone(),
+        };
     }
 
     // Default: pass through
@@ -60,115 +58,9 @@ pub fn needs_into_conversion(ty: &Type) -> bool {
     false
 }
 
-/// Check if type needs .try_into() conversion for from_proto
-/// Returns true for types that need downcasting from proto representation
-pub fn needs_try_into_conversion(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        return type_path
-            .path
-            .segments
-            .last()
-            .map(|s| matches!(s.ident.to_string().as_str(), "u8" | "u16" | "i8" | "i16"))
-            .unwrap_or(false);
-    }
-    false
-}
-
-/// Generate to_proto conversion for primitives
-/// Handles both direct access and array conversions
-pub fn generate_primitive_to_proto(ident: &syn::Ident, ty: &Type) -> TokenStream {
-    // Handle arrays
-    if let Type::Array(type_array) = ty {
-        if is_bytes_array(ty) {
-            return quote! { #ident: #ident.to_vec() };
-        }
-        let elem_ty = &*type_array.elem;
-        if needs_into_conversion(elem_ty) {
-            return quote! { #ident: #ident.iter().map(|v| (*v).into()).collect() };
-        } else {
-            return quote! { #ident: #ident.to_vec() };
-        }
-    }
-
-    // Handle primitives
-    if needs_into_conversion(ty) {
-        quote! { #ident: self.#ident.into() }
-    } else {
-        quote! { #ident: self.#ident.clone() }
-    }
-}
-
-/// Generate from_proto conversion for primitives
-/// Handles both direct access and array conversions with error handling
-pub fn generate_primitive_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Ident) -> TokenStream {
-    // Handle arrays
-    if let Type::Array(type_array) = ty {
-        if is_bytes_array(ty) {
-            return quote! {
-                #ident: proto.#ident.as_slice().try_into()
-                    .map_err(|_| #error_name::FieldConversion {
-                        field: stringify!(#ident).to_string(),
-                        source: Box::new(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "Invalid byte array length"
-                        ))
-                    })?
-            };
-        }
-
-        let elem_ty = &*type_array.elem;
-        if needs_try_into_conversion(elem_ty) {
-            return quote! {
-                #ident: {
-                    let converted: Result<Vec<_>, _> = proto.#ident.iter()
-                        .map(|v| (*v).try_into())
-                        .collect();
-                    converted
-                        .map_err(|e| #error_name::FieldConversion {
-                            field: stringify!(#ident).to_string(),
-                            source: Box::new(e),
-                        })?
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| #error_name::FieldConversion {
-                            field: stringify!(#ident).to_string(),
-                            source: Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "Invalid array length"
-                            ))
-                        })?
-                }
-            };
-        } else {
-            return quote! {
-                #ident: proto.#ident.as_slice().try_into()
-                    .map_err(|_| #error_name::FieldConversion {
-                        field: stringify!(#ident).to_string(),
-                        source: Box::new(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "Invalid array length"
-                        ))
-                    })?
-            };
-        }
-    }
-
-    // Handle primitives
-    if needs_try_into_conversion(ty) {
-        quote! {
-            #ident: proto.#ident.try_into()
-                .map_err(|e| #error_name::FieldConversion {
-                    field: stringify!(#ident).to_string(),
-                    source: Box::new(e),
-                })?
-        }
-    } else {
-        quote! { #ident: proto.#ident }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use quote::quote;
     use syn::parse_quote;
 
     use super::*;
@@ -251,19 +143,6 @@ mod tests {
 
         let ty: Type = parse_quote! { String };
         assert!(!needs_into_conversion(&ty));
-    }
-
-    #[test]
-    fn test_needs_try_into_conversion() {
-        let ty: Type = parse_quote! { u8 };
-        assert!(needs_try_into_conversion(&ty));
-
-        let ty: Type = parse_quote! { u32 };
-        assert!(!needs_try_into_conversion(&ty));
-
-        // usize needs into but not try_into (u64 -> usize doesn't need try)
-        let ty: Type = parse_quote! { usize };
-        assert!(!needs_try_into_conversion(&ty));
     }
 
     #[test]
