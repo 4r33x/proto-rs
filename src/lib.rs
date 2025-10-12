@@ -7,7 +7,9 @@ pub use prosto_derive::proto_rpc;
 const RECURSION_LIMIT: u32 = 100;
 
 mod arrays;
-pub mod custom_types;
+mod custom_types;
+#[allow(unused_imports)]
+pub use custom_types::*;
 
 #[doc(hidden)]
 pub extern crate alloc;

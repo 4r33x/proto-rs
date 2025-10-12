@@ -1,4 +1,3 @@
-use proto_rs::HasProto;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
