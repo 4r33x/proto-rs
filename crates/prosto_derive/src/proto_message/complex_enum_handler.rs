@@ -13,6 +13,7 @@ use crate::utils::field_handling::FieldHandler;
 use crate::utils::field_handling::FromProtoConversion;
 use crate::utils::parse_field_config;
 use crate::utils::type_info::*;
+use crate::utils::TagAllocator;
 
 pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
@@ -465,11 +466,24 @@ fn handle_named_variant(
     let mut pattern_bindings = Vec::new(); // For match pattern
 
     // Use FieldHandler for each field
-    for (idx, field) in fields_named.named.iter().enumerate() {
+    let mut tag_allocator = TagAllocator::new();
+    for field in &fields_named.named {
         let field_ident = field.ident.as_ref().unwrap();
-        let field_num = idx + 1;
+        let field_config = parse_field_config(field);
+        let field_tag = if field_config.skip {
+            0
+        } else {
+            tag_allocator.assign(field_config.tag, &format!("{}::{}", variant_ident, field_ident))
+        };
 
-        let handler = FieldHandler::new(field, field_ident, field_num, error_name, format!("{}::{}", variant_ident, field_ident));
+        let handler = FieldHandler::with_config(
+            field,
+            field_ident,
+            field_tag,
+            field_config,
+            error_name,
+            format!("{}::{}", variant_ident, field_ident),
+        );
 
         let result = handler.generate();
 

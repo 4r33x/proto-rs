@@ -28,6 +28,18 @@ pub struct FieldHandler<'a> {
 impl<'a> FieldHandler<'a> {
     pub fn new(field: &'a Field, field_name: &'a syn::Ident, field_tag: usize, error_name: &'a syn::Ident, context: String) -> Self {
         let field_config = parse_field_config(field);
+        let tag = field_config.tag.unwrap_or(field_tag);
+        Self::with_config(field, field_name, tag, field_config, error_name, context)
+    }
+
+    pub fn with_config(
+        field: &'a Field,
+        field_name: &'a syn::Ident,
+        field_tag: usize,
+        field_config: FieldConfig,
+        error_name: &'a syn::Ident,
+        context: String,
+    ) -> Self {
         Self {
             field,
             field_name,
@@ -159,7 +171,11 @@ impl<'a> FieldHandler<'a> {
 
         let prost_attr = if parsed.is_repeated {
             let prost_type = &parsed.prost_type;
-            quote! { #[prost(#prost_type, repeated, tag = #field_tag)] }
+            if should_use_packed(&parsed) {
+                quote! { #[prost(#prost_type, repeated, packed = "true", tag = #field_tag)] }
+            } else {
+                quote! { #[prost(#prost_type, repeated, tag = #field_tag)] }
+            }
         } else if parsed.is_option || parsed.is_message_like {
             let prost_type = &parsed.prost_type;
             quote! { #[prost(#prost_type, optional, tag = #field_tag)] }
@@ -331,6 +347,18 @@ pub enum FromProtoConversion {
     Normal(TokenStream),
     SkipDefault(syn::Ident),
     SkipWithFn { computation: TokenStream, field_name: syn::Ident },
+}
+
+fn should_use_packed(parsed: &ParsedFieldType) -> bool {
+    if !parsed.is_repeated {
+        return false;
+    }
+
+    if parsed.is_message_like {
+        return false;
+    }
+
+    !matches!(parsed.proto_type.as_str(), "string" | "bytes")
 }
 
 #[cfg(test)]

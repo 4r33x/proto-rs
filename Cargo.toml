@@ -64,6 +64,8 @@ emit-proto-files = ["prosto_derive/emit-proto-files"]
 tonic = "0.14.2"
 tonic-prost = "0.14.1"
 
+bytes = "1.10"
+
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-stream = "0.1.17"
 
