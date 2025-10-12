@@ -171,6 +171,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 buf: &mut impl ::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
+                use ::bytes::Buf;
                 match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
@@ -286,6 +287,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 buf: &mut impl ::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
+                use ::bytes::Buf;
                 match tag {
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
