@@ -6,6 +6,8 @@ use syn::Index;
 
 use crate::utils::field_handling::FieldHandler;
 use crate::utils::field_handling::FromProtoConversion;
+use crate::utils::parse_field_config;
+use crate::utils::TagAllocator;
 
 pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     match &data.fields {
@@ -91,14 +93,29 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let mut to_proto_conversions = Vec::new();
     let mut from_proto_conversions = Vec::new();
 
+    let mut tag_allocator = TagAllocator::new();
+
     // Use FieldHandler for each field
     for (idx, field) in fields.unnamed.iter().enumerate() {
-        let field_num = idx + 1;
         let field_name = syn::Ident::new(&format!("field_{}", idx), name.span());
         let tuple_idx = Index::from(idx);
 
+        let field_config = parse_field_config(field);
+        if field_config.skip {
+            panic!("Tuple structs don't support #[proto(skip)] attributes");
+        }
+
+        let field_tag = tag_allocator.assign(field_config.tag, &format!("{}::{}", name, field_name));
+
         // Use FieldHandler to generate proper conversions
-        let handler = FieldHandler::new(field, &field_name, field_num, &error_name, format!("field_{}", idx));
+        let handler = FieldHandler::with_config(
+            field,
+            &field_name,
+            field_tag,
+            field_config,
+            &error_name,
+            format!("field_{}", idx),
+        );
 
         let result = handler.generate();
 
@@ -241,18 +258,28 @@ pub fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenS
     let mut from_proto_fields = Vec::new();
     let mut skip_computations = Vec::new();
 
-    let mut field_num = 0;
     if let Fields::Named(fields) = &data.fields {
+        let mut tag_allocator = TagAllocator::new();
+
         for field in &fields.named {
             let ident = field.ident.as_ref().unwrap();
+            let field_config = parse_field_config(field);
+            let field_tag = if field_config.skip {
+                0
+            } else {
+                tag_allocator.assign(field_config.tag, &ident.to_string())
+            };
 
-            let handler = FieldHandler::new(field, ident, field_num + 1, &error_name, ident.to_string());
+            let handler = FieldHandler::with_config(
+                field,
+                ident,
+                field_tag,
+                field_config,
+                &error_name,
+                ident.to_string(),
+            );
 
             let result = handler.generate();
-
-            if result.prost_field.is_some() {
-                field_num += 1;
-            }
 
             if let Some(prost_field) = result.prost_field {
                 proto_fields.push(prost_field);

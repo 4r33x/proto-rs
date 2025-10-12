@@ -142,9 +142,19 @@ impl<'a> ArrayFieldHandler<'a> {
             quote! { ::std::vec::Vec<#proto_elem_ty> }
         };
 
-        let prost = quote! {
-            #[prost(#prost_type, repeated, tag = #field_tag)]
-            pub #field_name: #field_ty_tokens
+        let use_packed = !parsed_elem.is_message_like
+            && !matches!(parsed_elem.proto_type.as_str(), "string" | "bytes");
+
+        let prost = if use_packed {
+            quote! {
+                #[prost(#prost_type, repeated, packed = "true", tag = #field_tag)]
+                pub #field_name: #field_ty_tokens
+            }
+        } else {
+            quote! {
+                #[prost(#prost_type, repeated, tag = #field_tag)]
+                pub #field_name: #field_ty_tokens
+            }
         };
 
         let parsed = ParsedFieldType {
