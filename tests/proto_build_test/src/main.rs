@@ -4,7 +4,7 @@ use tokio_stream::Stream;
 use tonic::Status;
 
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Copy)]
 pub enum ServiceStatus {
     Pending,
     #[default]

@@ -3,6 +3,13 @@ syntax = "proto3";
 package show;
 
 
+message EnumArrayRustEnumAttributeFailTest2Proto {
+  oneof value {
+    Status fail = 1;
+  }
+}
+
+
 message PaymentMethodProto {
   oneof value {
     uint64 cash = 1;
@@ -32,6 +39,19 @@ message Address {
   string street = 1;
   string city = 2;
   string country = 3;
+}
+
+message ArrayTest3CustomProtoTest {}
+
+message ArrayTest3CustomProtoTest2 {
+  repeated ArrayTestMessageU16 test = 1;
+}
+message ArrayTest3CustomProto {
+  oneof value {
+    ArrayTest3CustomProtoTest test = 1;
+    ArrayTestMessageU16 test1 = 2;
+    ArrayTest3CustomProtoTest2 test2 = 3;
+  }
 }
 
 message ArrayTestMessageCustom {
