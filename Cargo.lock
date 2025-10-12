@@ -805,7 +805,6 @@ dependencies = [
 name = "proto_rs"
 version = "0.5.0"
 dependencies = [
- "bytes",
  "chrono",
  "fastnum",
  "inventory",

@@ -35,7 +35,6 @@ pub struct FieldConfig {
     pub import_path: Option<String>,
     pub is_message: bool,
     pub is_proto_enum: bool,
-    pub tag: Option<usize>,
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -54,7 +53,6 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("rust_enum") => config.is_rust_enum = true,
                 Some("enum") => config.is_proto_enum = true,
                 Some("message") => config.is_message = true,
-                Some("tag") => config.tag = parse_tag_value(&meta),
                 Some("into") => config.into_type = parse_string_value(&meta),
                 Some("from") => config.from_type = parse_string_value(&meta),
                 Some("into_fn") => config.into_fn = parse_string_value(&meta),
@@ -75,25 +73,6 @@ fn parse_skip_attribute(meta: &syn::meta::ParseNestedMeta, config: &mut FieldCon
         && let Some(fn_name) = parse_string_value(meta)
     {
         config.skip_deser_fn = Some(fn_name);
-    }
-}
-
-fn parse_tag_value(meta: &syn::meta::ParseNestedMeta) -> Option<usize> {
-    let value = meta
-        .value()
-        .expect("proto(tag = ...) requires an integer literal value");
-    let lit: Lit = value
-        .parse()
-        .expect("proto(tag = ...) expects an integer literal");
-
-    if let Lit::Int(lit_int) = lit {
-        Some(
-            lit_int
-                .base10_parse::<usize>()
-                .expect("proto(tag = ...) must be a positive integer"),
-        )
-    } else {
-        panic!("proto(tag = ...) must use an integer literal");
     }
 }
 
@@ -216,7 +195,6 @@ fn parse_primitive_or_custom(ty: &Type, type_name: &str) -> ParsedFieldType {
         "f32" => ParsedFieldType::primitive(ty.clone(), "float", quote! { float }),
         "f64" => ParsedFieldType::primitive(ty.clone(), "double", quote! { double }),
         "String" => ParsedFieldType::primitive(ty.clone(), "string", quote! { string }),
-        "Bytes" => ParsedFieldType::primitive(ty.clone(), "bytes", quote! { bytes }),
         "bool" => ParsedFieldType::primitive(ty.clone(), "bool", quote! { bool }),
         custom => parse_custom_type(ty, custom),
     }
@@ -284,48 +262,4 @@ pub struct MethodInfo {
     pub stream_type_name: Option<syn::Ident>,
     pub inner_response_type: Option<Type>,
     pub user_method_signature: TokenStream,
-}
-
-// ============================================================================
-// TAG ALLOCATION UTILITIES
-// ============================================================================
-
-use std::collections::HashSet;
-
-#[derive(Default)]
-pub struct TagAllocator {
-    used: HashSet<usize>,
-    next: usize,
-}
-
-impl TagAllocator {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Assign a protobuf tag number for a field.
-    ///
-    /// Custom tags are validated to be unique and greater than zero.
-    /// Automatically assigned tags skip numbers that have been reserved
-    /// by explicit assignments.
-    pub fn assign(&mut self, requested: Option<usize>, context: &str) -> usize {
-        if let Some(tag) = requested {
-            if tag == 0 {
-                panic!("proto(tag = 0) is invalid for field `{}`", context);
-            }
-            if !self.used.insert(tag) {
-                panic!("duplicate proto tag {} detected for `{}`", tag, context);
-            }
-            return tag;
-        }
-
-        loop {
-            let candidate = if self.next == 0 { 1 } else { self.next };
-            self.next = candidate + 1;
-
-            if self.used.insert(candidate) {
-                return candidate;
-            }
-        }
-    }
 }

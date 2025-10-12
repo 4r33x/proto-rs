@@ -22,7 +22,6 @@ use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
 use crate::utils::vec_inner_type;
-use crate::utils::TagAllocator;
 
 // ============================================================================
 // ENUM GENERATION
@@ -106,26 +105,14 @@ fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<
 
 fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) -> String {
     let mut proto_fields = Vec::new();
-    let mut tag_allocator = TagAllocator::new();
 
     for (idx, field) in fields.iter().enumerate() {
+        let field_num = idx + 1;
         let field_name = format!("field_{}", idx);
-        let base_ty = &field.ty;
-        let config = parse_field_config(field);
-        if config.skip {
-            continue;
-        }
+        let ty = &field.ty;
 
-        let field_num = tag_allocator.assign(config.tag, &format!("{}::{}", name, field_name));
-
-        let effective_ty = if let Some(ref into_type) = config.into_type {
-            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| field.ty.clone())
-        } else {
-            base_ty.clone()
-        };
-
-        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&effective_ty);
-        let proto_type = determine_proto_type(&inner_type, &config);
+        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(ty);
+        let proto_type = determine_proto_type(&inner_type, &crate::utils::FieldConfig::default());
 
         let modifier = if is_repeated {
             "repeated "
@@ -143,7 +130,7 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
 /// Generate proto fields for named struct/enum variant
 fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
     let mut proto_fields = Vec::new();
-    let mut tag_allocator = TagAllocator::new();
+    let mut field_num = 0;
 
     for field in fields.iter() {
         let config = parse_field_config(field);
@@ -151,9 +138,8 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
             continue;
         }
 
+        field_num += 1;
         let field_name = field.ident.as_ref().unwrap().to_string();
-
-        let field_num = tag_allocator.assign(config.tag, &field_name);
 
         // Get effective type for proto generation
         let ty = if let Some(ref into_type) = config.into_type {

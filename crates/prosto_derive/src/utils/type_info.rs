@@ -69,7 +69,7 @@ pub fn is_complex_type(ty: &Type) -> bool {
 fn is_primitive_name(type_name: &str) -> bool {
     matches!(
         type_name,
-        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" | "bool" | "String" | "Bytes"
+        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" | "bool" | "String"
     )
 }
 

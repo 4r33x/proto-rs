@@ -59,7 +59,7 @@ impl EnumType {
         };
 
         let prost_attr = if is_repeated {
-            quote! { #[prost(enumeration = #enum_path, repeated, packed = "true", tag = #field_tag)] }
+            quote! { #[prost(enumeration = #enum_path, repeated, tag = #field_tag)] }
         } else if is_option {
             quote! { #[prost(enumeration = #enum_path, optional, tag = #field_tag)] }
         } else {
@@ -101,14 +101,7 @@ impl EnumType {
     /// Generate from_proto conversion with error handling
     /// RustEnum: converts via Proto enum type then to Rust enum
     /// ProtoEnum: converts directly from i32
-    pub fn generate_from_proto(
-        &self,
-        field_name: &syn::Ident,
-        is_option: bool,
-        is_repeated: bool,
-        error_name: &syn::Ident,
-        _context: &str,
-    ) -> TokenStream {
+    pub fn generate_from_proto(&self, field_name: &syn::Ident, is_option: bool, is_repeated: bool, error_name: &syn::Ident, context: &str) -> TokenStream {
         match self {
             EnumType::RustEnum { enum_ident, proto_enum_name } => {
                 let proto_ident = syn::Ident::new(proto_enum_name, enum_ident.span());
