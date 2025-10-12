@@ -101,7 +101,7 @@ impl EnumType {
     /// Generate from_proto conversion with error handling
     /// RustEnum: converts via Proto enum type then to Rust enum
     /// ProtoEnum: converts directly from i32
-    pub fn generate_from_proto(&self, field_name: &syn::Ident, is_option: bool, is_repeated: bool, error_name: &syn::Ident, context: &str) -> TokenStream {
+    pub fn generate_from_proto(&self, field_name: &syn::Ident, is_option: bool, is_repeated: bool, error_name: &syn::Ident, _context: &str) -> TokenStream {
         match self {
             EnumType::RustEnum { enum_ident, proto_enum_name } => {
                 let proto_ident = syn::Ident::new(proto_enum_name, enum_ident.span());

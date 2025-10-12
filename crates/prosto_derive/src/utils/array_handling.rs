@@ -76,7 +76,9 @@ impl<'a> ArrayFieldHandler<'a> {
             is_option: false,
             is_repeated: true,
             is_message_like: false,
-            proto_rust_type: parse_field_type(&self.type_array.elem).proto_rust_type,
+            is_numeric_scalar: false,
+            proto_rust_type: syn::parse_quote! { ::std::vec::Vec<u8> },
+            elem_type: (*self.type_array.elem).clone(),
         };
 
         (prost, parsed)
@@ -97,7 +99,9 @@ impl<'a> ArrayFieldHandler<'a> {
             is_option: false,
             is_repeated: true,
             is_message_like: false,
+            is_numeric_scalar: true,
             proto_rust_type: elem_ty.clone(),
+            elem_type: elem_ty.clone(),
         };
 
         (prost, parsed)
@@ -120,7 +124,9 @@ impl<'a> ArrayFieldHandler<'a> {
             is_option: false,
             is_repeated: true,
             is_message_like: true,
+            is_numeric_scalar: false,
             proto_rust_type: elem_ty.clone(),
+            elem_type: elem_ty.clone(),
         };
 
         (prost, parsed)
@@ -155,6 +161,8 @@ impl<'a> ArrayFieldHandler<'a> {
             is_repeated: true,
             is_message_like: parsed_elem.is_message_like,
             proto_rust_type: parsed_elem.proto_rust_type,
+            is_numeric_scalar: parsed_elem.is_numeric_scalar,
+            elem_type: parsed_elem.elem_type,
         };
 
         (prost, parsed)
