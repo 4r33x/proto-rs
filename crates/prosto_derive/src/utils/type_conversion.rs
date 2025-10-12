@@ -7,6 +7,7 @@ use super::type_info::is_bytes_array;
 
 /// Get the proto-equivalent Rust type (handles size conversions)
 /// Maps Rust types to their protobuf-compatible equivalents
+#[allow(dead_code)]
 pub fn get_proto_rust_type(ty: &Type) -> Type {
     // Handle arrays
     if let Type::Array(type_array) = ty {
@@ -46,6 +47,7 @@ pub fn get_proto_rust_type(ty: &Type) -> Type {
 
 /// Check if type needs .into() conversion for to_proto
 /// Returns true for types that are smaller than their proto representation
+#[allow(dead_code)]
 pub fn needs_into_conversion(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty {
         return type_path

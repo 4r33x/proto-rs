@@ -23,7 +23,6 @@ pub struct Id {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing {
     id: Id,
-    #[proto(rust_enum)]
     status: ServiceStatus,
 }
 
@@ -31,7 +30,6 @@ pub struct RizzPing {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
     id: Id,
-    #[proto(rust_enum)]
     status: ServiceStatus,
 }
 

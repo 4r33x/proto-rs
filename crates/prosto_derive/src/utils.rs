@@ -14,8 +14,6 @@ pub mod type_conversion;
 pub mod type_info;
 
 pub use string_helpers::*;
-pub use type_conversion::get_proto_rust_type;
-pub use type_conversion::needs_into_conversion;
 pub use type_info::ParsedFieldType;
 pub use type_info::is_bytes_array;
 pub use type_info::is_bytes_vec;

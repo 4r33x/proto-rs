@@ -40,6 +40,20 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     // First variant is the default
     let first_variant = &data.variants.first().expect("Enum must have at least one variant").ident;
 
+    let proto_enum_impl = quote! {
+        impl #generics ::proto_rs::ProtoEnum for #name #generics {
+            const DEFAULT_VALUE: Self = Self::#first_variant;
+
+            fn from_i32(value: i32) -> Result<Self, ::proto_rs::DecodeError> {
+                Self::try_from(value)
+            }
+
+            fn to_i32(self) -> i32 {
+                self as i32
+            }
+        }
+    };
+
     quote! {
         #(#attrs)*
         #vis enum #name #generics {
@@ -52,7 +66,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 Self::#first_variant
             }
 
-            fn encode_raw(&self, buf: &mut impl ::bytes::BufMut) {
+            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value = *self as i32;
                 if value != 0 {
                     ::proto_rs::encoding::int32::encode(1, &value, buf);
@@ -63,7 +77,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 &mut self,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 match tag {
@@ -107,7 +121,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
             fn encode_repeated_field(
                 tag: u32,
                 values: &[Self],
-                buf: &mut impl ::bytes::BufMut,
+                buf: &mut impl ::proto_rs::bytes::BufMut,
             ) {
                 for value in values {
                     let raw = *value as i32;
@@ -118,7 +132,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
             fn merge_repeated_field(
                 wire_type: ::proto_rs::encoding::WireType,
                 values: &mut ::std::vec::Vec<Self>,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 let mut raw = ::std::vec::Vec::<i32>::new();
@@ -140,7 +154,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::SingularField for #name #generics {
-            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl ::bytes::BufMut) {
+            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let raw: i32 = (*value) as i32;
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);
@@ -150,7 +164,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
             fn merge_singular_field(
                 wire_type: ::proto_rs::encoding::WireType,
                 value: &mut Self,
-                buf: &mut impl ::bytes::Buf,
+                buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 let mut raw: i32 = 0;
@@ -168,6 +182,8 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
         }
+
+        #proto_enum_impl
     }
 }
 

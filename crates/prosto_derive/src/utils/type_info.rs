@@ -32,10 +32,12 @@ pub struct ParsedFieldType {
     pub proto_rust_type: Type,
     /// The logical element type (inner `T` for `Option<T>`/`Vec<T>`/`[T;N]`).
     pub elem_type: Type,
+    /// Whether this type should be encoded as a Rust enum (i32 on the wire).
+    pub is_rust_enum: bool,
 }
 
 impl ParsedFieldType {
-    fn new(rust_type: Type, proto_type: &str, prost_type: TokenStream, is_message_like: bool, is_numeric_scalar: bool, proto_rust_type: Type, elem_type: Type) -> Self {
+    fn new(rust_type: Type, proto_type: &str, prost_type: TokenStream, is_message_like: bool, is_numeric_scalar: bool, proto_rust_type: Type, elem_type: Type, is_rust_enum: bool) -> Self {
         Self {
             rust_type,
             proto_type: proto_type.to_string(),
@@ -46,6 +48,7 @@ impl ParsedFieldType {
             is_numeric_scalar,
             proto_rust_type,
             elem_type,
+            is_rust_enum,
         }
     }
 }
@@ -89,7 +92,7 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
     let rust_ty = Type::Array(array.clone());
 
     if is_bytes_array(&rust_ty) {
-        return ParsedFieldType::new(rust_ty.clone(), "bytes", quote! { bytes }, false, false, rust_ty, elem_ty);
+        return ParsedFieldType::new(rust_ty.clone(), "bytes", quote! { bytes }, false, false, rust_ty, elem_ty, false);
     }
 
     let inner = parse_field_type(&elem_ty);
@@ -110,6 +113,7 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
         is_numeric_scalar,
         proto_rust_type: parse_quote! { ::std::vec::Vec<#inner_proto> },
         elem_type: elem,
+        is_rust_enum: inner.is_rust_enum,
     }
 }
 
@@ -141,7 +145,7 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     };
 
     if matches!(inner_ty, Type::Path(p) if last_ident(p).map(|id| id == "u8").unwrap_or(false)) {
-        return ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::std::vec::Vec<u8> }, (*inner_ty).clone());
+        return ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::std::vec::Vec<u8> }, (*inner_ty).clone(), false);
     }
 
     let inner = parse_field_type(inner_ty);
@@ -155,6 +159,7 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         is_numeric_scalar: inner.is_numeric_scalar,
         proto_rust_type: inner.proto_rust_type.clone(),
         elem_type: inner.elem_type.clone(),
+        is_rust_enum: inner.is_rust_enum,
     }
 }
 
@@ -173,11 +178,11 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "i32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
                     "i64" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
                     "isize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
-                    "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone()),
-                    "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone()),
+                    "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone(), false),
+                    "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone(), false),
                     "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
-                    "String" => ParsedFieldType::new(ty.clone(), "string", quote! { string }, false, false, parse_quote! { ::std::string::String }, ty.clone()),
-                    "Bytes" => ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::bytes::Bytes }, ty.clone()),
+                    "String" => ParsedFieldType::new(ty.clone(), "string", quote! { string }, false, false, parse_quote! { ::std::string::String }, ty.clone(), false),
+                    "Bytes" => ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::proto_rs::bytes::Bytes }, ty.clone(), false),
                     _ => parse_custom_type(ty),
                 };
             }
@@ -189,7 +194,7 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
 
 fn numeric_scalar(rust: Type, proto: Type, name: &str) -> ParsedFieldType {
     let ident = syn::Ident::new(name, Span::call_site());
-    ParsedFieldType::new(rust.clone(), name, quote! { #ident }, false, true, proto, rust)
+    ParsedFieldType::new(rust.clone(), name, quote! { #ident }, false, true, proto, rust, false)
 }
 
 fn parse_array_proto_suffix(ty: &Type) -> Type {
@@ -204,7 +209,7 @@ fn parse_array_proto_suffix(ty: &Type) -> Type {
 
 fn parse_custom_type(ty: &Type) -> ParsedFieldType {
     let proto_ty = parse_array_proto_suffix(ty);
-    ParsedFieldType::new(ty.clone(), "message", quote! { message }, true, false, proto_ty, ty.clone())
+    ParsedFieldType::new(ty.clone(), "message", quote! { message }, true, false, proto_ty, ty.clone(), false)
 }
 
 fn last_ident(path: &TypePath) -> Option<&syn::Ident> {

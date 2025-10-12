@@ -61,7 +61,7 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             where
                 T: tonic::client::GrpcService<tonic::body::Body>,
                 T::Error: Into<StdError>,
-                T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+                T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + std::marker::Send + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
             {
                 pub fn new(inner: T) -> Self {
