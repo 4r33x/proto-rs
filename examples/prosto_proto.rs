@@ -322,6 +322,26 @@ pub struct Attr {
     pub updated_at: DateTime<Utc>,
 }
 
+fn compute_hash(user: &User) -> String {
+    format!("{}:{}", user.id, user.name)
+}
+
+fn get_current_timestamp(_user: &User) -> DateTime<Utc> {
+    Utc::now()
+}
+
+fn compute_hash_for_struct(attr: &Attr) -> String {
+    let mut parts = attr.id_vec.join("|");
+    if let Some(opt) = &attr.id_opt {
+        if !parts.is_empty() {
+            parts.push('|');
+        }
+        parts.push_str(opt);
+    }
+
+    format!("{}|{:?}|{:?}", parts, attr.status, attr.status_opt)
+}
+
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SimpleMessage {

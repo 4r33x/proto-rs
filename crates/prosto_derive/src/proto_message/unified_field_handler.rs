@@ -35,6 +35,13 @@ impl FieldAccess {
             FieldAccess::Tuple(ix) => quote! { #ix },
         }
     }
+
+    pub fn self_tokens(&self) -> TokenStream {
+        match self {
+            FieldAccess::Named(id) => quote! { self.#id },
+            FieldAccess::Tuple(ix) => quote! { self.#ix },
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +104,11 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
         return quote! { /* skipped during decode */ };
     }
 
-    if let Some(from_ty) = &cfg.from_type {
+    if let Some(from_ty) = cfg
+        .from_type
+        .as_ref()
+        .or(cfg.into_type.as_ref())
+    {
         let from_ty: Type = syn::parse_str(from_ty).expect("invalid from type");
         let conv_fn = cfg.from_fn.as_deref().map(|f| format_ident!("{}", f));
         let field_ty = ty.clone();
@@ -109,11 +120,9 @@ pub fn generate_field_decode(field: &Field, access: FieldAccess, tag: u32) -> To
         };
 
         return quote! {
-            if #tag == tag {
-                let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
-                ::proto_rs::ProtoExt::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
-                self.#access_tokens = #assign_expr;
-            }
+            let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
+            ::proto_rs::ProtoExt::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
+            self.#access_tokens = #assign_expr;
         };
     }
 
