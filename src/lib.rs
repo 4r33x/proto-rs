@@ -20,6 +20,7 @@ pub use bytes;
 mod error;
 mod message;
 mod name;
+mod tonic;
 mod types;
 
 #[doc(hidden)]
@@ -33,6 +34,7 @@ pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
 pub use crate::message::ProtoExt;
 pub use crate::name::Name;
+pub use crate::tonic::ProtoCodec;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled

@@ -289,8 +289,6 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
             Self: 'async_trait
         {
             Box::pin(async move {
-                use tonic::codegen::tokio_stream::StreamExt;
-
                 #request_conversion
 
                 let native_response = <Self as super::#trait_name>::#method_name(
@@ -298,16 +296,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     native_request
                 ).await?;
 
-                let (metadata, native_stream, extensions) = native_response.into_parts();
-                let proto_stream = native_stream.map(|result| {
-                    result.map(|native_item| native_item.to_proto())
-                });
-
-                Ok(tonic::Response::from_parts(
-                    metadata,
-                    Box::pin(proto_stream) as Self::#stream_name,
-                    extensions
-                ))
+                Ok(native_response)
             })
         }
     }
