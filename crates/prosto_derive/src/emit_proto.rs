@@ -29,20 +29,18 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{}", err));
 
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
-    if let Some(idx) = marked_default {
-        if idx < order.len() {
-            order.remove(idx);
-            order.insert(0, idx);
-        }
+    if let Some(idx) = marked_default
+        && idx < order.len()
+    {
+        order.remove(idx);
+        order.insert(0, idx);
     }
 
     let ordered_variants: Vec<&syn::Variant> = order.iter().map(|&idx| &data.variants[idx]).collect();
     let ordered_discriminants = collect_discriminants_for_variants(&ordered_variants).unwrap_or_else(|err| panic!("{}", err));
 
-    if let Some(_) = marked_default {
-        if ordered_discriminants.first().copied().unwrap_or_default() != 0 {
-            panic!("enum #[default] variant must have discriminant 0");
-        }
+    if marked_default.is_some() && ordered_discriminants.first().copied().unwrap_or_default() != 0 {
+        panic!("enum #[default] variant must have discriminant 0");
     }
 
     if !ordered_discriminants.contains(&0) {

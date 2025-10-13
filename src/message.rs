@@ -9,6 +9,16 @@ use alloc::sync::Arc;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 use core::hash::Hash;
+#[cfg(feature = "std")]
+use std::collections::BTreeMap;
+#[cfg(feature = "std")]
+use std::collections::BTreeSet;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
+#[cfg(feature = "std")]
+use std::sync::Arc;
 
 use bytes::Buf;
 use bytes::BufMut;
@@ -21,16 +31,6 @@ use crate::encoding::message;
 use crate::encoding::varint::encode_varint;
 use crate::encoding::varint::encoded_len_varint;
 use crate::encoding::wire_type::WireType;
-#[cfg(feature = "std")]
-use std::collections::BTreeMap;
-#[cfg(feature = "std")]
-use std::collections::BTreeSet;
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(feature = "std")]
-use std::collections::HashSet;
-#[cfg(feature = "std")]
-use std::sync::Arc;
 
 /// A Protocol Buffers message.
 pub trait ProtoExt {
@@ -332,7 +332,7 @@ impl<M> MessageField for Box<M> where M: MessageField {}
 
 impl<M> ProtoExt for Arc<M>
 where
-    M: ProtoExt + Clone,
+    M: ProtoExt,
 {
     fn proto_default() -> Self {
         Arc::new(M::proto_default())
@@ -343,7 +343,11 @@ where
     }
 
     fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        M::merge_field(Arc::make_mut(self), tag, wire_type, buf, ctx)
+        if let Some(v) = Arc::get_mut(self) {
+            M::merge_field(v, tag, wire_type, buf, ctx)
+        } else {
+            unreachable!("There should be no other Arc instances")
+        }
     }
 
     fn encoded_len(&self) -> usize {
@@ -351,13 +355,17 @@ where
     }
 
     fn clear(&mut self) {
-        M::clear(Arc::make_mut(self));
+        if let Some(v) = Arc::get_mut(self) {
+            M::clear(v);
+        } else {
+            unreachable!("There should be no other Arc instances")
+        }
     }
 }
 
 // `Arc::make_mut` requires the inner value to be `Clone` so that shared
 // storage can be detached before mutating during a merge.
-impl<M> MessageField for Arc<M> where M: MessageField + Clone {}
+impl<M> MessageField for Arc<M> where M: MessageField {}
 
 impl<T> ProtoExt for Vec<T>
 where
