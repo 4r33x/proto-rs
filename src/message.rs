@@ -18,6 +18,8 @@ use std::collections::HashMap;
 #[cfg(feature = "std")]
 use std::collections::HashSet;
 #[cfg(feature = "std")]
+use std::hash::BuildHasher;
+#[cfg(feature = "std")]
 use std::sync::Arc;
 
 use bytes::Buf;
@@ -452,10 +454,11 @@ where
 }
 
 #[cfg(feature = "std")]
-impl<K, V> ProtoExt for HashMap<K, V>
+impl<K, V, S> ProtoExt for HashMap<K, V, S>
 where
     K: SingularField + Default + Eq + Hash + Ord,
     V: SingularField + Default + PartialEq,
+    S: BuildHasher + Default,
 {
     #[inline]
     fn proto_default() -> Self {
@@ -548,13 +551,14 @@ where
 }
 
 #[cfg(feature = "std")]
-impl<T> ProtoExt for HashSet<T>
+impl<T, S> ProtoExt for HashSet<T, S>
 where
     T: RepeatedField + Clone + Eq + Hash,
+    S: BuildHasher + Default,
 {
     #[inline]
     fn proto_default() -> Self {
-        HashSet::new()
+        HashSet::default()
     }
 
     fn encode_raw(&self, buf: &mut impl BufMut) {
