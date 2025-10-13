@@ -8,6 +8,13 @@ enum SampleEnum {
   TWO = 2;
 }
 
+enum StatusWithDefaultAttribute {
+  ACTIVE = 0;
+  PENDING = 1;
+  INACTIVE = 2;
+  COMPLETED = 3;
+}
+
 message NestedMessage {
   int64 value = 1;
 }

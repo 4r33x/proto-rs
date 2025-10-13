@@ -45,13 +45,13 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
         }
     }
 
-    if !ordered_discriminants.iter().any(|&value| value == 0) {
+    if !ordered_discriminants.contains(&0) {
         panic!("proto enums must contain a variant with discriminant 0");
     }
 
     let variants: Vec<String> = ordered_variants
         .into_iter()
-        .zip(ordered_discriminants.into_iter())
+        .zip(ordered_discriminants)
         .map(|(variant, value)| {
             let proto_name = to_upper_snake_case(&variant.ident.to_string());
             format!("  {} = {};", proto_name, value)

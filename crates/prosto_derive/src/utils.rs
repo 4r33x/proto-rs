@@ -163,7 +163,7 @@ fn collect_discriminants_impl(variants: &[&syn::Variant]) -> Result<Vec<i32>, sy
     Ok(values)
 }
 
-pub fn collect_discriminants_for_variants<'a>(variants: &[&'a syn::Variant]) -> Result<Vec<i32>, syn::Error> {
+pub fn collect_discriminants_for_variants(variants: &[&syn::Variant]) -> Result<Vec<i32>, syn::Error> {
     collect_discriminants_impl(variants)
 }
 

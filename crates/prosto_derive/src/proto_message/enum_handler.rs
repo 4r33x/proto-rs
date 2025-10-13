@@ -42,7 +42,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
     }
 
-    if !ordered_discriminants.iter().any(|&value| value == 0) {
+    if !ordered_discriminants.contains(&0) {
         return syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0").to_compile_error();
     }
 

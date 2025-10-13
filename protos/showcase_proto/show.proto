@@ -29,8 +29,8 @@ message QuoteLamports {
 }
 
 enum Status {
-  PENDING = 0;
-  ACTIVE = 1;
+  ACTIVE = 0;
+  PENDING = 1;
   INACTIVE = 2;
   COMPLETED = 3;
 }
