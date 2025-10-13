@@ -2,6 +2,7 @@ use bytes::Bytes;
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
+use proto_rs::SingularField;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
@@ -9,6 +10,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -740,4 +742,54 @@ fn enum_discriminants_match_proto_requirements() {
     assert_eq!(SampleEnum::Zero as i32, 0);
     assert_eq!(SampleEnum::One as i32, 1);
     assert_eq!(SampleEnum::Two as i32, 2);
+}
+
+#[test]
+fn merge_option_box_reuses_allocation() {
+    let mut buf = BytesMut::new();
+    encoding::message::encode(1, &NestedMessage { value: 123 }, &mut buf);
+    let mut bytes = buf.freeze();
+
+    let (tag, wire_type) = encoding::decode_key(&mut bytes).expect("decode key");
+    assert_eq!(tag, 1);
+    assert_eq!(wire_type, encoding::WireType::LengthDelimited);
+
+    let mut target = Some(Box::new(NestedMessage { value: 0 }));
+    let ptr_before = target.as_ref().map(|b| &**b as *const NestedMessage).unwrap();
+
+    <Box<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
+
+    let ptr_after = target.as_ref().map(|b| &**b as *const NestedMessage).unwrap();
+    assert_eq!(ptr_before, ptr_after, "Box allocation should be reused");
+    assert_eq!(target.as_ref().unwrap().value, 123);
+}
+
+#[test]
+fn merge_option_arc_reuses_allocation() {
+    let mut buf = BytesMut::new();
+    encoding::message::encode(1, &NestedMessage { value: 456 }, &mut buf);
+    let mut bytes = buf.freeze();
+
+    let (tag, wire_type) = encoding::decode_key(&mut bytes).expect("decode key");
+    assert_eq!(tag, 1);
+    assert_eq!(wire_type, encoding::WireType::LengthDelimited);
+
+    let mut target = Some(Arc::new(NestedMessage { value: 0 }));
+    let ptr_before = Arc::as_ptr(target.as_ref().unwrap());
+
+    <Arc<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
+
+    let ptr_after = Arc::as_ptr(target.as_ref().unwrap());
+    assert_eq!(ptr_before, ptr_after, "Arc allocation should be reused when unique");
+    assert_eq!(target.as_ref().unwrap().value, 456);
+}
+
+#[test]
+fn heap_wrappers_support_array_protoext() {
+    fn assert_proto_ext<T: ProtoExt>() {}
+
+    assert_proto_ext::<Box<[u8; 4]>>();
+    assert_proto_ext::<Box<[NestedMessage; 2]>>();
+    assert_proto_ext::<Arc<[u8; 4]>>();
+    assert_proto_ext::<Arc<[NestedMessage; 2]>>();
 }

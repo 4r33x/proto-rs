@@ -1,7 +1,11 @@
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
+#[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
+#[cfg(not(feature = "std"))]
 use alloc::collections::BTreeSet;
+#[cfg(not(feature = "std"))]
+use alloc::sync::Arc;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 use core::hash::Hash;
@@ -18,9 +22,15 @@ use crate::encoding::varint::encode_varint;
 use crate::encoding::varint::encoded_len_varint;
 use crate::encoding::wire_type::WireType;
 #[cfg(feature = "std")]
+use std::collections::BTreeMap;
+#[cfg(feature = "std")]
+use std::collections::BTreeSet;
+#[cfg(feature = "std")]
 use std::collections::HashMap;
 #[cfg(feature = "std")]
 use std::collections::HashSet;
+#[cfg(feature = "std")]
+use std::sync::Arc;
 
 /// A Protocol Buffers message.
 pub trait ProtoExt {
@@ -221,10 +231,14 @@ pub trait SingularField: ProtoExt + Sized {
     /// Decodes an optional field occurrence and stores the result inside
     /// `target`.
     fn merge_option_field(wire_type: WireType, target: &mut Option<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut value = Self::proto_default();
-        Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
-        *target = Some(value);
-        Ok(())
+        if let Some(value) = target.as_mut() {
+            Self::merge_singular_field(wire_type, value, buf, ctx)
+        } else {
+            let mut value = Self::proto_default();
+            Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
+            *target = Some(value);
+            Ok(())
+        }
     }
 
     /// Computes the encoded length for an optional field.
@@ -313,6 +327,37 @@ where
         (**self).clear()
     }
 }
+
+impl<M> MessageField for Box<M> where M: MessageField {}
+
+impl<M> ProtoExt for Arc<M>
+where
+    M: ProtoExt + Clone,
+{
+    fn proto_default() -> Self {
+        Arc::new(M::proto_default())
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        (**self).encode_raw(buf)
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        M::merge_field(Arc::make_mut(self), tag, wire_type, buf, ctx)
+    }
+
+    fn encoded_len(&self) -> usize {
+        (**self).encoded_len()
+    }
+
+    fn clear(&mut self) {
+        M::clear(Arc::make_mut(self));
+    }
+}
+
+// `Arc::make_mut` requires the inner value to be `Clone` so that shared
+// storage can be detached before mutating during a merge.
+impl<M> MessageField for Arc<M> where M: MessageField + Clone {}
 
 impl<T> ProtoExt for Vec<T>
 where
