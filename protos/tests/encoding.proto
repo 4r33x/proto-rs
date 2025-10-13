@@ -31,3 +31,10 @@ message SampleMessage {
   optional SampleEnum optional_mode = 9;
 }
 
+message CollectionsMessage {
+  map<uint32, int64> hash_scores = 1;
+  map<string, NestedMessage> tree_messages = 2;
+  repeated string hash_tags = 3;
+  repeated int32 tree_ids = 4;
+}
+

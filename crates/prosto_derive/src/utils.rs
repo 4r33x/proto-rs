@@ -16,10 +16,32 @@ pub mod string_helpers;
 pub mod type_info;
 
 pub use string_helpers::*;
+pub use type_info::MapKind;
 pub use type_info::ParsedFieldType;
+pub use type_info::SetKind;
 pub use type_info::is_bytes_array;
 pub use type_info::is_bytes_vec;
 pub use type_info::parse_field_type;
+
+pub fn set_inner_type(ty: &Type) -> Option<(Type, SetKind)> {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        let kind = match segment.ident.to_string().as_str() {
+            "HashSet" => Some(SetKind::HashSet),
+            "BTreeSet" => Some(SetKind::BTreeSet),
+            _ => None,
+        }?;
+
+        if let PathArguments::AngleBracketed(args) = &segment.arguments {
+            if let Some(GenericArgument::Type(inner)) = args.args.first() {
+                return Some((inner.clone(), kind));
+            }
+        }
+    }
+
+    None
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct FieldConfig {
@@ -124,10 +146,6 @@ pub fn vec_inner_type(ty: &Type) -> Option<Type> {
         return Some(inner.clone());
     }
     None
-}
-
-pub fn is_complex_type(ty: &Type) -> bool {
-    parse_field_type(ty).is_message_like
 }
 
 pub struct MethodInfo {

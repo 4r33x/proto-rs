@@ -179,7 +179,8 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             });
 
-            encoded_len_fields.push(generate_field_encoded_len(field, access_expr, tag_u32));
+            let encoded_len_tokens = generate_field_encoded_len(field, access_expr, tag_u32);
+            encoded_len_fields.push(encoded_len_tokens.tokens);
         }
 
         clear_fields.push(generate_field_clear(field, &field_access));
@@ -334,7 +335,8 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                     Ok(())
                 }
             });
-            encoded_len_fields.push(generate_field_encoded_len(field, access_expr, tag_u32));
+            let encoded_len_tokens = generate_field_encoded_len(field, access_expr, tag_u32);
+            encoded_len_fields.push(encoded_len_tokens.tokens);
         }
 
         clear_fields.push(generate_field_clear(field, &field_access));

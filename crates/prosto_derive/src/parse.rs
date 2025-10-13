@@ -202,6 +202,25 @@ fn extract_field_type_name(ty: &syn::Type) -> String {
             return rust_type_path_ident(inner_ty).to_string();
         }
 
+        if matches!(ident.to_string().as_str(), "HashMap" | "BTreeMap")
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        {
+            let mut generics = args.args.iter().filter_map(|arg| match arg {
+                syn::GenericArgument::Type(inner_ty) => Some(inner_ty.clone()),
+                _ => None,
+            });
+
+            let value_ty = generics.nth(1).unwrap_or_else(|| ty.clone());
+            return rust_type_path_ident(&value_ty).to_string();
+        }
+
+        if matches!(ident.to_string().as_str(), "HashSet" | "BTreeSet")
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+        {
+            return rust_type_path_ident(inner_ty).to_string();
+        }
+
         return ident.to_string();
     }
 

@@ -5,6 +5,10 @@ use proto_rs::ProtoExt;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -45,6 +49,15 @@ pub struct SampleMessage {
     pub optional_mode: Option<SampleEnum>,
 }
 
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct CollectionsMessage {
+    pub hash_scores: HashMap<u32, i64>,
+    pub tree_messages: BTreeMap<String, NestedMessage>,
+    pub hash_tags: HashSet<String>,
+    pub tree_ids: BTreeSet<i32>,
+}
+
 #[derive(Clone, PartialEq, prost::Message)]
 #[prost(message, package = "compat")]
 pub struct NestedMessageProst {
@@ -73,6 +86,19 @@ pub struct SampleMessageProst {
     pub mode: i32,
     #[prost(enumeration = "SampleEnumProst", optional, tag = "9")]
     pub optional_mode: Option<i32>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+#[prost(message, package = "compat")]
+pub struct CollectionsMessageProst {
+    #[prost(map = "uint32, int64", tag = "1")]
+    pub hash_scores: HashMap<u32, i64>,
+    #[prost(map = "string, message", tag = "2")]
+    pub tree_messages: HashMap<String, NestedMessageProst>,
+    #[prost(string, repeated, tag = "3")]
+    pub hash_tags: Vec<String>,
+    #[prost(int32, repeated, tag = "4")]
+    pub tree_ids: Vec<i32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, prost::Enumeration)]
@@ -144,6 +170,28 @@ impl From<&SampleMessageProst> for SampleMessage {
             values: value.values.clone(),
             mode: SampleEnum::try_from(value.mode).expect("invalid enum value"),
             optional_mode: value.optional_mode.map(|m| SampleEnum::try_from(m).expect("invalid enum value")),
+        }
+    }
+}
+
+impl From<&CollectionsMessage> for CollectionsMessageProst {
+    fn from(value: &CollectionsMessage) -> Self {
+        Self {
+            hash_scores: value.hash_scores.clone(),
+            tree_messages: value.tree_messages.iter().map(|(key, msg)| (key.clone(), NestedMessageProst::from(msg))).collect(),
+            hash_tags: value.hash_tags.iter().cloned().collect(),
+            tree_ids: value.tree_ids.iter().cloned().collect(),
+        }
+    }
+}
+
+impl From<&CollectionsMessageProst> for CollectionsMessage {
+    fn from(value: &CollectionsMessageProst) -> Self {
+        Self {
+            hash_scores: value.hash_scores.clone(),
+            tree_messages: value.tree_messages.iter().map(|(key, msg)| (key.clone(), NestedMessage::from(msg))).collect::<BTreeMap<_, _>>(),
+            hash_tags: value.hash_tags.iter().cloned().collect(),
+            tree_ids: value.tree_ids.iter().cloned().collect(),
         }
     }
 }
@@ -357,6 +405,43 @@ fn compute_checksum(value: &MixedProto) -> u32 {
 
 fn rebuild_checksum(value: &MixedProto) -> u32 {
     compute_checksum(value)
+}
+
+#[test]
+fn collections_roundtrip() {
+    let mut msg = CollectionsMessage::default();
+    msg.hash_scores.insert(7, 42);
+    msg.hash_scores.insert(1, -5);
+    msg.tree_messages.insert("alice".to_string(), NestedMessage { value: 9 });
+    msg.tree_messages.insert("bob".to_string(), NestedMessage { value: -11 });
+    msg.hash_tags.insert("alpha".to_string());
+    msg.hash_tags.insert("beta".to_string());
+    msg.tree_ids.extend([3, 1, 8]);
+
+    let bytes = encode_proto_message(&msg);
+    let decoded = CollectionsMessage::decode(bytes.clone()).expect("decode collections message");
+
+    assert_eq!(decoded.hash_scores, msg.hash_scores);
+    assert_eq!(decoded.tree_messages, msg.tree_messages);
+    assert_eq!(decoded.hash_tags, msg.hash_tags);
+    assert_eq!(decoded.tree_ids, msg.tree_ids);
+}
+
+#[test]
+fn collections_matches_prost_for_ordered_structures() {
+    let mut msg = CollectionsMessage::default();
+    msg.tree_messages.insert("carol".to_string(), NestedMessage { value: 123 });
+    msg.tree_messages.insert("dave".to_string(), NestedMessage { value: -7 });
+    msg.tree_ids.extend([10, 2, 5]);
+
+    let proto_bytes = encode_proto_message(&msg);
+    let decoded_prost = CollectionsMessageProst::decode(proto_bytes.clone()).expect("prost decode");
+    assert_eq!(decoded_prost, CollectionsMessageProst::from(&msg));
+
+    let prost_roundtrip = encode_prost_message(&CollectionsMessageProst::from(&msg));
+    let decoded_proto = CollectionsMessage::decode(prost_roundtrip.clone()).expect("proto decode");
+    assert_eq!(decoded_proto.tree_messages, msg.tree_messages);
+    assert_eq!(decoded_proto.tree_ids, msg.tree_ids);
 }
 
 fn sample_mixed_proto() -> MixedProto {

@@ -1,7 +1,10 @@
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+use core::hash::Hash;
 
 use bytes::Buf;
 use bytes::BufMut;
@@ -14,6 +17,10 @@ use crate::encoding::message;
 use crate::encoding::varint::encode_varint;
 use crate::encoding::varint::encoded_len_varint;
 use crate::encoding::wire_type::WireType;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+#[cfg(feature = "std")]
+use std::collections::HashSet;
 
 /// A Protocol Buffers message.
 pub trait ProtoExt {
@@ -336,6 +343,198 @@ where
 
     fn clear(&mut self) {
         Vec::clear(self);
+    }
+}
+
+impl<K, V> ProtoExt for BTreeMap<K, V>
+where
+    K: SingularField + Default + Eq + Hash + Ord,
+    V: SingularField + Default + PartialEq,
+{
+    #[inline]
+    fn proto_default() -> Self {
+        BTreeMap::new()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        if !self.is_empty() {
+            crate::encoding::btree_map::encode(
+                |tag, key, buf| <K as SingularField>::encode_singular_field(tag, key, buf),
+                |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
+                |tag, value, buf| <V as SingularField>::encode_singular_field(tag, value, buf),
+                |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
+                1,
+                self,
+                buf,
+            );
+        }
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            crate::encoding::btree_map::merge(
+                |wire_type, key, buf, ctx| <K as SingularField>::merge_singular_field(wire_type, key, buf, ctx),
+                |wire_type, value, buf, ctx| <V as SingularField>::merge_singular_field(wire_type, value, buf, ctx),
+                self,
+                buf,
+                ctx,
+            )
+        } else {
+            crate::encoding::skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        crate::encoding::btree_map::encoded_len(
+            |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
+            |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
+            1,
+            self,
+        )
+    }
+
+    fn clear(&mut self) {
+        BTreeMap::clear(self);
+    }
+}
+
+#[cfg(feature = "std")]
+impl<K, V> ProtoExt for HashMap<K, V>
+where
+    K: SingularField + Default + Eq + Hash + Ord,
+    V: SingularField + Default + PartialEq,
+{
+    #[inline]
+    fn proto_default() -> Self {
+        HashMap::new()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        if !self.is_empty() {
+            crate::encoding::hash_map::encode(
+                |tag, key, buf| <K as SingularField>::encode_singular_field(tag, key, buf),
+                |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
+                |tag, value, buf| <V as SingularField>::encode_singular_field(tag, value, buf),
+                |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
+                1,
+                self,
+                buf,
+            );
+        }
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            crate::encoding::hash_map::merge(
+                |wire_type, key, buf, ctx| <K as SingularField>::merge_singular_field(wire_type, key, buf, ctx),
+                |wire_type, value, buf, ctx| <V as SingularField>::merge_singular_field(wire_type, value, buf, ctx),
+                self,
+                buf,
+                ctx,
+            )
+        } else {
+            crate::encoding::skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        crate::encoding::hash_map::encoded_len(
+            |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
+            |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
+            1,
+            self,
+        )
+    }
+
+    fn clear(&mut self) {
+        HashMap::clear(self);
+    }
+}
+
+impl<T> ProtoExt for BTreeSet<T>
+where
+    T: RepeatedField + Clone + Ord,
+{
+    #[inline]
+    fn proto_default() -> Self {
+        BTreeSet::new()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        if !self.is_empty() {
+            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+            T::encode_repeated_field(1, &values, buf);
+        }
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            let mut values: alloc::vec::Vec<T> = alloc::vec::Vec::new();
+            T::merge_repeated_field(wire_type, &mut values, buf, ctx)?;
+            for value in values {
+                self.insert(value);
+            }
+            Ok(())
+        } else {
+            crate::encoding::skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        if self.is_empty() {
+            0
+        } else {
+            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+            T::encoded_len_repeated_field(1, &values)
+        }
+    }
+
+    fn clear(&mut self) {
+        BTreeSet::clear(self);
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T> ProtoExt for HashSet<T>
+where
+    T: RepeatedField + Clone + Eq + Hash,
+{
+    #[inline]
+    fn proto_default() -> Self {
+        HashSet::new()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        if !self.is_empty() {
+            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+            T::encode_repeated_field(1, &values, buf);
+        }
+    }
+
+    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            let mut values: alloc::vec::Vec<T> = alloc::vec::Vec::new();
+            T::merge_repeated_field(wire_type, &mut values, buf, ctx)?;
+            for value in values {
+                self.insert(value);
+            }
+            Ok(())
+        } else {
+            crate::encoding::skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        if self.is_empty() {
+            0
+        } else {
+            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+            T::encoded_len_repeated_field(1, &values)
+        }
+    }
+
+    fn clear(&mut self) {
+        HashSet::clear(self);
     }
 }
 
