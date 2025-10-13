@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use proto_rs::ProtoExt;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -52,6 +53,23 @@ pub struct CollectionsMessage {
     pub tree_messages: BTreeMap<String, NestedMessage>,
     pub hash_tags: HashSet<String>,
     pub tree_ids: BTreeSet<i32>,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum ScalarCounter {
+    #[default]
+    Empty,
+    #[proto(tag = 2)]
+    Count { count: u32 },
+}
+
+#[test]
+fn scalar_counter_roundtrip() {
+    let original = ScalarCounter::Count { count: 42 };
+    let encoded = original.encode_to_vec();
+    let decoded = ScalarCounter::decode(encoded.as_slice()).expect("decode scalar counter");
+    assert_eq!(decoded, original);
 }
 
 #[derive(Clone, PartialEq, prost::Message)]

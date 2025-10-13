@@ -234,6 +234,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         decode_match.push(quote! {
             #field_tag => {
                 let tag = field_tag;
+                let wire_type = field_wire_type;
                 #decode_body
                 Ok(())
             }
@@ -379,6 +380,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             decode_match.push(quote! {
                 #field_tag => {
                     let tag = field_tag;
+                    let wire_type = field_wire_type;
                     #decode_body
                     Ok(())
                 }
