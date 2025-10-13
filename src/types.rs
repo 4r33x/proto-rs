@@ -330,7 +330,7 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
     }
 
     fn encoded_len(&self) -> usize {
-        self.as_ref().map_or(0, |value| value.encoded_len())
+        self.as_ref().map_or(0, ProtoExt::encoded_len)
     }
 
     fn clear(&mut self) {

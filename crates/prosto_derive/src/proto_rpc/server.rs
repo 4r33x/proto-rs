@@ -29,7 +29,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     let (blanket_types, blanket_methods) = generate_blanket_impl_components(methods, trait_name);
     let route_handlers = methods.iter().map(|m| generate_route_handler(m, package_name, trait_name)).collect::<Vec<_>>();
 
-    let service_name_value = format!("{}.{}", package_name, trait_name);
+    let service_name_value = format!("{package_name}.{trait_name}");
     let compression_methods = generate_server_compression_methods();
     let service_fields = generate_service_struct_fields();
     let service_constructors = generate_service_constructors();

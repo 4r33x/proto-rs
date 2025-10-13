@@ -41,7 +41,7 @@ fn struct_or_enum(input: DeriveInput, mut config: UnifiedProtoConfig) -> TokenSt
                 generate_complex_enum_proto(clean_name, data)
             }
         }
-        _ => panic!("proto_dump can only be used on structs and enums"),
+        Data::Union(_) => panic!("proto_dump can only be used on structs and enums, make PR/issue if you want unions"),
     };
 
     config.register_and_emit_proto(clean_name, &proto_def);

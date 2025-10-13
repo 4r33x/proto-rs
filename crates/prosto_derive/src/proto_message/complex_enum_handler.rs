@@ -1,4 +1,4 @@
-//! Handler for complex enums (with associated data) with ProtoExt support
+//! Handler for complex enums (with associated data) with `ProtoExt` support
 
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
@@ -96,7 +96,9 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 .collect();
             quote! { Self::#default_variant_ident { #(#field_defaults),* } }
         }
-        _ => panic!("Unsupported variant structure"),
+        Fields::Unnamed(_) => {
+            panic!("Complex enum variants must have exactly one unnamed field or multiple named fields")
+        }
     };
 
     quote! {
@@ -193,7 +195,9 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec
                 decode_arms.push(decode_arm);
                 encoded_len_arms.push(encoded_len_arm);
             }
-            _ => panic!("Complex enum variants must have exactly one unnamed field or multiple named fields"),
+            Fields::Unnamed(_) => {
+                panic!("Complex enum variants must have exactly one unnamed field or multiple named fields")
+            }
         }
     }
 
@@ -213,7 +217,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         0 => {
             return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
         }
-        value => value as u32,
+        value => value.try_into().unwrap(),
     };
     let field_ty = &field.ty;
 
@@ -353,7 +357,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             0 => {
                 return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
             }
-            value => value as u32,
+            value => value.try_into().unwrap(),
         };
         let field_ty = &field.ty;
 
@@ -383,9 +387,9 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             && let Some(fun) = &cfg.skip_deser_fn
         {
             let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-            let binding_name = format!("__{}_skip", ident);
+            let binding_name = format!("__{ident}_skip");
             let binding_ident = syn::Ident::new(&binding_name, Span::call_site());
-            let computed_name = format!("__{}_computed", ident);
+            let computed_name = format!("__{ident}_computed");
             let computed_ident = syn::Ident::new(&computed_name, Span::call_site());
             post_hooks.push(quote! {
                 let #computed_ident = #fun_path(&variant_value);
@@ -477,7 +481,7 @@ fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u3
         }
 
         attr.parse_nested_meta(|meta| {
-            if meta.path.get_ident().map(|ident| ident == "tag").unwrap_or(false) {
+            if meta.path.get_ident().is_some_and(|ident| ident == "tag") {
                 if custom_tag.is_some() {
                     return Err(syn::Error::new(meta.path.span(), "duplicate proto(tag) attribute for variant"));
                 }
@@ -503,5 +507,5 @@ fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u3
         return Err(syn::Error::new(variant.ident.span(), "proto enum variant tags must be greater than or equal to 1"));
     }
 
-    Ok(tag as u32)
+    Ok(tag.try_into().unwrap())
 }

@@ -1,3 +1,6 @@
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::similar_names)]
 use proc_macro::TokenStream;
 
 mod emit_proto;
@@ -21,9 +24,9 @@ pub fn inject_proto_import(input: TokenStream) -> TokenStream {
 
 /// Attribute macro for generating Tonic gRPC services with automatic Proto/Native conversion
 ///
-/// This macro works in conjunction with #[proto_message] to generate:
+/// This macro works in conjunction with `#[proto_message]` to generate:
 /// - A trait definition for your service (using native Rust types)
-/// - An internal proto trait (using Proto types from HasProto)
+/// - An internal proto trait (using Proto types from `HasProto`)
 /// - Automatic conversion layer between native and proto types
 /// - Complete Tonic server boilerplate
 ///

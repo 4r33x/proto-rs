@@ -148,12 +148,8 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         let tag = if field_config.skip {
             None
         } else if let Some(custom) = field_config.custom_tag {
-            if custom == 0 {
-                panic!("proto field tags must be >= 1");
-            }
-            if !used_tags.insert(custom) {
-                panic!("duplicate proto field tag: {custom}");
-            }
+            assert!((custom != 0), "proto field tags must be >= 1");
+            assert!(used_tags.insert(custom), "duplicate proto field tag: {custom}");
             Some(custom)
         } else {
             while used_tags.contains(&next_tag) {
@@ -166,7 +162,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         };
 
         if let Some(tag) = tag {
-            let tag_u32 = tag as u32;
+            let tag_u32 = tag.try_into().unwrap();
 
             let access_expr = field_access.self_tokens();
             encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
@@ -300,31 +296,24 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         let tag = if field_config.skip {
             None
         } else {
-            let assigned = match field_config.custom_tag {
-                Some(tag) => {
-                    if tag == 0 {
-                        panic!("proto field tags must be >= 1");
-                    }
-                    if !used_tags.insert(tag) {
-                        panic!("duplicate proto field tag: {tag}");
-                    }
-                    tag
-                }
-                None => {
-                    while used_tags.contains(&next_tag) {
-                        next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
-                    }
-                    let tag = next_tag;
-                    used_tags.insert(tag);
+            let assigned = if let Some(tag) = field_config.custom_tag {
+                assert!((tag != 0), "proto field tags must be >= 1");
+                assert!(used_tags.insert(tag), "duplicate proto field tag: {tag}");
+                tag
+            } else {
+                while used_tags.contains(&next_tag) {
                     next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
-                    tag
                 }
+                let tag = next_tag;
+                used_tags.insert(tag);
+                next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
+                tag
             };
             Some(assigned)
         };
 
         if let Some(tag) = tag {
-            let tag_u32 = tag as u32;
+            let tag_u32 = tag.try_into().unwrap();
             let access_expr = field_access.self_tokens();
             encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
 

@@ -76,6 +76,7 @@ impl DecodeContext {
 
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn enter_recursion(&self) -> DecodeContext {
         DecodeContext {}
     }
@@ -93,6 +94,8 @@ impl DecodeContext {
 
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
+    #[allow(clippy::unnecessary_wraps)]
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn limit_reached(&self) -> Result<(), DecodeError> {
         Ok(())
     }
@@ -112,7 +115,6 @@ pub fn encode_key(tag: u32, wire_type: WireType, buf: &mut impl BufMut) {
 
 /// Decodes a Protobuf field key, which consists of a wire type designator and
 /// the field tag.
-#[inline(always)]
 pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
     let key = decode_varint(buf)?;
     if key > u64::from(u32::MAX) {
@@ -343,7 +345,7 @@ varint!(u32, uint32);
 varint!(u64, uint64);
 varint!(i32, sint32,
 to_uint64(value) {
-    ((value << 1) ^ (value >> 31)) as u32 as u64
+    (((value << 1) ^ (value >> 31)) as u32).into()
 },
 from_uint64(value) {
     let value = value as u32;
@@ -486,7 +488,21 @@ macro_rules! length_delimited {
 }
 
 pub mod string {
-    use super::*;
+    use super::Buf;
+    use super::BufMut;
+    use super::DecodeContext;
+    use super::DecodeError;
+    use super::String;
+    use super::Vec;
+    use super::WireType;
+    use super::bytes;
+    use super::check_wire_type;
+    use super::encode_key;
+    use super::encode_varint;
+    use super::encoded_len_varint;
+    use super::key_len;
+    use super::mem;
+    use super::str;
 
     pub fn encode(tag: u32, value: &String, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
@@ -539,6 +555,8 @@ pub mod string {
         use super::super::test::check_collection_type;
         use super::super::test::check_type;
         use super::*;
+        use crate::encoding::MAX_TAG;
+        use crate::encoding::MIN_TAG;
 
         proptest! {
             #[test]
@@ -589,7 +607,7 @@ impl sealed::BytesAdapter for Bytes {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(self.clone())
+        buf.put(self.clone());
     }
 }
 
@@ -607,12 +625,24 @@ impl sealed::BytesAdapter for Vec<u8> {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(self.as_slice())
+        buf.put(self.as_slice());
     }
 }
 
 pub mod bytes {
-    use super::*;
+    use super::Buf;
+    use super::BufMut;
+    use super::BytesAdapter;
+    use super::DecodeContext;
+    use super::DecodeError;
+    use super::Vec;
+    use super::WireType;
+    use super::check_wire_type;
+    use super::decode_varint;
+    use super::encode_key;
+    use super::encode_varint;
+    use super::encoded_len_varint;
+    use super::key_len;
 
     pub fn encode(tag: u32, value: &impl BytesAdapter, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
@@ -661,11 +691,14 @@ pub mod bytes {
 
     #[cfg(test)]
     mod test {
+        use bytes::Bytes;
         use proptest::prelude::*;
 
         use super::super::test::check_collection_type;
         use super::super::test::check_type;
         use super::*;
+        use crate::encoding::MAX_TAG;
+        use crate::encoding::MIN_TAG;
 
         proptest! {
             #[test]
@@ -700,7 +733,20 @@ pub mod bytes {
 }
 
 pub mod message {
-    use super::*;
+    use super::Buf;
+    use super::BufMut;
+    use super::DecodeContext;
+    use super::DecodeError;
+    use super::ProtoExt;
+    use super::Vec;
+    use super::WireType;
+    use super::check_wire_type;
+    use super::decode_key;
+    use super::encode_key;
+    use super::encode_varint;
+    use super::encoded_len_varint;
+    use super::key_len;
+    use super::merge_loop;
 
     pub fn encode<M>(tag: u32, msg: &M, buf: &mut impl BufMut)
     where
@@ -765,7 +811,17 @@ pub mod message {
 }
 
 pub mod group {
-    use super::*;
+    use super::Buf;
+    use super::BufMut;
+    use super::DecodeContext;
+    use super::DecodeError;
+    use super::ProtoExt;
+    use super::Vec;
+    use super::WireType;
+    use super::check_wire_type;
+    use super::decode_key;
+    use super::encode_key;
+    use super::key_len;
 
     pub fn encode<M>(tag: u32, msg: &M, buf: &mut impl BufMut)
     where

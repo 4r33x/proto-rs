@@ -41,7 +41,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 (proto, rust_code)
             }
         }
-        _ => panic!("proto_message can only be used on structs and enums"),
+        Data::Union(_) => panic!("proto_message can only be used on structs and enums"),
     };
 
     config.register_and_emit_proto(&type_ident, &proto);

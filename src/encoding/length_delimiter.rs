@@ -12,7 +12,7 @@ pub use crate::name::Name;
 
 /// Encodes a length delimiter to the buffer.
 ///
-/// See [Message.encode_length_delimited] for more info.
+/// See [`Message.encode_length_delimited`] for more info.
 ///
 /// An error will be returned if the buffer does not have sufficient capacity to encode the
 /// delimiter.

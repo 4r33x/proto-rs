@@ -131,7 +131,7 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     let _ = syn::parse::Parser::parse(parser, attr);
 }
 
-/// Extract proto_imports from item attributes
+/// Extract `proto_imports` from item attributes
 pub fn extract_item_imports(item_attrs: &[Attribute]) -> BTreeMap<String, BTreeSet<String>> {
     let mut imports = BTreeMap::new();
 
@@ -141,7 +141,7 @@ pub fn extract_item_imports(item_attrs: &[Attribute]) -> BTreeMap<String, BTreeS
         }
 
         let _ = attr.parse_nested_meta(|meta| {
-            let package = meta.path.get_ident().map(|i| i.to_string()).unwrap_or_default();
+            let package = meta.path.get_ident().map(ToString::to_string).unwrap_or_default();
 
             // Parse array value
             if let Ok(syn::Expr::Array(array)) = meta.value()?.parse::<syn::Expr>() {
@@ -172,11 +172,11 @@ fn extract_string_array(array: &syn::ExprArray) -> BTreeSet<String> {
         .collect()
 }
 
-/// Extract import_path from field-level attributes
+/// Extract `import_path` from field-level attributes
 pub fn extract_field_imports(fields: &syn::Fields) -> HashMap<String, Vec<String>> {
     let mut imports = HashMap::new();
 
-    for field in fields.iter() {
+    for field in fields {
         let config = parse_field_config(field);
 
         if let Some(import_path) = config.import_path {

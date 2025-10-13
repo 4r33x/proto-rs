@@ -37,7 +37,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                             }
                             None
                         })
-                        .unwrap_or_else(|| panic!("Could not find associated type definition for {}", stream_name));
+                        .unwrap_or_else(|| panic!("Could not find associated type definition for {stream_name}"));
                     (Some(stream_name), Some(inner_type))
                 } else {
                     (None, None)

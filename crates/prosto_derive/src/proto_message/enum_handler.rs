@@ -1,4 +1,4 @@
-//! Handler for simple enums (unit variants only) with ProtoExt support
+//! Handler for simple enums (unit variants only) with `ProtoExt` support
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -267,10 +267,7 @@ mod tests {
             }
         };
 
-        let data = match input.data.clone() {
-            syn::Data::Enum(data) => data,
-            _ => panic!("Expected enum"),
-        };
+        let syn::Data::Enum(data) = input.data.clone() else { panic!("Expected enum") };
 
         let output = handle_enum(input, &data);
         let output_str = output.to_string();

@@ -44,6 +44,7 @@ pub fn set_inner_type(ty: &Type) -> Option<(Type, SetKind)> {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct FieldConfig {
     pub into_type: Option<String>,
     pub from_type: Option<String>,
@@ -67,7 +68,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
         }
 
         let _ = attr.parse_nested_meta(|meta| {
-            let key = meta.path.get_ident().map(|i| i.to_string());
+            let key = meta.path.get_ident().map(ToString::to_string);
 
             match key.as_deref() {
                 Some("skip") => {
@@ -120,7 +121,7 @@ fn last_path_segment(ty: &Type) -> Option<&syn::PathSegment> {
 }
 
 fn clone_last_ident(path: &TypePath) -> syn::Ident {
-    path.path.segments.last().map(|seg| seg.ident.clone()).unwrap_or_else(|| syn::Ident::new("_", Span::call_site()))
+    path.path.segments.last().map_or_else(|| syn::Ident::new("_", Span::call_site()), |seg| seg.ident.clone())
 }
 
 pub fn rust_type_path_ident(ty: &Type) -> syn::Ident {
@@ -162,7 +163,7 @@ fn collect_discriminants_impl(variants: &[&syn::Variant]) -> Result<Vec<i32>, sy
     let mut values = Vec::with_capacity(variants.len());
     let mut next_value: i32 = 0;
 
-    for variant in variants.iter() {
+    for variant in variants {
         let value = if let Some((_, expr)) = &variant.discriminant {
             let parsed = eval_discriminant(expr)?;
             next_value = parsed.checked_add(1).ok_or_else(|| syn::Error::new_spanned(&variant.ident, "enum discriminant overflowed i32 range"))?;

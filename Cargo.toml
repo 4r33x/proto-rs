@@ -94,10 +94,19 @@ all-features = true
 unsafe_code = { level = "forbid", priority = 0 }
 
 [workspace.lints.clippy]
-# cargo = { level = "deny", priority = -1 }
-# complexity = { level = "deny", priority = -1 }
-# correctness = { level = "deny", priority = -1 }
-# pedantic = { level = "deny", priority = -1 }
+#cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
-# restriction = { level = "warn", priority = -1 }
-# style = { level = "deny", priority = -1 }
+#restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }
+
+[lints.clippy]
+#cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+#restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }

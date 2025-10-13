@@ -1,6 +1,6 @@
 //! String manipulation utilities
 
-/// Convert identifier to UPPER_SNAKE_CASE for proto enums
+/// Convert identifier to `UPPER_SNAKE_CASE` for proto enums
 pub fn to_upper_snake_case(s: &str) -> String {
     let mut result = String::new();
     let mut prev_is_lower = false;
@@ -16,7 +16,7 @@ pub fn to_upper_snake_case(s: &str) -> String {
     result
 }
 
-/// Convert identifier to snake_case
+/// Convert identifier to `snake_case`
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
     let mut prev_is_lower = false;
@@ -32,7 +32,7 @@ pub fn to_snake_case(s: &str) -> String {
     result
 }
 
-/// Convert identifier to PascalCase
+/// Convert identifier to `PascalCase`
 pub fn to_pascal_case(s: &str) -> String {
     s.split('_')
         .filter(|w| !w.is_empty())
@@ -58,7 +58,7 @@ pub fn derive_package_name(file_path: &str) -> String {
 
 /// Format import statement
 pub fn format_import(import_path: &str) -> String {
-    format!("import \"{}.proto\";\n", import_path)
+    format!("import \"{import_path}.proto\";\n")
 }
 
 #[cfg(test)]

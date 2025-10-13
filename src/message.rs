@@ -136,7 +136,7 @@ pub trait ProtoExt {
         Self: Sized,
     {
         let mut message = Self::proto_default();
-        Self::merge(&mut message, &mut buf).map(|_| message)
+        Self::merge(&mut message, &mut buf).map(|()| message)
     }
 
     /// Decodes a length-delimited instance of the message from the buffer.
@@ -312,7 +312,7 @@ where
     }
 
     fn encode_raw(&self, buf: &mut impl BufMut) {
-        (**self).encode_raw(buf)
+        (**self).encode_raw(buf);
     }
 
     fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -324,7 +324,7 @@ where
     }
 
     fn clear(&mut self) {
-        (**self).clear()
+        (**self).clear();
     }
 }
 
@@ -339,7 +339,7 @@ where
     }
 
     fn encode_raw(&self, buf: &mut impl BufMut) {
-        (**self).encode_raw(buf)
+        (**self).encode_raw(buf);
     }
 
     fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -459,7 +459,7 @@ where
 {
     #[inline]
     fn proto_default() -> Self {
-        HashMap::new()
+        HashMap::default()
     }
 
     fn encode_raw(&self, buf: &mut impl BufMut) {

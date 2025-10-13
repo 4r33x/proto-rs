@@ -110,12 +110,12 @@ pub fn server_module_name(trait_name: &syn::Ident) -> syn::Ident {
 
 /// Generate client struct name from trait
 pub fn client_struct_name(trait_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(&format!("{}Client", trait_name), trait_name.span())
+    syn::Ident::new(&format!("{trait_name}Client"), trait_name.span())
 }
 
 /// Generate server struct name from trait
 pub fn server_struct_name(trait_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(&format!("{}Server", trait_name), trait_name.span())
+    syn::Ident::new(&format!("{trait_name}Server"), trait_name.span())
 }
 
 // ============================================================================

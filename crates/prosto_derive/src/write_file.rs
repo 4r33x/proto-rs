@@ -18,7 +18,7 @@ use crate::utils::format_import;
 
 const IMPORT_PREFIX: &str = "__IMPORT__";
 
-/// Global registry: filename -> BTreeSet<proto definitions>
+/// Global registry: filename -> `BTreeSet`<proto definitions>
 static REGISTRY: LazyLock<Mutex<HashMap<String, BTreeSet<String>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Track initialized files
@@ -28,8 +28,8 @@ static INITIALIZED_FILES: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(|| M
 /// Priority: env var > feature flag > default (false)
 pub fn should_emit_file() -> bool {
     match std::env::var("PROTO_EMIT_FILE").ok().as_deref() {
-        Some("0") | Some("false") | Some("False") | Some("FALSE") => false,
-        Some("1") | Some("true") | Some("True") | Some("TRUE") => true,
+        Some("0" | "false" | "False" | "FALSE") => false,
+        Some("1" | "true" | "True" | "TRUE") => true,
         _ => cfg!(feature = "emit-proto-files"),
     }
 }
@@ -72,7 +72,7 @@ pub fn register_and_emit_proto_inner(file_name: &str, type_ident: &str, content:
 pub fn register_imports(type_ident: &str, imports: &BTreeMap<String, BTreeSet<String>>) -> TokenStream {
     let mut code = TokenStream::new();
 
-    for (file, import_set) in imports.iter() {
+    for (file, import_set) in imports {
         // Register in global registry
         register_imports_in_registry(file, import_set);
 
@@ -84,7 +84,7 @@ pub fn register_imports(type_ident: &str, imports: &BTreeMap<String, BTreeSet<St
         // Generate emission code
         let imports_content = import_set.iter().map(|imp| format_import(imp)).collect::<String>();
 
-        let emission = generate_proto_emission(file, &format!("{}_ImportInject", type_ident), &imports_content);
+        let emission = generate_proto_emission(file, &format!("{type_ident}_ImportInject"), &imports_content);
 
         code = quote! { #code #emission };
     }
@@ -97,7 +97,7 @@ fn register_imports_in_registry(file: &str, imports: &BTreeSet<String>) {
     let defs = registry.entry(file.to_string()).or_default();
 
     for import in imports {
-        let import_entry = format!("{}:{}", IMPORT_PREFIX, import);
+        let import_entry = format!("{IMPORT_PREFIX}:{import}");
         defs.insert(import_entry);
     }
 }
@@ -112,7 +112,7 @@ pub fn register_import(file: &str, imports: &[String]) -> TokenStream {
 
         for import in imports {
             content.push_str(&format_import(import));
-            let import_entry = format!("{}:{}", IMPORT_PREFIX, import);
+            let import_entry = format!("{IMPORT_PREFIX}:{import}");
             defs.insert(import_entry);
         }
     }
@@ -172,7 +172,7 @@ fn separate_imports_and_content(defs: &BTreeSet<String>) -> (Vec<String>, Vec<St
     let mut content = Vec::new();
 
     for item in defs {
-        if let Some(import_path) = item.strip_prefix(&format!("{}:", IMPORT_PREFIX)) {
+        if let Some(import_path) = item.strip_prefix(&format!("{IMPORT_PREFIX}:")) {
             imports.push(import_path.to_string());
         } else {
             content.push(item.clone());
@@ -183,12 +183,13 @@ fn separate_imports_and_content(defs: &BTreeSet<String>) -> (Vec<String>, Vec<St
 }
 
 fn build_complete_proto_file(file_name: &str, imports: &[String], content_items: &[String]) -> String {
+    use std::fmt::Write;
     let mut output = String::new();
 
     // Header
     output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
     output.push_str("syntax = \"proto3\";\n");
-    output.push_str(&format!("package {};\n", derive_package_name(file_name)));
+    writeln!(&mut output, "package {};", derive_package_name(file_name)).unwrap();
 
     // Imports
     if !imports.is_empty() {
@@ -210,7 +211,7 @@ fn build_complete_proto_file(file_name: &str, imports: &[String], content_items:
 fn write_file_atomically(path: &Path, content: &str) {
     let mut file = OpenOptions::new().create(true).write(true).truncate(true).open(path).expect("Failed to open proto file");
 
-    write!(file, "{}", content).expect("Failed to write proto file");
+    write!(file, "{content}").expect("Failed to write proto file");
 }
 
 fn mark_file_initialized(file_name_path: &str) {

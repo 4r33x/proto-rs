@@ -1,4 +1,4 @@
-//! type_info.rs
+//! `type_info.rs`
 //! Lightweight type analysis used by the codegen. 100% `syn` v2 compatible.
 
 use proc_macro2::Span;
@@ -28,6 +28,7 @@ pub enum SetKind {
 }
 
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ParsedFieldType {
     /// The concrete Rust type seen in the AST (e.g. `Vec<u8>` or `MyType`).
     pub rust_type: Type,
@@ -92,7 +93,7 @@ pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
 
 /// True if the type is `[u8; N]`.
 pub fn is_bytes_array(ty: &Type) -> bool {
-    matches!(ty, Type::Array(array) if matches!(&*array.elem, Type::Path(inner) if last_ident(inner).map(|id| id == "u8").unwrap_or(false)))
+    matches!(ty, Type::Array(array) if matches!(&*array.elem, Type::Path(inner) if last_ident(inner).is_some_and(|id| id == "u8")))
 }
 
 /// True if the type is `Vec<u8>` or `Bytes`.
@@ -106,7 +107,7 @@ pub fn is_bytes_vec(ty: &Type) -> bool {
                 if id == "Vec"
                     && let Some(inner) = single_generic(path)
                 {
-                    return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).map(|i| i == "u8").unwrap_or(false));
+                    return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).is_some_and(|i| i == "u8"));
                 }
             }
             false
@@ -180,7 +181,7 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         panic!("Vec must have a single generic argument");
     };
 
-    if matches!(inner_ty, Type::Path(p) if last_ident(p).map(|id| id == "u8").unwrap_or(false)) {
+    if matches!(inner_ty, Type::Path(p) if last_ident(p).is_some_and(|id| id == "u8")) {
         return ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::std::vec::Vec<u8> }, (*inner_ty).clone(), false);
     }
 
@@ -208,16 +209,10 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
         Type::Path(path) => {
             if let Some(id) = last_ident(path) {
                 return match id.to_string().as_str() {
-                    "u8" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
-                    "u16" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
-                    "u32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
-                    "u64" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
-                    "usize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
-                    "i8" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
-                    "i16" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
-                    "i32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
-                    "i64" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
-                    "isize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
+                    "u8" | "u16" | "u32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
+                    "u64" | "usize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
+                    "i8" | "i16" | "i32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
+                    "i64" | "isize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
                     "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone(), false),
                     "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone(), false),
                     "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
@@ -256,7 +251,7 @@ fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType 
         value_info.proto_type.clone()
     };
 
-    let proto_type = format!("map<{}, {}>", key_proto, value_proto);
+    let proto_type = format!("map<{key_proto}, {value_proto}>");
 
     let key_proto_ty = key_info.proto_rust_type.clone();
     let value_proto_ty = value_info.proto_rust_type.clone();

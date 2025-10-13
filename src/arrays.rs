@@ -1,4 +1,4 @@
-//! ProtoExt implementations for arrays
+//! `ProtoExt` implementations for arrays
 use core::array;
 
 use ::bytes::Buf;
