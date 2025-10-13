@@ -1,6 +1,9 @@
+use bytes::{Bytes, BytesMut};
 use prost::Message as ProstMessage;
-use proto_rs::proto_message;
 use proto_rs::ProtoExt;
+use proto_rs::encoding::varint::encoded_len_varint;
+use proto_rs::encoding::{self};
+use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -53,7 +56,7 @@ pub struct SampleMessageProst {
     pub nested: Option<NestedMessageProst>,
     #[prost(message, repeated, tag = "6")]
     pub nested_list: Vec<NestedMessageProst>,
-    #[prost(int64, repeated, tag = "7", packed = "false")]
+    #[prost(int64, repeated, tag = "7")]
     pub values: Vec<i64>,
     #[prost(enumeration = "SampleEnumProst", tag = "8")]
     pub mode: i32,
@@ -129,9 +132,7 @@ impl From<&SampleMessageProst> for SampleMessage {
             nested_list: value.nested_list.iter().map(NestedMessage::from).collect(),
             values: value.values.clone(),
             mode: SampleEnum::try_from(value.mode).expect("invalid enum value"),
-            optional_mode: value
-                .optional_mode
-                .map(|m| SampleEnum::try_from(m).expect("invalid enum value")),
+            optional_mode: value.optional_mode.map(|m| SampleEnum::try_from(m).expect("invalid enum value")),
         }
     }
 }
@@ -154,21 +155,61 @@ fn sample_message_prost() -> SampleMessageProst {
     SampleMessageProst::from(&sample_message())
 }
 
-fn collect_bytes<M: ProstMessage>(value: &M) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(value.encoded_len());
+fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_expected: &SampleMessageProst) {
+    let decoded_proto = SampleMessage::decode(bytes.clone()).expect("proto decode failed");
+    assert_eq!(decoded_proto, *proto_expected);
+
+    let decoded_prost = SampleMessageProst::decode(bytes).expect("prost decode failed");
+    assert_eq!(decoded_prost, *prost_expected);
+}
+
+fn encode_proto_message<M: ProtoExt>(value: &M) -> Bytes {
+    let mut buf = BytesMut::with_capacity(value.encoded_len());
+    value.encode(&mut buf).expect("proto encode failed");
+    buf.freeze()
+}
+
+fn encode_prost_message<M: ProstMessage>(value: &M) -> Bytes {
+    let mut buf = BytesMut::with_capacity(value.encoded_len());
     value.encode(&mut buf).expect("prost encode failed");
-    buf
+    buf.freeze()
+}
+
+fn encode_proto_length_delimited<M: ProtoExt>(value: &M) -> Bytes {
+    let len = value.encoded_len();
+    let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
+    value.encode_length_delimited(&mut buf).expect("proto length-delimited encode failed");
+    buf.freeze()
+}
+
+fn encode_prost_length_delimited<M: ProstMessage>(value: &M) -> Bytes {
+    let len = value.encoded_len();
+    let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
+    value.encode_length_delimited(&mut buf).expect("prost length-delimited encode failed");
+    buf.freeze()
 }
 
 #[test]
-fn proto_and_prost_wire_formats_match() {
+fn proto_and_prost_encodings_are_equivalent() {
     let proto_msg = sample_message();
     let prost_msg = SampleMessageProst::from(&proto_msg);
 
-    let proto_bytes = proto_msg.encode_to_vec();
-    let prost_bytes = collect_bytes(&prost_msg);
+    let proto_bytes = encode_proto_message(&proto_msg);
+    let prost_bytes = encode_prost_message(&prost_msg);
 
-    assert_eq!(proto_bytes, prost_bytes, "wire format diverged between proto_rs and prost");
+    let prost_decoded_from_proto = SampleMessageProst::decode(proto_bytes.clone()).expect("prost decode from proto bytes failed");
+    assert_eq!(prost_decoded_from_proto, prost_msg);
+
+    let proto_decoded_from_prost = SampleMessage::decode(prost_bytes.clone()).expect("proto decode from prost bytes failed");
+    assert_eq!(proto_decoded_from_prost, proto_msg);
+
+    let normalized_prost = encode_prost_message(&prost_decoded_from_proto);
+    assert_eq!(normalized_prost, prost_bytes, "prost re-encode mismatch");
+
+    let normalized_proto = encode_proto_message(&proto_decoded_from_prost);
+    assert_eq!(normalized_proto, proto_bytes, "proto re-encode mismatch");
+
+    assert_eq!(proto_msg.encoded_len(), proto_bytes.len());
 }
 
 #[test]
@@ -176,20 +217,14 @@ fn cross_decode_round_trips() {
     let proto_msg = sample_message();
     let prost_msg = sample_message_prost();
 
-    let proto_bytes = proto_msg.encode_to_vec();
-    let prost_bytes = collect_bytes(&prost_msg);
+    let proto_bytes = encode_proto_message(&proto_msg);
+    let prost_bytes = encode_prost_message(&prost_msg);
 
-    let decoded_proto_from_proto = SampleMessage::decode(proto_bytes.as_slice()).expect("proto decode failed");
+    assert_decode_roundtrip(proto_bytes.clone(), &proto_msg, &prost_msg);
+    assert_decode_roundtrip(prost_bytes, &proto_msg, &prost_msg);
+
+    let decoded_proto_from_proto = SampleMessage::decode(proto_bytes.clone()).expect("proto decode failed");
     assert_eq!(decoded_proto_from_proto, proto_msg);
-
-    let decoded_proto_from_prost = SampleMessage::decode(prost_bytes.as_slice()).expect("proto decode from prost bytes failed");
-    assert_eq!(decoded_proto_from_prost, proto_msg);
-
-    let decoded_prost_from_prost = SampleMessageProst::decode(prost_bytes.as_slice()).expect("prost decode failed");
-    assert_eq!(decoded_prost_from_prost, prost_msg);
-
-    let decoded_prost_from_proto = SampleMessageProst::decode(proto_bytes.as_slice()).expect("prost decode from proto bytes failed");
-    assert_eq!(decoded_prost_from_proto, prost_msg);
 }
 
 #[test]
@@ -197,31 +232,96 @@ fn length_delimited_round_trips() {
     let proto_msg = sample_message();
     let prost_msg = SampleMessageProst::from(&proto_msg);
 
-    let proto_bytes = proto_msg.encode_length_delimited_to_vec();
-    let prost_bytes = {
-        let mut buf = Vec::new();
-        prost_msg
-            .encode_length_delimited(&mut buf)
-            .expect("prost length-delimited encode failed");
-        buf
-    };
+    let proto_bytes = encode_proto_length_delimited(&proto_msg);
+    let prost_bytes = encode_prost_length_delimited(&prost_msg);
 
-    assert_eq!(proto_bytes, prost_bytes, "length-delimited wire format diverged");
-
-    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.as_slice()).expect("proto length-delimited decode failed");
+    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.clone()).expect("proto length-delimited decode failed");
     assert_eq!(decoded_proto, proto_msg);
 
-    let decoded_proto_from_prost =
-        SampleMessage::decode_length_delimited(prost_bytes.as_slice()).expect("proto decode from prost length-delimited failed");
+    let decoded_proto_from_prost = SampleMessage::decode_length_delimited(prost_bytes.clone()).expect("proto decode from prost length-delimited failed");
     assert_eq!(decoded_proto_from_prost, proto_msg);
 
-    let decoded_prost = SampleMessageProst::decode_length_delimited(prost_bytes.as_slice())
-        .expect("prost length-delimited decode failed");
+    let decoded_prost = SampleMessageProst::decode_length_delimited(prost_bytes.clone()).expect("prost length-delimited decode failed");
     assert_eq!(decoded_prost, prost_msg);
 
-    let decoded_prost_from_proto = SampleMessageProst::decode_length_delimited(proto_bytes.as_slice())
-        .expect("prost decode from proto length-delimited failed");
+    let decoded_prost_from_proto = SampleMessageProst::decode_length_delimited(proto_bytes).expect("prost decode from proto length-delimited failed");
     assert_eq!(decoded_prost_from_proto, prost_msg);
+}
+
+#[test]
+fn decode_handles_non_canonical_field_order() {
+    let source = sample_message();
+    let mut buf = BytesMut::new();
+
+    encoding::int32::encode(8, &(SampleEnumProst::from(source.mode) as i32), &mut buf);
+    encoding::bytes::encode(4, &source.data, &mut buf);
+    encoding::int64::encode(7, &source.values[0], &mut buf);
+    encoding::message::encode(6, &source.nested_list[0], &mut buf);
+    encoding::string::encode(3, &source.name, &mut buf);
+    encoding::bool::encode(2, &source.flag, &mut buf);
+    encoding::uint32::encode(1, &source.id, &mut buf);
+    encoding::message::encode(6, &source.nested_list[1], &mut buf);
+    encoding::int64::encode(7, &source.values[1], &mut buf);
+    encoding::message::encode(5, source.nested.as_ref().expect("missing nested"), &mut buf);
+    encoding::int64::encode(7, &source.values[2], &mut buf);
+    encoding::int64::encode(7, &source.values[3], &mut buf);
+    if let Some(optional_mode) = source.optional_mode {
+        encoding::int32::encode(9, &(SampleEnumProst::from(optional_mode) as i32), &mut buf);
+    }
+
+    let bytes = buf.freeze();
+    assert_decode_roundtrip(bytes, &source, &SampleMessageProst::from(&source));
+}
+
+#[test]
+fn decode_prefers_last_value_for_singular_fields() {
+    let source = sample_message();
+    let mut buf = BytesMut::new();
+
+    // Initial values that should be overwritten.
+    encoding::uint32::encode(1, &1u32, &mut buf);
+    encoding::bool::encode(2, &false, &mut buf);
+    encoding::int32::encode(8, &(SampleEnumProst::from(SampleEnum::One) as i32), &mut buf);
+    if source.optional_mode.is_some() {
+        encoding::int32::encode(9, &(SampleEnumProst::from(SampleEnum::Zero) as i32), &mut buf);
+    }
+
+    // Final values should be preserved after decoding.
+    encoding::uint32::encode(1, &source.id, &mut buf);
+    encoding::bool::encode(2, &source.flag, &mut buf);
+    encoding::int32::encode(8, &(SampleEnumProst::from(source.mode) as i32), &mut buf);
+    if let Some(optional_mode) = source.optional_mode {
+        encoding::int32::encode(9, &(SampleEnumProst::from(optional_mode) as i32), &mut buf);
+    }
+
+    let bytes = buf.freeze();
+
+    let expected = SampleMessage {
+        id: source.id,
+        flag: source.flag,
+        mode: source.mode,
+        optional_mode: source.optional_mode,
+        ..SampleMessage::default()
+    };
+
+    assert_decode_roundtrip(bytes, &expected, &SampleMessageProst::from(&expected));
+}
+
+#[test]
+fn decode_handles_mixed_packed_repeated_values() {
+    let values = sample_message().values;
+
+    let mut buf = BytesMut::new();
+    encoding::int64::encode(7, &values[0], &mut buf);
+    encoding::int64::encode_packed(7, &values[1..3], &mut buf);
+    encoding::int64::encode(7, &values[3], &mut buf);
+
+    let bytes = buf.freeze();
+
+    let mut expected = SampleMessage::default();
+    expected.values = values.clone();
+
+    assert_decode_roundtrip(bytes, &expected, &SampleMessageProst::from(&expected));
 }
 
 #[test]

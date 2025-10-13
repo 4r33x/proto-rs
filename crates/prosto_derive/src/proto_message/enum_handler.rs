@@ -135,12 +135,28 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                let mut raw = ::std::vec::Vec::<i32>::new();
-                ::proto_rs::encoding::int32::merge_repeated(wire_type, &mut raw, buf, ctx.clone())?;
-                for value in raw {
-                    values.push(Self::try_from(value)?);
+                if wire_type == ::proto_rs::encoding::WireType::LengthDelimited {
+                    ::proto_rs::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
+                        let mut raw: i32 = 0;
+                        ::proto_rs::encoding::int32::merge(
+                            ::proto_rs::encoding::WireType::Varint,
+                            &mut raw,
+                            buf,
+                            ctx,
+                        )?;
+                        values.push(Self::try_from(raw)?);
+                        Ok(())
+                    })
+                } else {
+                    ::proto_rs::encoding::check_wire_type(
+                        ::proto_rs::encoding::WireType::Varint,
+                        wire_type,
+                    )?;
+                    let mut raw: i32 = 0;
+                    ::proto_rs::encoding::int32::merge(wire_type, &mut raw, buf, ctx)?;
+                    values.push(Self::try_from(raw)?);
+                    Ok(())
                 }
-                Ok(())
             }
 
             fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
