@@ -8,6 +8,7 @@ use syn::Fields;
 use syn::Lit;
 use syn::spanned::Spanned;
 
+use crate::utils::find_marked_default_variant;
 use crate::utils::parse_field_config;
 
 use super::unified_field_handler::generate_field_decode;
@@ -20,7 +21,13 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let vis = &input.vis;
     let generics = &input.generics;
 
-    let original_variants: Vec<_> = data
+    let default_variant_index = match find_marked_default_variant(data) {
+        Ok(Some(idx)) => idx,
+        Ok(None) => 0,
+        Err(err) => return err.to_compile_error(),
+    };
+
+    let mut original_variants: Vec<_> = data
         .variants
         .iter()
         .map(|v| {
@@ -60,18 +67,23 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         })
         .collect();
 
+    if default_variant_index != 0 {
+        let default_variant = original_variants.remove(default_variant_index);
+        original_variants.insert(0, default_variant);
+    }
+
     // Collect variant data for encoding/decoding
     let (encode_arms, decode_arms, encoded_len_arms) = match generate_variant_arms(name, data) {
         Ok(parts) => parts,
         Err(err) => return err.to_compile_error(),
     };
-    let last_variant = &data.variants.first().expect("Enum must have at least one variant");
-    let last_variant_ident = &last_variant.ident;
+    let default_variant = &data.variants[default_variant_index];
+    let default_variant_ident = &default_variant.ident;
 
-    let default_value = match &last_variant.fields {
-        Fields::Unit => quote! { Self::#last_variant_ident },
+    let default_value = match &default_variant.fields {
+        Fields::Unit => quote! { Self::#default_variant_ident },
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-            quote! { Self::#last_variant_ident(::proto_rs::ProtoExt::proto_default()) }
+            quote! { Self::#default_variant_ident(::proto_rs::ProtoExt::proto_default()) }
         }
         Fields::Named(fields) => {
             let field_defaults: Vec<_> = fields
@@ -82,7 +94,7 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                     quote! { #ident: ::proto_rs::ProtoExt::proto_default() }
                 })
                 .collect();
-            quote! { Self::#last_variant_ident { #(#field_defaults),* } }
+            quote! { Self::#default_variant_ident { #(#field_defaults),* } }
         }
         _ => panic!("Unsupported variant structure"),
     };
