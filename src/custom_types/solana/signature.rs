@@ -8,7 +8,42 @@ extern crate self as proto_rs;
 
 #[proto_dump(proto_path = "protos/solana.proto")]
 pub struct SignatureProto {
+    #[proto(tag = 1)]
     pub inner: [u8; BYTES],
 }
 
 impl_protoext_for_byte_array!(ByteSeq, BYTES);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encoding::{encode_key, encode_varint, WireType};
+    use crate::ProtoExt;
+
+    fn sample_signature_bytes() -> [u8; BYTES] {
+        let mut data = [0u8; BYTES];
+        for (idx, byte) in data.iter_mut().enumerate() {
+            *byte = (idx as u8).wrapping_mul(5).wrapping_add(11);
+        }
+        data
+    }
+
+    #[test]
+    fn roundtrip_proto_ext() {
+        let original = ByteSeq::from(sample_signature_bytes());
+        let encoded = <ByteSeq as ProtoExt>::encode_to_vec(&original);
+        let decoded = <ByteSeq as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        assert_eq!(decoded.as_ref(), original.as_ref());
+    }
+
+    #[test]
+    fn rejects_incorrect_length() {
+        let mut buf = Vec::new();
+        encode_key(1, WireType::LengthDelimited, &mut buf);
+        encode_varint((BYTES - 2) as u64, &mut buf);
+        buf.extend(std::iter::repeat(0u8).take(BYTES - 2));
+
+        let err = <ByteSeq as ProtoExt>::decode(buf.as_slice()).expect_err("invalid length should fail");
+        assert!(err.to_string().contains("expected"));
+    }
+}

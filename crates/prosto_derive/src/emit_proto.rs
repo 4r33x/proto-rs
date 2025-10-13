@@ -174,7 +174,9 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
             ""
         };
 
-        proto_fields.push(format!("  {modifier}{proto_type} {field_name} = {field_num};"));
+        let tag = config.custom_tag.unwrap_or(field_num);
+
+        proto_fields.push(format!("  {modifier}{proto_type} {field_name} = {tag};"));
     }
 
     proto_fields.join("\n")
