@@ -893,16 +893,27 @@ pub mod group {
 /// Rust doesn't have a `Map` trait, so macros are currently the best way to be
 /// generic over `HashMap` and `BTreeMap`.
 macro_rules! map {
-    ($map_ty:ident) => {
+    ($map_ty:ident $(<$extra:ident>)?) => {
         use core::hash::Hash;
+        #[allow(unused_imports)]
+        use core::hash::BuildHasher;
 
         use crate::encoding::*;
 
         /// Generic protobuf map encode function.
-        pub fn encode<K, V, B, KE, KL, VE, VL>(key_encode: KE, key_encoded_len: KL, val_encode: VE, val_encoded_len: VL, tag: u32, values: &$map_ty<K, V>, buf: &mut B)
+        pub fn encode<K, V, $( $extra, )? B, KE, KL, VE, VL>(
+            key_encode: KE,
+            key_encoded_len: KL,
+            val_encode: VE,
+            val_encoded_len: VL,
+            tag: u32,
+            values: &$map_ty<K, V $(, $extra)?>,
+            buf: &mut B,
+        )
         where
             K: Default + Eq + Hash + Ord,
             V: Default + PartialEq,
+            $( $extra: BuildHasher, )?
             B: BufMut,
             KE: Fn(u32, &K, &mut B),
             KL: Fn(u32, &K) -> usize,
@@ -913,10 +924,17 @@ macro_rules! map {
         }
 
         /// Generic protobuf map merge function.
-        pub fn merge<K, V, B, KM, VM>(key_merge: KM, val_merge: VM, values: &mut $map_ty<K, V>, buf: &mut B, ctx: DecodeContext) -> Result<(), DecodeError>
+        pub fn merge<K, V, $( $extra, )? B, KM, VM>(
+            key_merge: KM,
+            val_merge: VM,
+            values: &mut $map_ty<K, V $(, $extra)?>,
+            buf: &mut B,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError>
         where
             K: Default + Eq + Hash + Ord,
             V: Default,
+            $( $extra: BuildHasher, )?
             B: Buf,
             KM: Fn(WireType, &mut K, &mut B, DecodeContext) -> Result<(), DecodeError>,
             VM: Fn(WireType, &mut V, &mut B, DecodeContext) -> Result<(), DecodeError>,
@@ -925,10 +943,16 @@ macro_rules! map {
         }
 
         /// Generic protobuf map encode function.
-        pub fn encoded_len<K, V, KL, VL>(key_encoded_len: KL, val_encoded_len: VL, tag: u32, values: &$map_ty<K, V>) -> usize
+        pub fn encoded_len<K, V, $( $extra, )? KL, VL>(
+            key_encoded_len: KL,
+            val_encoded_len: VL,
+            tag: u32,
+            values: &$map_ty<K, V $(, $extra)?>,
+        ) -> usize
         where
             K: Default + Eq + Hash + Ord,
             V: Default + PartialEq,
+            $( $extra: BuildHasher, )?
             KL: Fn(u32, &K) -> usize,
             VL: Fn(u32, &V) -> usize,
         {
@@ -940,10 +964,20 @@ macro_rules! map {
         /// This is necessary because enumeration values can have a default value other
         /// than 0 in proto2.
         #[allow(clippy::too_many_arguments)]
-        pub fn encode_with_default<K, V, B, KE, KL, VE, VL>(key_encode: KE, key_encoded_len: KL, val_encode: VE, val_encoded_len: VL, val_default: &V, tag: u32, values: &$map_ty<K, V>, buf: &mut B)
+        pub fn encode_with_default<K, V, $( $extra, )? B, KE, KL, VE, VL>(
+            key_encode: KE,
+            key_encoded_len: KL,
+            val_encode: VE,
+            val_encoded_len: VL,
+            val_default: &V,
+            tag: u32,
+            values: &$map_ty<K, V $(, $extra)?>,
+            buf: &mut B,
+        )
         where
             K: Default + Eq + Hash + Ord,
             V: PartialEq,
+            $( $extra: BuildHasher, )?
             B: BufMut,
             KE: Fn(u32, &K, &mut B),
             KL: Fn(u32, &K) -> usize,
@@ -971,10 +1005,18 @@ macro_rules! map {
         ///
         /// This is necessary because enumeration values can have a default value other
         /// than 0 in proto2.
-        pub fn merge_with_default<K, V, B, KM, VM>(key_merge: KM, val_merge: VM, val_default: V, values: &mut $map_ty<K, V>, buf: &mut B, ctx: DecodeContext) -> Result<(), DecodeError>
+        pub fn merge_with_default<K, V, $( $extra, )? B, KM, VM>(
+            key_merge: KM,
+            val_merge: VM,
+            val_default: V,
+            values: &mut $map_ty<K, V $(, $extra)?>,
+            buf: &mut B,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError>
         where
             K: Default + Eq + Hash + Ord,
             B: Buf,
+            $( $extra: BuildHasher, )?
             KM: Fn(WireType, &mut K, &mut B, DecodeContext) -> Result<(), DecodeError>,
             VM: Fn(WireType, &mut V, &mut B, DecodeContext) -> Result<(), DecodeError>,
         {
@@ -998,10 +1040,17 @@ macro_rules! map {
         ///
         /// This is necessary because enumeration values can have a default value other
         /// than 0 in proto2.
-        pub fn encoded_len_with_default<K, V, KL, VL>(key_encoded_len: KL, val_encoded_len: VL, val_default: &V, tag: u32, values: &$map_ty<K, V>) -> usize
+        pub fn encoded_len_with_default<K, V, $( $extra, )? KL, VL>(
+            key_encoded_len: KL,
+            val_encoded_len: VL,
+            val_default: &V,
+            tag: u32,
+            values: &$map_ty<K, V $(, $extra)?>,
+        ) -> usize
         where
             K: Default + Eq + Hash + Ord,
             V: PartialEq,
+            $( $extra: BuildHasher, )?
             KL: Fn(u32, &K) -> usize,
             VL: Fn(u32, &V) -> usize,
         {
@@ -1020,7 +1069,7 @@ macro_rules! map {
 #[cfg(feature = "std")]
 pub mod hash_map {
     use std::collections::HashMap;
-    map!(HashMap);
+    map!(HashMap<S>);
 }
 
 pub mod btree_map {
