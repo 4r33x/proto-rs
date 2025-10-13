@@ -11,7 +11,8 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
 use crate::utils::MethodInfo;
-use crate::utils::collect_enum_discriminants;
+use crate::utils::collect_discriminants_for_variants;
+use crate::utils::find_marked_default_variant;
 use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::is_complex_type;
@@ -25,12 +26,32 @@ use crate::utils::to_upper_snake_case;
 use crate::utils::vec_inner_type;
 
 pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
-    let discriminants = collect_enum_discriminants(data).unwrap_or_else(|err| panic!("{}", err));
+    let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{}", err));
 
-    let variants: Vec<String> = data
-        .variants
-        .iter()
-        .zip(discriminants.iter())
+    let mut order: Vec<usize> = (0..data.variants.len()).collect();
+    if let Some(idx) = marked_default {
+        if idx < order.len() {
+            order.remove(idx);
+            order.insert(0, idx);
+        }
+    }
+
+    let ordered_variants: Vec<&syn::Variant> = order.iter().map(|&idx| &data.variants[idx]).collect();
+    let ordered_discriminants = collect_discriminants_for_variants(&ordered_variants).unwrap_or_else(|err| panic!("{}", err));
+
+    if let Some(_) = marked_default {
+        if ordered_discriminants.first().copied().unwrap_or_default() != 0 {
+            panic!("enum #[default] variant must have discriminant 0");
+        }
+    }
+
+    if !ordered_discriminants.iter().any(|&value| value == 0) {
+        panic!("proto enums must contain a variant with discriminant 0");
+    }
+
+    let variants: Vec<String> = ordered_variants
+        .into_iter()
+        .zip(ordered_discriminants.into_iter())
         .map(|(variant, value)| {
             let proto_name = to_upper_snake_case(&variant.ident.to_string());
             format!("  {} = {};", proto_name, value)

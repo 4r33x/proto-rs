@@ -15,6 +15,16 @@ pub enum SampleEnum {
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum StatusWithDefaultAttribute {
+    Pending,
+    #[default]
+    Active,
+    Inactive,
+    Completed,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct NestedMessage {
     pub value: i64,
@@ -187,6 +197,23 @@ fn encode_prost_length_delimited<M: ProstMessage>(value: &M) -> Bytes {
     let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
     value.encode_length_delimited(&mut buf).expect("prost length-delimited encode failed");
     buf.freeze()
+}
+
+#[test]
+fn enum_default_attribute_maps_to_zero_discriminant() {
+    assert_eq!(StatusWithDefaultAttribute::proto_default(), StatusWithDefaultAttribute::Active);
+    assert_eq!(StatusWithDefaultAttribute::Active as i32, 0);
+    assert_eq!(StatusWithDefaultAttribute::Pending as i32, 1);
+    assert_eq!(StatusWithDefaultAttribute::Inactive as i32, 2);
+    assert_eq!(StatusWithDefaultAttribute::Completed as i32, 3);
+
+    let default_bytes = StatusWithDefaultAttribute::Active.encode_to_vec();
+    assert!(default_bytes.is_empty(), "default enum variant must encode to empty payload");
+
+    let pending_bytes = StatusWithDefaultAttribute::Pending.encode_to_vec();
+    assert!(!pending_bytes.is_empty(), "non-default enum variant must encode field value");
+    let decoded = StatusWithDefaultAttribute::decode(Bytes::from(pending_bytes)).expect("decode enum with explicit value");
+    assert_eq!(decoded, StatusWithDefaultAttribute::Pending);
 }
 
 #[test]

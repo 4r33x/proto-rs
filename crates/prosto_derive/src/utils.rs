@@ -140,11 +140,11 @@ pub struct MethodInfo {
     pub user_method_signature: TokenStream,
 }
 
-pub fn collect_enum_discriminants(data: &DataEnum) -> Result<Vec<i32>, syn::Error> {
-    let mut values = Vec::with_capacity(data.variants.len());
+fn collect_discriminants_impl(variants: &[&syn::Variant]) -> Result<Vec<i32>, syn::Error> {
+    let mut values = Vec::with_capacity(variants.len());
     let mut next_value: i32 = 0;
 
-    for variant in data.variants.iter() {
+    for variant in variants.iter() {
         let value = if let Some((_, expr)) = &variant.discriminant {
             let parsed = eval_discriminant(expr)?;
             next_value = parsed.checked_add(1).ok_or_else(|| syn::Error::new_spanned(&variant.ident, "enum discriminant overflowed i32 range"))?;
@@ -160,11 +160,26 @@ pub fn collect_enum_discriminants(data: &DataEnum) -> Result<Vec<i32>, syn::Erro
         values.push(value);
     }
 
-    if !values.contains(&0) {
-        return Err(syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0"));
+    Ok(values)
+}
+
+pub fn collect_discriminants_for_variants<'a>(variants: &[&'a syn::Variant]) -> Result<Vec<i32>, syn::Error> {
+    collect_discriminants_impl(variants)
+}
+
+pub fn find_marked_default_variant(data: &DataEnum) -> syn::Result<Option<usize>> {
+    let mut default_index: Option<usize> = None;
+
+    for (idx, variant) in data.variants.iter().enumerate() {
+        if variant.attrs.iter().any(|attr| attr.path().is_ident("default")) {
+            if default_index.is_some() {
+                return Err(syn::Error::new(variant.span(), "multiple #[default] variants are not allowed"));
+            }
+            default_index = Some(idx);
+        }
     }
 
-    Ok(values)
+    Ok(default_index)
 }
 
 fn eval_discriminant(expr: &Expr) -> Result<i32, syn::Error> {
