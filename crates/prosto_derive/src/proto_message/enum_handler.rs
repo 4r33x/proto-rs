@@ -22,11 +22,11 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     };
 
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
-    if let Some(idx) = marked_default {
-        if idx < order.len() {
-            order.remove(idx);
-            order.insert(0, idx);
-        }
+    if let Some(idx) = marked_default
+        && idx < order.len()
+    {
+        order.remove(idx);
+        order.insert(0, idx);
     }
 
     let ordered_variants: Vec<&syn::Variant> = order.iter().map(|&idx| &data.variants[idx]).collect();
@@ -35,11 +35,11 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         Err(err) => return err.to_compile_error(),
     };
 
-    if let Some(idx) = marked_default {
-        if ordered_discriminants.first().copied().unwrap_or_default() != 0 {
-            let variant = &data.variants[idx];
-            return syn::Error::new(variant.span(), "enum #[default] variant must have discriminant 0").to_compile_error();
-        }
+    if let Some(idx) = marked_default
+        && ordered_discriminants.first().copied().unwrap_or_default() != 0
+    {
+        let variant = &data.variants[idx];
+        return syn::Error::new(variant.span(), "enum #[default] variant must have discriminant 0").to_compile_error();
     }
 
     if !ordered_discriminants.contains(&0) {

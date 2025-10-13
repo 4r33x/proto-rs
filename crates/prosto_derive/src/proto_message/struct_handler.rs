@@ -135,14 +135,14 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         let tuple_idx = Index::from(idx);
         let field_access = FieldAccess::Tuple(tuple_idx.clone());
 
-        if field_config.skip {
-            if let Some(fun) = &field_config.skip_deser_fn {
-                let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-                let access_tokens = field_access.self_tokens();
-                post_decode_hooks.push(quote! {
-                    #access_tokens = #fun_path(self);
-                });
-            }
+        if field_config.skip
+            && let Some(fun) = &field_config.skip_deser_fn
+        {
+            let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+            let access_tokens = field_access.self_tokens();
+            post_decode_hooks.push(quote! {
+                #access_tokens = #fun_path(self);
+            });
         }
 
         let tag = if field_config.skip {
@@ -287,14 +287,14 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         let field_config = parse_field_config(field);
         let field_access = FieldAccess::Named(ident.clone());
 
-        if field_config.skip {
-            if let Some(fun) = &field_config.skip_deser_fn {
-                let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-                let access_tokens = field_access.self_tokens();
-                post_decode_hooks.push(quote! {
-                    #access_tokens = #fun_path(self);
-                });
-            }
+        if field_config.skip
+            && let Some(fun) = &field_config.skip_deser_fn
+        {
+            let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+            let access_tokens = field_access.self_tokens();
+            post_decode_hooks.push(quote! {
+                #access_tokens = #fun_path(self);
+            });
         }
 
         let tag = if field_config.skip {

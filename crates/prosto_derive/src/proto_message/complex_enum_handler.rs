@@ -1,6 +1,7 @@
 //! Handler for complex enums (with associated data) with ProtoExt support
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::Span;
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DataEnum;
 use syn::DeriveInput;
@@ -8,12 +9,11 @@ use syn::Fields;
 use syn::Lit;
 use syn::spanned::Spanned;
 
-use crate::utils::find_marked_default_variant;
-use crate::utils::parse_field_config;
-
 use super::unified_field_handler::generate_field_decode;
 use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
+use crate::utils::find_marked_default_variant;
+use crate::utils::parse_field_config;
 
 pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
@@ -236,18 +236,18 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     }
 
     let mut post_hooks = Vec::new();
-    if cfg.skip {
-        if let Some(fun) = &cfg.skip_deser_fn {
-            let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-            let skip_binding = syn::Ident::new("__value", Span::call_site());
-            let computed_ident = syn::Ident::new("__skip_value", Span::call_site());
-            post_hooks.push(quote! {
-                let #computed_ident = #fun_path(&variant_value);
-                if let #name::#variant_ident(ref mut #skip_binding) = variant_value {
-                    *#skip_binding = #computed_ident;
-                }
-            });
-        }
+    if cfg.skip
+        && let Some(fun) = &cfg.skip_deser_fn
+    {
+        let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+        let skip_binding = syn::Ident::new("__value", Span::call_site());
+        let computed_ident = syn::Ident::new("__skip_value", Span::call_site());
+        post_hooks.push(quote! {
+            let #computed_ident = #fun_path(&variant_value);
+            if let #name::#variant_ident(ref mut #skip_binding) = variant_value {
+                *#skip_binding = #computed_ident;
+            }
+        });
     }
 
     let encode_arm = {
@@ -379,20 +379,20 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             });
         }
 
-        if cfg.skip {
-            if let Some(fun) = &cfg.skip_deser_fn {
-                let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-                let binding_name = format!("__{}_skip", ident);
-                let binding_ident = syn::Ident::new(&binding_name, Span::call_site());
-                let computed_name = format!("__{}_computed", ident);
-                let computed_ident = syn::Ident::new(&computed_name, Span::call_site());
-                post_hooks.push(quote! {
-                    let #computed_ident = #fun_path(&variant_value);
-                    if let #name::#variant_ident { #ident: ref mut #binding_ident, .. } = variant_value {
-                        *#binding_ident = #computed_ident;
-                    }
-                });
-            }
+        if cfg.skip
+            && let Some(fun) = &cfg.skip_deser_fn
+        {
+            let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+            let binding_name = format!("__{}_skip", ident);
+            let binding_ident = syn::Ident::new(&binding_name, Span::call_site());
+            let computed_name = format!("__{}_computed", ident);
+            let computed_ident = syn::Ident::new(&computed_name, Span::call_site());
+            post_hooks.push(quote! {
+                let #computed_ident = #fun_path(&variant_value);
+                if let #name::#variant_ident { #ident: ref mut #binding_ident, .. } = variant_value {
+                    *#binding_ident = #computed_ident;
+                }
+            });
         }
     }
 

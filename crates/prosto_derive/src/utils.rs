@@ -33,10 +33,10 @@ pub fn set_inner_type(ty: &Type) -> Option<(Type, SetKind)> {
             _ => None,
         }?;
 
-        if let PathArguments::AngleBracketed(args) = &segment.arguments {
-            if let Some(GenericArgument::Type(inner)) = args.args.first() {
-                return Some((inner.clone(), kind));
-            }
+        if let PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(GenericArgument::Type(inner)) = args.args.first()
+        {
+            return Some((inner.clone(), kind));
         }
     }
 

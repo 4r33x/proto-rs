@@ -2,12 +2,21 @@
 
 `proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions. The crate ships a set of procedural macros and runtime helpers that derive message encoders/decoders, generate `.proto` files on demand, and wire traits directly into Tonic servers and clients.
 
+## Motivation
+
+0. I hate to do conversion after conversion for conversion
+1. I love to see Rust only as first-class citizen for all my stuff
+2. I hate bloat, so no protoc (shoutout to PewDiePie debloat trend)
+3. I don't want to touch .proto files at all
+
+For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this crate implement different approach
+
 ## Key capabilities
 
 - **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code.
 - **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits can stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts.
-- **On-demand schema dumps** – `proto_dump!` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
-- **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs).
+- **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
+- **Workspace and even beyond schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs).
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
 
 ## Getting started
@@ -16,11 +25,11 @@ Add `proto_rs` to your `Cargo.toml` and optionally enable features you need (for
 
 ```toml
 [dependencies]
-proto_rs = { version = "0.5", features = ["emit-proto-files"] }
+proto_rs = { version = "0.6", features = ["emit-proto-files"] }
 tonic = "0.14"
 ```
 
-Define your messages and services using the derive macros:
+Define your messages and services using the derive macros with native rust types:
 
 ```rust
 use proto_rs::{proto_message, proto_rpc};
@@ -96,7 +105,7 @@ The test suite exercises more than 400 codec and integration scenarios to ensure
 
 - `build-schemas` – register generated schemas at compile time so they can be written later.
 - `emit-proto-files` – eagerly write `.proto` files during compilation.
-- `fastnum`, `solana` – enable extra type support for domain-specific numbers and Solana primitives.
-- `shadow_gen`, `direct_gen` – forward feature flags to the derive crate for advanced generation modes.
+- `fastnum`, `solana` – enable extra type support
 
+TODO! (no good docs yet)
 For the full API surface and macro documentation see [docs.rs/proto_rs](https://docs.rs/proto_rs).

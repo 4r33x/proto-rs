@@ -518,7 +518,10 @@ fn decode_handles_mixed_packed_repeated_values() {
     let bytes = buf.freeze();
 
     let mut expected = SampleMessage::default();
-    expected.values = values.clone();
+    #[allow(clippy::field_reassign_with_default)]
+    {
+        expected.values = values.clone();
+    }
 
     assert_decode_roundtrip(bytes, &expected, &SampleMessageProst::from(&expected));
 }
