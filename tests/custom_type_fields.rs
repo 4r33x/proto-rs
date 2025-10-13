@@ -7,7 +7,6 @@ use proto_rs::proto_message;
 mod fastnum_fields {
     use super::*;
     use fastnum::{D128, UD128, dec128, udec128};
-    use proto_rs::custom_types::fastnum::DecimalProtoExt;
 
     #[proto_message(proto_path = "protos/tests/custom_fastnum.proto")]
     #[derive(Clone, Debug, PartialEq, Default)]
@@ -53,10 +52,10 @@ mod fastnum_fields {
     }
 
     #[test]
-    fn decimal_proto_helpers_roundtrip() {
+    fn decimal_value_roundtrip() {
         let original = dec128!(-42.001);
-        let proto = original.to_proto();
-        let restored = D128::from_proto(proto).expect("from_proto");
+        let encoded = original.encode_to_vec();
+        let restored = D128::decode(encoded.as_slice()).expect("decode decimal value");
         assert_eq!(restored, original);
     }
 }
