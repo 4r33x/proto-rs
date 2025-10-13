@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
@@ -125,9 +127,11 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let mut clear_fields = Vec::new();
     let mut post_decode_hooks = Vec::new();
 
+    let mut used_tags = BTreeSet::new();
+    let mut next_tag = 1usize;
+
     for (idx, field) in fields.unnamed.iter().enumerate() {
         let field_config = parse_field_config(field);
-        let field_num = field_config.custom_tag.unwrap_or(idx + 1);
         let tuple_idx = Index::from(idx);
         let field_access = FieldAccess::Tuple(tuple_idx.clone());
 
@@ -139,8 +143,30 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                     #access_tokens = #fun_path(self);
                 });
             }
+        }
+
+        let tag = if field_config.skip {
+            None
+        } else if let Some(custom) = field_config.custom_tag {
+            if custom == 0 {
+                panic!("proto field tags must be >= 1");
+            }
+            if !used_tags.insert(custom) {
+                panic!("duplicate proto field tag: {custom}");
+            }
+            Some(custom)
         } else {
-            let tag_u32 = field_num as u32;
+            while used_tags.contains(&next_tag) {
+                next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
+            }
+            let assigned = next_tag;
+            used_tags.insert(assigned);
+            next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
+            Some(assigned)
+        };
+
+        if let Some(tag) = tag {
+            let tag_u32 = tag as u32;
 
             let access_expr = field_access.self_tokens();
             encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
@@ -253,6 +279,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let mut clear_fields = Vec::new();
     let mut post_decode_hooks = Vec::new();
     let mut next_tag = 1usize;
+    let mut used_tags = BTreeSet::new();
 
     for field in &fields.named {
         let ident = field.ident.as_ref().unwrap();
@@ -277,11 +304,17 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                     if tag == 0 {
                         panic!("proto field tags must be >= 1");
                     }
-                    next_tag = tag.checked_add(1).expect("proto field tag overflowed usize range");
+                    if !used_tags.insert(tag) {
+                        panic!("duplicate proto field tag: {tag}");
+                    }
                     tag
                 }
                 None => {
+                    while used_tags.contains(&next_tag) {
+                        next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
+                    }
                     let tag = next_tag;
+                    used_tags.insert(tag);
                     next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
                     tag
                 }
