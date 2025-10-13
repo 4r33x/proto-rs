@@ -252,7 +252,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let mut encoded_len_fields = Vec::new();
     let mut clear_fields = Vec::new();
     let mut post_decode_hooks = Vec::new();
-    let mut field_num = 0usize;
+    let mut next_tag = 1usize;
 
     for field in &fields.named {
         let ident = field.ident.as_ref().unwrap();
@@ -269,13 +269,28 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             }
         }
 
-        let tag = field_config.custom_tag.unwrap_or_else(|| {
-            field_num += 1;
-            field_num
-        });
-        let tag_u32 = tag as u32;
+        let tag = if field_config.skip {
+            None
+        } else {
+            let assigned = match field_config.custom_tag {
+                Some(tag) => {
+                    if tag == 0 {
+                        panic!("proto field tags must be >= 1");
+                    }
+                    next_tag = tag.checked_add(1).expect("proto field tag overflowed usize range");
+                    tag
+                }
+                None => {
+                    let tag = next_tag;
+                    next_tag = next_tag.checked_add(1).expect("proto field tag overflowed usize range");
+                    tag
+                }
+            };
+            Some(assigned)
+        };
 
-        if !field_config.skip {
+        if let Some(tag) = tag {
+            let tag_u32 = tag as u32;
             let access_expr = field_access.self_tokens();
             encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
 
@@ -286,7 +301,6 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                     Ok(())
                 }
             });
-
             encoded_len_fields.push(generate_field_encoded_len(field, access_expr, tag_u32));
         }
 

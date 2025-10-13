@@ -182,12 +182,9 @@ pub struct Attr {
     #[proto(skip = "compute_hash_for_struct")]
     hash: String,
     #[proto(import_path = "google.protobuf")]
-    #[proto(message)]
     timestamp: Timestamp,
-    #[proto(message)]
     #[proto(import_path = "google.protobuf")]
     timestamp_vec: Vec<Timestamp>,
-    #[proto(message)]
     #[proto(import_path = "google.protobuf")]
     timestamp_opt: Option<Timestamp>,
     #[proto(enum)]
@@ -253,12 +250,9 @@ pub enum VeryComplex {
         #[proto(skip = "compute_hash_for_enum")]
         hash: String,
         #[proto(import_path = "google.protobuf")]
-        #[proto(message)]
         timestamp: Timestamp,
-        #[proto(message)]
         #[proto(import_path = "google.protobuf")]
         timestamp_vec: Vec<Timestamp>,
-        #[proto(message)]
         #[proto(import_path = "google.protobuf")]
         timestamp_opt: Option<Timestamp>,
         #[proto(enum)]
