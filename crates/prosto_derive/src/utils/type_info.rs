@@ -37,6 +37,7 @@ pub struct ParsedFieldType {
 }
 
 impl ParsedFieldType {
+    #[allow(clippy::too_many_arguments)]
     fn new(rust_type: Type, proto_type: &str, prost_type: TokenStream, is_message_like: bool, is_numeric_scalar: bool, proto_rust_type: Type, elem_type: Type, is_rust_enum: bool) -> Self {
         Self {
             rust_type,

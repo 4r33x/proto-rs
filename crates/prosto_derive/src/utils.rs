@@ -160,7 +160,7 @@ pub fn collect_enum_discriminants(data: &DataEnum) -> Result<Vec<i32>, syn::Erro
         values.push(value);
     }
 
-    if !values.iter().any(|&v| v == 0) {
+    if !values.contains(&0) {
         return Err(syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0"));
     }
 

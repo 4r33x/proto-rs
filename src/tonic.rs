@@ -1,6 +1,5 @@
 use core::marker::PhantomData;
 
-use bytes::Buf;
 use tonic::Status;
 use tonic::codec::Codec;
 use tonic::codec::DecodeBuf;
@@ -88,7 +87,10 @@ where
     type Error = Status;
 
     fn decode(&mut self, src: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
-        let bytes = src.copy_to_bytes(src.remaining());
-        T::decode(bytes).map(Some).map_err(|err| Status::internal(format!("failed to decode message: {err}")))
+        // Always attempt to decode: tonic gives full frames, even empty ones
+        match T::decode(src) {
+            Ok(msg) => Ok(Some(msg)),
+            Err(err) => Err(Status::data_loss(format!("failed to decode message: {err}"))),
+        }
     }
 }
