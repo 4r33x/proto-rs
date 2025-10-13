@@ -32,701 +32,109 @@ use crate::encoding::uint32;
 use crate::encoding::uint64;
 use crate::encoding::wire_type::WireType;
 
-/// `google.protobuf.BoolValue`
-impl ProtoExt for bool {
-    #[inline]
-    fn proto_default() -> Self {
-        false
-    }
+macro_rules! impl_google_wrapper {
+    ($ty:ty, $module:ident, $name:literal, |$value:ident| $is_default:expr, |$clear_value:ident| $clear_body:expr) => {
+        impl ProtoExt for $ty {
+            #[inline]
+            fn proto_default() -> Self {
+                Default::default()
+            }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self {
-            bool::encode(1, self, buf)
+            fn encode_raw(&self, buf: &mut impl BufMut) {
+                if !{
+                    let $value: &$ty = self;
+                    $is_default
+                } {
+                    $module::encode(1, self, buf);
+                }
+            }
+
+            fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    $module::merge(wire_type, self, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            fn encoded_len(&self) -> usize {
+                if {
+                    let $value: &$ty = self;
+                    $is_default
+                } {
+                    0
+                } else {
+                    $module::encoded_len(1, self)
+                }
+            }
+
+            fn clear(&mut self) {
+                let $clear_value: &mut $ty = self;
+                $clear_body
+            }
         }
-    }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 { bool::merge(wire_type, self, buf, ctx) } else { skip_field(wire_type, tag, buf, ctx) }
-    }
+        impl Name for $ty {
+            const NAME: &'static str = $name;
+            const PACKAGE: &'static str = "google.protobuf";
 
-    fn encoded_len(&self) -> usize {
-        if *self { 2 } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = false;
-    }
-}
-
-/// `google.protobuf.BoolValue`
-impl Name for bool {
-    const NAME: &'static str = "BoolValue";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for bool {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        bool::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        bool::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        bool::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for bool {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value {
-            bool::encode(tag, value, buf);
+            fn type_url() -> String {
+                googleapis_type_url_for::<Self>()
+            }
         }
-    }
 
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        bool::merge(wire_type, value, buf, ctx)
-    }
+        impl RepeatedField for $ty {
+            fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+                $module::encode_repeated(tag, values, buf);
+            }
 
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value { bool::encoded_len(tag, value) } else { 0 }
-    }
-}
+            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                $module::merge_repeated(wire_type, values, buf, ctx)
+            }
 
-/// `google.protobuf.UInt32Value`
-impl ProtoExt for u32 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            uint32::encode(1, self, buf)
+            fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+                $module::encoded_len_repeated(tag, values)
+            }
         }
-    }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            uint32::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
+        impl SingularField for $ty {
+            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
+                if !{
+                    let $value: &$ty = value;
+                    $is_default
+                } {
+                    $module::encode(tag, value, buf);
+                }
+            }
+
+            fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                $module::merge(wire_type, value, buf, ctx)
+            }
+
+            fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
+                if {
+                    let $value: &$ty = value;
+                    $is_default
+                } {
+                    0
+                } else {
+                    $module::encoded_len(tag, value)
+                }
+            }
         }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { uint32::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
+    };
 }
 
-/// `google.protobuf.UInt32Value`
-impl Name for u32 {
-    const NAME: &'static str = "UInt32Value";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for u32 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        uint32::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        uint32::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        uint32::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for u32 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            uint32::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        uint32::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value != 0 { uint32::encoded_len(tag, value) } else { 0 }
-    }
-}
-
-/// `google.protobuf.UInt64Value`
-impl ProtoExt for u64 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            uint64::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            uint64::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { uint64::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-/// `google.protobuf.UInt64Value`
-impl Name for u64 {
-    const NAME: &'static str = "UInt64Value";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for u64 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        uint64::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        uint64::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        uint64::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for u64 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            uint64::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        uint64::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value != 0 { uint64::encoded_len(tag, value) } else { 0 }
-    }
-}
-
-/// `google.protobuf.Int32Value`
-impl ProtoExt for i32 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            int32::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            int32::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { int32::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-/// `google.protobuf.Int32Value`
-impl Name for i32 {
-    const NAME: &'static str = "Int32Value";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for i32 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        int32::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        int32::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        int32::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for i32 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            int32::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        int32::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value != 0 { int32::encoded_len(tag, value) } else { 0 }
-    }
-}
-
-/// `google.protobuf.Int64Value`
-impl ProtoExt for i64 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            int64::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            int64::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { int64::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-/// `google.protobuf.Int64Value`
-impl Name for i64 {
-    const NAME: &'static str = "Int64Value";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for i64 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        int64::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        int64::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        int64::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for i64 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            int64::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        int64::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value != 0 { int64::encoded_len(tag, value) } else { 0 }
-    }
-}
-
-/// `google.protobuf.FloatValue`
-impl ProtoExt for f32 {
-    #[inline]
-    fn proto_default() -> Self {
-        0.0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0.0 {
-            float::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            float::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0.0 { float::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0.0;
-    }
-}
-
-/// `google.protobuf.FloatValue`
-impl Name for f32 {
-    const NAME: &'static str = "FloatValue";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for f32 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        float::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        float::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        float::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for f32 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0.0 {
-            float::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        float::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value != 0.0 { float::encoded_len(tag, value) } else { 0 }
-    }
-}
-
-/// `google.protobuf.DoubleValue`
-impl ProtoExt for f64 {
-    #[inline]
-    fn proto_default() -> Self {
-        0.0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0.0 {
-            double::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            double::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0.0 { double::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0.0;
-    }
-}
-
-/// `google.protobuf.DoubleValue`
-impl Name for f64 {
-    const NAME: &'static str = "DoubleValue";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for f64 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        double::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        double::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        double::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for f64 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0.0 {
-            double::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        double::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value != 0.0 { double::encoded_len(tag, value) } else { 0 }
-    }
-}
-
-/// `google.protobuf.StringValue`
-impl ProtoExt for String {
-    #[inline]
-    fn proto_default() -> Self {
-        String::new()
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
-            string::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            string::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if !self.is_empty() { string::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        self.clear();
-    }
-}
-
-/// `google.protobuf.StringValue`
-impl Name for String {
-    const NAME: &'static str = "StringValue";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for String {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        string::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        string::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        string::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for String {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if !value.is_empty() {
-            string::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        string::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if value.is_empty() { 0 } else { string::encoded_len(tag, value) }
-    }
-}
-
-/// `google.protobuf.BytesValue`
-impl ProtoExt for Vec<u8> {
-    #[inline]
-    fn proto_default() -> Self {
-        Vec::new()
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
-            bytes::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            bytes::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if !self.is_empty() { bytes::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        self.clear();
-    }
-}
-
-/// `google.protobuf.BytesValue`
-impl Name for Vec<u8> {
-    const NAME: &'static str = "BytesValue";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for Vec<u8> {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        bytes::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        bytes::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        bytes::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for Vec<u8> {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if !value.is_empty() {
-            bytes::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        bytes::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if value.is_empty() { 0 } else { bytes::encoded_len(tag, value) }
-    }
-}
-
-/// `google.protobuf.BytesValue`
-impl ProtoExt for Bytes {
-    #[inline]
-    fn proto_default() -> Self {
-        Bytes::new()
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
-            bytes::encode(1, self, buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            bytes::merge(wire_type, self, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if !self.is_empty() { bytes::encoded_len(1, self) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        self.clear();
-    }
-}
-
-/// `google.protobuf.BytesValue`
-impl Name for Bytes {
-    const NAME: &'static str = "BytesValue";
-    const PACKAGE: &'static str = "google.protobuf";
-
-    fn type_url() -> String {
-        googleapis_type_url_for::<Self>()
-    }
-}
-
-impl RepeatedField for Bytes {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        bytes::encode_repeated(tag, values, buf);
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        bytes::merge_repeated(wire_type, values, buf, ctx)
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        bytes::encoded_len_repeated(tag, values)
-    }
-}
-
-impl SingularField for Bytes {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if !value.is_empty() {
-            bytes::encode(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        bytes::merge(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if value.is_empty() { 0 } else { bytes::encoded_len(tag, value) }
-    }
-}
+impl_google_wrapper!(bool, bool, "BoolValue", |value| !*value, |value| *value = false);
+impl_google_wrapper!(u32, uint32, "UInt32Value", |value| *value == 0, |value| *value = 0);
+impl_google_wrapper!(u64, uint64, "UInt64Value", |value| *value == 0, |value| *value = 0);
+impl_google_wrapper!(i32, int32, "Int32Value", |value| *value == 0, |value| *value = 0);
+impl_google_wrapper!(i64, int64, "Int64Value", |value| *value == 0, |value| *value = 0);
+impl_google_wrapper!(f32, float, "FloatValue", |value| *value == 0.0, |value| *value = 0.0);
+impl_google_wrapper!(f64, double, "DoubleValue", |value| *value == 0.0, |value| *value = 0.0);
+impl_google_wrapper!(String, string, "StringValue", |value| value.is_empty(), |value| value.clear());
+impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", |value| value.is_empty(), |value| value.clear());
+impl_google_wrapper!(Bytes, bytes, "BytesValue", |value| value.is_empty(), |value| value.clear());
 
 /// `google.protobuf.Empty`
 impl ProtoExt for () {
@@ -767,345 +175,139 @@ fn googleapis_type_url_for<T: Name>() -> String {
 // Additional implementations for smaller primitive types
 // These are not part of protobuf well-known types but needed for internal use
 
-/// Internal implementation for u8
-impl ProtoExt for u8 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
+macro_rules! impl_narrow_varint {
+    ($ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
+        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, true);
+    };
+    ($ty:ty, $wide_ty:ty, $module:ident, $err:literal, no_repeated) => {
+        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, false);
+    };
+    (@impl $ty:ty, $wide_ty:ty, $module:ident, $err:literal, $with_repeated:tt) => {
+        impl ProtoExt for $ty {
+            #[inline]
+            fn proto_default() -> Self {
+                Self::default()
+            }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            uint32::encode(1, &(*self as u32), buf)
+            fn encode_raw(&self, buf: &mut impl BufMut) {
+                if *self != Self::default() {
+                    let widened: $wide_ty = (*self).into();
+                    $module::encode(1, &widened, buf);
+                }
+            }
+
+            fn merge_field(
+                &mut self,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    let mut widened: $wide_ty = <$wide_ty as Default>::default();
+                    $module::merge(wire_type, &mut widened, buf, ctx)?;
+                    *self = widened.try_into().map_err(|_| DecodeError::new($err))?;
+                    Ok(())
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            fn encoded_len(&self) -> usize {
+                if *self == Self::default() {
+                    0
+                } else {
+                    let widened: $wide_ty = (*self).into();
+                    $module::encoded_len(1, &widened)
+                }
+            }
+
+            fn clear(&mut self) {
+                *self = Self::default();
+            }
         }
-    }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            let mut temp: u32 = 0;
-            uint32::merge(wire_type, &mut temp, buf, ctx)?;
-            *self = temp.try_into().map_err(|_| DecodeError::new("u8 overflow"))?;
-            Ok(())
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
+        impl SingularField for $ty {
+            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
+                if *value != Self::default() {
+                    let widened: $wide_ty = (*value).into();
+                    $module::encode(tag, &widened, buf);
+                }
+            }
 
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { uint32::encoded_len(1, &(*self as u32)) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-impl SingularField for u8 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            let converted: u32 = (*value).into();
-            uint32::encode(tag, &converted, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut temp: u32 = 0;
-        uint32::merge(wire_type, &mut temp, buf, ctx)?;
-        *value = temp.try_into().map_err(|_| DecodeError::new("u8 overflow"))?;
-        Ok(())
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value == 0 {
-            0
-        } else {
-            let converted: u32 = (*value).into();
-            uint32::encoded_len(tag, &converted)
-        }
-    }
-}
-
-/// Internal implementation for u16
-impl ProtoExt for u16 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            uint32::encode(1, &(*self as u32), buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            let mut temp: u32 = 0;
-            uint32::merge(wire_type, &mut temp, buf, ctx)?;
-            *self = temp.try_into().map_err(|_| DecodeError::new("u16 overflow"))?;
-            Ok(())
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { uint32::encoded_len(1, &(*self as u32)) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-impl SingularField for u16 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            let converted: u32 = (*value).into();
-            uint32::encode(tag, &converted, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut temp: u32 = 0;
-        uint32::merge(wire_type, &mut temp, buf, ctx)?;
-        *value = temp.try_into().map_err(|_| DecodeError::new("u16 overflow"))?;
-        Ok(())
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value == 0 {
-            0
-        } else {
-            let converted: u32 = (*value).into();
-            uint32::encoded_len(tag, &converted)
-        }
-    }
-}
-
-impl RepeatedField for u16 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        for value in values {
-            let widened = u32::from(*value);
-            uint32::encode(tag, &widened, buf);
-        }
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if wire_type == WireType::LengthDelimited {
-            crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
-                let mut widened: u32 = 0;
-                uint32::merge(WireType::Varint, &mut widened, buf, ctx)?;
-                values.push(widened.try_into().map_err(|_| DecodeError::new("u16 overflow"))?);
+            fn merge_singular_field(
+                wire_type: WireType,
+                value: &mut Self,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                let mut widened: $wide_ty = <$wide_ty as Default>::default();
+                $module::merge(wire_type, &mut widened, buf, ctx)?;
+                *value = widened.try_into().map_err(|_| DecodeError::new($err))?;
                 Ok(())
-            })
-        } else {
-            crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
-            let mut widened: u32 = 0;
-            uint32::merge(wire_type, &mut widened, buf, ctx)?;
-            values.push(widened.try_into().map_err(|_| DecodeError::new("u16 overflow"))?);
-            Ok(())
-        }
-    }
+            }
 
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        values
-            .iter()
-            .map(|value| {
-                let widened = u32::from(*value);
-                uint32::encoded_len(tag, &widened)
-            })
-            .sum()
-    }
+            fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
+                if *value == Self::default() {
+                    0
+                } else {
+                    let widened: $wide_ty = (*value).into();
+                    $module::encoded_len(tag, &widened)
+                }
+            }
+        }
+
+        impl_narrow_varint!(@maybe_repeated $with_repeated, $ty, $wide_ty, $module, $err);
+    };
+    (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
+        impl RepeatedField for $ty {
+            fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+                for value in values {
+                    let widened: $wide_ty = (*value).into();
+                    $module::encode(tag, &widened, buf);
+                }
+            }
+
+            fn merge_repeated_field(
+                wire_type: WireType,
+                values: &mut Vec<Self>,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                if wire_type == WireType::LengthDelimited {
+                    crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
+                        let mut widened: $wide_ty = <$wide_ty as Default>::default();
+                        $module::merge(WireType::Varint, &mut widened, buf, ctx)?;
+                        values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
+                        Ok(())
+                    })
+                } else {
+                    crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
+                    let mut widened: $wide_ty = <$wide_ty as Default>::default();
+                    $module::merge(wire_type, &mut widened, buf, ctx)?;
+                    values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
+                    Ok(())
+                }
+            }
+
+            fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+                values
+                    .iter()
+                    .map(|value| {
+                        let widened: $wide_ty = (*value).into();
+                        $module::encoded_len(tag, &widened)
+                    })
+                    .sum()
+            }
+        }
+    };
+    (@maybe_repeated false, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
 }
 
-/// Internal implementation for i8
-impl ProtoExt for i8 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            int32::encode(1, &(*self as i32), buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            let mut temp: i32 = 0;
-            int32::merge(wire_type, &mut temp, buf, ctx)?;
-            *self = temp.try_into().map_err(|_| DecodeError::new("i8 overflow"))?;
-            Ok(())
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { int32::encoded_len(1, &(*self as i32)) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-impl SingularField for i8 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            let converted: i32 = (*value).into();
-            int32::encode(tag, &converted, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut temp: i32 = 0;
-        int32::merge(wire_type, &mut temp, buf, ctx)?;
-        *value = temp.try_into().map_err(|_| DecodeError::new("i8 overflow"))?;
-        Ok(())
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value == 0 {
-            0
-        } else {
-            let converted: i32 = (*value).into();
-            int32::encoded_len(tag, &converted)
-        }
-    }
-}
-
-impl RepeatedField for i8 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        for value in values {
-            let widened = i32::from(*value);
-            int32::encode(tag, &widened, buf);
-        }
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if wire_type == WireType::LengthDelimited {
-            crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
-                let mut widened: i32 = 0;
-                int32::merge(WireType::Varint, &mut widened, buf, ctx)?;
-                values.push(widened.try_into().map_err(|_| DecodeError::new("i8 overflow"))?);
-                Ok(())
-            })
-        } else {
-            crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
-            let mut widened: i32 = 0;
-            int32::merge(wire_type, &mut widened, buf, ctx)?;
-            values.push(widened.try_into().map_err(|_| DecodeError::new("i8 overflow"))?);
-            Ok(())
-        }
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        values
-            .iter()
-            .map(|value| {
-                let widened = i32::from(*value);
-                int32::encoded_len(tag, &widened)
-            })
-            .sum()
-    }
-}
-
-/// Internal implementation for i16
-impl ProtoExt for i16 {
-    #[inline]
-    fn proto_default() -> Self {
-        0
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if *self != 0 {
-            int32::encode(1, &(*self as i32), buf)
-        }
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            let mut temp: i32 = 0;
-            int32::merge(wire_type, &mut temp, buf, ctx)?;
-            *self = temp.try_into().map_err(|_| DecodeError::new("i16 overflow"))?;
-            Ok(())
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        if *self != 0 { int32::encoded_len(1, &(*self as i32)) } else { 0 }
-    }
-
-    fn clear(&mut self) {
-        *self = 0;
-    }
-}
-
-impl SingularField for i16 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        if *value != 0 {
-            let converted: i32 = (*value).into();
-            int32::encode(tag, &converted, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut temp: i32 = 0;
-        int32::merge(wire_type, &mut temp, buf, ctx)?;
-        *value = temp.try_into().map_err(|_| DecodeError::new("i16 overflow"))?;
-        Ok(())
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if *value == 0 {
-            0
-        } else {
-            let converted: i32 = (*value).into();
-            int32::encoded_len(tag, &converted)
-        }
-    }
-}
-
-impl RepeatedField for i16 {
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-        for value in values {
-            let widened = i32::from(*value);
-            int32::encode(tag, &widened, buf);
-        }
-    }
-
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if wire_type == WireType::LengthDelimited {
-            crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
-                let mut widened: i32 = 0;
-                int32::merge(WireType::Varint, &mut widened, buf, ctx)?;
-                values.push(widened.try_into().map_err(|_| DecodeError::new("i16 overflow"))?);
-                Ok(())
-            })
-        } else {
-            crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
-            let mut widened: i32 = 0;
-            int32::merge(wire_type, &mut widened, buf, ctx)?;
-            values.push(widened.try_into().map_err(|_| DecodeError::new("i16 overflow"))?);
-            Ok(())
-        }
-    }
-
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-        values
-            .iter()
-            .map(|value| {
-                let widened = i32::from(*value);
-                int32::encoded_len(tag, &widened)
-            })
-            .sum()
-    }
-}
+impl_narrow_varint!(u8, u32, uint32, "u8 overflow", no_repeated);
+impl_narrow_varint!(u16, u32, uint32, "u16 overflow");
+impl_narrow_varint!(i8, i32, int32, "i8 overflow");
+impl_narrow_varint!(i16, i32, int32, "i16 overflow");
 
 /// Generic implementation for Option<T>
 impl<T: ProtoExt> ProtoExt for Option<T> {
