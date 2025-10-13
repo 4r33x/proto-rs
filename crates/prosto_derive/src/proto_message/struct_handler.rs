@@ -1,8 +1,6 @@
 use std::collections::BTreeSet;
 
-use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::TokenStream;
-use quote::format_ident;
 use quote::quote;
 use syn::DeriveInput;
 use syn::Fields;
@@ -354,54 +352,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
             panic!("#[proto_message(convert = ...)] is not supported on generic types");
         }
 
-        let type_name = name.to_string();
-        let shouty_name = type_name.to_shouty_snake_case();
-        let snake_name = type_name.to_snake_case();
-
-        let cache_ident = format_ident!("__PROTO_SHADOW_CACHE_FOR_{}", shouty_name);
-        let with_shadow_ident = format_ident!("__proto_shadow_with_{}", snake_name);
-        let finalize_ident = format_ident!("__proto_shadow_finalize_{}", snake_name);
-        let clear_shadow_ident = format_ident!("__proto_shadow_clear_{}", snake_name);
-
         quote! {
-            ::std::thread_local! {
-                static #cache_ident: ::core::cell::RefCell<
-                    ::proto_rs::alloc::collections::BTreeMap<*const #sun_ty, #name>
-                > = ::core::cell::RefCell::new(::proto_rs::alloc::collections::BTreeMap::new());
-            }
-
-            fn #with_shadow_ident<F>(value: &mut #sun_ty, f: F) -> Result<(), ::proto_rs::DecodeError>
-            where
-                F: FnOnce(&mut #name) -> Result<(), ::proto_rs::DecodeError>,
-            {
-                let key = value as *mut #sun_ty as *const #sun_ty;
-                #cache_ident.with(|cache| {
-                    let mut cache = cache.borrow_mut();
-                    let entry = cache
-                        .entry(key)
-                        .or_insert_with(|| <#name as ::proto_rs::ProtoShadow>::cast_shadow(value));
-                    f(entry)
-                })
-            }
-
-            fn #finalize_ident(value: &mut #sun_ty) {
-                let key = value as *mut #sun_ty as *const #sun_ty;
-                #cache_ident.with(|cache| {
-                    let mut cache = cache.borrow_mut();
-                    if let Some(mut shadow) = cache.remove(&key) {
-                        ::proto_rs::ProtoExt::post_decode(&mut shadow);
-                        *value = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
-                    }
-                });
-            }
-
-            fn #clear_shadow_ident(value: &mut #sun_ty) {
-                let key = value as *mut #sun_ty as *const #sun_ty;
-                #cache_ident.with(|cache| {
-                    cache.borrow_mut().remove(&key);
-                });
-            }
-
             impl ::proto_rs::ProtoExt for #sun_ty {
                 fn proto_default() -> Self {
                     <#name as ::proto_rs::ProtoShadow>::to_sun(<#name as ::proto_rs::ProtoExt>::proto_default())
@@ -409,7 +360,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
 
                 fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
                     let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    shadow.encode_raw(buf);
+                    <#name as ::proto_rs::ProtoExt>::encode_raw(&shadow, buf);
                 }
 
                 fn merge_field(
@@ -419,21 +370,25 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
                     buf: &mut impl ::proto_rs::bytes::Buf,
                     ctx: ::proto_rs::encoding::DecodeContext,
                 ) -> Result<(), ::proto_rs::DecodeError> {
-                    #with_shadow_ident(self, |shadow| shadow.merge_field(tag, wire_type, buf, ctx))
+                    let mut shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
+                    <#name as ::proto_rs::ProtoExt>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+                    *self = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
+                    Ok(())
                 }
 
                 fn encoded_len(&self) -> usize {
                     let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    shadow.encoded_len()
+                    <#name as ::proto_rs::ProtoExt>::encoded_len(&shadow)
                 }
 
                 fn clear(&mut self) {
-                    #clear_shadow_ident(self);
                     *self = <Self as ::proto_rs::ProtoExt>::proto_default();
                 }
 
                 fn post_decode(&mut self) {
-                    #finalize_ident(self);
+                    let mut shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
+                    <#name as ::proto_rs::ProtoExt>::post_decode(&mut shadow);
+                    *self = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
                 }
             }
 
