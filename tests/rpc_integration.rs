@@ -226,7 +226,7 @@ async fn spawn_prost_server() -> (std::net::SocketAddr, tokio::sync::oneshot::Se
 async fn tonic_client_roundtrip_against_proto_server() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
-    let mut client = tonic_prost_test::complex_rpc::complex_service_client::ComplexServiceClient::connect(format!("http://{}", addr))
+    let mut client = tonic_prost_test::complex_rpc::complex_service_client::ComplexServiceClient::connect(format!("http://{addr}"))
         .await
         .unwrap();
 
@@ -251,7 +251,7 @@ async fn tonic_client_roundtrip_against_proto_server() {
 async fn proto_client_roundtrip_against_prost_server() {
     let (addr, shutdown, handle) = spawn_prost_server().await;
 
-    let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{}", addr)).await.unwrap();
+    let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
 
     let response = client.echo_sample(request_message()).await.unwrap().into_inner();
     assert_eq!(response, response_message());
@@ -273,7 +273,7 @@ async fn proto_client_roundtrip_against_prost_server() {
 async fn proto_client_roundtrip_against_proto_server() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
-    let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{}", addr)).await.unwrap();
+    let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
 
     let response = client.echo_sample(request_message()).await.unwrap().into_inner();
     assert_eq!(response, response_message());

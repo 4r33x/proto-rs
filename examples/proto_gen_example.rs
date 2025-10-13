@@ -1,3 +1,5 @@
+#![allow(clippy::missing_errors_doc)]
+
 use std::pin::Pin;
 
 use proto_rs::proto_message;
@@ -45,7 +47,7 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "127.0.0.1:50051".parse()?;
     let service = S;
 
-    println!("TestRpc server listening on {}", addr);
+    println!("TestRpc server listening on {addr}");
 
     Server::builder().add_service(SigmaRpcServer::new(service)).serve(addr).await?;
 

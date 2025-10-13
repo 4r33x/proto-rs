@@ -1,4 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#![allow(clippy::must_use_candidate)]
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 use proto_rs::proto_message;
 
@@ -172,7 +176,7 @@ impl From<&CollectionsMessage> for CollectionsMessageProst {
             hash_scores: value.hash_scores.clone(),
             tree_messages: value.tree_messages.iter().map(|(key, msg)| (key.clone(), NestedMessageProst::from(msg))).collect(),
             hash_tags: value.hash_tags.iter().cloned().collect(),
-            tree_ids: value.tree_ids.iter().cloned().collect(),
+            tree_ids: value.tree_ids.iter().copied().collect(),
         }
     }
 }
@@ -183,7 +187,7 @@ impl From<&CollectionsMessageProst> for CollectionsMessage {
             hash_scores: value.hash_scores.clone(),
             tree_messages: value.tree_messages.iter().map(|(key, msg)| (key.clone(), NestedMessage::from(msg))).collect::<BTreeMap<_, _>>(),
             hash_tags: value.hash_tags.iter().cloned().collect(),
-            tree_ids: value.tree_ids.iter().cloned().collect(),
+            tree_ids: value.tree_ids.iter().copied().collect(),
         }
     }
 }

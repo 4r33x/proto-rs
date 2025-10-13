@@ -17,8 +17,10 @@ impl_protoext_for_byte_array!(ByteSeq, BYTES);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encoding::{encode_key, encode_varint, WireType};
     use crate::ProtoExt;
+    use crate::encoding::WireType;
+    use crate::encoding::encode_key;
+    use crate::encoding::encode_varint;
 
     fn sample_address_bytes() -> [u8; BYTES] {
         let mut data = [0u8; BYTES];

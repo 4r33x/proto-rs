@@ -9,18 +9,18 @@ message ConversionInner {
 }
 
 message MixedProto {
-  string name = 1;
+  string name = 9;
   repeated uint32 raw = 2;
-  bytes bytes_field = 3;
-  optional bytes optional_data = 4;
-  optional bytes optional_payload = 5;
-  repeated bytes attachments = 6;
-  int64 timestamp = 7;
-  repeated bool bools = 8;
-  bytes byte_array = 9;
-  optional ConversionInner optional_inner = 10;
-  repeated ConversionInner inner_list = 11;
-  repeated ConversionInner fixed_inner = 12;
-  repeated int32 values = 13;
+  bytes bytes_field = 11;
+  optional bytes optional_data = 10;
+  optional bytes optional_payload = 20;
+  repeated bytes attachments = 7;
+  int64 timestamp = 12;
+  repeated bool bools = 4;
+  bytes byte_array = 18;
+  optional ConversionInner optional_inner = 5;
+  repeated ConversionInner inner_list = 6;
+  repeated ConversionInner fixed_inner = 8;
+  repeated int32 values = 15;
 }
 

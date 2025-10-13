@@ -335,7 +335,7 @@ fn compute_hash_for_enum(value: &VeryComplex) -> String {
                 }
                 parts.push_str(opt);
             }
-            format!("{}|{:?}|{:?}", parts, status, status_opt)
+            format!("{parts}|{status:?}|{status_opt:?}")
         }
         _ => String::new(),
     }
@@ -531,6 +531,7 @@ fn serialize_json(value: &serde_json::Value) -> String {
     value.to_string()
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn deserialize_json(value: String) -> serde_json::Value {
     serde_json::from_str(&value).unwrap_or(serde_json::Value::Null)
 }

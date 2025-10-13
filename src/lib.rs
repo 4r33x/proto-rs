@@ -18,8 +18,6 @@ const RECURSION_LIMIT: u32 = 100;
 
 mod arrays;
 mod custom_types;
-#[allow(unused_imports)]
-pub use custom_types::*;
 
 #[doc(hidden)]
 pub extern crate alloc;

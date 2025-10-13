@@ -1,3 +1,8 @@
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::cast_possible_truncation)]
+
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -202,9 +207,9 @@ fn compute_checksum(value: &MixedProto) -> u32 {
     if let Some(optional) = &value.optional_payload {
         acc = acc.wrapping_add(optional.len() as u32);
     }
-    acc = acc.wrapping_add(value.attachments.iter().map(|b| b.len() as u32).fold(0, |sum, len| sum.wrapping_add(len)));
+    acc = acc.wrapping_add(value.attachments.iter().map(|b| b.len() as u32).fold(0, u32::wrapping_add));
     acc = acc.wrapping_add(value.bools.iter().filter(|&&b| b).count() as u32);
-    acc = acc.wrapping_add(value.byte_array.iter().map(|&b| b as u32).fold(0, |sum, v| sum.wrapping_add(v)));
+    acc = acc.wrapping_add(value.byte_array.iter().map(|&b| b as u32).fold(0, u32::wrapping_add));
     if let Some(inner) = &value.optional_inner {
         acc = acc.wrapping_add(inner.id as u32);
         acc = acc.wrapping_add(inner.label.len() as u32);
@@ -215,14 +220,14 @@ fn compute_checksum(value: &MixedProto) -> u32 {
             .inner_list
             .iter()
             .map(|inner| inner.id as u32 + inner.label.len() as u32 + inner.payload.len() as u32)
-            .fold(0, |sum, v| sum.wrapping_add(v)),
+            .fold(0, u32::wrapping_add),
     );
     acc = acc.wrapping_add(
         value
             .fixed_inner
             .iter()
             .map(|inner| inner.id as u32 + inner.label.len() as u32 + inner.payload.len() as u32)
-            .fold(0, |sum, v| sum.wrapping_add(v)),
+            .fold(0, u32::wrapping_add),
     );
     acc = acc.wrapping_add(value.values.iter().fold(0, |sum, &v| sum.wrapping_add(v as u32)));
     acc = acc.wrapping_add(value.timestamp.seconds as u32);
@@ -583,11 +588,11 @@ fn merge_option_box_reuses_allocation() {
     assert_eq!(wire_type, encoding::WireType::LengthDelimited);
 
     let mut target = Some(Box::new(NestedMessage { value: 0 }));
-    let ptr_before = target.as_ref().map(|b| &**b as *const NestedMessage).unwrap();
+    let ptr_before = target.as_ref().map(|b| &raw const **b).unwrap();
 
     <Box<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
-    let ptr_after = target.as_ref().map(|b| &**b as *const NestedMessage).unwrap();
+    let ptr_after = target.as_ref().map(|b| &raw const **b).unwrap();
     assert_eq!(ptr_before, ptr_after, "Box allocation should be reused");
     assert_eq!(target.as_ref().unwrap().value, 123);
 }

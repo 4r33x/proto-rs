@@ -4,6 +4,7 @@ use crate::ProtoExt;
 use crate::proto_dump;
 extern crate self as proto_rs;
 
+//DO NOT USE IT FOR ENCODE\DECODE
 #[proto_dump(proto_path = "protos/fastnum.proto")]
 struct D128Proto {
     #[proto(tag = 1)]
@@ -18,102 +19,6 @@ struct D128Proto {
     #[proto(tag = 4)]
     /// Sign bit: true for negative, false for positive/zero
     pub is_negative: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct D128Parts {
-    lo: u64,
-    hi: u64,
-    fractional_digits_count: i32,
-    is_negative: bool,
-}
-
-impl From<&D128> for D128Parts {
-    fn from(value: &D128) -> Self {
-        let digits: u128 = value
-            .digits()
-            .try_into()
-            .expect("D128 should have at most u128 digits");
-        Self {
-            lo: digits as u64,
-            hi: (digits >> 64) as u64,
-            fractional_digits_count: value.fractional_digits_count() as i32,
-            is_negative: value.is_sign_negative(),
-        }
-    }
-}
-
-impl From<D128> for D128Parts {
-    fn from(value: D128) -> Self {
-        Self::from(&value)
-    }
-}
-
-impl From<D128Parts> for D128Proto {
-    fn from(parts: D128Parts) -> Self {
-        Self {
-            lo: parts.lo,
-            hi: parts.hi,
-            fractional_digits_count: parts.fractional_digits_count,
-            is_negative: parts.is_negative,
-        }
-    }
-}
-
-impl From<D128Proto> for D128Parts {
-    fn from(proto: D128Proto) -> Self {
-        Self {
-            lo: proto.lo,
-            hi: proto.hi,
-            fractional_digits_count: proto.fractional_digits_count,
-            is_negative: proto.is_negative,
-        }
-    }
-}
-
-impl D128Parts {
-    fn into_value(self) -> Result<D128, crate::DecodeError> {
-        let digits = ((self.hi as u128) << 64) | u128::from(self.lo);
-        let mut value = D128::from_u128(digits)
-            .map_err(|err| crate::DecodeError::new(err.to_string()))?;
-
-        match self.fractional_digits_count.cmp(&0) {
-            core::cmp::Ordering::Greater => {
-                value /= D128::TEN.powi(self.fractional_digits_count);
-            }
-            core::cmp::Ordering::Less => {
-                value *= D128::TEN.powi(-self.fractional_digits_count);
-            }
-            core::cmp::Ordering::Equal => {}
-        }
-
-        if self.is_negative {
-            value = -value;
-        }
-
-        Ok(value)
-    }
-}
-
-impl From<D128> for D128Proto {
-    fn from(value: D128) -> Self {
-        D128Parts::from(value).into()
-    }
-}
-
-impl From<&D128> for D128Proto {
-    fn from(value: &D128) -> Self {
-        D128Parts::from(value).into()
-    }
-}
-
-// we dont need it, its just reference how we should convert back
-impl TryFrom<D128Proto> for D128 {
-    type Error = crate::DecodeError;
-
-    fn try_from(proto: D128Proto) -> Result<Self, Self::Error> {
-        D128Parts::from(proto).into_value()
-    }
 }
 
 impl ProtoExt for D128 {
@@ -135,13 +40,7 @@ impl ProtoExt for D128 {
         crate::encoding::bool::encode(4, &parts.is_negative, buf);
     }
 
-    fn merge_field(
-        &mut self,
-        tag: u32,
-        wire_type: crate::encoding::WireType,
-        buf: &mut impl bytes::Buf,
-        ctx: crate::encoding::DecodeContext,
-    ) -> Result<(), crate::DecodeError>
+    fn merge_field(&mut self, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), crate::DecodeError>
     where
         Self: Sized,
     {
