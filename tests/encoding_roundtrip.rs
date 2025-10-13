@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bytes::Bytes;
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
@@ -6,15 +8,20 @@ use proto_rs::SingularField;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
-use std::sync::Arc;
 
-#[path = "common/encoding_messages.rs"]
 mod encoding_messages;
 
-pub use encoding_messages::{
-    CollectionsMessage, CollectionsMessageProst, NestedMessage, NestedMessageProst, SampleEnum, SampleEnumProst, SampleMessage, SampleMessageProst, StatusWithDefaultAttribute,
-};
-pub use encoding_messages::{sample_collections_messages as shared_sample_collections_messages, sample_message as shared_sample_message};
+pub use encoding_messages::CollectionsMessage;
+pub use encoding_messages::CollectionsMessageProst;
+pub use encoding_messages::NestedMessage;
+pub use encoding_messages::NestedMessageProst;
+pub use encoding_messages::SampleEnum;
+pub use encoding_messages::SampleEnumProst;
+pub use encoding_messages::SampleMessage;
+pub use encoding_messages::SampleMessageProst;
+pub use encoding_messages::StatusWithDefaultAttribute;
+pub use encoding_messages::sample_collections_messages as shared_sample_collections_messages;
+pub use encoding_messages::sample_message as shared_sample_message;
 
 #[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
 #[derive(Clone, Debug, PartialEq, Eq, Default)]

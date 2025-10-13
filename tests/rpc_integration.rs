@@ -8,10 +8,17 @@ use tonic::Request;
 use tonic::Response;
 use tonic::Status;
 
-#[path = "common/encoding_messages.rs"]
 mod encoding_messages;
 
-use encoding_messages::{CollectionsMessage, CollectionsMessageProst, NestedMessage, NestedMessageProst, SampleEnum, SampleMessage, SampleMessageProst, sample_collections_messages, sample_message};
+use encoding_messages::CollectionsMessage;
+use encoding_messages::CollectionsMessageProst;
+use encoding_messages::NestedMessage;
+use encoding_messages::NestedMessageProst;
+use encoding_messages::SampleEnum;
+use encoding_messages::SampleMessage;
+use encoding_messages::SampleMessageProst;
+use encoding_messages::sample_collections_messages;
+use encoding_messages::sample_message;
 
 #[proto_rpc(rpc_package = "complex_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/tests/complex_rpc.proto")]
 #[proto_imports(encoding = ["SampleMessage", "CollectionsMessage", "NestedMessage"])]
