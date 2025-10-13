@@ -1,0 +1,9 @@
+syntax = "proto3";
+package complex_rpc;
+
+import "encoding.proto";
+
+service ComplexService {
+  rpc EchoSample(encoding.SampleMessage) returns (encoding.SampleMessage) {}
+  rpc StreamCollections(encoding.SampleMessage) returns (stream encoding.CollectionsMessage) {}
+}
