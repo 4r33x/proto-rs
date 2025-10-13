@@ -204,6 +204,11 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     let binding_ident = syn::Ident::new("inner", Span::call_site());
     let access_expr = quote! { #binding_ident };
     let cfg = parse_field_config(field);
+    let binding_pattern_encode = if cfg.skip {
+        quote! { _ }
+    } else {
+        quote! { #binding_ident }
+    };
     let field_tag = match cfg.custom_tag.unwrap_or(1) {
         0 => {
             return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
@@ -249,7 +254,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         let encode_body = encode_fields.clone();
         let msg_len_expr = encoded_len_expr_for_encode;
         quote! {
-            #name::#variant_ident(#binding_ident) => {
+            #name::#variant_ident(#binding_pattern_encode) => {
                 let msg_len = #msg_len_expr;
                 ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
                 ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
@@ -305,8 +310,13 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
     let encoded_len_arm = {
         let msg_len_expr = encoded_len_expr_for_len;
+        let binding_pattern_len = if cfg.skip {
+            quote! { _ }
+        } else {
+            quote! { #binding_ident }
+        };
         quote! {
-            #name::#variant_ident(#binding_ident) => {
+            #name::#variant_ident(#binding_pattern_len) => {
                 let msg_len = #msg_len_expr;
                 ::proto_rs::encoding::key_len(#tag)
                     + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
@@ -320,6 +330,8 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
 fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, fields_named: &syn::FieldsNamed) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
     let mut field_bindings = Vec::new();
+    let mut field_bindings_encode = Vec::new();
+    let mut field_bindings_len = Vec::new();
     let mut field_defaults = Vec::new();
     let mut encode_fields = Vec::new();
     let mut decode_match = Vec::new();
@@ -328,9 +340,21 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
     for (index, field) in fields_named.named.iter().enumerate() {
         let ident = field.ident.as_ref().unwrap();
-        field_bindings.push(quote! { #ident });
-        let access_expr = quote! { #ident };
         let cfg = parse_field_config(field);
+        field_bindings.push(quote! { #ident });
+        let field_binding_encode = if cfg.skip {
+            quote! { #ident: _ }
+        } else {
+            quote! { #ident }
+        };
+        field_bindings_encode.push(field_binding_encode);
+        let field_binding_len = if cfg.skip {
+            quote! { #ident: _ }
+        } else {
+            quote! { #ident }
+        };
+        field_bindings_len.push(field_binding_len);
+        let access_expr = quote! { #ident };
         let field_tag = match cfg.custom_tag.unwrap_or(index + 1) {
             0 => {
                 return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
@@ -371,9 +395,9 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
     }
 
-    let field_bindings_for_encode = field_bindings.clone();
+    let field_bindings_for_encode = field_bindings_encode;
     let field_bindings_for_decode = field_bindings.clone();
-    let field_bindings_for_len = field_bindings.clone();
+    let field_bindings_for_len = field_bindings_len;
     let encoded_len_exprs_for_encode = encoded_len_exprs.clone();
     let encoded_len_exprs_for_len = encoded_len_exprs.clone();
     let encode_fields_body = encode_fields.clone();
