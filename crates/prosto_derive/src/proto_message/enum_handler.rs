@@ -5,6 +5,8 @@ use quote::quote;
 use syn::DataEnum;
 use syn::DeriveInput;
 
+use crate::utils::collect_enum_discriminants;
+
 pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
     let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
@@ -12,15 +14,24 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let generics = &input.generics;
 
     // Build original variants (without proto attributes)
+    let discriminants = match collect_enum_discriminants(data) {
+        Ok(values) => values,
+        Err(err) => return err.to_compile_error(),
+    };
+
+    let zero_variant_index = discriminants.iter().position(|&value| value == 0).expect("collect_enum_discriminants guarantees a zero variant");
+    let zero_variant_ident = &data.variants[zero_variant_index].ident;
+
     let original_variants: Vec<_> = data
         .variants
         .iter()
         .map(|v| {
             let variant_attrs: Vec<_> = v.attrs.iter().filter(|a| !a.path().is_ident("proto")).collect();
             let ident = &v.ident;
+            let discriminant = v.discriminant.as_ref().map(|(_, expr)| quote! { = #expr });
             quote! {
                 #(#variant_attrs)*
-                #ident
+                #ident #discriminant
             }
         })
         .collect();
@@ -29,20 +40,17 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let try_from_arms: Vec<_> = data
         .variants
         .iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let ident = &v.ident;
-            let i = i as i32;
-            quote! { #i => Ok(Self::#ident) }
+        .zip(discriminants.iter())
+        .map(|(variant, value)| {
+            let ident = &variant.ident;
+            let value = *value;
+            quote! { #value => Ok(Self::#ident) }
         })
         .collect();
 
-    // First variant is the default
-    let first_variant = &data.variants.first().expect("Enum must have at least one variant").ident;
-
     let proto_enum_impl = quote! {
         impl #generics ::proto_rs::ProtoEnum for #name #generics {
-            const DEFAULT_VALUE: Self = Self::#first_variant;
+            const DEFAULT_VALUE: Self = Self::#zero_variant_ident;
 
             fn from_i32(value: i32) -> Result<Self, ::proto_rs::DecodeError> {
                 Self::try_from(value)
@@ -63,7 +71,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         impl #generics ::proto_rs::ProtoExt for #name #generics {
             #[inline]
             fn proto_default() -> Self {
-                Self::#first_variant
+                Self::#zero_variant_ident
             }
 
             fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {

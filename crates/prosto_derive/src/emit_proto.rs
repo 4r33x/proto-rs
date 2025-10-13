@@ -11,6 +11,7 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
 use crate::utils::MethodInfo;
+use crate::utils::collect_enum_discriminants;
 use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::is_complex_type;
@@ -24,13 +25,15 @@ use crate::utils::to_upper_snake_case;
 use crate::utils::vec_inner_type;
 
 pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
+    let discriminants = collect_enum_discriminants(data).unwrap_or_else(|err| panic!("{}", err));
+
     let variants: Vec<String> = data
         .variants
         .iter()
-        .enumerate()
-        .map(|(i, variant)| {
+        .zip(discriminants.iter())
+        .map(|(variant, value)| {
             let proto_name = to_upper_snake_case(&variant.ident.to_string());
-            format!("  {} = {};", proto_name, i)
+            format!("  {} = {};", proto_name, value)
         })
         .collect();
 

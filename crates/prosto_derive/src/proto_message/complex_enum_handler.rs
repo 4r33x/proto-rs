@@ -5,6 +5,8 @@ use quote::quote;
 use syn::DataEnum;
 use syn::DeriveInput;
 use syn::Fields;
+use syn::Lit;
+use syn::spanned::Spanned;
 
 use crate::utils::parse_field_config;
 
@@ -59,7 +61,10 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         .collect();
 
     // Collect variant data for encoding/decoding
-    let (encode_arms, decode_arms, encoded_len_arms) = generate_variant_arms(name, data);
+    let (encode_arms, decode_arms, encoded_len_arms) = match generate_variant_arms(name, data) {
+        Ok(parts) => parts,
+        Err(err) => return err.to_compile_error(),
+    };
     let last_variant = &data.variants.first().expect("Enum must have at least one variant");
     let last_variant_ident = &last_variant.ident;
 
@@ -129,13 +134,13 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     }
 }
 
-fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>) {
+fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>)> {
     let mut encode_arms = Vec::new();
     let mut decode_arms = Vec::new();
     let mut encoded_len_arms = Vec::new();
 
     for (idx, variant) in data.variants.iter().enumerate() {
-        let tag = (idx + 1) as u32;
+        let tag = resolve_variant_tag(variant, idx + 1)?;
         let variant_ident = &variant.ident;
 
         match &variant.fields {
@@ -165,13 +170,13 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream
                 });
             }
             Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                let (encode_arm, decode_arm, encoded_len_arm) = generate_tuple_variant_arms(name, variant_ident, tag, &fields.unnamed[0]);
+                let (encode_arm, decode_arm, encoded_len_arm) = generate_tuple_variant_arms(name, variant_ident, tag, &fields.unnamed[0])?;
                 encode_arms.push(encode_arm);
                 decode_arms.push(decode_arm);
                 encoded_len_arms.push(encoded_len_arm);
             }
             Fields::Named(fields_named) => {
-                let (encode_arm, decode_arm, encoded_len_arm) = generate_named_variant_arms(name, variant_ident, tag, fields_named);
+                let (encode_arm, decode_arm, encoded_len_arm) = generate_named_variant_arms(name, variant_ident, tag, fields_named)?;
                 encode_arms.push(encode_arm);
                 decode_arms.push(decode_arm);
                 encoded_len_arms.push(encoded_len_arm);
@@ -180,14 +185,19 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> (Vec<TokenStream
         }
     }
 
-    (encode_arms, decode_arms, encoded_len_arms)
+    Ok((encode_arms, decode_arms, encoded_len_arms))
 }
 
-fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, field: &syn::Field) -> (TokenStream, TokenStream, TokenStream) {
+fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, field: &syn::Field) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
     let binding_ident = syn::Ident::new("inner", Span::call_site());
     let access_expr = quote! { #binding_ident };
     let cfg = parse_field_config(field);
-    let field_tag = cfg.custom_tag.unwrap_or(1) as u32;
+    let field_tag = match cfg.custom_tag.unwrap_or(1) {
+        0 => {
+            return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
+        }
+        value => value as u32,
+    };
     let field_ty = &field.ty;
 
     let encoded_len_expr = generate_field_encoded_len(field, access_expr.clone(), field_tag);
@@ -293,10 +303,10 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
     };
 
-    (encode_arm, decode_arm, encoded_len_arm)
+    Ok((encode_arm, decode_arm, encoded_len_arm))
 }
 
-fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, fields_named: &syn::FieldsNamed) -> (TokenStream, TokenStream, TokenStream) {
+fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, fields_named: &syn::FieldsNamed) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
     let mut field_bindings = Vec::new();
     let mut field_defaults = Vec::new();
     let mut encode_fields = Vec::new();
@@ -309,7 +319,12 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         field_bindings.push(quote! { #ident });
         let access_expr = quote! { #ident };
         let cfg = parse_field_config(field);
-        let field_tag = cfg.custom_tag.unwrap_or(index + 1) as u32;
+        let field_tag = match cfg.custom_tag.unwrap_or(index + 1) {
+            0 => {
+                return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
+            }
+            value => value as u32,
+        };
         let field_ty = &field.ty;
 
         field_defaults.push(quote! { let mut #ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); });
@@ -413,5 +428,43 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
     };
 
-    (encode_arm, decode_arm, encoded_len_arm)
+    Ok((encode_arm, decode_arm, encoded_len_arm))
+}
+
+fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u32> {
+    let mut custom_tag = None;
+
+    for attr in &variant.attrs {
+        if !attr.path().is_ident("proto") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.get_ident().map(|ident| ident == "tag").unwrap_or(false) {
+                if custom_tag.is_some() {
+                    return Err(syn::Error::new(meta.path.span(), "duplicate proto(tag) attribute for variant"));
+                }
+
+                let lit: Lit = meta.value()?.parse()?;
+                let value = match lit {
+                    Lit::Int(int_lit) => int_lit.base10_parse::<usize>()?,
+                    Lit::Str(str_lit) => str_lit.value().parse::<usize>().map_err(|_| syn::Error::new(str_lit.span(), "proto tag must be a positive integer"))?,
+                    _ => {
+                        return Err(syn::Error::new(lit.span(), "proto tag must be specified as an integer"));
+                    }
+                };
+
+                custom_tag = Some(value);
+            }
+
+            Ok(())
+        })?;
+    }
+
+    let tag = custom_tag.unwrap_or(default);
+    if tag == 0 {
+        return Err(syn::Error::new(variant.ident.span(), "proto enum variant tags must be greater than or equal to 1"));
+    }
+
+    Ok(tag as u32)
 }

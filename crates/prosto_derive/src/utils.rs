@@ -2,12 +2,15 @@
 
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
+use syn::DataEnum;
+use syn::Expr;
 use syn::Field;
 use syn::GenericArgument;
 use syn::Lit;
 use syn::PathArguments;
 use syn::Type;
 use syn::TypePath;
+use syn::spanned::Spanned;
 
 pub mod string_helpers;
 pub mod type_info;
@@ -135,4 +138,53 @@ pub struct MethodInfo {
     pub stream_type_name: Option<syn::Ident>,
     pub inner_response_type: Option<Type>,
     pub user_method_signature: TokenStream,
+}
+
+pub fn collect_enum_discriminants(data: &DataEnum) -> Result<Vec<i32>, syn::Error> {
+    let mut values = Vec::with_capacity(data.variants.len());
+    let mut next_value: i32 = 0;
+
+    for variant in data.variants.iter() {
+        let value = if let Some((_, expr)) = &variant.discriminant {
+            let parsed = eval_discriminant(expr)?;
+            next_value = parsed.checked_add(1).ok_or_else(|| syn::Error::new_spanned(&variant.ident, "enum discriminant overflowed i32 range"))?;
+            parsed
+        } else {
+            let value = next_value;
+            next_value = next_value
+                .checked_add(1)
+                .ok_or_else(|| syn::Error::new_spanned(&variant.ident, "enum discriminant overflowed i32 range"))?;
+            value
+        };
+
+        values.push(value);
+    }
+
+    if !values.iter().any(|&v| v == 0) {
+        return Err(syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0"));
+    }
+
+    Ok(values)
+}
+
+fn eval_discriminant(expr: &Expr) -> Result<i32, syn::Error> {
+    match expr {
+        Expr::Lit(expr_lit) => match &expr_lit.lit {
+            Lit::Int(lit_int) => lit_int.base10_parse::<i32>().map_err(|_| syn::Error::new(lit_int.span(), "enum discriminant must fit in i32")),
+            _ => Err(syn::Error::new(expr.span(), "unsupported enum discriminant literal")),
+        },
+        Expr::Unary(expr_unary) => {
+            use syn::UnOp;
+            match expr_unary.op {
+                UnOp::Neg(_) => {
+                    let value = eval_discriminant(&expr_unary.expr)?;
+                    value.checked_neg().ok_or_else(|| syn::Error::new(expr.span(), "enum discriminant must fit in i32"))
+                }
+                _ => Err(syn::Error::new(expr.span(), "unsupported enum discriminant expression")),
+            }
+        }
+        Expr::Group(group) => eval_discriminant(&group.expr),
+        Expr::Paren(paren) => eval_discriminant(&paren.expr),
+        _ => Err(syn::Error::new(expr.span(), "unsupported enum discriminant expression")),
+    }
 }

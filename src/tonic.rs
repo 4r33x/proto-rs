@@ -65,7 +65,7 @@ where
     type Error = Status;
 
     fn encode(&mut self, item: Self::Item, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
-        item.encode_length_delimited(dst).map_err(|err| Status::internal(format!("failed to encode message: {err}")))
+        item.encode(dst).map_err(|err| Status::internal(format!("failed to encode message: {err}")))
     }
 }
 
@@ -88,10 +88,6 @@ where
     type Error = Status;
 
     fn decode(&mut self, src: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
-        if src.remaining() == 0 {
-            return Ok(None);
-        }
-
         let bytes = src.copy_to_bytes(src.remaining());
         T::decode(bytes).map(Some).map_err(|err| Status::internal(format!("failed to decode message: {err}")))
     }
