@@ -1,0 +1,26 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package encoding;
+
+enum SampleEnum {
+  ZERO = 0;
+  ONE = 1;
+  TWO = 2;
+}
+
+message NestedMessage {
+  int64 value = 1;
+}
+
+message SampleMessage {
+  uint32 id = 1;
+  bool flag = 2;
+  string name = 3;
+  repeated uint32 data = 4;
+  optional NestedMessage nested = 5;
+  repeated NestedMessage nested_list = 6;
+  repeated int64 values = 7;
+  SampleEnum mode = 8;
+  optional SampleEnum optional_mode = 9;
+}
+

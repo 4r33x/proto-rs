@@ -10,7 +10,6 @@ use syn::Type;
 use syn::TypePath;
 
 pub mod string_helpers;
-pub mod type_conversion;
 pub mod type_info;
 
 pub use string_helpers::*;
