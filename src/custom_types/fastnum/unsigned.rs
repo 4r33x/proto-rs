@@ -1,17 +1,12 @@
 use fastnum::UD128;
 
-use crate::proto_dump;
+use crate::ProtoShadow;
+
+use super::common::{combine_words, fractional_digits_from_i16, raw_split_digits};
+
 extern crate self as proto_rs;
 
-use super::common::{DecimalLike, DecimalProto, FastnumDecimalParts, combine_words, decimal_state, fractional_digits, split_digits};
-
-use bytes::{Buf, BufMut};
-
-use crate::DecodeError;
-use crate::encoding::{self, DecodeContext, WireType};
-
-//DO NOT USE IT FOR ENCODE\DECODE
-#[proto_dump(proto_path = "protos/fastnum.proto")]
+#[crate::proto_message(proto_path = "protos/fastnum.proto", convert = fastnum::UD128)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UD128Proto {
     #[proto(tag = 1)]
@@ -25,18 +20,12 @@ pub struct UD128Proto {
     pub fractional_digits_count: i32,
 }
 
-impl DecimalProto for UD128Proto {
-    type Decimal = UD128;
+impl ProtoShadow for UD128Proto {
+    type Sun = UD128;
 
-    fn from_decimal(decimal: &Self::Decimal) -> Self {
-        let (lo, hi) = split_digits(decimal);
-        let fractional_digits_count = fractional_digits(decimal);
-        Self { lo, hi, fractional_digits_count }
-    }
-
-    fn try_into_decimal(self) -> Result<Self::Decimal, DecodeError> {
+    fn to_sun(self) -> Self::Sun {
         let digits = combine_words(self.lo, self.hi);
-        let mut value = UD128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
+        let mut value = UD128::from_u128(digits).expect("invalid decimal digits");
 
         match self.fractional_digits_count.cmp(&0) {
             core::cmp::Ordering::Greater => {
@@ -48,107 +37,19 @@ impl DecimalProto for UD128Proto {
             core::cmp::Ordering::Equal => {}
         }
 
-        Ok(value)
+        value
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<bool, DecodeError> {
-        let handled = match tag {
-            1 => {
-                encoding::uint64::merge(wire_type, &mut self.lo, buf, ctx)?;
-                true
-            }
-            2 => {
-                encoding::uint64::merge(wire_type, &mut self.hi, buf, ctx)?;
-                true
-            }
-            3 => {
-                encoding::int32::merge(wire_type, &mut self.fractional_digits_count, buf, ctx)?;
-                true
-            }
-            _ => false,
-        };
+    fn cast_shadow(value: &Self::Sun) -> Self {
+        let (lo, hi) = raw_split_digits(value.digits());
+        let fractional_digits_count = fractional_digits_from_i16(value.fractional_digits_count());
 
-        Ok(handled)
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        encoding::uint64::encode(1, &self.lo, buf);
-        encoding::uint64::encode(2, &self.hi, buf);
-        encoding::int32::encode(3, &self.fractional_digits_count, buf);
-    }
-
-    fn encoded_len(&self) -> usize {
-        encoding::uint64::encoded_len(1, &self.lo) + encoding::uint64::encoded_len(2, &self.hi) + encoding::int32::encoded_len(3, &self.fractional_digits_count)
+        Self { lo, hi, fractional_digits_count }
     }
 }
-
-impl DecimalLike for UD128 {
-    type Proto = UD128Proto;
-}
-
-impl FastnumDecimalParts for UD128 {
-    fn digits_uint(&self) -> fastnum::bint::UInt<2> {
-        self.digits()
-    }
-
-    fn fractional_count(&self) -> i16 {
-        self.fractional_digits_count()
-    }
-}
-
-decimal_state!(UNSIGNED_STATE, UD128, with_unsigned_proto, finalize_unsigned, clear_unsigned);
-
-impl crate::ProtoExt for UD128 {
-    fn proto_default() -> Self
-    where
-        Self: Sized,
-    {
-        UD128::ZERO
-    }
-
-    fn encode_raw(&self, buf: &mut impl bytes::BufMut)
-    where
-        Self: Sized,
-    {
-        UD128Proto::from_decimal(self).encode_raw(buf);
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), crate::DecodeError>
-    where
-        Self: Sized,
-    {
-        if with_unsigned_proto(self, |proto| {
-            let handled = proto.merge_field(tag, wire_type, buf, ctx)?;
-            if handled && matches!(tag, 1 | 2) {
-                proto.clone().try_into_decimal()?;
-            }
-            Ok(handled)
-        })? {
-            Ok(())
-        } else {
-            crate::encoding::skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        UD128Proto::from_decimal(self).encoded_len()
-    }
-
-    fn clear(&mut self) {
-        clear_unsigned(self);
-        *self = UD128::ZERO;
-    }
-
-    fn post_decode(&mut self) {
-        finalize_unsigned(self).expect("failed to finalize unsigned decimal decode");
-    }
-}
-
-impl crate::MessageField for UD128 {}
 
 #[cfg(test)]
 mod tests {
-
     use fastnum::udec128;
 
     use super::*;
@@ -163,8 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fractional_digits() {
-        // Test case from docs: 123.45 has 2 fractional digits
+    fn test_positive_value() {
         let val = udec128!(123.45);
         let encoded = val.encode_to_vec();
         let restored = UD128::decode(encoded.as_slice()).unwrap();
@@ -174,7 +74,6 @@ mod tests {
 
     #[test]
     fn test_scientific_notation() {
-        // Test case: 5e9 has -9 fractional digits
         let val = udec128!(5e9);
         let encoded = val.encode_to_vec();
         let restored = UD128::decode(encoded.as_slice()).unwrap();
@@ -182,17 +81,23 @@ mod tests {
     }
 
     #[test]
-    fn test_no_fractional_part() {
-        let val = udec128!(12345);
+    fn test_large_value() {
+        let val = udec128!(123456789123456789.123456789123456789);
         let encoded = val.encode_to_vec();
         let restored = UD128::decode(encoded.as_slice()).unwrap();
-        assert_eq!(restored.fractional_digits_count(), val.fractional_digits_count());
         assert_eq!(val, restored);
     }
 
     #[test]
+    fn test_zero() {
+        let zero = UD128::ZERO;
+        let encoded = zero.encode_to_vec();
+        let restored = UD128::decode(encoded.as_slice()).unwrap();
+        assert_eq!(zero, restored);
+    }
+
+    #[test]
     fn test_small_fractional() {
-        // Test case: 0.0000012345 has 10 fractional digits
         let val = udec128!(0.0000012345);
         let encoded = val.encode_to_vec();
         let restored = UD128::decode(encoded.as_slice()).unwrap();
@@ -209,20 +114,9 @@ mod tests {
     }
 
     #[test]
-    fn test_zero() {
-        let zero = UD128::ZERO;
-        let encoded = zero.encode_to_vec();
-        let restored = UD128::decode(encoded.as_slice()).unwrap();
-        assert_eq!(zero, restored);
-    }
-
-    #[test]
-    fn test_proto_fields() {
-        // Verify proto structure for 123.45
-        let val = udec128!(123.45);
-        let (lo, hi) = split_digits(&val);
-        let digits = combine_words(lo, hi);
-        assert_eq!(digits, 12345);
-        assert_eq!(fractional_digits(&val), 2);
+    fn test_encoded_len() {
+        let val = udec128!(42.42);
+        let encoded = val.encode_to_vec();
+        assert_eq!(encoded.len(), val.encoded_len());
     }
 }

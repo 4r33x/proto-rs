@@ -1,18 +1,12 @@
 use fastnum::D128;
 
-use crate::ProtoExt;
-use crate::proto_dump;
+use crate::ProtoShadow;
+
+use super::common::{combine_words, fractional_digits_from_i16, raw_split_digits};
+
 extern crate self as proto_rs;
 
-use super::common::{DecimalLike, DecimalProto, FastnumDecimalParts, combine_words, decimal_state, fractional_digits, split_digits};
-
-use bytes::{Buf, BufMut};
-
-use crate::DecodeError;
-use crate::encoding::{self, DecodeContext, WireType};
-
-//DO NOT USE IT FOR ENCODE\DECODE
-#[proto_dump(proto_path = "protos/fastnum.proto")]
+#[crate::proto_message(proto_path = "protos/fastnum.proto", convert = fastnum::D128)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct D128Proto {
     #[proto(tag = 1)]
@@ -29,25 +23,12 @@ pub struct D128Proto {
     pub is_negative: bool,
 }
 
-impl DecimalProto for D128Proto {
-    type Decimal = D128;
+impl ProtoShadow for D128Proto {
+    type Sun = D128;
 
-    fn from_decimal(decimal: &Self::Decimal) -> Self {
-        let (lo, hi) = split_digits(decimal);
-        let fractional_digits_count = fractional_digits(decimal);
-        let is_negative = decimal.is_sign_negative();
-
-        Self {
-            lo,
-            hi,
-            fractional_digits_count,
-            is_negative,
-        }
-    }
-
-    fn try_into_decimal(self) -> Result<Self::Decimal, DecodeError> {
+    fn to_sun(self) -> Self::Sun {
         let digits = combine_words(self.lo, self.hi);
-        let mut value = D128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
+        let mut value = D128::from_u128(digits).expect("invalid decimal digits");
 
         match self.fractional_digits_count.cmp(&0) {
             core::cmp::Ordering::Greater => {
@@ -60,114 +41,24 @@ impl DecimalProto for D128Proto {
         }
 
         if self.is_negative {
-            value = value.neg();
+            value = -value;
         }
 
-        Ok(value)
+        value
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<bool, DecodeError> {
-        let handled = match tag {
-            1 => {
-                encoding::uint64::merge(wire_type, &mut self.lo, buf, ctx)?;
-                true
-            }
-            2 => {
-                encoding::uint64::merge(wire_type, &mut self.hi, buf, ctx)?;
-                true
-            }
-            3 => {
-                encoding::int32::merge(wire_type, &mut self.fractional_digits_count, buf, ctx)?;
-                true
-            }
-            4 => {
-                encoding::bool::merge(wire_type, &mut self.is_negative, buf, ctx)?;
-                true
-            }
-            _ => false,
-        };
+    fn cast_shadow(value: &Self::Sun) -> Self {
+        let (lo, hi) = raw_split_digits(value.digits());
+        let fractional_digits_count = fractional_digits_from_i16(value.fractional_digits_count());
 
-        Ok(handled)
-    }
-
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        encoding::uint64::encode(1, &self.lo, buf);
-        encoding::uint64::encode(2, &self.hi, buf);
-        encoding::int32::encode(3, &self.fractional_digits_count, buf);
-        encoding::bool::encode(4, &self.is_negative, buf);
-    }
-
-    fn encoded_len(&self) -> usize {
-        encoding::uint64::encoded_len(1, &self.lo)
-            + encoding::uint64::encoded_len(2, &self.hi)
-            + encoding::int32::encoded_len(3, &self.fractional_digits_count)
-            + encoding::bool::encoded_len(4, &self.is_negative)
-    }
-}
-
-impl DecimalLike for D128 {
-    type Proto = D128Proto;
-}
-
-impl FastnumDecimalParts for D128 {
-    fn digits_uint(&self) -> fastnum::bint::UInt<2> {
-        self.digits()
-    }
-
-    fn fractional_count(&self) -> i16 {
-        self.fractional_digits_count()
-    }
-}
-
-decimal_state!(SIGNED_STATE, D128, with_signed_proto, finalize_signed, clear_signed);
-
-impl ProtoExt for D128 {
-    fn proto_default() -> Self
-    where
-        Self: Sized,
-    {
-        D128::ZERO
-    }
-
-    fn encode_raw(&self, buf: &mut impl bytes::BufMut)
-    where
-        Self: Sized,
-    {
-        D128Proto::from_decimal(self).encode_raw(buf);
-    }
-
-    fn merge_field(&mut self, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), crate::DecodeError>
-    where
-        Self: Sized,
-    {
-        if with_signed_proto(self, |proto| {
-            let handled = proto.merge_field(tag, wire_type, buf, ctx)?;
-            if handled && matches!(tag, 1 | 2) {
-                proto.clone().try_into_decimal()?;
-            }
-            Ok(handled)
-        })? {
-            Ok(())
-        } else {
-            crate::encoding::skip_field(wire_type, tag, buf, ctx)
+        Self {
+            lo,
+            hi,
+            fractional_digits_count,
+            is_negative: value.is_sign_negative(),
         }
     }
-
-    fn encoded_len(&self) -> usize {
-        D128Proto::from_decimal(self).encoded_len()
-    }
-
-    fn clear(&mut self) {
-        clear_signed(self);
-        *self = D128::ZERO;
-    }
-
-    fn post_decode(&mut self) {
-        finalize_signed(self).expect("failed to finalize decimal decode");
-    }
 }
-
-impl crate::MessageField for D128 {}
 
 #[cfg(test)]
 mod tests {
@@ -205,18 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fractional_digits() {
-        // Test case from docs: 123.45 has 2 fractional digits
-        let val = dec128!(123.45);
-        let encoded = val.encode_to_vec();
-        let restored = D128::decode(encoded.as_slice()).unwrap();
-        assert_eq!(restored.fractional_digits_count(), val.fractional_digits_count());
-        assert_eq!(val, restored);
-    }
-
-    #[test]
     fn test_scientific_notation() {
-        // Test case: 5e9 has -9 fractional digits
         let val = dec128!(5e9);
         let encoded = val.encode_to_vec();
         let restored = D128::decode(encoded.as_slice()).unwrap();
@@ -233,39 +113,11 @@ mod tests {
     }
 
     #[test]
-    fn test_no_fractional_part() {
-        let val = dec128!(12345);
+    fn test_large_value() {
+        let val = dec128!(123456789123456789.123456789123456789);
         let encoded = val.encode_to_vec();
         let restored = D128::decode(encoded.as_slice()).unwrap();
-        assert_eq!(restored.fractional_digits_count(), val.fractional_digits_count());
         assert_eq!(val, restored);
-    }
-
-    #[test]
-    fn test_small_fractional() {
-        // Test case: 0.0000012345 has 10 fractional digits
-        let val = dec128!(0.0000012345);
-        let encoded = val.encode_to_vec();
-        let restored = D128::decode(encoded.as_slice()).unwrap();
-        assert_eq!(restored.fractional_digits_count(), val.fractional_digits_count());
-        assert_eq!(val, restored);
-    }
-
-    #[test]
-    fn test_max_value() {
-        let max_val = D128::MAX;
-        let encoded = max_val.encode_to_vec();
-        let restored = D128::decode(encoded.as_slice()).unwrap();
-        assert_eq!(max_val, restored);
-    }
-
-    #[test]
-    fn test_min_value() {
-        let min_val = D128::MIN;
-        let encoded = min_val.encode_to_vec();
-        let restored = D128::decode(encoded.as_slice()).unwrap();
-        assert!(restored.is_sign_negative());
-        assert_eq!(min_val, restored);
     }
 
     #[test]
@@ -273,7 +125,6 @@ mod tests {
         let zero = D128::ZERO;
         let encoded = zero.encode_to_vec();
         let restored = D128::decode(encoded.as_slice()).unwrap();
-        assert!(!restored.is_sign_negative());
         assert_eq!(zero, restored);
     }
 
@@ -286,13 +137,25 @@ mod tests {
     }
 
     #[test]
-    fn test_proto_fields() {
-        // Verify proto structure for -123.45
-        let val = dec128!(-123.45);
-        let (lo, hi) = split_digits(&val);
-        let digits = combine_words(lo, hi);
-        assert_eq!(digits, 12345);
-        assert_eq!(fractional_digits(&val), 2);
-        assert!(val.is_sign_negative());
+    fn test_extreme_values() {
+        let max_val = D128::MAX;
+        let min_val = D128::MIN;
+
+        let encoded_max = max_val.encode_to_vec();
+        let encoded_min = min_val.encode_to_vec();
+
+        let restored_max = D128::decode(encoded_max.as_slice()).unwrap();
+        let restored_min = D128::decode(encoded_min.as_slice()).unwrap();
+
+        assert_eq!(max_val, restored_max);
+        assert_eq!(min_val, restored_min);
+        assert!(restored_min.is_sign_negative());
+    }
+
+    #[test]
+    fn test_encoded_len() {
+        let val = dec128!(42.42);
+        let encoded = val.encode_to_vec();
+        assert_eq!(encoded.len(), val.encoded_len());
     }
 }

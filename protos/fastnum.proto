@@ -2,14 +2,14 @@
 syntax = "proto3";
 package fastnum;
 
-message D128 {
+message D128Proto {
   uint64 lo = 1;
   uint64 hi = 2;
   int32 fractional_digits_count = 3;
   bool is_negative = 4;
 }
 
-message UD128 {
+message UD128Proto {
   uint64 lo = 1;
   uint64 hi = 2;
   int32 fractional_digits_count = 3;

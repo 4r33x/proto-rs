@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
+use heck::{ToShoutySnakeCase, ToSnakeCase};
 use proc_macro2::TokenStream;
+use quote::format_ident;
 use quote::quote;
 use syn::DeriveInput;
 use syn::Fields;
@@ -14,11 +16,11 @@ use crate::utils::is_option_type;
 use crate::utils::parse_field_config;
 use crate::utils::vec_inner_type;
 
-pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct, convert: Option<&syn::Type>) -> TokenStream {
     match &data.fields {
-        Fields::Named(_) => handle_named_struct(input, data),
-        Fields::Unnamed(_) => handle_tuple_struct(input, data),
-        Fields::Unit => handle_unit_struct(input),
+        Fields::Named(_) => handle_named_struct(input, data, convert),
+        Fields::Unnamed(_) => handle_tuple_struct(input, data, convert),
+        Fields::Unit => handle_unit_struct(input, convert),
     }
 }
 
@@ -67,7 +69,10 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     }
 }
 
-fn handle_unit_struct(input: DeriveInput) -> TokenStream {
+fn handle_unit_struct(input: DeriveInput, convert: Option<&syn::Type>) -> TokenStream {
+    if convert.is_some() {
+        panic!("#[proto_message(convert = ...)] is not supported for unit structs");
+    }
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -106,7 +111,10 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
     }
 }
 
-fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Option<&syn::Type>) -> TokenStream {
+    if convert.is_some() {
+        panic!("#[proto_message(convert = ...)] is not supported for tuple structs");
+    }
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -235,7 +243,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     }
 }
 
-fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Option<&syn::Type>) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -341,6 +349,98 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         }
     };
 
+    let convert_impl = convert.map(|sun_ty| {
+        if !input.generics.params.is_empty() {
+            panic!("#[proto_message(convert = ...)] is not supported on generic types");
+        }
+
+        let type_name = name.to_string();
+        let shouty_name = type_name.to_shouty_snake_case();
+        let snake_name = type_name.to_snake_case();
+
+        let cache_ident = format_ident!("__PROTO_SHADOW_CACHE_FOR_{}", shouty_name);
+        let with_shadow_ident = format_ident!("__proto_shadow_with_{}", snake_name);
+        let finalize_ident = format_ident!("__proto_shadow_finalize_{}", snake_name);
+        let clear_shadow_ident = format_ident!("__proto_shadow_clear_{}", snake_name);
+
+        quote! {
+            ::std::thread_local! {
+                static #cache_ident: ::core::cell::RefCell<
+                    ::proto_rs::alloc::collections::BTreeMap<*const #sun_ty, #name>
+                > = ::core::cell::RefCell::new(::proto_rs::alloc::collections::BTreeMap::new());
+            }
+
+            fn #with_shadow_ident<F>(value: &mut #sun_ty, f: F) -> Result<(), ::proto_rs::DecodeError>
+            where
+                F: FnOnce(&mut #name) -> Result<(), ::proto_rs::DecodeError>,
+            {
+                let key = value as *mut #sun_ty as *const #sun_ty;
+                #cache_ident.with(|cache| {
+                    let mut cache = cache.borrow_mut();
+                    let entry = cache
+                        .entry(key)
+                        .or_insert_with(|| <#name as ::proto_rs::ProtoShadow>::cast_shadow(value));
+                    f(entry)
+                })
+            }
+
+            fn #finalize_ident(value: &mut #sun_ty) {
+                let key = value as *mut #sun_ty as *const #sun_ty;
+                #cache_ident.with(|cache| {
+                    let mut cache = cache.borrow_mut();
+                    if let Some(mut shadow) = cache.remove(&key) {
+                        ::proto_rs::ProtoExt::post_decode(&mut shadow);
+                        *value = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
+                    }
+                });
+            }
+
+            fn #clear_shadow_ident(value: &mut #sun_ty) {
+                let key = value as *mut #sun_ty as *const #sun_ty;
+                #cache_ident.with(|cache| {
+                    cache.borrow_mut().remove(&key);
+                });
+            }
+
+            impl ::proto_rs::ProtoExt for #sun_ty {
+                fn proto_default() -> Self {
+                    <#name as ::proto_rs::ProtoShadow>::to_sun(<#name as ::proto_rs::ProtoExt>::proto_default())
+                }
+
+                fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                    let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
+                    shadow.encode_raw(buf);
+                }
+
+                fn merge_field(
+                    &mut self,
+                    tag: u32,
+                    wire_type: ::proto_rs::encoding::WireType,
+                    buf: &mut impl ::proto_rs::bytes::Buf,
+                    ctx: ::proto_rs::encoding::DecodeContext,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    #with_shadow_ident(self, |shadow| shadow.merge_field(tag, wire_type, buf, ctx))
+                }
+
+                fn encoded_len(&self) -> usize {
+                    let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
+                    shadow.encoded_len()
+                }
+
+                fn clear(&mut self) {
+                    #clear_shadow_ident(self);
+                    *self = <Self as ::proto_rs::ProtoExt>::proto_default();
+                }
+
+                fn post_decode(&mut self) {
+                    #finalize_ident(self);
+                }
+            }
+
+            impl ::proto_rs::MessageField for #sun_ty {}
+        }
+    });
+
     quote! {
         #(#attrs)*
         #vis struct #name #generics {
@@ -388,5 +488,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
+
+        #convert_impl
     }
 }
