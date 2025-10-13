@@ -147,6 +147,266 @@ impl From<&SampleMessageProst> for SampleMessage {
     }
 }
 
+#[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct ConversionInner {
+    #[proto(tag = 1)]
+    pub id: u64,
+    #[proto(tag = 2)]
+    pub label: String,
+    #[proto(tag = 3)]
+    pub payload: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct FakeTime {
+    seconds: i64,
+}
+
+#[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct MixedProto {
+    #[proto(tag = 9)]
+    pub name: String,
+    #[proto(tag = 3)]
+    pub raw: Vec<u8>,
+    #[proto(tag = 11)]
+    pub bytes_field: Bytes,
+    #[proto(tag = 10)]
+    pub optional_data: Option<Bytes>,
+    #[proto(tag = 20)]
+    pub optional_payload: Option<Vec<u8>>,
+    #[proto(tag = 7)]
+    pub attachments: Vec<Bytes>,
+    #[proto(tag = 12, into = "i64", into_fn = "fake_time_to_i64", from_fn = "i64_to_fake_time")]
+    pub timestamp: FakeTime,
+    #[proto(tag = 4)]
+    pub bools: Vec<bool>,
+    #[proto(tag = 18)]
+    pub byte_array: [u8; 4],
+    #[proto(tag = 5)]
+    pub optional_inner: Option<ConversionInner>,
+    #[proto(tag = 6)]
+    pub inner_list: Vec<ConversionInner>,
+    #[proto(tag = 8)]
+    pub fixed_inner: Vec<ConversionInner>,
+    #[proto(tag = 15)]
+    pub values: Vec<i32>,
+    #[proto(tag = 25, skip)]
+    pub cached: Vec<u8>,
+    #[proto(tag = 30, skip = "rebuild_checksum")]
+    pub checksum: u32,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+#[prost(message, package = "encoding")]
+pub struct ConversionInnerProst {
+    #[prost(uint64, tag = "1")]
+    pub id: u64,
+    #[prost(string, tag = "2")]
+    pub label: String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub payload: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+#[prost(message, package = "encoding")]
+pub struct MixedProtoProst {
+    #[prost(string, tag = "9")]
+    pub name: String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub raw: Vec<u8>,
+    #[prost(bytes = "vec", tag = "11")]
+    pub bytes_field: Vec<u8>,
+    #[prost(bytes = "vec", optional, tag = "10")]
+    pub optional_data: Option<Vec<u8>>,
+    #[prost(bytes = "vec", optional, tag = "20")]
+    pub optional_payload: Option<Vec<u8>>,
+    #[prost(bytes = "vec", repeated, tag = "7")]
+    pub attachments: Vec<Vec<u8>>,
+    #[prost(int64, tag = "12")]
+    pub timestamp: i64,
+    #[prost(bool, repeated, tag = "4")]
+    pub bools: Vec<bool>,
+    #[prost(bytes = "vec", tag = "18")]
+    pub byte_array: Vec<u8>,
+    #[prost(message, optional, tag = "5")]
+    pub optional_inner: Option<ConversionInnerProst>,
+    #[prost(message, repeated, tag = "6")]
+    pub inner_list: Vec<ConversionInnerProst>,
+    #[prost(message, repeated, tag = "8")]
+    pub fixed_inner: Vec<ConversionInnerProst>,
+    #[prost(int32, repeated, tag = "15")]
+    pub values: Vec<i32>,
+}
+
+impl From<&ConversionInner> for ConversionInnerProst {
+    fn from(value: &ConversionInner) -> Self {
+        Self {
+            id: value.id,
+            label: value.label.clone(),
+            payload: value.payload.clone(),
+        }
+    }
+}
+
+impl From<&ConversionInnerProst> for ConversionInner {
+    fn from(value: &ConversionInnerProst) -> Self {
+        Self {
+            id: value.id,
+            label: value.label.clone(),
+            payload: value.payload.clone(),
+        }
+    }
+}
+
+impl From<&MixedProto> for MixedProtoProst {
+    fn from(value: &MixedProto) -> Self {
+        Self {
+            name: value.name.clone(),
+            raw: value.raw.clone(),
+            bytes_field: value.bytes_field.clone().to_vec(),
+            optional_data: value.optional_data.as_ref().map(|b| b.clone().to_vec()),
+            optional_payload: value.optional_payload.clone(),
+            attachments: value.attachments.iter().map(|b| b.clone().to_vec()).collect(),
+            timestamp: fake_time_to_i64(&value.timestamp),
+            bools: value.bools.clone(),
+            byte_array: value.byte_array.to_vec(),
+            optional_inner: value.optional_inner.as_ref().map(ConversionInnerProst::from),
+            inner_list: value.inner_list.iter().map(ConversionInnerProst::from).collect(),
+            fixed_inner: value.fixed_inner.iter().map(ConversionInnerProst::from).collect(),
+            values: value.values.clone(),
+        }
+    }
+}
+
+impl From<&MixedProtoProst> for MixedProto {
+    fn from(value: &MixedProtoProst) -> Self {
+        let mut byte_array = [0u8; 4];
+        for (dst, src) in byte_array.iter_mut().zip(value.byte_array.iter().copied()) {
+            *dst = src;
+        }
+
+        let mut message = Self {
+            name: value.name.clone(),
+            raw: value.raw.clone(),
+            bytes_field: Bytes::from(value.bytes_field.clone()),
+            optional_data: value.optional_data.as_ref().map(|b| Bytes::from(b.clone())),
+            optional_payload: value.optional_payload.clone(),
+            attachments: value.attachments.iter().map(|b| Bytes::from(b.clone())).collect(),
+            timestamp: i64_to_fake_time(value.timestamp),
+            bools: value.bools.clone(),
+            byte_array,
+            optional_inner: value.optional_inner.as_ref().map(ConversionInner::from),
+            inner_list: value.inner_list.iter().map(ConversionInner::from).collect(),
+            fixed_inner: value.fixed_inner.iter().map(ConversionInner::from).collect(),
+            values: value.values.clone(),
+            cached: Vec::new(),
+            checksum: 0,
+        };
+        message.checksum = compute_checksum(&message);
+        message
+    }
+}
+
+fn fake_time_to_i64(value: &FakeTime) -> i64 {
+    value.seconds
+}
+
+fn i64_to_fake_time(value: i64) -> FakeTime {
+    FakeTime { seconds: value }
+}
+
+fn compute_checksum(value: &MixedProto) -> u32 {
+    let mut acc = 0u32;
+    acc = value.raw.iter().fold(acc, |sum, &b| sum.wrapping_add(b as u32));
+    acc = acc.wrapping_add(value.bytes_field.len() as u32);
+    if let Some(optional) = &value.optional_data {
+        acc = acc.wrapping_add(optional.len() as u32);
+    }
+    if let Some(optional) = &value.optional_payload {
+        acc = acc.wrapping_add(optional.len() as u32);
+    }
+    acc = acc.wrapping_add(value.attachments.iter().map(|b| b.len() as u32).fold(0, |sum, len| sum.wrapping_add(len)));
+    acc = acc.wrapping_add(value.bools.iter().filter(|&&b| b).count() as u32);
+    acc = acc.wrapping_add(value.byte_array.iter().map(|&b| b as u32).fold(0, |sum, v| sum.wrapping_add(v)));
+    if let Some(inner) = &value.optional_inner {
+        acc = acc.wrapping_add(inner.id as u32);
+        acc = acc.wrapping_add(inner.label.len() as u32);
+        acc = acc.wrapping_add(inner.payload.len() as u32);
+    }
+    acc = acc.wrapping_add(
+        value
+            .inner_list
+            .iter()
+            .map(|inner| inner.id as u32 + inner.label.len() as u32 + inner.payload.len() as u32)
+            .fold(0, |sum, v| sum.wrapping_add(v)),
+    );
+    acc = acc.wrapping_add(
+        value
+            .fixed_inner
+            .iter()
+            .map(|inner| inner.id as u32 + inner.label.len() as u32 + inner.payload.len() as u32)
+            .fold(0, |sum, v| sum.wrapping_add(v)),
+    );
+    acc = acc.wrapping_add(value.values.iter().fold(0, |sum, &v| sum.wrapping_add(v as u32)));
+    acc = acc.wrapping_add(value.timestamp.seconds as u32);
+    acc = acc.wrapping_add(value.name.len() as u32);
+    acc
+}
+
+fn rebuild_checksum(value: &MixedProto) -> u32 {
+    compute_checksum(value)
+}
+
+fn sample_mixed_proto() -> MixedProto {
+    let mut message = MixedProto {
+        name: "complex-roundtrip".to_string(),
+        raw: vec![1, 2, 3, 4, 5],
+        bytes_field: Bytes::from_static(b"proto-bytes"),
+        optional_data: Some(Bytes::from_static(b"optional-bytes")),
+        optional_payload: Some(vec![9, 8, 7]),
+        attachments: vec![Bytes::from_static(b"alpha"), Bytes::from_static(b"beta")],
+        timestamp: FakeTime { seconds: 42 },
+        bools: vec![true, false, true],
+        byte_array: [0xAA, 0xBB, 0xCC, 0xDD],
+        optional_inner: Some(ConversionInner {
+            id: 7,
+            label: "optional".into(),
+            payload: vec![1, 1, 2, 3],
+        }),
+        inner_list: vec![
+            ConversionInner {
+                id: 1,
+                label: "first".into(),
+                payload: vec![0, 1],
+            },
+            ConversionInner {
+                id: 2,
+                label: "second".into(),
+                payload: vec![2, 3, 4],
+            },
+        ],
+        fixed_inner: vec![
+            ConversionInner {
+                id: 10,
+                label: "fixed-0".into(),
+                payload: vec![0, 1],
+            },
+            ConversionInner {
+                id: 11,
+                label: "fixed-1".into(),
+                payload: vec![1, 2],
+            },
+        ],
+        values: vec![-5, 0, 5, 10],
+        cached: Vec::new(),
+        checksum: 0,
+    };
+    message.checksum = compute_checksum(&message);
+    message
+}
+
 fn sample_message() -> SampleMessage {
     SampleMessage {
         id: 42,
@@ -349,6 +609,45 @@ fn decode_handles_mixed_packed_repeated_values() {
     expected.values = values.clone();
 
     assert_decode_roundtrip(bytes, &expected, &SampleMessageProst::from(&expected));
+}
+
+#[test]
+fn mixed_proto_cross_roundtrip_with_prost() {
+    let proto_msg = sample_mixed_proto();
+    let prost_msg = MixedProtoProst::from(&proto_msg);
+    let proto_from_prost = MixedProto::from(&prost_msg);
+    assert_eq!(proto_from_prost, proto_msg);
+
+    let proto_bytes = encode_proto_message(&proto_msg);
+    let decoded_proto = MixedProto::decode(proto_bytes.clone()).expect("mixed proto decode failed");
+    assert_eq!(decoded_proto, proto_msg);
+    let decoded_prost = MixedProtoProst::decode(proto_bytes.clone()).expect("mixed prost decode from proto bytes failed");
+    assert_eq!(decoded_prost, prost_msg);
+    let reconverted_prost = MixedProtoProst::from(&decoded_proto);
+    assert_eq!(reconverted_prost, prost_msg);
+
+    let prost_bytes = encode_prost_message(&prost_msg);
+    let decoded_proto_from_prost = MixedProto::decode(prost_bytes.clone()).expect("mixed proto decode from prost bytes failed");
+    assert_eq!(decoded_proto_from_prost, proto_msg);
+    let reconverted_prost_from_proto = MixedProtoProst::from(&decoded_proto_from_prost);
+    assert_eq!(reconverted_prost_from_proto, prost_msg);
+    let decoded_prost_from_prost = MixedProtoProst::decode(prost_bytes.clone()).expect("mixed prost decode failed");
+    assert_eq!(decoded_prost_from_prost, prost_msg);
+    let reconverted_proto = MixedProto::from(&decoded_prost_from_prost);
+    assert_eq!(reconverted_proto, proto_msg);
+}
+
+#[test]
+fn mixed_proto_skip_and_rebuild_behaviour() {
+    let mut proto_msg = sample_mixed_proto();
+    proto_msg.cached = vec![0xAA, 0xBB];
+    proto_msg.checksum = 0;
+
+    let bytes = encode_proto_message(&proto_msg);
+    let decoded = MixedProto::decode(bytes).expect("mixed proto decode failed");
+
+    assert!(decoded.cached.is_empty(), "skipped field should remain at default");
+    assert_eq!(decoded.checksum, compute_checksum(&decoded), "checksum must be recomputed after decode");
 }
 
 #[test]
