@@ -109,9 +109,16 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
         };
 
         return quote! {
-            let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
-            ::proto_rs::ProtoExt::merge_field(&mut __tmp, #tag, wire_type, buf, ctx.clone())?;
-            #access_clone = #assign_expr;
+            if #tag == tag {
+                let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
+                <#from_ty as ::proto_rs::SingularField>::merge_singular_field(
+                    wire_type,
+                    &mut __tmp,
+                    buf,
+                    ctx.clone(),
+                )?;
+                #access_clone = #assign_expr;
+            }
         };
     }
 
@@ -358,6 +365,28 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
 fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
     let elem_ty = &*array.elem;
     let elem_parsed = parse_field_type(elem_ty);
+
+    if is_bytes_array(&Type::Array(array.clone())) {
+        return quote! {
+            if #tag == tag {
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new("invalid wire type for fixed array"));
+                }
+                let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                if __len > (#access).len() {
+                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                }
+                let mut __i = 0usize;
+                while __i < __len {
+                    (#access)[__i] = buf.get_u8();
+                    __i += 1;
+                }
+                for __value in (#access)[__i..].iter_mut() {
+                    *__value = 0;
+                }
+            }
+        };
+    }
 
     if elem_parsed.is_message_like {
         return quote! {
