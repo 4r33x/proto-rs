@@ -2,13 +2,20 @@
 macro_rules! impl_protoext_for_byte_array {
     ($ty:ident, $bytes:ident) => {
         impl $crate::ProtoExt for $ty {
+            fn proto_default() -> Self
+            where
+                Self: Sized,
+            {
+                Self::default()
+            }
+
             fn encode_raw(&self, buf: &mut impl bytes::BufMut)
             where
                 Self: Sized,
             {
                 $crate::encoding::encode_key(1, $crate::encoding::WireType::LengthDelimited, buf);
                 $crate::encoding::encode_varint($bytes as u64, buf);
-                buf.put_slice(&self.inner);
+                buf.put_slice(self.as_ref());
             }
 
             fn merge_field(&mut self, tag: u32, wire_type: $crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: $crate::encoding::DecodeContext) -> Result<(), $crate::DecodeError>
@@ -27,7 +34,9 @@ macro_rules! impl_protoext_for_byte_array {
                     if len as usize != $bytes {
                         return Err($crate::DecodeError::new(format!("expected {} bytes, got {}", $bytes, len)));
                     }
-                    buf.copy_to_slice(&mut self.inner);
+                    let mut data = [0u8; $bytes];
+                    buf.copy_to_slice(&mut data);
+                    *self = <$ty as From<[u8; $bytes]>>::from(data);
                     Ok(())
                 } else {
                     $crate::encoding::skip_field(wire_type, tag, buf, ctx)
@@ -42,7 +51,7 @@ macro_rules! impl_protoext_for_byte_array {
             }
 
             fn clear(&mut self) {
-                self.inner = [0u8; $bytes];
+                *self = Self::default();
             }
         }
     };

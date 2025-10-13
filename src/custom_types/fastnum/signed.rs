@@ -20,70 +20,175 @@ struct D128Proto {
     pub is_negative: bool,
 }
 
-impl From<D128> for D128Proto {
-    fn from(v: D128) -> Self {
-        let digits: u128 = v.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
-        let lo = digits as u64;
-        let hi = (digits >> 64) as u64;
-        let fractional_digits_count = v.fractional_digits_count() as i32;
-        let is_negative = v.is_sign_negative();
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct D128Parts {
+    lo: u64,
+    hi: u64,
+    fractional_digits_count: i32,
+    is_negative: bool,
+}
+
+impl From<&D128> for D128Parts {
+    fn from(value: &D128) -> Self {
+        let digits: u128 = value
+            .digits()
+            .try_into()
+            .expect("D128 should have at most u128 digits");
         Self {
-            lo,
-            hi,
-            fractional_digits_count,
-            is_negative,
+            lo: digits as u64,
+            hi: (digits >> 64) as u64,
+            fractional_digits_count: value.fractional_digits_count() as i32,
+            is_negative: value.is_sign_negative(),
         }
     }
 }
 
-//we dont need it, its just reference how we should convert back
+impl From<D128> for D128Parts {
+    fn from(value: D128) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<D128Parts> for D128Proto {
+    fn from(parts: D128Parts) -> Self {
+        Self {
+            lo: parts.lo,
+            hi: parts.hi,
+            fractional_digits_count: parts.fractional_digits_count,
+            is_negative: parts.is_negative,
+        }
+    }
+}
+
+impl From<D128Proto> for D128Parts {
+    fn from(proto: D128Proto) -> Self {
+        Self {
+            lo: proto.lo,
+            hi: proto.hi,
+            fractional_digits_count: proto.fractional_digits_count,
+            is_negative: proto.is_negative,
+        }
+    }
+}
+
+impl D128Parts {
+    fn into_value(self) -> Result<D128, crate::DecodeError> {
+        let digits = ((self.hi as u128) << 64) | u128::from(self.lo);
+        let mut value = D128::from_u128(digits)
+            .map_err(|err| crate::DecodeError::new(err.to_string()))?;
+
+        match self.fractional_digits_count.cmp(&0) {
+            core::cmp::Ordering::Greater => {
+                value /= D128::TEN.powi(self.fractional_digits_count);
+            }
+            core::cmp::Ordering::Less => {
+                value *= D128::TEN.powi(-self.fractional_digits_count);
+            }
+            core::cmp::Ordering::Equal => {}
+        }
+
+        if self.is_negative {
+            value = -value;
+        }
+
+        Ok(value)
+    }
+}
+
+impl From<D128> for D128Proto {
+    fn from(value: D128) -> Self {
+        D128Parts::from(value).into()
+    }
+}
+
+impl From<&D128> for D128Proto {
+    fn from(value: &D128) -> Self {
+        D128Parts::from(value).into()
+    }
+}
+
+// we dont need it, its just reference how we should convert back
 impl TryFrom<D128Proto> for D128 {
-    type Error = Box<dyn std::error::Error>;
-    fn try_from(proto: D128Proto) -> Result<D128, Self::Error> {
-        // Reconstruct u128 from two u64 parts
-        let digits = ((proto.hi as u128) << 64) | (proto.lo as u128);
+    type Error = crate::DecodeError;
 
-        // Create D128 from digits and fractional count
-        let mut result = D128::from_u128(digits)?;
-
-        if proto.fractional_digits_count > 0 {
-            // Use D128 for the power to avoid overflow
-            result /= D128::TEN.powi(proto.fractional_digits_count);
-        } else if proto.fractional_digits_count < 0 {
-            result *= D128::TEN.powi(-proto.fractional_digits_count);
-        }
-
-        // Apply sign
-        if proto.is_negative {
-            result = -result;
-        }
-
-        Ok(result)
+    fn try_from(proto: D128Proto) -> Result<Self, Self::Error> {
+        D128Parts::from(proto).into_value()
     }
 }
 
 impl ProtoExt for D128 {
+    fn proto_default() -> Self
+    where
+        Self: Sized,
+    {
+        D128::ZERO
+    }
+
     fn encode_raw(&self, buf: &mut impl bytes::BufMut)
     where
         Self: Sized,
     {
-        todo!()
+        let parts = D128Parts::from(self);
+        crate::encoding::uint64::encode(1, &parts.lo, buf);
+        crate::encoding::uint64::encode(2, &parts.hi, buf);
+        crate::encoding::int32::encode(3, &parts.fractional_digits_count, buf);
+        crate::encoding::bool::encode(4, &parts.is_negative, buf);
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), crate::DecodeError>
+    fn merge_field(
+        &mut self,
+        tag: u32,
+        wire_type: crate::encoding::WireType,
+        buf: &mut impl bytes::Buf,
+        ctx: crate::encoding::DecodeContext,
+    ) -> Result<(), crate::DecodeError>
     where
         Self: Sized,
     {
-        todo!()
+        let mut parts = D128Parts::from(&*self);
+        let handled = match tag {
+            1 => {
+                crate::encoding::uint64::merge(wire_type, &mut parts.lo, buf, ctx)?;
+                true
+            }
+            2 => {
+                crate::encoding::uint64::merge(wire_type, &mut parts.hi, buf, ctx)?;
+                true
+            }
+            3 => {
+                crate::encoding::int32::merge(wire_type, &mut parts.fractional_digits_count, buf, ctx)?;
+                true
+            }
+            4 => {
+                crate::encoding::bool::merge(wire_type, &mut parts.is_negative, buf, ctx)?;
+                true
+            }
+            _ => false,
+        };
+
+        if handled {
+            *self = parts.into_value()?;
+            Ok(())
+        } else {
+            crate::encoding::skip_field(wire_type, tag, buf, ctx)
+        }
     }
 
     fn encoded_len(&self) -> usize {
-        todo!()
+        let parts = D128Parts::from(self);
+        crate::encoding::uint64::encoded_len(1, &parts.lo)
+            + crate::encoding::uint64::encoded_len(2, &parts.hi)
+            + crate::encoding::int32::encoded_len(3, &parts.fractional_digits_count)
+            + crate::encoding::bool::encoded_len(4, &parts.is_negative)
     }
 
     fn clear(&mut self) {
-        todo!()
+        *self = D128::ZERO;
     }
+}
+
+fn d128_from_proto(proto: D128Proto) -> Result<D128, crate::DecodeError> {
+    D128::try_from(proto)
 }
 
 #[cfg(test)]
