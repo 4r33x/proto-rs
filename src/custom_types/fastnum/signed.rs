@@ -1,4 +1,7 @@
+use core::cmp::Ordering;
+
 use fastnum::D128;
+use fastnum::bint::UInt;
 
 use crate::ProtoExt;
 use crate::proto_dump;
@@ -6,7 +9,7 @@ extern crate self as proto_rs;
 
 //DO NOT USE IT FOR ENCODE\DECODE
 #[proto_dump(proto_path = "protos/fastnum.proto")]
-struct D128Proto {
+pub struct D128Proto {
     #[proto(tag = 1)]
     /// Lower 64 bits of the digits
     pub lo: u64,
@@ -86,8 +89,112 @@ impl ProtoExt for D128 {
     }
 }
 
-fn d128_from_proto(proto: D128Proto) -> Result<D128, crate::DecodeError> {
-    D128::try_from(proto)
+impl super::DecimalProtoExt for D128 {
+    type Proto = D128Proto;
+
+    fn to_proto(&self) -> Self::Proto {
+        D128Proto::from(self)
+    }
+
+    fn from_proto(proto: Self::Proto) -> Result<Self, crate::DecodeError> {
+        D128Parts::from(proto).into_value()
+    }
+}
+
+impl From<&D128> for D128Proto {
+    fn from(value: &D128) -> Self {
+        let parts = D128Parts::from(value);
+        Self {
+            lo: parts.lo,
+            hi: parts.hi,
+            fractional_digits_count: parts.fractional_digits_count,
+            is_negative: parts.is_negative,
+        }
+    }
+}
+
+impl From<D128> for D128Proto {
+    fn from(value: D128) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl TryFrom<D128Proto> for D128 {
+    type Error = crate::DecodeError;
+
+    fn try_from(proto: D128Proto) -> Result<Self, Self::Error> {
+        D128Parts::from(proto).into_value()
+    }
+}
+
+impl crate::MessageField for D128 {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct D128Parts {
+    lo: u64,
+    hi: u64,
+    fractional_digits_count: i32,
+    is_negative: bool,
+}
+
+impl From<&D128> for D128Parts {
+    fn from(value: &D128) -> Self {
+        let digits = value.digits();
+        let (lo, hi) = split_digits(&digits);
+        Self {
+            lo,
+            hi,
+            fractional_digits_count: i32::from(value.fractional_digits_count()),
+            is_negative: value.is_sign_negative(),
+        }
+    }
+}
+
+impl From<D128Proto> for D128Parts {
+    fn from(proto: D128Proto) -> Self {
+        Self {
+            lo: proto.lo,
+            hi: proto.hi,
+            fractional_digits_count: proto.fractional_digits_count,
+            is_negative: proto.is_negative,
+        }
+    }
+}
+
+impl D128Parts {
+    fn into_value(self) -> Result<D128, crate::DecodeError> {
+        let digits = combine_words(self.lo, self.hi);
+        let mut value = D128::from_u128(digits).map_err(|err| crate::DecodeError::new(err.to_string()))?;
+
+        match self.fractional_digits_count.cmp(&0) {
+            Ordering::Greater => {
+                value = value / D128::TEN.powi(self.fractional_digits_count);
+            }
+            Ordering::Less => {
+                value = value * D128::TEN.powi(-self.fractional_digits_count);
+            }
+            Ordering::Equal => {}
+        }
+
+        if self.is_negative {
+            value = value.neg();
+        }
+
+        Ok(value)
+    }
+}
+
+fn split_digits<const N: usize>(digits: &UInt<N>) -> (u64, u64) {
+    let limbs = digits.digits();
+    let lo = limbs.get(0).copied().unwrap_or(0);
+    let hi = limbs.get(1).copied().unwrap_or(0);
+    debug_assert!(limbs.iter().skip(2).all(|&digit| digit == 0));
+    (lo, hi)
+}
+
+#[inline]
+fn combine_words(lo: u64, hi: u64) -> u128 {
+    ((hi as u128) << 64) | (lo as u128)
 }
 
 #[cfg(test)]
@@ -95,6 +202,7 @@ mod tests {
     use fastnum::dec128;
 
     use super::*;
+    use crate::custom_types::fastnum::DecimalProtoExt;
 
     #[test]
     fn test_roundtrip() {

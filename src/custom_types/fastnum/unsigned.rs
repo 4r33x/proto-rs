@@ -1,19 +1,21 @@
+use core::cmp::Ordering;
+
 use fastnum::UD128;
+use fastnum::bint::UInt;
 
 use crate::proto_dump;
 extern crate self as proto_rs;
 
 //DO NOT USE IT FOR ENCODE\DECODE
 #[proto_dump(proto_path = "protos/fastnum.proto")]
-#[derive(prost::Message, Clone, PartialEq, Copy)]
 pub struct UD128Proto {
-    #[prost(uint64, tag = 1)]
+    #[proto(tag = 1)]
     /// Lower 64 bits of the digits
     pub lo: u64,
-    #[prost(uint64, tag = 2)]
+    #[proto(tag = 2)]
     /// Upper 64 bits of the digits
     pub hi: u64,
-    #[prost(int32, tag = 3)]
+    #[proto(tag = 3)]
     /// Fractional digits count (can be negative for scientific notation)
     pub fractional_digits_count: i32,
 }
@@ -75,8 +77,104 @@ impl crate::ProtoExt for UD128 {
     }
 }
 
-fn ud128_from_proto(proto: UD128Proto) -> Result<UD128, crate::DecodeError> {
-    UD128Parts::from(proto).into_value()
+impl super::DecimalProtoExt for UD128 {
+    type Proto = UD128Proto;
+
+    fn to_proto(&self) -> Self::Proto {
+        UD128Proto::from(self)
+    }
+
+    fn from_proto(proto: Self::Proto) -> Result<Self, crate::DecodeError> {
+        UD128Parts::from(proto).into_value()
+    }
+}
+
+impl From<&UD128> for UD128Proto {
+    fn from(value: &UD128) -> Self {
+        let parts = UD128Parts::from(value);
+        Self {
+            lo: parts.lo,
+            hi: parts.hi,
+            fractional_digits_count: parts.fractional_digits_count,
+        }
+    }
+}
+
+impl From<UD128> for UD128Proto {
+    fn from(value: UD128) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl TryFrom<UD128Proto> for UD128 {
+    type Error = crate::DecodeError;
+
+    fn try_from(proto: UD128Proto) -> Result<Self, Self::Error> {
+        UD128Parts::from(proto).into_value()
+    }
+}
+
+impl crate::MessageField for UD128 {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UD128Parts {
+    lo: u64,
+    hi: u64,
+    fractional_digits_count: i32,
+}
+
+impl From<&UD128> for UD128Parts {
+    fn from(value: &UD128) -> Self {
+        let digits = value.digits();
+        let (lo, hi) = split_digits(&digits);
+        Self {
+            lo,
+            hi,
+            fractional_digits_count: i32::from(value.fractional_digits_count()),
+        }
+    }
+}
+
+impl From<UD128Proto> for UD128Parts {
+    fn from(proto: UD128Proto) -> Self {
+        Self {
+            lo: proto.lo,
+            hi: proto.hi,
+            fractional_digits_count: proto.fractional_digits_count,
+        }
+    }
+}
+
+impl UD128Parts {
+    fn into_value(self) -> Result<UD128, crate::DecodeError> {
+        let digits = combine_words(self.lo, self.hi);
+        let mut value = UD128::from_u128(digits).map_err(|err| crate::DecodeError::new(err.to_string()))?;
+
+        match self.fractional_digits_count.cmp(&0) {
+            Ordering::Greater => {
+                value = value / UD128::TEN.powi(self.fractional_digits_count);
+            }
+            Ordering::Less => {
+                value = value * UD128::TEN.powi(-self.fractional_digits_count);
+            }
+            Ordering::Equal => {}
+        }
+
+        Ok(value)
+    }
+}
+
+fn split_digits<const N: usize>(digits: &UInt<N>) -> (u64, u64) {
+    let limbs = digits.digits();
+    let lo = limbs.get(0).copied().unwrap_or(0);
+    let hi = limbs.get(1).copied().unwrap_or(0);
+    debug_assert!(limbs.iter().skip(2).all(|&digit| digit == 0));
+    (lo, hi)
+}
+
+#[inline]
+fn combine_words(lo: u64, hi: u64) -> u128 {
+    ((hi as u128) << 64) | (lo as u128)
 }
 
 #[cfg(test)]
@@ -85,6 +183,7 @@ mod tests {
     use fastnum::udec128;
 
     use super::*;
+    use crate::custom_types::fastnum::DecimalProtoExt;
 
     #[test]
     fn test_roundtrip() {

@@ -27,7 +27,7 @@ pub fn proto_dump_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     panic!("proto_dump can only be used on structs, enums, or traits (services)");
 }
 
-fn struct_or_enum(input: DeriveInput, mut config: UnifiedProtoConfig) -> TokenStream {
+fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> TokenStream {
     let proto_name = input.ident.to_string();
     let clean_name = proto_name.strip_suffix("Proto").unwrap_or(&proto_name);
 
@@ -46,6 +46,7 @@ fn struct_or_enum(input: DeriveInput, mut config: UnifiedProtoConfig) -> TokenSt
 
     config.register_and_emit_proto(clean_name, &proto_def);
     let proto = config.imports_mat;
+    strip_proto_attributes(&mut input);
     quote! {
         #input
         #proto
@@ -53,16 +54,57 @@ fn struct_or_enum(input: DeriveInput, mut config: UnifiedProtoConfig) -> TokenSt
     .into()
 }
 
-fn trait_service(input: ItemTrait, mut config: UnifiedProtoConfig) -> TokenStream {
+fn trait_service(mut input: ItemTrait, mut config: UnifiedProtoConfig) -> TokenStream {
     let proto_name = input.ident.to_string();
     let clean_name = proto_name.strip_suffix("Proto").unwrap_or(&proto_name);
     let (methods, _) = extract_methods_and_types(&input);
     let proto_def = generate_service_content(&input.ident, &methods, &config.type_imports);
     config.register_and_emit_proto(clean_name, &proto_def);
     let proto = config.imports_mat;
+    strip_trait_proto_attributes(&mut input);
     quote! {
         #input
         #proto
     }
     .into()
+}
+
+fn strip_proto_attributes(input: &mut DeriveInput) {
+    input.attrs.retain(|attr| !attr.path().is_ident("proto"));
+
+    match &mut input.data {
+        Data::Struct(data) => strip_fields(&mut data.fields),
+        Data::Enum(data) => {
+            for variant in &mut data.variants {
+                variant.attrs.retain(|attr| !attr.path().is_ident("proto"));
+                strip_fields(&mut variant.fields);
+            }
+        }
+        Data::Union(_) => {}
+    }
+}
+
+fn strip_fields(fields: &mut Fields) {
+    match fields {
+        Fields::Named(named) => {
+            for field in &mut named.named {
+                field.attrs.retain(|attr| !attr.path().is_ident("proto"));
+            }
+        }
+        Fields::Unnamed(unnamed) => {
+            for field in &mut unnamed.unnamed {
+                field.attrs.retain(|attr| !attr.path().is_ident("proto"));
+            }
+        }
+        Fields::Unit => {}
+    }
+}
+
+fn strip_trait_proto_attributes(item: &mut ItemTrait) {
+    item.attrs.retain(|attr| !attr.path().is_ident("proto"));
+    for trait_item in &mut item.items {
+        if let syn::TraitItem::Fn(fun) = trait_item {
+            fun.attrs.retain(|attr| !attr.path().is_ident("proto"));
+        }
+    }
 }

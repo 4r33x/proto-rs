@@ -233,6 +233,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
         decode_match.push(quote! {
             #field_tag => {
+                let tag = field_tag;
                 #decode_body
                 Ok(())
             }
@@ -377,6 +378,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
             decode_match.push(quote! {
                 #field_tag => {
+                    let tag = field_tag;
                     #decode_body
                     Ok(())
                 }
