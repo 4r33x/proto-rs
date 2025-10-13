@@ -109,16 +109,14 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
         };
 
         return quote! {
-            if #tag == tag {
-                let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
-                <#from_ty as ::proto_rs::SingularField>::merge_singular_field(
-                    wire_type,
-                    &mut __tmp,
-                    buf,
-                    ctx.clone(),
-                )?;
-                #access_clone = #assign_expr;
-            }
+            let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
+            <#from_ty as ::proto_rs::SingularField>::merge_singular_field(
+                wire_type,
+                &mut __tmp,
+                buf,
+                ctx.clone(),
+            )?;
+            #access_clone = #assign_expr;
         };
     }
 
@@ -368,20 +366,20 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
 
     if is_bytes_array(&Type::Array(array.clone())) {
         return quote! {
-            if #tag == tag {
-                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
-                    return Err(::proto_rs::DecodeError::new("invalid wire type for fixed array"));
-                }
-                let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                if __len > (#access).len() {
-                    return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                }
-                let mut __i = 0usize;
-                while __i < __len {
-                    (#access)[__i] = buf.get_u8();
-                    __i += 1;
-                }
-                for __value in (#access)[__i..].iter_mut() {
+            if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                return Err(::proto_rs::DecodeError::new("invalid wire type for fixed array"));
+            }
+            let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+            if __len > (#access).len() {
+                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+            }
+            if buf.remaining() < __len {
+                return Err(::proto_rs::DecodeError::new("insufficient data for fixed array"));
+            }
+            {
+                let (__filled, __rest) = (#access).split_at_mut(__len);
+                buf.copy_to_slice(__filled);
+                for __value in __rest.iter_mut() {
                     *__value = 0;
                 }
             }
