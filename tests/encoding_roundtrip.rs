@@ -1,4 +1,5 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
+use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
 use proto_rs::encoding::varint::encoded_len_varint;
@@ -168,7 +169,6 @@ pub struct FakeTime {
 pub struct MixedProto {
     #[proto(tag = 9)]
     pub name: String,
-    #[proto(tag = 3)]
     pub raw: Vec<u8>,
     #[proto(tag = 11)]
     pub bytes_field: Bytes,
@@ -214,7 +214,7 @@ pub struct ConversionInnerProst {
 pub struct MixedProtoProst {
     #[prost(string, tag = "9")]
     pub name: String,
-    #[prost(bytes = "vec", tag = "3")]
+    #[prost(bytes = "vec", tag = "1")]
     pub raw: Vec<u8>,
     #[prost(bytes = "vec", tag = "11")]
     pub bytes_field: Vec<u8>,

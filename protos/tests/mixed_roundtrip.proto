@@ -1,24 +1,26 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
-package encoding;
+package mixed_roundtrip;
 
 message ConversionInner {
   uint64 id = 1;
   string label = 2;
-  bytes payload = 3;
+  repeated uint32 payload = 3;
 }
 
 message MixedProto {
-  string name = 9;
-  bytes raw = 3;
-  bytes bytes_field = 11;
-  optional bytes optional_data = 10;
-  optional bytes optional_payload = 20;
-  repeated bytes attachments = 7;
-  int64 timestamp = 12;
-  repeated bool bools = 4;
-  bytes byte_array = 18;
-  optional ConversionInner optional_inner = 5;
-  repeated ConversionInner inner_list = 6;
-  repeated ConversionInner fixed_inner = 8;
-  repeated int32 values = 15;
+  string name = 1;
+  repeated uint32 raw = 2;
+  bytes bytes_field = 3;
+  optional bytes optional_data = 4;
+  optional bytes optional_payload = 5;
+  repeated bytes attachments = 6;
+  int64 timestamp = 7;
+  repeated bool bools = 8;
+  bytes byte_array = 9;
+  optional ConversionInner optional_inner = 10;
+  repeated ConversionInner inner_list = 11;
+  repeated ConversionInner fixed_inner = 12;
+  repeated int32 values = 13;
 }
+
