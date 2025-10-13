@@ -892,12 +892,20 @@ impl RepeatedField for u16 {
     }
 
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut widened = Vec::<u32>::new();
-        uint32::merge_repeated(wire_type, &mut widened, buf, ctx)?;
-        for value in widened {
-            values.push(value.try_into().map_err(|_| DecodeError::new("u16 overflow"))?);
+        if wire_type == WireType::LengthDelimited {
+            crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
+                let mut widened: u32 = 0;
+                uint32::merge(WireType::Varint, &mut widened, buf, ctx)?;
+                values.push(widened.try_into().map_err(|_| DecodeError::new("u16 overflow"))?);
+                Ok(())
+            })
+        } else {
+            crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
+            let mut widened: u32 = 0;
+            uint32::merge(wire_type, &mut widened, buf, ctx)?;
+            values.push(widened.try_into().map_err(|_| DecodeError::new("u16 overflow"))?);
+            Ok(())
         }
-        Ok(())
     }
 
     fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
@@ -978,12 +986,20 @@ impl RepeatedField for i8 {
     }
 
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut widened = Vec::<i32>::new();
-        int32::merge_repeated(wire_type, &mut widened, buf, ctx)?;
-        for value in widened {
-            values.push(value.try_into().map_err(|_| DecodeError::new("i8 overflow"))?);
+        if wire_type == WireType::LengthDelimited {
+            crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
+                let mut widened: i32 = 0;
+                int32::merge(WireType::Varint, &mut widened, buf, ctx)?;
+                values.push(widened.try_into().map_err(|_| DecodeError::new("i8 overflow"))?);
+                Ok(())
+            })
+        } else {
+            crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
+            let mut widened: i32 = 0;
+            int32::merge(wire_type, &mut widened, buf, ctx)?;
+            values.push(widened.try_into().map_err(|_| DecodeError::new("i8 overflow"))?);
+            Ok(())
         }
-        Ok(())
     }
 
     fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
@@ -1064,12 +1080,20 @@ impl RepeatedField for i16 {
     }
 
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut widened = Vec::<i32>::new();
-        int32::merge_repeated(wire_type, &mut widened, buf, ctx)?;
-        for value in widened {
-            values.push(value.try_into().map_err(|_| DecodeError::new("i16 overflow"))?);
+        if wire_type == WireType::LengthDelimited {
+            crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
+                let mut widened: i32 = 0;
+                int32::merge(WireType::Varint, &mut widened, buf, ctx)?;
+                values.push(widened.try_into().map_err(|_| DecodeError::new("i16 overflow"))?);
+                Ok(())
+            })
+        } else {
+            crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
+            let mut widened: i32 = 0;
+            int32::merge(wire_type, &mut widened, buf, ctx)?;
+            values.push(widened.try_into().map_err(|_| DecodeError::new("i16 overflow"))?);
+            Ok(())
         }
-        Ok(())
     }
 
     fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
