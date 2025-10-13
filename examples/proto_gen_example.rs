@@ -1,6 +1,5 @@
 use std::pin::Pin;
 
-use proto_rs::ProtoExt;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;

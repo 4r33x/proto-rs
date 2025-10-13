@@ -11,7 +11,22 @@ use syn::TypeArray;
 use syn::TypePath;
 use syn::parse_quote;
 
+use super::rust_type_path_ident;
+use super::string_helpers::strip_proto_suffix;
+
 /// Parsed metadata about a field's Rust type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapKind {
+    HashMap,
+    BTreeMap,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetKind {
+    HashSet,
+    BTreeSet,
+}
+
 #[derive(Clone)]
 pub struct ParsedFieldType {
     /// The concrete Rust type seen in the AST (e.g. `Vec<u8>` or `MyType`).
@@ -34,6 +49,14 @@ pub struct ParsedFieldType {
     pub elem_type: Type,
     /// Whether this type should be encoded as a Rust enum (i32 on the wire).
     pub is_rust_enum: bool,
+    /// Whether this type represents a map.
+    pub map_kind: Option<MapKind>,
+    /// Whether this type represents a set.
+    pub set_kind: Option<SetKind>,
+    /// Map key type when `map_kind` is set.
+    pub map_key_type: Option<Type>,
+    /// Map value type when `map_kind` is set.
+    pub map_value_type: Option<Type>,
 }
 
 impl ParsedFieldType {
@@ -50,6 +73,10 @@ impl ParsedFieldType {
             proto_rust_type,
             elem_type,
             is_rust_enum,
+            map_kind: None,
+            set_kind: None,
+            map_key_type: None,
+            map_value_type: None,
         }
     }
 }
@@ -115,6 +142,10 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
         proto_rust_type: parse_quote! { ::std::vec::Vec<#inner_proto> },
         elem_type: elem,
         is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
+        set_kind: None,
+        map_key_type: None,
+        map_value_type: None,
     }
 }
 
@@ -123,6 +154,10 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         match id.to_string().as_str() {
             "Option" => return parse_option_type(path, ty),
             "Vec" => return parse_vec_type(path, ty),
+            "HashMap" => return parse_map_type(path, ty, MapKind::HashMap),
+            "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
+            "HashSet" => return parse_set_type(path, ty, SetKind::HashSet),
+            "BTreeSet" => return parse_set_type(path, ty, SetKind::BTreeSet),
             _ => {}
         }
     }
@@ -161,6 +196,10 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         proto_rust_type: inner.proto_rust_type.clone(),
         elem_type: inner.elem_type.clone(),
         is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
+        set_kind: None,
+        map_key_type: None,
+        map_value_type: None,
     }
 }
 
@@ -190,6 +229,91 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
             parse_custom_type(ty)
         }
         _ => parse_custom_type(ty),
+    }
+}
+
+fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType {
+    let syn::PathArguments::AngleBracketed(args) = &path.path.segments.last().unwrap().arguments else {
+        panic!("Map types must specify key and value generics");
+    };
+
+    let mut generics = args.args.iter().filter_map(|arg| match arg {
+        GenericArgument::Type(ty) => Some(ty.clone()),
+        _ => None,
+    });
+
+    let key_ty = generics.next().expect("map key type missing");
+    let value_ty = generics.next().expect("map value type missing");
+
+    let key_info = parse_field_type(&key_ty);
+    let value_info = parse_field_type(&value_ty);
+
+    let key_proto = key_info.proto_type.clone();
+    let value_proto = if value_info.is_message_like {
+        let rust_name = rust_type_path_ident(&value_info.proto_rust_type).to_string();
+        strip_proto_suffix(&rust_name)
+    } else {
+        value_info.proto_type.clone()
+    };
+
+    let proto_type = format!("map<{}, {}>", key_proto, value_proto);
+
+    let key_proto_ty = key_info.proto_rust_type.clone();
+    let value_proto_ty = value_info.proto_rust_type.clone();
+    let proto_rust_type = match kind {
+        MapKind::HashMap => parse_quote! { ::std::collections::HashMap<#key_proto_ty, #value_proto_ty> },
+        MapKind::BTreeMap => parse_quote! { ::alloc::collections::BTreeMap<#key_proto_ty, #value_proto_ty> },
+    };
+
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type,
+        prost_type: quote! { map },
+        is_option: false,
+        is_repeated: false,
+        is_message_like: true,
+        is_numeric_scalar: false,
+        proto_rust_type,
+        elem_type: value_ty.clone(),
+        is_rust_enum: false,
+        map_kind: Some(kind),
+        set_kind: None,
+        map_key_type: Some(key_ty),
+        map_value_type: Some(value_ty),
+    }
+}
+
+fn parse_set_type(path: &TypePath, ty: &Type, kind: SetKind) -> ParsedFieldType {
+    let syn::PathArguments::AngleBracketed(args) = &path.path.segments.last().unwrap().arguments else {
+        panic!("Set types must specify element generics");
+    };
+
+    let elem_ty = args
+        .args
+        .iter()
+        .find_map(|arg| match arg {
+            GenericArgument::Type(ty) => Some(ty.clone()),
+            _ => None,
+        })
+        .expect("set element type missing");
+
+    let inner = parse_field_type(&elem_ty);
+
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type: inner.proto_type.clone(),
+        prost_type: inner.prost_type.clone(),
+        is_option: false,
+        is_repeated: false,
+        is_message_like: inner.is_message_like,
+        is_numeric_scalar: inner.is_numeric_scalar,
+        proto_rust_type: inner.proto_rust_type.clone(),
+        elem_type: elem_ty,
+        is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
+        set_kind: Some(kind),
+        map_key_type: None,
+        map_value_type: None,
     }
 }
 

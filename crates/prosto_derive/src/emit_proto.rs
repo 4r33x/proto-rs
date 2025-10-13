@@ -15,10 +15,10 @@ use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
 use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
-use crate::utils::is_complex_type;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::rust_type_path_ident;
+use crate::utils::set_inner_type;
 use crate::utils::strip_proto_suffix;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
@@ -207,6 +207,10 @@ fn get_field_proto_type(ty: &Type) -> String {
 
     let parsed = parse_field_type(ty);
 
+    if parsed.map_kind.is_some() {
+        return parsed.proto_type;
+    }
+
     if parsed.is_message_like {
         let rust_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
         strip_proto_suffix(&rust_name)
@@ -229,6 +233,8 @@ fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
         }
         (true, false, ty.clone())
     } else if let Some(inner) = vec_inner_type(ty) {
+        (false, true, inner)
+    } else if let Some((inner, _)) = set_inner_type(ty) {
         (false, true, inner)
     } else if let Type::Array(_) = ty {
         if is_bytes_array(ty) {
@@ -256,16 +262,21 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
         return format!("{}.{}", import_path, base_name);
     }
 
+    let parsed = parse_field_type(inner_type);
+
+    if parsed.map_kind.is_some() {
+        return parsed.proto_type;
+    }
+
     if config.is_rust_enum || config.is_proto_enum || config.is_message {
         return rust_type_path_ident(inner_type).to_string();
     }
 
-    if is_complex_type(inner_type) {
-        let base_name = rust_type_path_ident(inner_type).to_string();
+    if parsed.is_message_like {
+        let base_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
         return strip_proto_suffix(&base_name);
     }
 
-    let parsed = parse_field_type(inner_type);
     parsed.proto_type
 }
 

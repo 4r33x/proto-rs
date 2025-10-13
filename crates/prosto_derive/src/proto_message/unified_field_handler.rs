@@ -14,6 +14,7 @@ use syn::Ident;
 use syn::Index;
 use syn::Type;
 
+use crate::utils::MapKind;
 use crate::utils::ParsedFieldType;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
@@ -34,6 +35,18 @@ impl FieldAccess {
             FieldAccess::Named(id) => quote! { self.#id },
             FieldAccess::Tuple(ix) => quote! { self.#ix },
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct EncodedLenTokens {
+    pub tokens: TokenStream,
+    pub uses_access: bool,
+}
+
+impl EncodedLenTokens {
+    fn new(tokens: TokenStream, uses_access: bool) -> Self {
+        Self { tokens, uses_access }
     }
 }
 
@@ -68,8 +81,16 @@ pub fn generate_field_encode(field: &Field, access: TokenStream, tag: u32) -> To
         return encode_enum(&access, tag, ty);
     }
 
+    if let Some(kind) = parsed.map_kind {
+        return encode_map(&access, tag, &parsed, kind);
+    }
+
     if let Type::Array(array) = ty {
         return encode_array(&access, tag, array);
+    }
+
+    if parsed.set_kind.is_some() {
+        return encode_set(&access, tag, &parsed);
     }
 
     if parsed.is_repeated {
@@ -124,8 +145,16 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
         return decode_enum(&access, tag, ty);
     }
 
+    if let Some(kind) = parsed.map_kind {
+        return decode_map(&access, tag, &parsed, kind);
+    }
+
     if let Type::Array(array) = ty {
         return decode_array(&access, tag, array);
+    }
+
+    if parsed.set_kind.is_some() {
+        return decode_set(&access, tag, &parsed);
     }
 
     if parsed.is_repeated {
@@ -143,10 +172,10 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
     decode_scalar(&access, tag, ty)
 }
 
-pub fn generate_field_encoded_len(field: &Field, access: TokenStream, tag: u32) -> TokenStream {
+pub fn generate_field_encoded_len(field: &Field, access: TokenStream, tag: u32) -> EncodedLenTokens {
     let cfg = parse_field_config(field);
     if cfg.skip {
-        return quote! { 0 };
+        return EncodedLenTokens::new(quote! { 0 }, false);
     }
 
     let ty = &field.ty;
@@ -163,30 +192,38 @@ pub fn generate_field_encoded_len(field: &Field, access: TokenStream, tag: u32) 
             quote! { <#into_ty as ::core::convert::From<_>>::from((#access_clone).clone()) }
         };
 
-        return encoded_len_scalar_value(&value, tag, &into_ty);
+        return EncodedLenTokens::new(encoded_len_scalar_value(&value, tag, &into_ty), true);
     }
 
     if (cfg.is_rust_enum || parsed.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
-        return encoded_len_enum(&access, tag, ty);
+        return EncodedLenTokens::new(encoded_len_enum(&access, tag, ty), true);
+    }
+
+    if let Some(kind) = parsed.map_kind {
+        return EncodedLenTokens::new(encoded_len_map(&access, tag, &parsed, kind), true);
     }
 
     if let Type::Array(array) = ty {
         return encoded_len_array(&access, tag, array);
     }
 
+    if parsed.set_kind.is_some() {
+        return EncodedLenTokens::new(encoded_len_set(&access, tag, &parsed), true);
+    }
+
     if parsed.is_repeated {
-        return encoded_len_repeated(&access, tag, &parsed);
+        return EncodedLenTokens::new(encoded_len_repeated(&access, tag, &parsed), true);
     }
 
     if parsed.is_option {
-        return encoded_len_option(&access, tag, &parsed);
+        return EncodedLenTokens::new(encoded_len_option(&access, tag, &parsed), true);
     }
 
     if cfg.is_message {
-        return encoded_len_message(&access, tag);
+        return EncodedLenTokens::new(encoded_len_message(&access, tag), true);
     }
 
-    encoded_len_scalar(&access, tag, ty)
+    EncodedLenTokens::new(encoded_len_scalar(&access, tag, ty), true)
 }
 
 // ---------------------------------------------------------------------------
@@ -472,48 +509,73 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
     }
 }
 
-fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
+fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> EncodedLenTokens {
     if is_bytes_array(&Type::Array(array.clone())) {
-        return quote! {
-            if (#access).iter().all(|&b| b == 0u8) {
-                0
-            } else {
-                let l = (#access).len();
-                ::proto_rs::encoding::key_len(#tag)
-                    + ::proto_rs::encoding::encoded_len_varint(l as u64)
-                    + l
-            }
-        };
+        return EncodedLenTokens::new(
+            quote! {
+                if (#access).iter().all(|&b| b == 0u8) {
+                    0
+                } else {
+                    let l = (#access).len();
+                    ::proto_rs::encoding::key_len(#tag)
+                        + ::proto_rs::encoding::encoded_len_varint(l as u64)
+                        + l
+                }
+            },
+            true,
+        );
     }
 
     let elem_ty = &*array.elem;
     let elem_parsed = parse_field_type(elem_ty);
+
+    if elem_parsed.is_message_like {
+        return EncodedLenTokens::new(
+            quote! {
+                {
+                    let mut __total = 0usize;
+                    for __value in (#access).iter() {
+                        __total += ::proto_rs::encoding::message::encoded_len(#tag, __value);
+                    }
+                    __total
+                }
+            },
+            true,
+        );
+    }
+
     let Some(codec) = scalar_codec(&elem_parsed) else {
-        return quote! { 0 };
+        return EncodedLenTokens::new(quote! { 0 }, false);
     };
 
     if needs_numeric_widening(&elem_parsed) {
         let proto_ty = &elem_parsed.proto_rust_type;
-        quote! {
-            {
-                let mut __total = 0usize;
-                for __value in (#access).iter() {
-                    let __converted: #proto_ty = (*__value) as #proto_ty;
-                    __total += ::proto_rs::encoding::#codec::encoded_len(#tag, &__converted);
+        EncodedLenTokens::new(
+            quote! {
+                {
+                    let mut __total = 0usize;
+                    for __value in (#access).iter() {
+                        let __converted: #proto_ty = (*__value) as #proto_ty;
+                        __total += ::proto_rs::encoding::#codec::encoded_len(#tag, &__converted);
+                    }
+                    __total
                 }
-                __total
-            }
-        }
+            },
+            true,
+        )
     } else {
-        quote! {
-            {
-                let mut __total = 0usize;
-                for __value in (#access).iter() {
-                    __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
+        EncodedLenTokens::new(
+            quote! {
+                {
+                    let mut __total = 0usize;
+                    for __value in (#access).iter() {
+                        __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
+                    }
+                    __total
                 }
-                __total
-            }
-        }
+            },
+            true,
+        )
     }
 }
 
@@ -545,6 +607,106 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
     let elem_ty = &parsed.elem_type;
     quote! {
         <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &(#access))
+    }
+}
+
+fn map_module(kind: MapKind) -> TokenStream {
+    match kind {
+        MapKind::HashMap => quote! { ::proto_rs::encoding::hash_map },
+        MapKind::BTreeMap => quote! { ::proto_rs::encoding::btree_map },
+    }
+}
+
+fn encode_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kind: MapKind) -> TokenStream {
+    let module = map_module(kind);
+    let key_ty = parsed.map_key_type.as_ref().expect("map key type metadata missing");
+    let value_ty = parsed.map_value_type.as_ref().expect("map value type metadata missing");
+
+    quote! {
+        if !(#access).is_empty() {
+            #module::encode(
+                |tag, key, buf| <#key_ty as ::proto_rs::SingularField>::encode_singular_field(tag, key, buf),
+                |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, key),
+                |tag, value, buf| <#value_ty as ::proto_rs::SingularField>::encode_singular_field(tag, value, buf),
+                |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, value),
+                #tag,
+                &(#access),
+                buf,
+            );
+        }
+    }
+}
+
+fn decode_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kind: MapKind) -> TokenStream {
+    let module = map_module(kind);
+    let key_ty = parsed.map_key_type.as_ref().expect("map key type metadata missing");
+    let value_ty = parsed.map_value_type.as_ref().expect("map value type metadata missing");
+
+    quote! {
+        if #tag == tag {
+            #module::merge(
+                |wire_type, key, buf, ctx| <#key_ty as ::proto_rs::SingularField>::merge_singular_field(wire_type, key, buf, ctx),
+                |wire_type, value, buf, ctx| <#value_ty as ::proto_rs::SingularField>::merge_singular_field(wire_type, value, buf, ctx),
+                &mut (#access),
+                buf,
+                ctx.clone(),
+            )?;
+        }
+    }
+}
+
+fn encoded_len_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kind: MapKind) -> TokenStream {
+    let module = map_module(kind);
+    let key_ty = parsed.map_key_type.as_ref().expect("map key type metadata missing");
+    let value_ty = parsed.map_value_type.as_ref().expect("map value type metadata missing");
+
+    quote! {
+        #module::encoded_len(
+            |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, key),
+            |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, value),
+            #tag,
+            &(#access),
+        )
+    }
+}
+
+fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let elem_ty = &parsed.elem_type;
+    quote! {
+        if !(#access).is_empty() {
+            let __tmp: ::proto_rs::alloc::vec::Vec<#elem_ty> = (#access).iter().cloned().collect();
+            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, &__tmp, buf);
+        }
+    }
+}
+
+fn decode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let elem_ty = &parsed.elem_type;
+    quote! {
+        if #tag == tag {
+            let mut __tmp: ::proto_rs::alloc::vec::Vec<#elem_ty> = ::proto_rs::alloc::vec::Vec::new();
+            <#elem_ty as ::proto_rs::RepeatedField>::merge_repeated_field(
+                wire_type,
+                &mut __tmp,
+                buf,
+                ctx.clone(),
+            )?;
+            for __value in __tmp {
+                (#access).insert(__value);
+            }
+        }
+    }
+}
+
+fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
+    let elem_ty = &parsed.elem_type;
+    quote! {
+        if (#access).is_empty() {
+            0
+        } else {
+            let __tmp: ::proto_rs::alloc::vec::Vec<#elem_ty> = (#access).iter().cloned().collect();
+            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__tmp)
+        }
     }
 }
 

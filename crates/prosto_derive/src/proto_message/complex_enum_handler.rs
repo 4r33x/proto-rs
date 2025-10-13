@@ -218,8 +218,8 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     let field_ty = &field.ty;
 
     let encoded_len_expr = generate_field_encoded_len(field, access_expr.clone(), field_tag);
-    let encoded_len_expr_for_encode = encoded_len_expr.clone();
-    let encoded_len_expr_for_len = encoded_len_expr.clone();
+    let encoded_len_expr_for_encode = encoded_len_expr.tokens.clone();
+    let encoded_len_expr_for_len = encoded_len_expr.tokens.clone();
 
     let mut encode_fields = Vec::new();
     let mut decode_match = Vec::new();
@@ -310,7 +310,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
     let encoded_len_arm = {
         let msg_len_expr = encoded_len_expr_for_len;
-        let binding_pattern_len = if cfg.skip {
+        let binding_pattern_len = if cfg.skip || !encoded_len_expr.uses_access {
             quote! { _ }
         } else {
             quote! { #binding_ident }
@@ -348,12 +348,6 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             quote! { #ident }
         };
         field_bindings_encode.push(field_binding_encode);
-        let field_binding_len = if cfg.skip {
-            quote! { #ident: _ }
-        } else {
-            quote! { #ident }
-        };
-        field_bindings_len.push(field_binding_len);
         let access_expr = quote! { #ident };
         let field_tag = match cfg.custom_tag.unwrap_or(index + 1) {
             0 => {
@@ -365,7 +359,14 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
         field_defaults.push(quote! { let mut #ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); });
 
-        encoded_len_exprs.push(generate_field_encoded_len(field, access_expr.clone(), field_tag));
+        let encoded_len_tokens = generate_field_encoded_len(field, access_expr.clone(), field_tag);
+        encoded_len_exprs.push(encoded_len_tokens.tokens.clone());
+        let field_binding_len = if cfg.skip || !encoded_len_tokens.uses_access {
+            quote! { #ident: _ }
+        } else {
+            quote! { #ident }
+        };
+        field_bindings_len.push(field_binding_len);
 
         if !cfg.skip {
             encode_fields.push(generate_field_encode(field, access_expr.clone(), field_tag));
