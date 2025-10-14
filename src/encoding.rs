@@ -747,37 +747,41 @@ pub mod message {
     use super::encoded_len_varint;
     use super::key_len;
     use super::merge_loop;
+    use crate::traits::ProtoShadow;
+    use crate::traits::ViewOf;
 
-    pub fn encode<M>(tag: u32, msg: &M, buf: &mut impl BufMut)
+    pub fn encode<M>(tag: u32, msg: ViewOf<'_, M>, buf: &mut impl BufMut)
     where
         M: ProtoExt,
     {
         encode_key(tag, WireType::LengthDelimited, buf);
-        encode_varint(msg.encoded_len() as u64, buf);
-        msg.encode_raw(buf);
+        encode_varint(M::Shadow::encoded_len(&msg) as u64, buf);
+        M::encode_raw(msg, buf);
     }
 
-    pub fn merge<M, B>(wire_type: WireType, msg: &mut M, buf: &mut B, ctx: DecodeContext) -> Result<(), DecodeError>
+    pub fn merge<M, B>(wire_type: WireType, msg: &mut M::Shadow<'_>, buf: &mut B, ctx: DecodeContext) -> Result<(), DecodeError>
     where
         M: ProtoExt,
         B: Buf,
     {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         ctx.limit_reached()?;
-        merge_loop(msg, buf, ctx.enter_recursion(), |msg: &mut M, buf: &mut B, ctx| {
+        merge_loop(msg, buf, ctx.enter_recursion(), |msg: &mut M::Shadow<'_>, buf: &mut B, ctx| {
             let (tag, wire_type) = decode_key(buf)?;
-            msg.merge_field(tag, wire_type, buf, ctx)
+            M::merge_field(msg, tag, wire_type, buf, ctx)
         })?;
-        msg.post_decode();
+
         Ok(())
     }
 
     pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
     where
         M: ProtoExt,
+        for<'a> M::Shadow<'a>: ProtoShadow<'a, Sun<'a> = &'a M, OwnedSun = M>,
     {
         for msg in messages {
-            encode(tag, msg, buf);
+            let shadow = M::Shadow::from_sun(msg);
+            encode::<M>(tag, shadow, buf);
         }
     }
 
@@ -786,109 +790,117 @@ pub mod message {
         M: ProtoExt,
     {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
-        let mut msg = M::proto_default();
-        merge(WireType::LengthDelimited, &mut msg, buf, ctx)?;
-        messages.push(msg);
+        let mut msg = M::Shadow::proto_default();
+        merge::<M, _>(WireType::LengthDelimited, &mut msg, buf, ctx)?;
+        messages.push(M::post_decode(msg)?);
         Ok(())
     }
 
     #[inline]
-    pub fn encoded_len<M>(tag: u32, msg: &M) -> usize
+    pub fn encoded_len<M>(tag: u32, msg: &ViewOf<'_, M>) -> usize
     where
         M: ProtoExt,
     {
-        let len = msg.encoded_len();
+        let len = M::Shadow::encoded_len(msg);
         key_len(tag) + encoded_len_varint(len as u64) + len
     }
 
     #[inline]
-    pub fn encoded_len_repeated<M>(tag: u32, messages: &[M]) -> usize
+    pub fn encoded_len_repeated<M>(tag: u32, messages: &[ViewOf<'_, M>]) -> usize
     where
         M: ProtoExt,
     {
-        key_len(tag) * messages.len() + messages.iter().map(ProtoExt::encoded_len).map(|len| len + encoded_len_varint(len as u64)).sum::<usize>()
+        key_len(tag) * messages.len()
+            + messages
+                .iter()
+                .map(|x| {
+                    let shadow = M::Shadow::encoded_len(x);
+                    shadow
+                })
+                .map(|len| len + encoded_len_varint(len as u64))
+                .sum::<usize>()
     }
 }
 
-pub mod group {
-    use super::Buf;
-    use super::BufMut;
-    use super::DecodeContext;
-    use super::DecodeError;
-    use super::ProtoExt;
-    use super::Vec;
-    use super::WireType;
-    use super::check_wire_type;
-    use super::decode_key;
-    use super::encode_key;
-    use super::key_len;
+// pub mod group {
+//     use super::Buf;
+//     use super::BufMut;
+//     use super::DecodeContext;
+//     use super::DecodeError;
+//     use super::ProtoExt;
+//     use super::Vec;
+//     use super::WireType;
+//     use super::check_wire_type;
+//     use super::decode_key;
+//     use super::encode_key;
+//     use super::key_len;
 
-    pub fn encode<M>(tag: u32, msg: &M, buf: &mut impl BufMut)
-    where
-        M: ProtoExt,
-    {
-        encode_key(tag, WireType::StartGroup, buf);
-        msg.encode_raw(buf);
-        encode_key(tag, WireType::EndGroup, buf);
-    }
+//     pub fn encode<M>(tag: u32, msg: &M, buf: &mut impl BufMut)
+//     where
+//         M: ProtoExt,
+//     {
+//         encode_key(tag, WireType::StartGroup, buf);
+//         msg.encode_raw(buf);
+//         encode_key(tag, WireType::EndGroup, buf);
+//     }
 
-    pub fn merge<M>(tag: u32, wire_type: WireType, msg: &mut M, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
-    where
-        M: ProtoExt,
-    {
-        check_wire_type(WireType::StartGroup, wire_type)?;
+//     pub fn merge<M>(tag: u32, wire_type: WireType, msg: &mut M, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
+//     where
+//         M: ProtoExt,
+//     {
+//         check_wire_type(WireType::StartGroup, wire_type)?;
 
-        ctx.limit_reached()?;
-        loop {
-            let (field_tag, field_wire_type) = decode_key(buf)?;
-            if field_wire_type == WireType::EndGroup {
-                if field_tag != tag {
-                    return Err(DecodeError::new("unexpected end group tag"));
-                }
-                msg.post_decode();
-                return Ok(());
-            }
+//         ctx.limit_reached()?;
+//         loop {
+//             let (field_tag, field_wire_type) = decode_key(buf)?;
+//             if field_wire_type == WireType::EndGroup {
+//                 if field_tag != tag {
+//                     return Err(DecodeError::new("unexpected end group tag"));
+//                 }
+//                 msg.post_decode();
+//                 return Ok(());
+//             }
 
-            M::merge_field(msg, field_tag, field_wire_type, buf, ctx.enter_recursion())?;
-        }
-    }
+//             M::merge_field(msg, field_tag, field_wire_type, buf, ctx.enter_recursion())?;
+//         }
+//     }
 
-    pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
-    where
-        M: ProtoExt,
-    {
-        for msg in messages {
-            encode(tag, msg, buf);
-        }
-    }
+//     pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
+//     where
+//         M: ProtoExt,
+//     {
+//         for msg in messages {
+//             encode(tag, msg, buf);
+//         }
+//     }
 
-    pub fn merge_repeated<M>(tag: u32, wire_type: WireType, messages: &mut Vec<M>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
-    where
-        M: ProtoExt,
-    {
-        check_wire_type(WireType::StartGroup, wire_type)?;
-        let mut msg = M::proto_default();
-        merge(tag, WireType::StartGroup, &mut msg, buf, ctx)?;
-        messages.push(msg);
-        Ok(())
-    }
+//     pub fn merge_repeated<M>(tag: u32, wire_type: WireType, messages: &mut Vec<M>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
+//     where
+//         M: ProtoExt,
+//     {
+//         check_wire_type(WireType::StartGroup, wire_type)?;
+//         let mut msg = M::proto_default();
+//         merge(tag, WireType::StartGroup, &mut msg, buf, ctx)?;
+//         messages.push(msg);
+//         Ok(())
+//     }
 
-    #[inline]
-    pub fn encoded_len<M>(tag: u32, msg: &M) -> usize
-    where
-        M: ProtoExt,
-    {
-        2 * key_len(tag) + msg.encoded_len()
-    }
+//     #[inline]
+//     pub fn encoded_len<M>(tag: u32, msg: &M) -> usize
+//     where
+//         M: ProtoExt,
+//     {
+//         2 * key_len(tag) + msg.encoded_len()
+//     }
 
-    #[inline]
-    pub fn encoded_len_repeated<M>(tag: u32, messages: &[M]) -> usize
-    where
-        M: ProtoExt,
-    {
-        2 * key_len(tag) * messages.len() + messages.iter().map(ProtoExt::encoded_len).sum::<usize>()
-    }
-}
+//     #[inline]
+//     pub fn encoded_len_repeated<M>(tag: u32, messages: &[M]) -> usize
+//     where
+//         M: ProtoExt,
+//     {
+//         2 * key_len(tag) * messages.len() + messages.iter().map(ProtoExt::encoded_len).sum::<usize>()
+//     }
+// }
 
 /// Rust doesn't have a `Map` trait, so macros are currently the best way to be
 /// generic over `HashMap` and `BTreeMap`.

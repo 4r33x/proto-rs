@@ -26,266 +26,34 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::EncodeError;
+use crate::MessageField;
+use crate::ProtoExt;
+use crate::RepeatedField;
+use crate::SingularField;
 use crate::encoding::DecodeContext;
-use crate::encoding::decode_key;
-use crate::encoding::message;
-use crate::encoding::varint::encode_varint;
-use crate::encoding::varint::encoded_len_varint;
 use crate::encoding::wire_type::WireType;
-
-/// A Protocol Buffers message.
-pub trait ProtoExt {
-    /// Returns the default value for this type according to protobuf semantics.
-    /// This is used internally for decoding and should not be called directly.
-    #[doc(hidden)]
-    fn proto_default() -> Self
-    where
-        Self: Sized;
-
-    /// Encodes the message to a buffer.
-    ///
-    /// This method will panic if the buffer has insufficient capacity.
-    ///
-    /// Meant to be used only by `Message` implementations.
-    #[doc(hidden)]
-    fn encode_raw(&self, buf: &mut impl BufMut)
-    where
-        Self: Sized;
-
-    /// Decodes a field from a buffer, and merges it into `self`.
-    ///
-    /// Meant to be used only by `Message` implementations.
-    #[doc(hidden)]
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
-    where
-        Self: Sized;
-
-    /// Hook that is invoked after a successful decode/merge pass completes.
-    ///
-    /// The default implementation is a no-op. Code generated via
-    /// `#[proto_message]` overrides this to run post-processing that depends on
-    /// all fields having been decoded.
-    fn post_decode(&mut self) {}
-
-    /// Returns the encoded length of the message without a length delimiter.
-    fn encoded_len(&self) -> usize;
-
-    /// Encodes the message to a buffer.
-    ///
-    /// An error will be returned if the buffer does not have sufficient capacity.
-    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
-    where
-        Self: Sized,
-    {
-        let required = self.encoded_len();
-        let remaining = buf.remaining_mut();
-        if required > remaining {
-            return Err(EncodeError::new(required, remaining));
-        }
-
-        self.encode_raw(buf);
-        Ok(())
-    }
-
-    /// Encodes the message to a newly allocated buffer.
-    fn encode_to_vec(&self) -> Vec<u8>
-    where
-        Self: Sized,
-    {
-        let mut buf = Vec::with_capacity(self.encoded_len());
-
-        self.encode_raw(&mut buf);
-        buf
-    }
-
-    /// Encodes the message with a length-delimiter to a buffer.
-    ///
-    /// An error will be returned if the buffer does not have sufficient capacity.
-    fn encode_length_delimited(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
-    where
-        Self: Sized,
-    {
-        let len = self.encoded_len();
-        let required = len + encoded_len_varint(len as u64);
-        let remaining = buf.remaining_mut();
-        if required > remaining {
-            return Err(EncodeError::new(required, remaining));
-        }
-        encode_varint(len as u64, buf);
-        self.encode_raw(buf);
-        Ok(())
-    }
-
-    /// Encodes the message with a length-delimiter to a newly allocated buffer.
-    fn encode_length_delimited_to_vec(&self) -> Vec<u8>
-    where
-        Self: Sized,
-    {
-        let len = self.encoded_len();
-        let mut buf = Vec::with_capacity(len + encoded_len_varint(len as u64));
-
-        encode_varint(len as u64, &mut buf);
-        self.encode_raw(&mut buf);
-        buf
-    }
-
-    /// Decodes an instance of the message from a buffer.
-    ///
-    /// The entire buffer will be consumed.
-    fn decode(mut buf: impl Buf) -> Result<Self, DecodeError>
-    where
-        Self: Sized,
-    {
-        let mut message = Self::proto_default();
-        Self::merge(&mut message, &mut buf).map(|()| message)
-    }
-
-    /// Decodes a length-delimited instance of the message from the buffer.
-    fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError>
-    where
-        Self: Sized,
-    {
-        let mut message = Self::proto_default();
-        message.merge_length_delimited(buf)?;
-        Ok(message)
-    }
-
-    /// Decodes an instance of the message from a buffer, and merges it into `self`.
-    ///
-    /// The entire buffer will be consumed.
-    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError>
-    where
-        Self: Sized,
-    {
-        let ctx = DecodeContext::default();
-        while buf.has_remaining() {
-            let (tag, wire_type) = decode_key(&mut buf)?;
-            self.merge_field(tag, wire_type, &mut buf, ctx)?;
-        }
-        self.post_decode();
-        Ok(())
-    }
-
-    /// Decodes a length-delimited instance of the message from buffer, and
-    /// merges it into `self`.
-    fn merge_length_delimited(&mut self, mut buf: impl Buf) -> Result<(), DecodeError>
-    where
-        Self: Sized,
-    {
-        message::merge(WireType::LengthDelimited, self, &mut buf, DecodeContext::default())
-    }
-
-    /// Clears the message, resetting all fields to their default.
-    fn clear(&mut self);
-}
-
-/// Marker trait for message-like types which can be embedded inside other
-/// messages (e.g. nested structs, enums with fields, etc.).
-///
-/// This trait is automatically implemented for all types generated by the
-/// `#[proto_message]` macro and is used internally to provide blanket
-/// implementations for collections of nested messages.
-pub trait MessageField: ProtoExt {}
-
-/// Marker trait for enums encoded as plain `int32` values on the wire.
-///
-/// Derive macros mark unit enums with this trait so other generated code can
-/// reliably treat them as scalar fields. Manual implementations can opt in to
-/// the same behaviour by providing the conversions required here alongside the
-/// appropriate [`ProtoExt`], [`SingularField`], and [`RepeatedField`]
-/// implementations.
-pub trait ProtoEnum: Copy + Sized {
-    /// Default value used when decoding absent fields.
-    const DEFAULT_VALUE: Self;
-
-    /// Convert a raw `i32` value into the enum, returning a [`DecodeError`]
-    /// when the value is not recognised.
-    fn from_i32(value: i32) -> Result<Self, DecodeError>;
-
-    /// Convert the enum into its raw `i32` representation.
-    fn to_i32(self) -> i32;
-}
-
-/// Trait describing how to encode, decode, and size a single field value.
-///
-/// Implementations exist for all scalar protobuf types, as well as the message
-/// types generated via `#[proto_message]`. Codegen can rely on this trait to
-/// drive both singular fields and optional wrappers without having to know the
-/// concrete wire representation of `Self`.
-pub trait SingularField: ProtoExt + Sized {
-    /// Encodes `value` as a singular field with the provided tag.
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut);
-
-    /// Merges a single field occurrence into `value`.
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
-
-    /// Computes the encoded length for a singular field with the provided tag.
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize;
-
-    /// Encodes an optional field by delegating to [`Self::encode_singular_field`].
-    fn encode_option_field(tag: u32, value: &Option<Self>, buf: &mut impl BufMut) {
-        if let Some(inner) = value.as_ref() {
-            Self::encode_singular_field(tag, inner, buf);
-        }
-    }
-
-    /// Decodes an optional field occurrence and stores the result inside
-    /// `target`.
-    fn merge_option_field(wire_type: WireType, target: &mut Option<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if let Some(value) = target.as_mut() {
-            Self::merge_singular_field(wire_type, value, buf, ctx)
-        } else {
-            let mut value = Self::proto_default();
-            Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
-            *target = Some(value);
-            Ok(())
-        }
-    }
-
-    /// Computes the encoded length for an optional field.
-    fn encoded_len_option_field(tag: u32, value: &Option<Self>) -> usize {
-        value.as_ref().map_or(0, |inner| Self::encoded_len_singular_field(tag, inner))
-    }
-}
+use crate::traits::ProtoShadow;
+use crate::traits::Shadow;
+use crate::traits::ViewOf;
 
 impl<T> SingularField for T
 where
     T: MessageField,
 {
-    fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
-        let len = ProtoExt::encoded_len(value);
+    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+        let len = <Self as ProtoExt>::Shadow::encoded_len(&value);
         if len != 0 {
             crate::encoding::message::encode(tag, value, buf);
         }
     }
 
-    fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         crate::encoding::message::merge(wire_type, value, buf, ctx)
     }
 
-    fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-        if ProtoExt::encoded_len(value) == 0 {
-            0
-        } else {
-            crate::encoding::message::encoded_len(tag, value)
-        }
+    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+        if Shadow::encoded_len(value) == 0 { 0 } else { crate::encoding::message::encoded_len(tag, value) }
     }
-}
-
-/// Trait describing how to encode and decode a repeated field of a particular
-/// element type. This is used to support nested `Vec<T>` values inside
-/// generated structs and enums without requiring ad-hoc implementations for
-/// every possible `T`.
-pub trait RepeatedField: ProtoExt + Sized {
-    /// Encodes `values` as a repeated field with the provided tag.
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut);
-
-    /// Merges repeated field occurrences into `values`.
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
-
-    /// Returns the encoded length of a repeated field with the provided tag.
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize;
 }
 
 impl<T> RepeatedField for T
@@ -300,7 +68,7 @@ where
         crate::encoding::message::merge_repeated(wire_type, values, buf, ctx)
     }
 
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+    fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, T>]) -> usize {
         crate::encoding::message::encoded_len_repeated(tag, values)
     }
 }

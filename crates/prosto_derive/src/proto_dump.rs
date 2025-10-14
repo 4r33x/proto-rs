@@ -124,7 +124,7 @@ fn strip_proto_attributes_from_trait(item: &mut ItemTrait) {
             syn::TraitItem::Macro(macro_item) => {
                 strip_proto_from_attrs(&mut macro_item.attrs);
             }
-            syn::TraitItem::Verbatim(_) => {}
+
             _ => {}
         }
     }

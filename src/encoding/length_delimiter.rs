@@ -1,13 +1,13 @@
 use bytes::Buf;
 use bytes::BufMut;
 
+pub use crate::ProtoExt;
 use crate::encoding::varint::decode_varint;
 use crate::encoding::varint::encode_varint;
 use crate::encoding::varint::encoded_len_varint;
 pub use crate::error::DecodeError;
 pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
-pub use crate::message::ProtoExt;
 pub use crate::name::Name;
 
 /// Encodes a length delimiter to the buffer.

@@ -26,10 +26,11 @@ pub extern crate alloc;
 pub use bytes;
 
 mod error;
-mod message;
 mod name;
 mod tonic;
+mod traits;
 mod types;
+mod wrappers;
 
 #[doc(hidden)]
 pub mod encoding;
@@ -40,13 +41,13 @@ pub use crate::encoding::length_delimiter::length_delimiter_len;
 pub use crate::error::DecodeError;
 pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
-pub use crate::message::MessageField;
-pub use crate::message::ProtoEnum;
-pub use crate::message::ProtoExt;
-pub use crate::message::RepeatedField;
-pub use crate::message::SingularField;
 pub use crate::name::Name;
 pub use crate::tonic::ProtoCodec;
+pub use crate::traits::MessageField;
+pub use crate::traits::ProtoEnum;
+pub use crate::traits::ProtoExt;
+pub use crate::traits::RepeatedField;
+pub use crate::traits::SingularField;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled
