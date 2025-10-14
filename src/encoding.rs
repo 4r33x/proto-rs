@@ -775,10 +775,12 @@ pub mod message {
         M: ProtoExt,
         B: Buf,
     {
-        let mut shadow = M::cast_shadow(&*msg);
-        merge_shadow(wire_type, &mut shadow, buf, ctx, M::merge_field)?;
-        M::rebuild_from_shadow(msg, shadow);
-        Ok(())
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
+        ctx.limit_reached()?;
+        merge_loop(msg, buf, ctx.enter_recursion(), |msg, buf, ctx| {
+            let (tag, wire_type) = decode_key(buf)?;
+            M::merge_into(msg, tag, wire_type, buf, ctx)
+        })
     }
 
     pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
@@ -847,18 +849,16 @@ pub mod group {
         check_wire_type(WireType::StartGroup, wire_type)?;
 
         ctx.limit_reached()?;
-        let mut shadow = M::cast_shadow(&*msg);
         loop {
             let (field_tag, field_wire_type) = decode_key(buf)?;
             if field_wire_type == WireType::EndGroup {
                 if field_tag != tag {
                     return Err(DecodeError::new("unexpected end group tag"));
                 }
-                *msg = M::post_decode(shadow);
                 return Ok(());
             }
 
-            M::merge_field(&mut shadow, field_tag, field_wire_type, buf, ctx.enter_recursion())?;
+            M::merge_into(msg, field_tag, field_wire_type, buf, ctx.enter_recursion())?;
         }
     }
 

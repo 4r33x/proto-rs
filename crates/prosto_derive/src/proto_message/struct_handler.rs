@@ -121,6 +121,47 @@ fn handle_unit_struct(input: DeriveInput, convert: Option<&syn::Type>) -> TokenS
             fn cast_shadow(_value: &Self) -> Self::Shadow {
                 Self
             }
+
+            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                Self::encode_shadow(self, buf);
+            }
+
+            fn encoded_len(&self) -> usize {
+                Self::encoded_len_shadow(self)
+            }
+
+            fn merge_into(
+                value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                Self::merge_field(value, tag, wire_type, buf, ctx)
+            }
+
+            fn merge(
+                &mut self,
+                mut buf: impl ::proto_rs::bytes::Buf,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                let ctx = ::proto_rs::encoding::DecodeContext::default();
+                while buf.has_remaining() {
+                    let (tag, wire_type) = ::proto_rs::encoding::decode_key(&mut buf)?;
+                    Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+                }
+                Ok(())
+            }
+
+            fn merge_length_delimited(
+                &mut self,
+                buf: impl ::proto_rs::bytes::Buf,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                Self::merge_length_delimited_shadow(self, buf)
+            }
+
+            fn clear(&mut self) {
+                Self::clear_shadow(self);
+            }
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
@@ -264,6 +305,47 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
 
             fn cast_shadow(value: &Self) -> Self::Shadow {
                 Self(#(value.#field_indices.clone()),*)
+            }
+
+            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                Self::encode_shadow(self, buf);
+            }
+
+            fn encoded_len(&self) -> usize {
+                Self::encoded_len_shadow(self)
+            }
+
+            fn merge_into(
+                value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                Self::merge_field(value, tag, wire_type, buf, ctx)
+            }
+
+            fn merge(
+                &mut self,
+                mut buf: impl ::proto_rs::bytes::Buf,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                let ctx = ::proto_rs::encoding::DecodeContext::default();
+                while buf.has_remaining() {
+                    let (tag, wire_type) = ::proto_rs::encoding::decode_key(&mut buf)?;
+                    Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+                }
+                Ok(())
+            }
+
+            fn merge_length_delimited(
+                &mut self,
+                buf: impl ::proto_rs::bytes::Buf,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                Self::merge_length_delimited_shadow(self, buf)
+            }
+
+            fn clear(&mut self) {
+                Self::clear_shadow(self);
             }
         }
 
@@ -495,6 +577,47 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
                     Self {
                         #(#fields_named_idents: value.#fields_named_idents.clone(),)*
                     }
+                }
+
+                fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                    Self::encode_shadow(self, buf);
+                }
+
+                fn encoded_len(&self) -> usize {
+                    Self::encoded_len_shadow(self)
+                }
+
+                fn merge_into(
+                    value: &mut Self,
+                    tag: u32,
+                    wire_type: ::proto_rs::encoding::WireType,
+                    buf: &mut impl ::proto_rs::bytes::Buf,
+                    ctx: ::proto_rs::encoding::DecodeContext,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    Self::merge_field(value, tag, wire_type, buf, ctx)
+                }
+
+                fn merge(
+                    &mut self,
+                    mut buf: impl ::proto_rs::bytes::Buf,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    let ctx = ::proto_rs::encoding::DecodeContext::default();
+                    while buf.has_remaining() {
+                        let (tag, wire_type) = ::proto_rs::encoding::decode_key(&mut buf)?;
+                        Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+                    }
+                    Ok(())
+                }
+
+                fn merge_length_delimited(
+                    &mut self,
+                    buf: impl ::proto_rs::bytes::Buf,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    Self::merge_length_delimited_shadow(self, buf)
+                }
+
+                fn clear(&mut self) {
+                    Self::clear_shadow(self);
                 }
             }
 

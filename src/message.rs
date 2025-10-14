@@ -390,6 +390,30 @@ where
     fn rebuild_from_shadow(value: &mut Self, shadow: Self::Shadow) {
         **value = M::post_decode(shadow);
     }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        M::encode_raw(self.as_ref(), buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        M::encoded_len(self.as_ref())
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        M::merge_into(value.as_mut(), tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        M::merge(self.as_mut(), buf)
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        M::merge_length_delimited(self.as_mut(), buf)
+    }
+
+    fn clear(&mut self) {
+        M::clear(self.as_mut());
+    }
 }
 
 impl<M> MessageField for Box<M> where M: MessageField {}
@@ -433,6 +457,60 @@ where
             *inner = M::post_decode(shadow);
         } else {
             *value = Arc::new(M::post_decode(shadow));
+        }
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        M::encode_raw(self.as_ref(), buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        M::encoded_len(self.as_ref())
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if let Some(inner) = Arc::get_mut(value) {
+            M::merge_into(inner, tag, wire_type, buf, ctx)
+        } else {
+            let mut shadow = M::cast_shadow(value.as_ref());
+            M::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+            *value = Arc::new(M::post_decode(shadow));
+            Ok(())
+        }
+    }
+
+    fn merge(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        if let Some(inner) = Arc::get_mut(self) {
+            M::merge(inner, buf)
+        } else {
+            let ctx = DecodeContext::default();
+            let mut shadow = M::cast_shadow(self.as_ref());
+            let mut buf = buf;
+            while buf.has_remaining() {
+                let (tag, wire_type) = decode_key(&mut buf)?;
+                M::merge_field(&mut shadow, tag, wire_type, &mut buf, ctx)?;
+            }
+            *self = Arc::new(M::post_decode(shadow));
+            Ok(())
+        }
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        if let Some(inner) = Arc::get_mut(self) {
+            M::merge_length_delimited(inner, buf)
+        } else {
+            let mut shadow = M::cast_shadow(self.as_ref());
+            M::merge_length_delimited_shadow(&mut shadow, buf)?;
+            *self = Arc::new(M::post_decode(shadow));
+            Ok(())
+        }
+    }
+
+    fn clear(&mut self) {
+        if let Some(inner) = Arc::get_mut(self) {
+            M::clear(inner);
+        } else {
+            *self = Arc::new(M::post_decode(M::proto_default()));
         }
     }
 }
@@ -480,6 +558,35 @@ where
 
     fn cast_shadow(value: &Self) -> Self::Shadow {
         value.clone()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        Self::encode_shadow(self, buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        Self::encoded_len_shadow(self)
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        Self::merge_length_delimited_shadow(self, buf)
+    }
+
+    fn clear(&mut self) {
+        Self::clear_shadow(self);
     }
 }
 
@@ -542,6 +649,35 @@ where
 
     fn cast_shadow(value: &Self) -> Self::Shadow {
         value.clone()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        Self::encode_shadow(self, buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        Self::encoded_len_shadow(self)
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        Self::merge_length_delimited_shadow(self, buf)
+    }
+
+    fn clear(&mut self) {
+        Self::clear_shadow(self);
     }
 }
 
@@ -607,6 +743,35 @@ where
     fn cast_shadow(value: &Self) -> Self::Shadow {
         value.clone()
     }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        Self::encode_shadow(self, buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        Self::encoded_len_shadow(self)
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        Self::merge_length_delimited_shadow(self, buf)
+    }
+
+    fn clear(&mut self) {
+        Self::clear_shadow(self);
+    }
 }
 
 impl<T> ProtoExt for BTreeSet<T>
@@ -659,6 +824,35 @@ where
 
     fn cast_shadow(value: &Self) -> Self::Shadow {
         value.clone()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        Self::encode_shadow(self, buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        Self::encoded_len_shadow(self)
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        Self::merge_length_delimited_shadow(self, buf)
+    }
+
+    fn clear(&mut self) {
+        Self::clear_shadow(self);
     }
 }
 
@@ -714,6 +908,35 @@ where
 
     fn cast_shadow(value: &Self) -> Self::Shadow {
         value.clone()
+    }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        Self::encode_shadow(self, buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        Self::encoded_len_shadow(self)
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        Self::merge_length_delimited_shadow(self, buf)
+    }
+
+    fn clear(&mut self) {
+        Self::clear_shadow(self);
     }
 }
 

@@ -82,6 +82,35 @@ macro_rules! impl_google_wrapper {
             fn cast_shadow(value: &Self) -> Self::Shadow {
                 value.clone()
             }
+
+            fn encode_raw(&self, buf: &mut impl BufMut) {
+                Self::encode_shadow(self, buf);
+            }
+
+            fn encoded_len(&self) -> usize {
+                Self::encoded_len_shadow(self)
+            }
+
+            fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                Self::merge_field(value, tag, wire_type, buf, ctx)
+            }
+
+            fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+                let ctx = DecodeContext::default();
+                while buf.has_remaining() {
+                    let (tag, wire_type) = crate::encoding::decode_key(&mut buf)?;
+                    Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+                }
+                Ok(())
+            }
+
+            fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+                Self::merge_length_delimited_shadow(self, buf)
+            }
+
+            fn clear(&mut self) {
+                Self::clear_shadow(self);
+            }
         }
 
         impl Name for $ty {
@@ -172,6 +201,35 @@ impl ProtoExt for () {
     fn cast_shadow(value: &Self) -> Self::Shadow {
         *value
     }
+
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        Self::encode_shadow(self, buf);
+    }
+
+    fn encoded_len(&self) -> usize {
+        Self::encoded_len_shadow(self)
+    }
+
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = crate::encoding::decode_key(&mut buf)?;
+            Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(())
+    }
+
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        Self::merge_length_delimited_shadow(self, buf)
+    }
+
+    fn clear(&mut self) {
+        Self::clear_shadow(self);
+    }
 }
 
 /// `google.protobuf.Empty`
@@ -254,6 +312,41 @@ macro_rules! impl_narrow_varint {
 
             fn cast_shadow(value: &Self) -> Self::Shadow {
                 *value
+            }
+
+            fn encode_raw(&self, buf: &mut impl BufMut) {
+                Self::encode_shadow(self, buf);
+            }
+
+            fn encoded_len(&self) -> usize {
+                Self::encoded_len_shadow(self)
+            }
+
+            fn merge_into(
+                value: &mut Self,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                Self::merge_field(value, tag, wire_type, buf, ctx)
+            }
+
+            fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
+                let ctx = DecodeContext::default();
+                while buf.has_remaining() {
+                    let (tag, wire_type) = crate::encoding::decode_key(&mut buf)?;
+                    Self::merge_field(self, tag, wire_type, &mut buf, ctx)?;
+                }
+                Ok(())
+            }
+
+            fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+                Self::merge_length_delimited_shadow(self, buf)
+            }
+
+            fn clear(&mut self) {
+                Self::clear_shadow(self);
             }
         }
 
