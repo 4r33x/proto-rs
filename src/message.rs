@@ -35,13 +35,60 @@ use crate::encoding::varint::encoded_len_varint;
 use crate::encoding::wire_type::WireType;
 
 /// A Protocol Buffers message.
-pub trait ProtoExt {
+pub trait ProtoExt: Sized {
+    /// The lightweight protobuf representation used while encoding and decoding
+    /// values of `Self`.
+    type Shadow;
+
     /// Returns the default value for this type according to protobuf semantics.
     /// This is used internally for decoding and should not be called directly.
     #[doc(hidden)]
-    fn proto_default() -> Self
-    where
-        Self: Sized;
+    fn proto_default() -> Self::Shadow;
+
+    /// Encodes the message using its shadow representation to a buffer.
+    #[doc(hidden)]
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut);
+
+    /// Decodes a field from a buffer, and merges it into `shadow`.
+    #[doc(hidden)]
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+
+    /// Returns the encoded length of the message without a length delimiter for
+    /// the provided shadow value.
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize;
+
+    /// Clears the shadow representation, resetting all fields to their default.
+    fn clear_shadow(shadow: &mut Self::Shadow);
+
+    /// Finalises decoding by converting the fully-populated shadow
+    /// representation into the domain type.
+    fn post_decode(shadow: Self::Shadow) -> Self;
+
+    /// Produces a shadow representation from the domain value prior to encoding
+    /// or incremental decoding.
+    fn cast_shadow(value: &Self) -> Self::Shadow;
+
+    /// Merges a single field occurrence directly into the domain value.
+    ///
+    /// The default implementation converts `value` into a shadow
+    /// representation, delegates to [`Self::merge_field`], and then
+    /// reconstructs the domain value via [`Self::post_decode`]. Types with
+    /// specialised storage requirements (e.g. smart pointers) can override this
+    /// method to reuse allocations during incremental decoding.
+    fn merge_into(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut shadow = Self::cast_shadow(value);
+        Self::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+        *value = Self::post_decode(shadow);
+        Ok(())
+    }
+
+    /// Rebuilds the domain value from a fully merged shadow.
+    ///
+    /// Types can override this to avoid reallocations during incremental
+    /// decoding. By default the shadow is consumed via [`Self::post_decode`].
+    fn rebuild_from_shadow(value: &mut Self, shadow: Self::Shadow) {
+        *value = Self::post_decode(shadow);
+    }
 
     /// Encodes the message to a buffer.
     ///
@@ -49,35 +96,21 @@ pub trait ProtoExt {
     ///
     /// Meant to be used only by `Message` implementations.
     #[doc(hidden)]
-    fn encode_raw(&self, buf: &mut impl BufMut)
-    where
-        Self: Sized;
-
-    /// Decodes a field from a buffer, and merges it into `self`.
-    ///
-    /// Meant to be used only by `Message` implementations.
-    #[doc(hidden)]
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
-    where
-        Self: Sized;
-
-    /// Hook that is invoked after a successful decode/merge pass completes.
-    ///
-    /// The default implementation is a no-op. Code generated via
-    /// `#[proto_message]` overrides this to run post-processing that depends on
-    /// all fields having been decoded.
-    fn post_decode(&mut self) {}
+    fn encode_raw(&self, buf: &mut impl BufMut) {
+        let shadow = Self::cast_shadow(self);
+        Self::encode_shadow(&shadow, buf);
+    }
 
     /// Returns the encoded length of the message without a length delimiter.
-    fn encoded_len(&self) -> usize;
+    fn encoded_len(&self) -> usize {
+        let shadow = Self::cast_shadow(self);
+        Self::encoded_len_shadow(&shadow)
+    }
 
     /// Encodes the message to a buffer.
     ///
     /// An error will be returned if the buffer does not have sufficient capacity.
-    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
-    where
-        Self: Sized,
-    {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let required = self.encoded_len();
         let remaining = buf.remaining_mut();
         if required > remaining {
@@ -89,10 +122,7 @@ pub trait ProtoExt {
     }
 
     /// Encodes the message to a newly allocated buffer.
-    fn encode_to_vec(&self) -> Vec<u8>
-    where
-        Self: Sized,
-    {
+    fn encode_to_vec(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.encoded_len());
 
         self.encode_raw(&mut buf);
@@ -102,10 +132,7 @@ pub trait ProtoExt {
     /// Encodes the message with a length-delimiter to a buffer.
     ///
     /// An error will be returned if the buffer does not have sufficient capacity.
-    fn encode_length_delimited(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
-    where
-        Self: Sized,
-    {
+    fn encode_length_delimited(&self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let len = self.encoded_len();
         let required = len + encoded_len_varint(len as u64);
         let remaining = buf.remaining_mut();
@@ -118,10 +145,7 @@ pub trait ProtoExt {
     }
 
     /// Encodes the message with a length-delimiter to a newly allocated buffer.
-    fn encode_length_delimited_to_vec(&self) -> Vec<u8>
-    where
-        Self: Sized,
-    {
+    fn encode_length_delimited_to_vec(&self) -> Vec<u8> {
         let len = self.encoded_len();
         let mut buf = Vec::with_capacity(len + encoded_len_varint(len as u64));
 
@@ -133,51 +157,58 @@ pub trait ProtoExt {
     /// Decodes an instance of the message from a buffer.
     ///
     /// The entire buffer will be consumed.
-    fn decode(mut buf: impl Buf) -> Result<Self, DecodeError>
-    where
-        Self: Sized,
-    {
-        let mut message = Self::proto_default();
-        Self::merge(&mut message, &mut buf).map(|()| message)
+    fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
+        let mut shadow = Self::proto_default();
+        let ctx = DecodeContext::default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(&mut shadow, tag, wire_type, &mut buf, ctx)?;
+        }
+        Ok(Self::post_decode(shadow))
     }
 
     /// Decodes a length-delimited instance of the message from the buffer.
-    fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError>
-    where
-        Self: Sized,
-    {
+    fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError> {
         let mut message = Self::proto_default();
-        message.merge_length_delimited(buf)?;
-        Ok(message)
+        Self::merge_length_delimited_shadow(&mut message, buf)?;
+        Ok(Self::post_decode(message))
     }
 
     /// Decodes an instance of the message from a buffer, and merges it into `self`.
     ///
     /// The entire buffer will be consumed.
-    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError>
-    where
-        Self: Sized,
-    {
+    fn merge(&mut self, mut buf: impl Buf) -> Result<(), DecodeError> {
         let ctx = DecodeContext::default();
+        let mut shadow = Self::cast_shadow(self);
         while buf.has_remaining() {
             let (tag, wire_type) = decode_key(&mut buf)?;
-            self.merge_field(tag, wire_type, &mut buf, ctx)?;
+            Self::merge_field(&mut shadow, tag, wire_type, &mut buf, ctx)?;
         }
-        self.post_decode();
+        *self = Self::post_decode(shadow);
         Ok(())
     }
 
     /// Decodes a length-delimited instance of the message from buffer, and
     /// merges it into `self`.
-    fn merge_length_delimited(&mut self, mut buf: impl Buf) -> Result<(), DecodeError>
-    where
-        Self: Sized,
-    {
-        message::merge(WireType::LengthDelimited, self, &mut buf, DecodeContext::default())
+    fn merge_length_delimited(&mut self, buf: impl Buf) -> Result<(), DecodeError> {
+        let mut shadow = Self::cast_shadow(self);
+        Self::merge_length_delimited_shadow(&mut shadow, buf)?;
+        *self = Self::post_decode(shadow);
+        Ok(())
     }
 
     /// Clears the message, resetting all fields to their default.
-    fn clear(&mut self);
+    fn clear(&mut self) {
+        let mut shadow = Self::proto_default();
+        Self::clear_shadow(&mut shadow);
+        *self = Self::post_decode(shadow);
+    }
+
+    /// Helper for merging a length-delimited payload into a shadow value.
+    #[doc(hidden)]
+    fn merge_length_delimited_shadow(shadow: &mut Self::Shadow, mut buf: impl Buf) -> Result<(), DecodeError> {
+        message::merge_shadow::<Self::Shadow, _, _>(WireType::LengthDelimited, shadow, &mut buf, DecodeContext::default(), Self::merge_field)
+    }
 }
 
 /// Marker trait for message-like types which can be embedded inside other
@@ -253,7 +284,7 @@ pub trait SingularField: ProtoExt + Sized {
         if let Some(value) = target.as_mut() {
             Self::merge_singular_field(wire_type, value, buf, ctx)
         } else {
-            let mut value = Self::proto_default();
+            let mut value = Self::post_decode(Self::proto_default());
             Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
             *target = Some(value);
             Ok(())
@@ -326,24 +357,38 @@ impl<M> ProtoExt for Box<M>
 where
     M: ProtoExt,
 {
-    fn proto_default() -> Self {
-        Box::new(M::proto_default())
+    type Shadow = M::Shadow;
+
+    fn proto_default() -> Self::Shadow {
+        M::proto_default()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        (**self).encode_raw(buf);
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        M::encode_shadow(shadow, buf);
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        (**self).merge_field(tag, wire_type, buf, ctx)
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        M::merge_field(shadow, tag, wire_type, buf, ctx)
     }
 
-    fn encoded_len(&self) -> usize {
-        (**self).encoded_len()
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+        M::encoded_len_shadow(shadow)
     }
 
-    fn clear(&mut self) {
-        (**self).clear();
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        M::clear_shadow(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        Box::new(M::post_decode(shadow))
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        M::cast_shadow(value.as_ref())
+    }
+
+    fn rebuild_from_shadow(value: &mut Self, shadow: Self::Shadow) {
+        **value = M::post_decode(shadow);
     }
 }
 
@@ -353,31 +398,41 @@ impl<M> ProtoExt for Arc<M>
 where
     M: ProtoExt,
 {
-    fn proto_default() -> Self {
-        Arc::new(M::proto_default())
+    type Shadow = M::Shadow;
+
+    fn proto_default() -> Self::Shadow {
+        M::proto_default()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        (**self).encode_raw(buf);
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        M::encode_shadow(shadow, buf);
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if let Some(v) = Arc::get_mut(self) {
-            M::merge_field(v, tag, wire_type, buf, ctx)
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        M::merge_field(shadow, tag, wire_type, buf, ctx)
+    }
+
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+        M::encoded_len_shadow(shadow)
+    }
+
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        M::clear_shadow(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        Arc::new(M::post_decode(shadow))
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        M::cast_shadow(value.as_ref())
+    }
+
+    fn rebuild_from_shadow(value: &mut Self, shadow: Self::Shadow) {
+        if let Some(inner) = Arc::get_mut(value) {
+            *inner = M::post_decode(shadow);
         } else {
-            unreachable!("There should be no other Arc instances")
-        }
-    }
-
-    fn encoded_len(&self) -> usize {
-        (**self).encoded_len()
-    }
-
-    fn clear(&mut self) {
-        if let Some(v) = Arc::get_mut(self) {
-            M::clear(v);
-        } else {
-            unreachable!("There should be no other Arc instances")
+            *value = Arc::new(M::post_decode(shadow));
         }
     }
 }
@@ -388,66 +443,78 @@ impl<M> MessageField for Arc<M> where M: MessageField {}
 
 impl<T> ProtoExt for Vec<T>
 where
-    T: RepeatedField,
+    T: RepeatedField + Clone,
 {
+    type Shadow = Self;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default() -> Self::Shadow {
         Vec::new()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
-            T::encode_repeated_field(1, self, buf);
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        if !shadow.is_empty() {
+            T::encode_repeated_field(1, shadow, buf);
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            T::merge_repeated_field(wire_type, self, buf, ctx)
+            T::merge_repeated_field(wire_type, shadow, buf, ctx)
         } else {
             crate::encoding::skip_field(wire_type, tag, buf, ctx)
         }
     }
 
-    fn encoded_len(&self) -> usize {
-        if self.is_empty() { 0 } else { T::encoded_len_repeated_field(1, self) }
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+        if shadow.is_empty() { 0 } else { T::encoded_len_repeated_field(1, shadow) }
     }
 
-    fn clear(&mut self) {
-        Vec::clear(self);
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        Vec::clear(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        value.clone()
     }
 }
 
 impl<K, V> ProtoExt for BTreeMap<K, V>
 where
-    K: SingularField + Default + Eq + Hash + Ord,
-    V: SingularField + Default + PartialEq,
+    K: SingularField + Default + Eq + Hash + Ord + Clone,
+    V: SingularField + Default + PartialEq + Clone,
 {
+    type Shadow = Self;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default() -> Self::Shadow {
         BTreeMap::new()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        if !shadow.is_empty() {
             crate::encoding::btree_map::encode(
                 |tag, key, buf| <K as SingularField>::encode_singular_field(tag, key, buf),
                 |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
                 |tag, value, buf| <V as SingularField>::encode_singular_field(tag, value, buf),
                 |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
                 1,
-                self,
+                shadow,
                 buf,
             );
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             crate::encoding::btree_map::merge(
                 |wire_type, key, buf, ctx| <K as SingularField>::merge_singular_field(wire_type, key, buf, ctx),
                 |wire_type, value, buf, ctx| <V as SingularField>::merge_singular_field(wire_type, value, buf, ctx),
-                self,
+                shadow,
                 buf,
                 ctx,
             )
@@ -456,52 +523,62 @@ where
         }
     }
 
-    fn encoded_len(&self) -> usize {
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
         crate::encoding::btree_map::encoded_len(
             |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
             |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
             1,
-            self,
+            shadow,
         )
     }
 
-    fn clear(&mut self) {
-        BTreeMap::clear(self);
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        BTreeMap::clear(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        value.clone()
     }
 }
 
 #[cfg(feature = "std")]
 impl<K, V, S> ProtoExt for HashMap<K, V, S>
 where
-    K: SingularField + Default + Eq + Hash + Ord,
-    V: SingularField + Default + PartialEq,
-    S: BuildHasher + Default,
+    K: SingularField + Default + Eq + Hash + Ord + Clone,
+    V: SingularField + Default + PartialEq + Clone,
+    S: BuildHasher + Default + Clone,
 {
+    type Shadow = Self;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default() -> Self::Shadow {
         HashMap::default()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        if !shadow.is_empty() {
             crate::encoding::hash_map::encode(
                 |tag, key, buf| <K as SingularField>::encode_singular_field(tag, key, buf),
                 |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
                 |tag, value, buf| <V as SingularField>::encode_singular_field(tag, value, buf),
                 |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
                 1,
-                self,
+                shadow,
                 buf,
             );
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             crate::encoding::hash_map::merge(
                 |wire_type, key, buf, ctx| <K as SingularField>::merge_singular_field(wire_type, key, buf, ctx),
                 |wire_type, value, buf, ctx| <V as SingularField>::merge_singular_field(wire_type, value, buf, ctx),
-                self,
+                shadow,
                 buf,
                 ctx,
             )
@@ -510,17 +587,25 @@ where
         }
     }
 
-    fn encoded_len(&self) -> usize {
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
         crate::encoding::hash_map::encoded_len(
             |tag, key| <K as SingularField>::encoded_len_singular_field(tag, key),
             |tag, value| <V as SingularField>::encoded_len_singular_field(tag, value),
             1,
-            self,
+            shadow,
         )
     }
 
-    fn clear(&mut self) {
-        HashMap::clear(self);
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        HashMap::clear(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        value.clone()
     }
 }
 
@@ -528,24 +613,26 @@ impl<T> ProtoExt for BTreeSet<T>
 where
     T: RepeatedField + Clone + Ord,
 {
+    type Shadow = Self;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default() -> Self::Shadow {
         BTreeSet::new()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
-            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        if !shadow.is_empty() {
+            let values: alloc::vec::Vec<T> = shadow.iter().cloned().collect();
             T::encode_repeated_field(1, &values, buf);
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             let mut values: alloc::vec::Vec<T> = alloc::vec::Vec::new();
             T::merge_repeated_field(wire_type, &mut values, buf, ctx)?;
             for value in values {
-                self.insert(value);
+                shadow.insert(value);
             }
             Ok(())
         } else {
@@ -553,17 +640,25 @@ where
         }
     }
 
-    fn encoded_len(&self) -> usize {
-        if self.is_empty() {
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+        if shadow.is_empty() {
             0
         } else {
-            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+            let values: alloc::vec::Vec<T> = shadow.iter().cloned().collect();
             T::encoded_len_repeated_field(1, &values)
         }
     }
 
-    fn clear(&mut self) {
-        BTreeSet::clear(self);
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        BTreeSet::clear(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        value.clone()
     }
 }
 
@@ -571,26 +666,28 @@ where
 impl<T, S> ProtoExt for HashSet<T, S>
 where
     T: RepeatedField + Clone + Eq + Hash,
-    S: BuildHasher + Default,
+    S: BuildHasher + Default + Clone,
 {
+    type Shadow = Self;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default() -> Self::Shadow {
         HashSet::default()
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if !self.is_empty() {
-            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        if !shadow.is_empty() {
+            let values: alloc::vec::Vec<T> = shadow.iter().cloned().collect();
             T::encode_repeated_field(1, &values, buf);
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             let mut values: alloc::vec::Vec<T> = alloc::vec::Vec::new();
             T::merge_repeated_field(wire_type, &mut values, buf, ctx)?;
             for value in values {
-                self.insert(value);
+                shadow.insert(value);
             }
             Ok(())
         } else {
@@ -598,17 +695,25 @@ where
         }
     }
 
-    fn encoded_len(&self) -> usize {
-        if self.is_empty() {
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+        if shadow.is_empty() {
             0
         } else {
-            let values: alloc::vec::Vec<T> = self.iter().cloned().collect();
+            let values: alloc::vec::Vec<T> = shadow.iter().cloned().collect();
             T::encoded_len_repeated_field(1, &values)
         }
     }
 
-    fn clear(&mut self) {
-        HashSet::clear(self);
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        HashSet::clear(shadow);
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        value.clone()
     }
 }
 
@@ -616,5 +721,9 @@ where
 mod tests {
     use super::*;
 
-    const _MESSAGE_IS_OBJECT_SAFE: Option<&dyn ProtoExt> = None;
+    #[test]
+    fn proto_ext_is_sized() {
+        fn assert_sized<T: ProtoExt + Sized>() {}
+        assert_sized::<Option<()>>();
+    }
 }

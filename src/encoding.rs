@@ -748,6 +748,19 @@ pub mod message {
     use super::key_len;
     use super::merge_loop;
 
+    pub fn merge_shadow<S, M, B>(wire_type: WireType, shadow: &mut S, buf: &mut B, ctx: DecodeContext, mut merge_field: M) -> Result<(), DecodeError>
+    where
+        M: FnMut(&mut S, u32, WireType, &mut B, DecodeContext) -> Result<(), DecodeError>,
+        B: Buf,
+    {
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
+        ctx.limit_reached()?;
+        merge_loop(shadow, buf, ctx.enter_recursion(), |shadow, buf, ctx| {
+            let (tag, wire_type) = decode_key(buf)?;
+            merge_field(shadow, tag, wire_type, buf, ctx)
+        })
+    }
+
     pub fn encode<M>(tag: u32, msg: &M, buf: &mut impl BufMut)
     where
         M: ProtoExt,
@@ -762,13 +775,9 @@ pub mod message {
         M: ProtoExt,
         B: Buf,
     {
-        check_wire_type(WireType::LengthDelimited, wire_type)?;
-        ctx.limit_reached()?;
-        merge_loop(msg, buf, ctx.enter_recursion(), |msg: &mut M, buf: &mut B, ctx| {
-            let (tag, wire_type) = decode_key(buf)?;
-            msg.merge_field(tag, wire_type, buf, ctx)
-        })?;
-        msg.post_decode();
+        let mut shadow = M::cast_shadow(&*msg);
+        merge_shadow(wire_type, &mut shadow, buf, ctx, M::merge_field)?;
+        M::rebuild_from_shadow(msg, shadow);
         Ok(())
     }
 
@@ -785,10 +794,9 @@ pub mod message {
     where
         M: ProtoExt,
     {
-        check_wire_type(WireType::LengthDelimited, wire_type)?;
-        let mut msg = M::proto_default();
-        merge(WireType::LengthDelimited, &mut msg, buf, ctx)?;
-        messages.push(msg);
+        let mut shadow = M::proto_default();
+        merge_shadow(wire_type, &mut shadow, buf, ctx, M::merge_field)?;
+        messages.push(M::post_decode(shadow));
         Ok(())
     }
 
@@ -839,17 +847,18 @@ pub mod group {
         check_wire_type(WireType::StartGroup, wire_type)?;
 
         ctx.limit_reached()?;
+        let mut shadow = M::cast_shadow(&*msg);
         loop {
             let (field_tag, field_wire_type) = decode_key(buf)?;
             if field_wire_type == WireType::EndGroup {
                 if field_tag != tag {
                     return Err(DecodeError::new("unexpected end group tag"));
                 }
-                msg.post_decode();
+                *msg = M::post_decode(shadow);
                 return Ok(());
             }
 
-            M::merge_field(msg, field_tag, field_wire_type, buf, ctx.enter_recursion())?;
+            M::merge_field(&mut shadow, field_tag, field_wire_type, buf, ctx.enter_recursion())?;
         }
     }
 
@@ -867,9 +876,9 @@ pub mod group {
         M: ProtoExt,
     {
         check_wire_type(WireType::StartGroup, wire_type)?;
-        let mut msg = M::proto_default();
-        merge(tag, WireType::StartGroup, &mut msg, buf, ctx)?;
-        messages.push(msg);
+        let mut value = M::post_decode(M::proto_default());
+        merge(tag, WireType::StartGroup, &mut value, buf, ctx)?;
+        messages.push(value);
         Ok(())
     }
 

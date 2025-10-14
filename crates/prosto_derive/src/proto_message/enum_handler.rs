@@ -108,20 +108,22 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default() -> Self::Shadow {
                 Self::#default_variant_ident
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value = *self as i32;
+            fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value = *shadow as i32;
                 if value != 0 {
                     ::proto_rs::encoding::int32::encode(1, &value, buf);
                 }
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -131,7 +133,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                     1 => {
                         let mut value: i32 = 0;
                         ::proto_rs::encoding::int32::merge(wire_type, &mut value, buf, ctx)?;
-                        *self = Self::try_from(value)
+                        *shadow = Self::try_from(value)
                             .map_err(|_| ::proto_rs::DecodeError::new("Invalid enum value"))?;
                         Ok(())
                     }
@@ -139,8 +141,8 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn encoded_len(&self) -> usize {
-                let value = *self as i32;
+            fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+                let value = *shadow as i32;
                 if value != 0 {
                     ::proto_rs::encoding::int32::encoded_len(1, &value)
                 } else {
@@ -148,8 +150,16 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn clear(&mut self) {
-                *self = Self::proto_default();
+            fn clear_shadow(shadow: &mut Self::Shadow) {
+                *shadow = Self::proto_default();
+            }
+
+            fn post_decode(shadow: Self::Shadow) -> Self {
+                shadow
+            }
+
+            fn cast_shadow(value: &Self) -> Self::Shadow {
+                *value
             }
         }
 

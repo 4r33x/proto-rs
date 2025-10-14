@@ -73,7 +73,7 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     }
 
     // Collect variant data for encoding/decoding
-    let (encode_arms, decode_arms, encoded_len_arms) = match generate_variant_arms(name, data) {
+    let (encode_arms, decode_arms, encoded_len_arms, cast_shadow_arms) = match generate_variant_arms(name, data) {
         Ok(parts) => parts,
         Err(err) => return err.to_compile_error(),
     };
@@ -83,7 +83,14 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let default_value = match &default_variant.fields {
         Fields::Unit => quote! { Self::#default_variant_ident },
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-            quote! { Self::#default_variant_ident(::proto_rs::ProtoExt::proto_default()) }
+            let field_ty = &fields.unnamed[0].ty;
+            quote! {
+                Self::#default_variant_ident(
+                    <#field_ty as ::proto_rs::ProtoExt>::post_decode(
+                        <#field_ty as ::proto_rs::ProtoExt>::proto_default(),
+                    ),
+                )
+            }
         }
         Fields::Named(fields) => {
             let field_defaults: Vec<_> = fields
@@ -91,7 +98,12 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 .iter()
                 .map(|f| {
                     let ident = f.ident.as_ref().unwrap();
-                    quote! { #ident: ::proto_rs::ProtoExt::proto_default() }
+                    let field_ty = &f.ty;
+                    quote! {
+                        #ident: <#field_ty as ::proto_rs::ProtoExt>::post_decode(
+                            <#field_ty as ::proto_rs::ProtoExt>::proto_default(),
+                        )
+                    }
                 })
                 .collect();
             quote! { Self::#default_variant_ident { #(#field_defaults),* } }
@@ -108,19 +120,21 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default() -> Self::Shadow {
                 #default_value
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                match self {
+            fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                match shadow {
                     #(#encode_arms)*
                 }
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -133,14 +147,24 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn encoded_len(&self) -> usize {
-                match self {
+            fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+                match shadow {
                     #(#encoded_len_arms)*
                 }
             }
 
-            fn clear(&mut self) {
-                *self = Self::proto_default();
+            fn clear_shadow(shadow: &mut Self::Shadow) {
+                *shadow = Self::proto_default();
+            }
+
+            fn post_decode(shadow: Self::Shadow) -> Self {
+                shadow
+            }
+
+            fn cast_shadow(value: &Self) -> Self::Shadow {
+                match value {
+                    #(#cast_shadow_arms,)*
+                }
             }
         }
 
@@ -148,10 +172,11 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     }
 }
 
-fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>)> {
+fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>)> {
     let mut encode_arms = Vec::new();
     let mut decode_arms = Vec::new();
     let mut encoded_len_arms = Vec::new();
+    let mut cast_shadow_arms = Vec::new();
 
     for (idx, variant) in data.variants.iter().enumerate() {
         let tag = resolve_variant_tag(variant, idx + 1)?;
@@ -172,7 +197,7 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec
                         if len != 0 {
                             return Err(::proto_rs::DecodeError::new("Expected empty message for unit variant"));
                         }
-                        *self = #name::#variant_ident;
+                        *shadow = #name::#variant_ident;
                         Ok(())
                     }
                 });
@@ -182,18 +207,24 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec
                         ::proto_rs::encoding::key_len(#tag) + 1
                     }
                 });
+
+                cast_shadow_arms.push(quote! {
+                    #name::#variant_ident => #name::#variant_ident
+                });
             }
             Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-                let (encode_arm, decode_arm, encoded_len_arm) = generate_tuple_variant_arms(name, variant_ident, tag, &fields.unnamed[0])?;
+                let (encode_arm, decode_arm, encoded_len_arm, cast_arm) = generate_tuple_variant_arms(name, variant_ident, tag, &fields.unnamed[0])?;
                 encode_arms.push(encode_arm);
                 decode_arms.push(decode_arm);
                 encoded_len_arms.push(encoded_len_arm);
+                cast_shadow_arms.push(cast_arm);
             }
             Fields::Named(fields_named) => {
-                let (encode_arm, decode_arm, encoded_len_arm) = generate_named_variant_arms(name, variant_ident, tag, fields_named)?;
+                let (encode_arm, decode_arm, encoded_len_arm, cast_arm) = generate_named_variant_arms(name, variant_ident, tag, fields_named)?;
                 encode_arms.push(encode_arm);
                 decode_arms.push(decode_arm);
                 encoded_len_arms.push(encoded_len_arm);
+                cast_shadow_arms.push(cast_arm);
             }
             Fields::Unnamed(_) => {
                 panic!("Complex enum variants must have exactly one unnamed field or multiple named fields")
@@ -201,10 +232,10 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec
         }
     }
 
-    Ok((encode_arms, decode_arms, encoded_len_arms))
+    Ok((encode_arms, decode_arms, encoded_len_arms, cast_shadow_arms))
 }
 
-fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, field: &syn::Field) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
+fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, field: &syn::Field) -> syn::Result<(TokenStream, TokenStream, TokenStream, TokenStream)> {
     let binding_ident = syn::Ident::new("inner", Span::call_site());
     let access_expr = quote! { #binding_ident };
     let cfg = parse_field_config(field);
@@ -302,13 +333,15 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
                 }
                 let limit = remaining - len;
 
-                let mut #binding_ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default();
+                let mut #binding_ident = <#field_ty as ::proto_rs::ProtoExt>::post_decode(
+                    <#field_ty as ::proto_rs::ProtoExt>::proto_default(),
+                );
 
                 #decode_loop
 
                 let mut variant_value = #name::#variant_ident(#binding_ident);
                 #(#post_decode_hooks)*
-                *self = variant_value;
+                *shadow = variant_value;
                 Ok(())
             }
         }
@@ -331,10 +364,14 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
     };
 
-    Ok((encode_arm, decode_arm, encoded_len_arm))
+    let cast_arm = quote! {
+        #name::#variant_ident(#binding_ident) => #name::#variant_ident(#binding_ident.clone())
+    };
+
+    Ok((encode_arm, decode_arm, encoded_len_arm, cast_arm))
 }
 
-fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, fields_named: &syn::FieldsNamed) -> syn::Result<(TokenStream, TokenStream, TokenStream)> {
+fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, tag: u32, fields_named: &syn::FieldsNamed) -> syn::Result<(TokenStream, TokenStream, TokenStream, TokenStream)> {
     let mut field_bindings = Vec::new();
     let mut field_bindings_encode = Vec::new();
     let mut field_bindings_len = Vec::new();
@@ -363,7 +400,11 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         };
         let field_ty = &field.ty;
 
-        field_defaults.push(quote! { let mut #ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); });
+        field_defaults.push(quote! {
+            let mut #ident = <#field_ty as ::proto_rs::ProtoExt>::post_decode(
+                <#field_ty as ::proto_rs::ProtoExt>::proto_default(),
+            );
+        });
 
         let encoded_len_tokens = generate_field_encoded_len(field, access_expr.clone(), field_tag);
         encoded_len_exprs.push(encoded_len_tokens.tokens.clone());
@@ -459,7 +500,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
             let mut variant_value = #name::#variant_ident { #(#field_bindings_for_decode),* };
             #(#post_decode_hooks)*
-            *self = variant_value;
+            *shadow = variant_value;
             Ok(())
         }
     };
@@ -473,7 +514,15 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
     };
 
-    Ok((encode_arm, decode_arm, encoded_len_arm))
+    let cast_arm = quote! {
+        #name::#variant_ident { #(#field_bindings),* } => {
+            #name::#variant_ident {
+                #(#field_bindings: #field_bindings.clone()),*
+            }
+        }
+    };
+
+    Ok((encode_arm, decode_arm, encoded_len_arm, cast_arm))
 }
 
 fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u32> {

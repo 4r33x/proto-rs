@@ -30,11 +30,15 @@ pub enum FieldAccess {
 }
 
 impl FieldAccess {
-    pub fn self_tokens(&self) -> TokenStream {
+    pub fn tokens_with(&self, base: TokenStream) -> TokenStream {
         match self {
-            FieldAccess::Named(id) => quote! { self.#id },
-            FieldAccess::Tuple(ix) => quote! { self.#ix },
+            FieldAccess::Named(id) => quote! { #base.#id },
+            FieldAccess::Tuple(ix) => quote! { #base.#ix },
         }
+    }
+
+    pub fn shadow_tokens(&self) -> TokenStream {
+        self.tokens_with(quote! { shadow })
     }
 }
 
@@ -130,7 +134,9 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
         };
 
         return quote! {
-            let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
+            let mut __tmp = <#from_ty as ::proto_rs::ProtoExt>::post_decode(
+                <#from_ty as ::proto_rs::ProtoExt>::proto_default(),
+            );
             <#from_ty as ::proto_rs::SingularField>::merge_singular_field(
                 wire_type,
                 &mut __tmp,
@@ -430,7 +436,9 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                 if __i >= (#access).len() {
                     return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                 }
-                let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                let mut __tmp = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(
+                    <#elem_ty as ::proto_rs::ProtoExt>::proto_default(),
+                );
                 ::proto_rs::encoding::message::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                 (#access)[__i] = __tmp;
                 __i += 1;
@@ -458,7 +466,9 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                             if __i >= (#access).len() {
                                 return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                             }
-                            let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                            let mut __tmp = <#proto_ty as ::proto_rs::ProtoExt>::post_decode(
+                                <#proto_ty as ::proto_rs::ProtoExt>::proto_default(),
+                            );
                             ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
                             (#access)[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
                                 .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
@@ -469,7 +479,9 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                         if __i >= (#access).len() {
                             return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                         }
-                        let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                        let mut __tmp = <#proto_ty as ::proto_rs::ProtoExt>::post_decode(
+                            <#proto_ty as ::proto_rs::ProtoExt>::proto_default(),
+                        );
                         ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                         (#access)[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
                             .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
@@ -489,7 +501,9 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                             if __i >= (#access).len() {
                                 return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                             }
-                            let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                            let mut __tmp = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(
+                                <#elem_ty as ::proto_rs::ProtoExt>::proto_default(),
+                            );
                             ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
                             (#access)[__i] = __tmp;
                             __i += 1;
@@ -499,7 +513,9 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                         if __i >= (#access).len() {
                             return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                         }
-                        let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                        let mut __tmp = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(
+                            <#elem_ty as ::proto_rs::ProtoExt>::proto_default(),
+                        );
                         ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                         (#access)[__i] = __tmp;
                     }

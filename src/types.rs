@@ -35,42 +35,52 @@ use crate::encoding::wire_type::WireType;
 macro_rules! impl_google_wrapper {
     ($ty:ty, $module:ident, $name:literal, |$value:ident| $is_default:expr, |$clear_value:ident| $clear_body:expr) => {
         impl ProtoExt for $ty {
+            type Shadow = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default() -> Self::Shadow {
                 Default::default()
             }
 
-            fn encode_raw(&self, buf: &mut impl BufMut) {
+            fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
                 if !{
-                    let $value: &$ty = self;
+                    let $value: &$ty = shadow;
                     $is_default
                 } {
-                    $module::encode(1, self, buf);
+                    $module::encode(1, shadow, buf);
                 }
             }
 
-            fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 if tag == 1 {
-                    $module::merge(wire_type, self, buf, ctx)
+                    $module::merge(wire_type, shadow, buf, ctx)
                 } else {
                     skip_field(wire_type, tag, buf, ctx)
                 }
             }
 
-            fn encoded_len(&self) -> usize {
+            fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
                 if {
-                    let $value: &$ty = self;
+                    let $value: &$ty = shadow;
                     $is_default
                 } {
                     0
                 } else {
-                    $module::encoded_len(1, self)
+                    $module::encoded_len(1, shadow)
                 }
             }
 
-            fn clear(&mut self) {
-                let $clear_value: &mut $ty = self;
+            fn clear_shadow(shadow: &mut Self::Shadow) {
+                let $clear_value: &mut $ty = shadow;
                 $clear_body
+            }
+
+            fn post_decode(shadow: Self::Shadow) -> Self {
+                shadow
+            }
+
+            fn cast_shadow(value: &Self) -> Self::Shadow {
+                value.clone()
             }
         }
 
@@ -138,20 +148,30 @@ impl_google_wrapper!(Bytes, bytes, "BytesValue", |value| value.is_empty(), |valu
 
 /// `google.protobuf.Empty`
 impl ProtoExt for () {
+    type Shadow = Self;
+
     #[inline]
-    fn proto_default() -> Self {}
+    fn proto_default() -> Self::Shadow {}
 
-    fn encode_raw(&self, _buf: &mut impl BufMut) {}
+    fn encode_shadow(_shadow: &Self::Shadow, _buf: &mut impl BufMut) {}
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(_shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         skip_field(wire_type, tag, buf, ctx)
     }
 
-    fn encoded_len(&self) -> usize {
+    fn encoded_len_shadow(_shadow: &Self::Shadow) -> usize {
         0
     }
 
-    fn clear(&mut self) {}
+    fn clear_shadow(_shadow: &mut Self::Shadow) {}
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        *value
+    }
 }
 
 /// `google.protobuf.Empty`
@@ -184,20 +204,22 @@ macro_rules! impl_narrow_varint {
     };
     (@impl $ty:ty, $wide_ty:ty, $module:ident, $err:literal, $with_repeated:tt) => {
         impl ProtoExt for $ty {
+            type Shadow = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default() -> Self::Shadow {
                 Self::default()
             }
 
-            fn encode_raw(&self, buf: &mut impl BufMut) {
-                if *self != Self::default() {
-                    let widened: $wide_ty = (*self).into();
+            fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+                if *shadow != Self::default() {
+                    let widened: $wide_ty = (*shadow).into();
                     $module::encode(1, &widened, buf);
                 }
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow,
                 tag: u32,
                 wire_type: WireType,
                 buf: &mut impl Buf,
@@ -206,24 +228,32 @@ macro_rules! impl_narrow_varint {
                 if tag == 1 {
                     let mut widened: $wide_ty = <$wide_ty as Default>::default();
                     $module::merge(wire_type, &mut widened, buf, ctx)?;
-                    *self = widened.try_into().map_err(|_| DecodeError::new($err))?;
+                    *shadow = widened.try_into().map_err(|_| DecodeError::new($err))?;
                     Ok(())
                 } else {
                     skip_field(wire_type, tag, buf, ctx)
                 }
             }
 
-            fn encoded_len(&self) -> usize {
-                if *self == Self::default() {
+            fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+                if *shadow == Self::default() {
                     0
                 } else {
-                    let widened: $wide_ty = (*self).into();
+                    let widened: $wide_ty = (*shadow).into();
                     $module::encoded_len(1, &widened)
                 }
             }
 
-            fn clear(&mut self) {
-                *self = Self::default();
+            fn clear_shadow(shadow: &mut Self::Shadow) {
+                *shadow = Self::default();
+            }
+
+            fn post_decode(shadow: Self::Shadow) -> Self {
+                shadow
+            }
+
+            fn cast_shadow(value: &Self) -> Self::Shadow {
+                *value
             }
         }
 
@@ -311,30 +341,40 @@ impl_narrow_varint!(i16, i32, int32, "i16 overflow");
 
 /// Generic implementation for Option<T>
 impl<T: ProtoExt> ProtoExt for Option<T> {
+    type Shadow = Option<T::Shadow>;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default() -> Self::Shadow {
         None
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if let Some(value) = self {
-            value.encode_raw(buf);
+    fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl BufMut) {
+        if let Some(inner) = shadow.as_ref() {
+            T::encode_shadow(inner, buf);
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut value = self.take().unwrap_or_else(T::proto_default);
-        value.merge_field(tag, wire_type, buf, ctx)?;
-        *self = Some(value);
+    fn merge_field(shadow: &mut Self::Shadow, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut inner = shadow.take().unwrap_or_else(T::proto_default);
+        T::merge_field(&mut inner, tag, wire_type, buf, ctx)?;
+        *shadow = Some(inner);
         Ok(())
     }
 
-    fn encoded_len(&self) -> usize {
-        self.as_ref().map_or(0, ProtoExt::encoded_len)
+    fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+        shadow.as_ref().map_or(0, T::encoded_len_shadow)
     }
 
-    fn clear(&mut self) {
-        *self = None;
+    fn clear_shadow(shadow: &mut Self::Shadow) {
+        *shadow = None;
+    }
+
+    fn post_decode(shadow: Self::Shadow) -> Self {
+        shadow.map(T::post_decode)
+    }
+
+    fn cast_shadow(value: &Self) -> Self::Shadow {
+        value.as_ref().map(T::cast_shadow)
     }
 }
 

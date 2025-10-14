@@ -42,14 +42,18 @@ fn generate_field_default(field: &syn::Field) -> TokenStream {
     if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
         quote! { ::core::default::Default::default() }
     } else {
-        quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
+        quote! {
+            <#field_ty as ::proto_rs::ProtoExt>::post_decode(
+                <#field_ty as ::proto_rs::ProtoExt>::proto_default(),
+            )
+        }
     }
 }
 
 /// Generate smart clear for a field
-fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream {
+fn generate_field_clear(field: &syn::Field, access: &FieldAccess, base: TokenStream) -> TokenStream {
     let field_ty = &field.ty;
-    let access_tokens = access.self_tokens();
+    let access_tokens = access.tokens_with(base.clone());
 
     if is_option_type(field_ty) {
         return quote! { #access_tokens = None; };
@@ -63,7 +67,11 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
         quote! { #access_tokens = ::core::default::Default::default(); }
     } else {
-        quote! { #access_tokens = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); }
+        quote! {
+            #access_tokens = <#field_ty as ::proto_rs::ProtoExt>::post_decode(
+                <#field_ty as ::proto_rs::ProtoExt>::proto_default(),
+            );
+        }
     }
 }
 
@@ -81,15 +89,17 @@ fn handle_unit_struct(input: DeriveInput, convert: Option<&syn::Type>) -> TokenS
         #vis struct #name #generics;
 
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default() -> Self::Shadow {
                 Self
             }
 
-            fn encode_raw(&self, _buf: &mut impl ::proto_rs::bytes::BufMut) {}
+            fn encode_shadow(_shadow: &Self::Shadow, _buf: &mut impl ::proto_rs::bytes::BufMut) {}
 
             fn merge_field(
-                &mut self,
+                _shadow: &mut Self::Shadow,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -98,11 +108,19 @@ fn handle_unit_struct(input: DeriveInput, convert: Option<&syn::Type>) -> TokenS
                 ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
             }
 
-            fn encoded_len(&self) -> usize {
+            fn encoded_len_shadow(_shadow: &Self::Shadow) -> usize {
                 0
             }
 
-            fn clear(&mut self) {}
+            fn clear_shadow(_shadow: &mut Self::Shadow) {}
+
+            fn post_decode(shadow: Self::Shadow) -> Self {
+                shadow
+            }
+
+            fn cast_shadow(_value: &Self) -> Self::Shadow {
+                Self
+            }
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
@@ -123,6 +141,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
     };
 
     let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
+    let field_indices: Vec<_> = (0..fields.unnamed.len()).map(Index::from).collect();
 
     // Generate smart defaults
     let default_values: Vec<_> = fields.unnamed.iter().map(generate_field_default).collect();
@@ -145,9 +164,9 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
             && let Some(fun) = &field_config.skip_deser_fn
         {
             let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-            let access_tokens = field_access.self_tokens();
+            let access_tokens = field_access.shadow_tokens();
             post_decode_hooks.push(quote! {
-                #access_tokens = #fun_path(self);
+                #access_tokens = #fun_path(&shadow);
             });
         }
 
@@ -170,7 +189,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
         if let Some(tag) = tag {
             let tag_u32 = tag.try_into().unwrap();
 
-            let access_expr = field_access.self_tokens();
+            let access_expr = field_access.shadow_tokens();
             encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
 
             let decode_body = generate_field_decode(field, access_expr.clone(), tag_u32);
@@ -185,15 +204,20 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
             encoded_len_fields.push(encoded_len_tokens.tokens);
         }
 
-        clear_fields.push(generate_field_clear(field, &field_access));
+        clear_fields.push(generate_field_clear(field, &field_access, quote! { shadow }));
     }
 
     let post_decode_impl = if post_decode_hooks.is_empty() {
-        quote! {}
+        quote! {
+            fn post_decode(mut shadow: Self::Shadow) -> Self {
+                shadow
+            }
+        }
     } else {
         quote! {
-            fn post_decode(&mut self) {
+            fn post_decode(mut shadow: Self::Shadow) -> Self {
                 #(#post_decode_hooks)*
+                shadow
             }
         }
     };
@@ -203,17 +227,19 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
         #vis struct #name #generics(#(pub #field_types),*);
 
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default() -> Self::Shadow {
                 Self(#(#default_values),*)
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+            fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 #(#encode_fields)*
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -226,15 +252,19 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
                 }
             }
 
-            fn encoded_len(&self) -> usize {
+            fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
                 0 #(+ #encoded_len_fields)*
             }
 
-            fn clear(&mut self) {
+            fn clear_shadow(shadow: &mut Self::Shadow) {
                 #(#clear_fields)*
             }
 
             #post_decode_impl
+
+            fn cast_shadow(value: &Self) -> Self::Shadow {
+                Self(#(value.#field_indices.clone()),*)
+            }
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
@@ -293,9 +323,9 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
             && let Some(fun) = &field_config.skip_deser_fn
         {
             let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-            let access_tokens = field_access.self_tokens();
+            let access_tokens = field_access.shadow_tokens();
             post_decode_hooks.push(quote! {
-                #access_tokens = #fun_path(self);
+                #access_tokens = #fun_path(&shadow);
             });
         }
 
@@ -320,7 +350,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
 
         if let Some(tag) = tag {
             let tag_u32 = tag.try_into().unwrap();
-            let access_expr = field_access.self_tokens();
+            let access_expr = field_access.shadow_tokens();
             encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
 
             let decode_body = generate_field_decode(field, access_expr.clone(), tag_u32);
@@ -334,67 +364,143 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
             encoded_len_fields.push(encoded_len_tokens.tokens);
         }
 
-        clear_fields.push(generate_field_clear(field, &field_access));
+        clear_fields.push(generate_field_clear(field, &field_access, quote! { shadow }));
     }
 
-    let post_decode_impl = if post_decode_hooks.is_empty() {
-        quote! {}
-    } else {
-        quote! {
-            fn post_decode(&mut self) {
-                #(#post_decode_hooks)*
-            }
+    let proto_default_expr = quote! {
+        #name {
+            #(#default_field_values),*
         }
     };
 
-    let convert_impl = convert.map(|sun_ty| {
+    let encode_body = quote! {
+        #(#encode_fields)*
+    };
+
+    let merge_body = quote! {
+        use ::proto_rs::bytes::Buf;
+        match tag {
+            #(#decode_fields,)*
+            _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    };
+
+    let encoded_len_body = quote! { 0 #(+ #encoded_len_fields)* };
+    let clear_body = quote! { #(#clear_fields)* };
+
+    let post_decode_body_plain = if post_decode_hooks.is_empty() {
+        quote! { shadow }
+    } else {
+        quote! {
+            #(#post_decode_hooks)*
+            shadow
+        }
+    };
+
+    let post_decode_body_convert = if post_decode_hooks.is_empty() {
+        quote! {
+            <#name as ::proto_rs::ProtoShadow>::to_sun(shadow)
+        }
+    } else {
+        quote! {
+            #(#post_decode_hooks)*
+            <#name as ::proto_rs::ProtoShadow>::to_sun(shadow)
+        }
+    };
+
+    let proto_impl = if let Some(sun_ty) = convert {
         if !input.generics.params.is_empty() {
             panic!("#[proto_message(convert = ...)] is not supported on generic types");
         }
 
         quote! {
             impl ::proto_rs::ProtoExt for #sun_ty {
-                fn proto_default() -> Self {
-                    <#name as ::proto_rs::ProtoShadow>::to_sun(<#name as ::proto_rs::ProtoExt>::proto_default())
+                type Shadow = #name;
+
+                #[inline]
+                fn proto_default() -> Self::Shadow {
+                    #proto_default_expr
                 }
 
-                fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                    let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::encode_raw(&shadow, buf);
+                fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                    #encode_body
                 }
 
                 fn merge_field(
-                    &mut self,
+                    shadow: &mut Self::Shadow,
                     tag: u32,
                     wire_type: ::proto_rs::encoding::WireType,
                     buf: &mut impl ::proto_rs::bytes::Buf,
                     ctx: ::proto_rs::encoding::DecodeContext,
                 ) -> Result<(), ::proto_rs::DecodeError> {
-                    let mut shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
-                    *self = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
-                    Ok(())
+                    #merge_body
                 }
 
-                fn encoded_len(&self) -> usize {
-                    let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::encoded_len(&shadow)
+                fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+                    #encoded_len_body
                 }
 
-                fn clear(&mut self) {
-                    *self = <Self as ::proto_rs::ProtoExt>::proto_default();
+                fn clear_shadow(shadow: &mut Self::Shadow) {
+                    #clear_body
                 }
 
-                fn post_decode(&mut self) {
-                    let mut shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::post_decode(&mut shadow);
-                    *self = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
+                fn post_decode(mut shadow: Self::Shadow) -> Self {
+                    #post_decode_body_convert
+                }
+
+                fn cast_shadow(value: &Self) -> Self::Shadow {
+                    <#name as ::proto_rs::ProtoShadow>::cast_shadow(value)
                 }
             }
 
             impl ::proto_rs::MessageField for #sun_ty {}
         }
-    });
+    } else {
+        quote! {
+            impl #generics ::proto_rs::ProtoExt for #name #generics {
+                type Shadow = Self;
+
+                #[inline]
+                fn proto_default() -> Self::Shadow {
+                    #proto_default_expr
+                }
+
+                fn encode_shadow(shadow: &Self::Shadow, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                    #encode_body
+                }
+
+                fn merge_field(
+                    shadow: &mut Self::Shadow,
+                    tag: u32,
+                    wire_type: ::proto_rs::encoding::WireType,
+                    buf: &mut impl ::proto_rs::bytes::Buf,
+                    ctx: ::proto_rs::encoding::DecodeContext,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    #merge_body
+                }
+
+                fn encoded_len_shadow(shadow: &Self::Shadow) -> usize {
+                    #encoded_len_body
+                }
+
+                fn clear_shadow(shadow: &mut Self::Shadow) {
+                    #clear_body
+                }
+
+                fn post_decode(mut shadow: Self::Shadow) -> Self {
+                    #post_decode_body_plain
+                }
+
+                fn cast_shadow(value: &Self) -> Self::Shadow {
+                    Self {
+                        #(#fields_named_idents: value.#fields_named_idents.clone(),)*
+                    }
+                }
+            }
+
+            impl #generics ::proto_rs::MessageField for #name #generics {}
+        }
+    };
 
     quote! {
         #(#attrs)*
@@ -405,45 +511,6 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
             )*
         }
 
-        impl #generics ::proto_rs::ProtoExt for #name #generics {
-            #[inline]
-            fn proto_default() -> Self {
-                Self {
-                    #(#default_field_values),*
-                }
-            }
-
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                #(#encode_fields)*
-            }
-
-            fn merge_field(
-                &mut self,
-                tag: u32,
-                wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                use ::proto_rs::bytes::Buf;
-                match tag {
-                    #(#decode_fields,)*
-                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                }
-            }
-
-            fn encoded_len(&self) -> usize {
-                0 #(+ #encoded_len_fields)*
-            }
-
-            fn clear(&mut self) {
-                #(#clear_fields)*
-            }
-
-            #post_decode_impl
-        }
-
-        impl #generics ::proto_rs::MessageField for #name #generics {}
-
-        #convert_impl
+        #proto_impl
     }
 }
