@@ -4,6 +4,8 @@
 // #[cfg(feature = "solana")]
 // pub mod solana;
 
+use crate::proto_dump;
+
 #[proto_dump(proto_path = "protos/fastnum.proto")]
 struct D128Proto {
     #[proto(tag = 1)]
