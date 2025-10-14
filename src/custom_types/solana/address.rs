@@ -45,9 +45,7 @@ mod tests {
         encode_varint((BYTES - 1) as u64, &mut buf);
         buf.extend(std::iter::repeat(0u8).take(BYTES - 1));
 
-        match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
-            Err(err) => assert!(err.to_string().contains("expected")),
-            Ok(_) => panic!("invalid length should fail"),
-        }
+        let err = <ByteSeq as ProtoExt>::decode(buf.as_slice()).expect_err("invalid length should fail");
+        assert!(err.to_string().contains("expected"));
     }
 }

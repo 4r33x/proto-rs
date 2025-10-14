@@ -10,7 +10,6 @@ use syn::Attribute;
 use syn::Data;
 use syn::ItemTrait;
 use syn::Lit;
-use syn::Type;
 
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
@@ -57,7 +56,6 @@ pub struct UnifiedProtoConfig {
     pub rpc_server: bool,
     pub rpc_client: bool,
     rpc_package: Option<String>,
-    pub convert_sun: Option<Type>,
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
@@ -126,10 +124,6 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
-        } else if (meta.path.is_ident("sun") || meta.path.is_ident("convert"))
-            && let Ok(ty) = meta.value()?.parse::<Type>()
-        {
-            config.convert_sun = Some(ty);
         }
         Ok(())
     });

@@ -54,7 +54,5 @@ macro_rules! impl_protoext_for_byte_array {
                 *self = Self::default();
             }
         }
-
-        impl $crate::MessageField for $ty {}
     };
 }

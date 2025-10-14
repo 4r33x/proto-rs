@@ -14,11 +14,11 @@ use crate::utils::is_option_type;
 use crate::utils::parse_field_config;
 use crate::utils::vec_inner_type;
 
-pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct, convert: Option<&syn::Type>) -> TokenStream {
+pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     match &data.fields {
-        Fields::Named(_) => handle_named_struct(input, data, convert),
-        Fields::Unnamed(_) => handle_tuple_struct(input, data, convert),
-        Fields::Unit => handle_unit_struct(input, convert),
+        Fields::Named(_) => handle_named_struct(input, data),
+        Fields::Unnamed(_) => handle_tuple_struct(input, data),
+        Fields::Unit => handle_unit_struct(input),
     }
 }
 
@@ -67,10 +67,7 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     }
 }
 
-fn handle_unit_struct(input: DeriveInput, convert: Option<&syn::Type>) -> TokenStream {
-    if convert.is_some() {
-        panic!("#[proto_message(convert = ...)] is not supported for unit structs");
-    }
+fn handle_unit_struct(input: DeriveInput) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -109,10 +106,7 @@ fn handle_unit_struct(input: DeriveInput, convert: Option<&syn::Type>) -> TokenS
     }
 }
 
-fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Option<&syn::Type>) -> TokenStream {
-    if convert.is_some() {
-        panic!("#[proto_message(convert = ...)] is not supported for tuple structs");
-    }
+fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -241,7 +235,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
     }
 }
 
-fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Option<&syn::Type>) -> TokenStream {
+fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -347,55 +341,6 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
         }
     };
 
-    let convert_impl = convert.map(|sun_ty| {
-        if !input.generics.params.is_empty() {
-            panic!("#[proto_message(convert = ...)] is not supported on generic types");
-        }
-
-        quote! {
-            impl ::proto_rs::ProtoExt for #sun_ty {
-                fn proto_default() -> Self {
-                    <#name as ::proto_rs::ProtoShadow>::to_sun(<#name as ::proto_rs::ProtoExt>::proto_default())
-                }
-
-                fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                    let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::encode_raw(&shadow, buf);
-                }
-
-                fn merge_field(
-                    &mut self,
-                    tag: u32,
-                    wire_type: ::proto_rs::encoding::WireType,
-                    buf: &mut impl ::proto_rs::bytes::Buf,
-                    ctx: ::proto_rs::encoding::DecodeContext,
-                ) -> Result<(), ::proto_rs::DecodeError> {
-                    let mut shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
-                    *self = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
-                    Ok(())
-                }
-
-                fn encoded_len(&self) -> usize {
-                    let shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::encoded_len(&shadow)
-                }
-
-                fn clear(&mut self) {
-                    *self = <Self as ::proto_rs::ProtoExt>::proto_default();
-                }
-
-                fn post_decode(&mut self) {
-                    let mut shadow = <#name as ::proto_rs::ProtoShadow>::cast_shadow(self);
-                    <#name as ::proto_rs::ProtoExt>::post_decode(&mut shadow);
-                    *self = <#name as ::proto_rs::ProtoShadow>::to_sun(shadow);
-                }
-            }
-
-            impl ::proto_rs::MessageField for #sun_ty {}
-        }
-    });
-
     quote! {
         #(#attrs)*
         #vis struct #name #generics {
@@ -443,7 +388,5 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, convert: Opti
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
-
-        #convert_impl
     }
 }

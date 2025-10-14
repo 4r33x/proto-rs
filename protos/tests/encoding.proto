@@ -38,15 +38,3 @@ message SampleMessage {
   optional SampleEnum optional_mode = 9;
 }
 
-message ScalarCounterEmpty {}
-
-message ScalarCounterCount {
-  uint32 count = 1;
-}
-message ScalarCounter {
-  oneof value {
-    ScalarCounterEmpty empty = 1;
-    ScalarCounterCount count = 2;
-  }
-}
-
