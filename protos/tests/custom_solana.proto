@@ -1,9 +1,0 @@
-//CODEGEN BELOW - DO NOT TOUCH ME
-syntax = "proto3";
-package custom_solana;
-
-message SolanaPayload {
-  Address address = 1;
-  Signature signature = 2;
-}
-
