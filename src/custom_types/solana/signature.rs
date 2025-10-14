@@ -17,8 +17,8 @@ impl_protoext_for_byte_array!(ByteSeq, BYTES);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encoding::{encode_key, encode_varint, WireType};
     use crate::ProtoExt;
+    use crate::encoding::{WireType, encode_key, encode_varint};
 
     fn sample_signature_bytes() -> [u8; BYTES] {
         let mut data = [0u8; BYTES];
@@ -43,7 +43,9 @@ mod tests {
         encode_varint((BYTES - 2) as u64, &mut buf);
         buf.extend(std::iter::repeat(0u8).take(BYTES - 2));
 
-        let err = <ByteSeq as ProtoExt>::decode(buf.as_slice()).expect_err("invalid length should fail");
-        assert!(err.to_string().contains("expected"));
+        match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
+            Err(err) => assert!(err.to_string().contains("expected")),
+            Ok(_) => panic!("invalid length should fail"),
+        }
     }
 }

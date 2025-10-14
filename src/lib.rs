@@ -8,6 +8,8 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 
+extern crate self as proto_rs;
+
 pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
@@ -17,7 +19,7 @@ pub use prosto_derive::proto_rpc;
 const RECURSION_LIMIT: u32 = 100;
 
 mod arrays;
-mod custom_types;
+pub mod custom_types;
 
 #[doc(hidden)]
 pub extern crate alloc;
@@ -43,6 +45,7 @@ pub use crate::error::UnknownEnumValue;
 pub use crate::message::MessageField;
 pub use crate::message::ProtoEnum;
 pub use crate::message::ProtoExt;
+pub use crate::message::ProtoShadow;
 pub use crate::message::RepeatedField;
 pub use crate::message::SingularField;
 pub use crate::name::Name;

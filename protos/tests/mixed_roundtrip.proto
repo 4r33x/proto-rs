@@ -8,7 +8,7 @@ message ConversionInner {
   repeated uint32 payload = 3;
 }
 
-message MixedProto {
+message Mixed {
   string name = 9;
   repeated uint32 raw = 2;
   bytes bytes_field = 11;

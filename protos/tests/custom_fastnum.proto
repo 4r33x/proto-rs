@@ -1,0 +1,27 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package custom_fastnum;
+
+message DecimalEnvelopeEmpty {}
+
+message DecimalEnvelopeSigned {
+  D128 value = 1;
+}
+
+message DecimalEnvelopeUnsigned {
+  UD128 value = 1;
+}
+message DecimalEnvelope {
+  oneof value {
+    DecimalEnvelopeEmpty empty = 1;
+    DecimalEnvelopeSigned signed = 2;
+    DecimalEnvelopeUnsigned unsigned = 3;
+  }
+}
+
+message DecimalHolder {
+  D128 signed = 1;
+  UD128 unsigned = 2;
+  repeated D128 history = 3;
+}
+
