@@ -12,8 +12,8 @@ use crate::ProtoExt;
 use crate::traits::ProtoShadow;
 
 #[derive(Debug, Clone)]
-pub struct ProtoCodec<Encode = (), Decode = ()> {
-    _marker: PhantomData<(Encode, Decode)>,
+pub struct ProtoCodec<Encode = (), Decode = (), Mode = ()> {
+    _marker: PhantomData<(Encode, Decode, Mode)>,
 }
 
 impl<Encode, Decode> Default for ProtoCodec<Encode, Decode> {
@@ -28,33 +28,24 @@ impl<Encode, Decode> ProtoCodec<Encode, Decode> {
     }
 }
 
-impl<Encode, Decode> Codec for ProtoCodec<Encode, Decode>
+impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
 where
-    Encode: AsBytes + Send + 'static,
+    Encode: Send + 'static,
     Decode: ProtoExt + Send + 'static,
+    Mode: Send + Sync + 'static,
+    ProtoEncoder<Encode, Mode>: EncoderExt<Encode, Mode>,
 {
     type Encode = Encode;
     type Decode = Decode;
-    type Encoder = ProtoEncoderBytes<Encode>;
+    type Encoder = ProtoEncoder<Encode, Mode>;
     type Decoder = ProtoDecoder<Decode>;
 
     fn encoder(&mut self) -> Self::Encoder {
-        ProtoEncoderBytes::default()
+        ProtoEncoder::default()
     }
 
     fn decoder(&mut self) -> Self::Decoder {
         ProtoDecoder::default()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProtoEncoder<T> {
-    _marker: PhantomData<T>,
-}
-
-impl<T> Default for ProtoEncoder<T> {
-    fn default() -> Self {
-        Self { _marker: PhantomData }
     }
 }
 
@@ -74,51 +65,47 @@ impl<const N: usize> AsBytes for [u8; N] {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProtoEncoderBytes<T> {
-    _marker: PhantomData<T>,
-}
-
-impl<T> Default for ProtoEncoderBytes<T> {
-    fn default() -> Self {
-        Self { _marker: PhantomData }
-    }
-}
-
-impl<T> Encoder for ProtoEncoderBytes<T>
-where
-    T: AsBytes,
-{
-    type Item = T;
-    type Error = tonic::Status;
-
-    fn encode(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
-        dst.put_slice(item.as_bytes());
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProtoEncoderMsg<T, Mode> {
+pub struct ProtoEncoder<T, Mode> {
     _marker: core::marker::PhantomData<(T, Mode)>,
 }
 
-impl<T, N> Default for ProtoEncoderMsg<T, N> {
+impl<T, N> Default for ProtoEncoder<T, N> {
     fn default() -> Self {
         Self { _marker: PhantomData }
     }
 }
-
+#[derive(Clone, Copy, Default)]
+pub struct BytesMode;
+#[derive(Clone, Copy, Default)]
 pub struct SunByVal {} // Sun<'a> = T
+#[derive(Clone, Copy, Default)]
 pub struct SunByRef {} // Sun<'a> = &'a T
+
+unsafe impl Send for BytesMode {}
+unsafe impl Sync for BytesMode {}
+unsafe impl Send for SunByVal {}
+unsafe impl Sync for SunByVal {}
+unsafe impl Send for SunByRef {}
+unsafe impl Sync for SunByRef {}
 
 pub trait EncoderExt<T, Mode> {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status>;
 }
 
+impl<T, Mode> EncoderExt<T, Mode> for ProtoEncoder<T, BytesMode>
+where
+    T: AsBytes,
+{
+    fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
+        dst.put_slice(item.as_bytes());
+        Ok(())
+    }
+}
+
 // ----- Specialization via helper trait (disjoint impls) -----
 
 // Case 1: Sun<'a> = T  (owned)
-impl<T> EncoderExt<T, SunByVal> for ProtoEncoderMsg<T, SunByVal>
+impl<T> EncoderExt<T, SunByVal> for ProtoEncoder<T, SunByVal>
 where
     T: ProtoExt + 'static,
     for<'a> T::Shadow<'a>: ProtoShadow<'a, Sun<'a> = T, OwnedSun = T>,
@@ -129,7 +116,7 @@ where
 }
 
 // Case 2: Sun<'a> = &'a T (borrowed)
-impl<T> EncoderExt<T, SunByRef> for ProtoEncoderMsg<T, SunByRef>
+impl<T> EncoderExt<T, SunByRef> for ProtoEncoder<T, SunByRef>
 where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<'a, Sun<'a> = &'a T, OwnedSun = T>,
@@ -141,20 +128,18 @@ where
 
 // ----- Single blanket Encoder impl that delegates to the helper -----
 
-impl<T, Mode> Encoder for ProtoEncoderMsg<T, Mode>
+impl<T, Mode> Encoder for ProtoEncoder<T, Mode>
 where
-    T: ProtoExt,
-    // Pick the unique Mode whose helper impl is satisfied for this T.
-    ProtoEncoderMsg<T, Mode>: EncoderExt<T, Mode>,
+    ProtoEncoder<T, Mode>: EncoderExt<T, Mode>,
 {
-    type Item = T; // take owned input from tonic; borrow or move internally per Mode
+    type Item = T;
     type Error = Status;
 
+    #[inline(always)]
     fn encode(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         <Self as EncoderExt<T, Mode>>::encode_sun(self, item, dst)
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct ProtoDecoder<T> {
     _marker: PhantomData<T>,

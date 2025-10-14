@@ -221,11 +221,11 @@ pub trait SingularField: ProtoExt + Sized {
 /// every possible `T`.
 pub trait RepeatedField: ProtoExt + Sized {
     /// Encodes `values` as a repeated field with the provided tag.
-    fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut);
+    fn encode_repeated_field(tag: u32, values: &[ViewOf<'_, Self>], buf: &mut impl BufMut);
 
     /// Merges repeated field occurrences into `values`.
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Shadow<'_, Self>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     /// Returns the encoded length of a repeated field with the provided tag.
-    fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize;
+    fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize;
 }
