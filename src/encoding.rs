@@ -778,49 +778,44 @@ pub mod message {
     }
 
     #[inline]
-    pub fn merge_repeated<M>(wire_type: WireType, messages: &mut Vec<M>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
+    pub fn merge_repeated<M>(wire_type: WireType, messages: &mut Vec<M::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
     where
         M: ProtoExt,
     {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let mut msg = M::proto_default();
         merge::<M, _>(WireType::LengthDelimited, &mut msg, buf, ctx)?;
-        messages.push(M::post_decode(msg)?);
+        messages.push(msg);
         Ok(())
     }
+
     #[inline]
-    pub fn encode_repeated<M>(tag: u32, messages: &[OwnedSunOf<'_, M>], buf: &mut impl BufMut)
+    pub fn encode_repeated<'a, M, I>(tag: u32, values: I, buf: &mut impl BufMut)
     where
-        M: ProtoExt,
-        for<'a> M::Shadow<'a>: ProtoShadow<Sun<'a> = &'a M, OwnedSun = M>,
+        M: ProtoExt + 'a,
+        I: IntoIterator<Item = ViewOf<'a, M>>,
     {
-        for msg in messages {
-            // Each element in `messages` is an owned message (M),
-            // so we borrow it as &M to form its shadow for encoding.
-            let shadow = M::Shadow::from_sun(msg);
-            crate::encoding::message::encode::<M>(tag, shadow, buf);
+        for v in values.into_iter() {
+            let len = M::encoded_len(&v);
+            encode_key(tag, WireType::LengthDelimited, buf);
+            encode_varint(len as u64, buf);
+            M::encode_raw(v, buf);
         }
     }
 
     #[inline]
-    pub fn encoded_len_repeated<M>(tag: u32, messages: &[OwnedSunOf<'_, M>]) -> usize
+    pub fn encoded_len_repeated<'a, M, I: ?Sized>(tag: u32, values: &I) -> usize
     where
-        M: ProtoExt,
-        // same bound needed here so from_sun(&M) type-checks
-        for<'a> M::Shadow<'a>: ProtoShadow<Sun<'a> = &'a M, OwnedSun = M>,
+        M: ProtoExt + 'a,
+        for<'b> &'b I: IntoIterator<Item = ViewOf<'a, M>>,
     {
-        key_len(tag) * messages.len()
-            + messages
-                .iter()
-                .map(|msg| {
-                    // msg: &M
-                    let view = M::Shadow::from_sun(msg);
-                    let len = M::encoded_len(&view);
-                    len + encoded_len_varint(len as u64)
-                })
-                .sum::<usize>()
+        let mut total = 0;
+        for v in <&I as IntoIterator>::into_iter(values) {
+            let len = M::encoded_len(&v);
+            total += key_len(tag) + encoded_len_varint(len as u64) + len;
+        }
+        total
     }
-
     #[inline]
     pub fn encoded_len<M>(tag: u32, msg: &ViewOf<'_, M>) -> usize
     where

@@ -104,22 +104,22 @@ macro_rules! impl_google_wrapper {
                 googleapis_type_url_for::<Self>()
             }
         }
+        //TODO
+        // impl RepeatedField for $ty {
+        //     fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
+        //         for value in values {
+        //             $module::encode(tag, value, buf);
+        //         }
+        //     }
 
-        impl RepeatedField for $ty {
-            fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
-                for value in values {
-                    $module::encode(tag, value, buf);
-                }
-            }
+        //     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        //         $module::merge_repeated(wire_type, values, buf, ctx)
+        //     }
 
-            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-                $module::merge_repeated(wire_type, values, buf, ctx)
-            }
-
-            fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
-                values.iter().map(|value| $module::encoded_len(tag, value)).sum()
-            }
-        }
+        //     fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
+        //         values.iter().map(|value| $module::encoded_len(tag, value)).sum()
+        //     }
+        // }
 
         impl SingularField for $ty {
             fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {

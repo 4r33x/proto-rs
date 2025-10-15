@@ -17,17 +17,13 @@ pub trait ProtoShadow: Sized {
     type Sun<'a>: 'a;
 
     /// The value returned after decoding — can be fully owned
-    /// (e.g. `D128`, `String`) or a zero-copy wrapper that still
-    /// implements `ZeroCopyAccess<T>`.
+    /// (e.g. `D128`, `String`) or a zero-copy wrapper `ZeroCopyAccess<T>`.
     type OwnedSun: Sized;
 
-    /// The *resulting* shadow type when constructed from a given Sun<'b>.
-    ///
-    /// Example:
-    /// - If Sun<'b> = &'b Self::OwnedSun → ResultShadow<'b> = &'b Self
-    /// - If Sun<'b> = Self::OwnedSun → ResultShadow<'b> = Self
+    /// The *resulting* shadow type when constructed from a given Sun<'b>, it could be just zero-copy view so we can encode it to buffer
     type View<'a>: 'a;
 
+    /// Decoder to owned value
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError>;
 
     /// Build a shadow from an existing Sun (borrowed or owned).
@@ -219,13 +215,6 @@ pub trait SingularField: ProtoExt + Sized {
 /// element type. This is used to support nested `Vec<T>` values inside
 /// generated structs and enums without requiring ad-hoc implementations for
 /// every possible `T`.
-pub trait RepeatedField: ProtoExt + Sized {
-    /// Encodes `values` as a repeated field with the provided tag.
-    fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut);
-
-    /// Merges repeated field occurrences into `values`.
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
-
-    /// Returns the encoded length of a repeated field with the provided tag.
-    fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize;
+pub trait RepeatedField: ProtoExt {
+    //TODO
 }
