@@ -34,7 +34,6 @@ use crate::encoding::wire_type::WireType;
 use crate::traits::OwnedSunOf;
 use crate::traits::ProtoShadow;
 use crate::traits::Shadow;
-use crate::traits::SunOf;
 use crate::traits::ViewOf;
 
 macro_rules! impl_google_wrapper {

@@ -77,26 +77,45 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
         #(#attrs)*
         #vis struct #name #generics;
 
+        impl #generics ::proto_rs::ProtoShadow for #name #generics {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 Self
             }
 
-            fn encode_raw(&self, _buf: &mut impl ::proto_rs::bytes::BufMut) {}
+            fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let _value: &Self = *value;
+                0
+            }
+
+            fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, _buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let _value: &Self = value;
+            }
 
             fn merge_field(
-                &mut self,
+                _value: &mut Self::Shadow<'_>,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
-            }
-
-            fn encoded_len(&self) -> usize {
-                0
             }
 
             fn clear(&mut self) {}
@@ -139,9 +158,12 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             && let Some(fun) = &field_config.skip_deser_fn
         {
             let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-            let access_tokens = field_access.self_tokens();
+            let access_tokens = field_access.tokens_with_base(quote! { shadow });
             post_decode_hooks.push(quote! {
-                #access_tokens = #fun_path(self);
+                {
+                    let __proto_rs_tmp = #fun_path(&mut shadow);
+                    #access_tokens = __proto_rs_tmp;
+                }
             });
         }
 
@@ -164,10 +186,11 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         if let Some(tag) = tag {
             let tag_u32 = tag.try_into().unwrap();
 
-            let access_expr = field_access.self_tokens();
-            encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
+            let encode_access = field_access.tokens_with_base(quote! { value });
+            encode_fields.push(generate_field_encode(field, encode_access, tag_u32));
 
-            let decode_body = generate_field_decode(field, access_expr.clone(), tag_u32);
+            let decode_access = field_access.tokens_with_base(quote! { shadow });
+            let decode_body = generate_field_decode(field, decode_access, tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
                     #decode_body
@@ -175,7 +198,8 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             });
 
-            let encoded_len_tokens = generate_field_encoded_len(field, access_expr, tag_u32);
+            let encoded_len_access = field_access.tokens_with_base(quote! { value });
+            let encoded_len_tokens = generate_field_encoded_len(field, encoded_len_access, tag_u32);
             encoded_len_fields.push(encoded_len_tokens.tokens);
         }
 
@@ -186,8 +210,9 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         quote! {}
     } else {
         quote! {
-            fn post_decode(&mut self) {
+            fn post_decode(mut shadow: Self::Shadow<'_>) -> Result<Self, ::proto_rs::DecodeError> {
                 #(#post_decode_hooks)*
+                ::proto_rs::ProtoShadow::to_sun(shadow)
             }
         }
     };
@@ -196,18 +221,40 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         #(#attrs)*
         #vis struct #name #generics(#(pub #field_types),*);
 
+        impl #generics ::proto_rs::ProtoShadow for #name #generics {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 Self(#(#default_values),*)
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+            fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let value: &Self = *value;
+                0 #(+ #encoded_len_fields)*
+            }
+
+            fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value: &Self = value;
                 #(#encode_fields)*
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow<'_>,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -218,10 +265,6 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
-            }
-
-            fn encoded_len(&self) -> usize {
-                0 #(+ #encoded_len_fields)*
             }
 
             fn clear(&mut self) {
@@ -287,9 +330,12 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             && let Some(fun) = &field_config.skip_deser_fn
         {
             let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-            let access_tokens = field_access.self_tokens();
+            let access_tokens = field_access.tokens_with_base(quote! { shadow });
             post_decode_hooks.push(quote! {
-                #access_tokens = #fun_path(self);
+                {
+                    let __proto_rs_tmp = #fun_path(&mut shadow);
+                    #access_tokens = __proto_rs_tmp;
+                }
             });
         }
 
@@ -314,17 +360,19 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
 
         if let Some(tag) = tag {
             let tag_u32 = tag.try_into().unwrap();
-            let access_expr = field_access.self_tokens();
-            encode_fields.push(generate_field_encode(field, access_expr.clone(), tag_u32));
+            let encode_access = field_access.tokens_with_base(quote! { value });
+            encode_fields.push(generate_field_encode(field, encode_access, tag_u32));
 
-            let decode_body = generate_field_decode(field, access_expr.clone(), tag_u32);
+            let decode_access = field_access.tokens_with_base(quote! { shadow });
+            let decode_body = generate_field_decode(field, decode_access, tag_u32);
             decode_fields.push(quote! {
                 #tag_u32 => {
                     #decode_body
                     Ok(())
                 }
             });
-            let encoded_len_tokens = generate_field_encoded_len(field, access_expr, tag_u32);
+            let encoded_len_access = field_access.tokens_with_base(quote! { value });
+            let encoded_len_tokens = generate_field_encoded_len(field, encoded_len_access, tag_u32);
             encoded_len_fields.push(encoded_len_tokens.tokens);
         }
 
@@ -335,8 +383,9 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         quote! {}
     } else {
         quote! {
-            fn post_decode(&mut self) {
+            fn post_decode(mut shadow: Self::Shadow<'_>) -> Result<Self, ::proto_rs::DecodeError> {
                 #(#post_decode_hooks)*
+                ::proto_rs::ProtoShadow::to_sun(shadow)
             }
         }
     };
@@ -350,20 +399,42 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             )*
         }
 
+        impl #generics ::proto_rs::ProtoShadow for #name #generics {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 Self {
                     #(#default_field_values),*
                 }
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+            fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let value: &Self = *value;
+                0 #(+ #encoded_len_fields)*
+            }
+
+            fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value: &Self = value;
                 #(#encode_fields)*
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow<'_>,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -374,10 +445,6 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                     #(#decode_fields,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
-            }
-
-            fn encoded_len(&self) -> usize {
-                0 #(+ #encoded_len_fields)*
             }
 
             fn clear(&mut self) {

@@ -31,9 +31,13 @@ pub enum FieldAccess {
 
 impl FieldAccess {
     pub fn self_tokens(&self) -> TokenStream {
+        self.tokens_with_base(quote! { self })
+    }
+
+    pub fn tokens_with_base(&self, base: TokenStream) -> TokenStream {
         match self {
-            FieldAccess::Named(id) => quote! { self.#id },
-            FieldAccess::Tuple(ix) => quote! { self.#ix },
+            FieldAccess::Named(id) => quote! { #base.#id },
+            FieldAccess::Tuple(ix) => quote! { #base.#ix },
         }
     }
 }
@@ -276,7 +280,7 @@ fn decode_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
 
 fn encoded_len_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
     quote! {
-        <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &(#access))
+        <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&(#access))
     }
 }
 
@@ -284,7 +288,7 @@ fn encoded_len_scalar_value(value: &TokenStream, tag: u32, ty: &Type) -> TokenSt
     quote! {
         {
             let __value: #ty = #value;
-            <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &__value)
+            <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&__value)
         }
     }
 }
@@ -309,7 +313,7 @@ fn decode_message(access: &TokenStream, tag: u32) -> TokenStream {
 }
 
 fn encoded_len_message(access: &TokenStream, tag: u32) -> TokenStream {
-    quote! { ::proto_rs::encoding::message::encoded_len(#tag, &(#access)) }
+    quote! { ::proto_rs::encoding::message::encoded_len(#tag, &&(#access)) }
 }
 
 // ---------------------------------------------------------------------------

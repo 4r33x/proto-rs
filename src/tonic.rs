@@ -44,13 +44,13 @@ pub struct ProtoCodec<Encode = (), Decode = (), Mode = SunByRef> {
     _marker: PhantomData<(Encode, Decode, Mode)>,
 }
 
-impl<Encode, Decode> Default for ProtoCodec<Encode, Decode> {
+impl<Encode, Decode, Mode> Default for ProtoCodec<Encode, Decode, Mode> {
     fn default() -> Self {
         Self { _marker: PhantomData }
     }
 }
 
-impl<Encode, Decode> ProtoCodec<Encode, Decode> {
+impl<Encode, Decode, Mode> ProtoCodec<Encode, Decode, Mode> {
     pub fn new() -> Self {
         Self { _marker: PhantomData }
     }
