@@ -10,21 +10,51 @@ use tonic::codec::Encoder;
 
 use crate::ProtoExt;
 use crate::traits::ProtoShadow;
+use crate::traits::SunOf;
+
+pub trait AsBytes {
+    fn as_bytes(&self) -> &[u8];
+}
+
+impl AsBytes for Vec<u8> {
+    fn as_bytes(&self) -> &[u8] {
+        self
+    }
+}
+impl<const N: usize> AsBytes for [u8; N] {
+    fn as_bytes(&self) -> &[u8] {
+        self
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct BytesMode;
+#[derive(Clone, Copy, Default)]
+pub struct SunByVal; // Sun<'a> = T
+#[derive(Clone, Copy, Default)]
+pub struct SunByRef; // Sun<'a> = &'a T
+
+unsafe impl Send for BytesMode {}
+unsafe impl Sync for BytesMode {}
+unsafe impl Send for SunByVal {}
+unsafe impl Sync for SunByVal {}
+unsafe impl Send for SunByRef {}
+unsafe impl Sync for SunByRef {}
 
 #[derive(Debug, Clone)]
-pub struct ProtoCodec<Encode = (), Decode = (), Mode = ()> {
+pub struct ProtoCodec<Encode = (), Decode = (), Mode = SunByRef> {
     _marker: PhantomData<(Encode, Decode, Mode)>,
 }
 
-impl<Encode, Decode> Default for ProtoCodec<Encode, Decode> {
-    fn default() -> Self {
+impl<Encode, Decode, Mode> ProtoCodec<Encode, Decode, Mode> {
+    pub fn new() -> Self {
         Self { _marker: PhantomData }
     }
 }
 
-impl<Encode, Decode> ProtoCodec<Encode, Decode> {
-    pub fn new() -> Self {
-        Self { _marker: PhantomData }
+impl<Encode, Decode, Mode> Default for ProtoCodec<Encode, Decode, Mode> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -49,44 +79,16 @@ where
     }
 }
 
-pub trait AsBytes {
-    fn as_bytes(&self) -> &[u8];
-}
-
-impl AsBytes for Vec<u8> {
-    fn as_bytes(&self) -> &[u8] {
-        self
-    }
-}
-impl<const N: usize> AsBytes for [u8; N] {
-    fn as_bytes(&self) -> &[u8] {
-        self
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ProtoEncoder<T, Mode> {
     _marker: core::marker::PhantomData<(T, Mode)>,
 }
 
-impl<T, N> Default for ProtoEncoder<T, N> {
+impl<T, Mode> Default for ProtoEncoder<T, Mode> {
     fn default() -> Self {
         Self { _marker: PhantomData }
     }
 }
-#[derive(Clone, Copy, Default)]
-pub struct BytesMode;
-#[derive(Clone, Copy, Default)]
-pub struct SunByVal {} // Sun<'a> = T
-#[derive(Clone, Copy, Default)]
-pub struct SunByRef {} // Sun<'a> = &'a T
-
-unsafe impl Send for BytesMode {}
-unsafe impl Sync for BytesMode {}
-unsafe impl Send for SunByVal {}
-unsafe impl Sync for SunByVal {}
-unsafe impl Send for SunByRef {}
-unsafe impl Sync for SunByRef {}
 
 pub trait EncoderExt<T, Mode> {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status>;
@@ -122,7 +124,8 @@ where
     for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        T::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        let sun: SunOf<'_, T> = &item;
+        T::encode(sun, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 

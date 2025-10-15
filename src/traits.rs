@@ -12,13 +12,24 @@ use crate::encoding::encoded_len_varint;
 // ---------- conversion trait users implement ----------
 pub trait ProtoShadow: Sized {
     /// Borrowed or owned form used during encoding.
+    ///
+    /// Implementations typically use `&'a Self` which keeps the existing "borrowed
+    /// encode" behaviour, but the associated type can be swapped for consuming
+    /// encoders or zero-copy wrappers when required.
     type Sun<'a>: 'a;
 
     /// The value returned after decoding — can be fully owned
     /// (e.g. `D128`, `String`) or a zero-copy wrapper `ZeroCopyAccess<T>`.
+    ///
+    /// By default this is simply `Self`, making conversions a no-op while still
+    /// allowing specialised implementations to opt into different ownership
+    /// strategies.
     type OwnedSun: Sized;
 
     /// The *resulting* shadow type when constructed from a given Sun<'b>, it could be just zero-copy view so we can encode it to buffer
+    ///
+    /// The common case mirrors `&'a Self`, but alternate representations can be
+    /// used to support intermediate representations for encoding/decoding.
     type View<'a>: 'a;
 
     /// Decoder to owned value
@@ -35,6 +46,10 @@ pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::OwnedSun;
 pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::View<'a>;
 
 pub trait ProtoExt: Sized {
+    /// Shadow type representing the intermediate form used during
+    /// encoding/decoding. Most implementations simply use `Self`, which keeps the
+    /// legacy behaviour while allowing specialised shadows for advanced zero-copy
+    /// scenarios.
     type Shadow<'a>: ProtoShadow<OwnedSun = Self>
     where
         Self: 'a;
