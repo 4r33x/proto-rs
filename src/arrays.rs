@@ -64,7 +64,8 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
 #[inline]
 unsafe fn array_assume_init<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
     // SAFETY: Caller guarantees all elements are initialized
-    unsafe { core::mem::transmute_copy::<[MaybeUninit<T>; N], [T; N]>(&arr) }
+    let ptr = &arr as *const [MaybeUninit<T>; N] as *const [T; N];
+    unsafe { core::ptr::read(ptr) }
 }
 // -----------------------------------------------------------------------------
 // ProtoExt for arrays — placeholder behavior (encoded/decoded by parent struct)
