@@ -107,21 +107,48 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
             #(#original_variants),*
         }
 
+        impl #generics ::proto_rs::ProtoShadow for #name #generics {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 Self::#default_variant_ident
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value = *self as i32;
-                if value != 0 {
-                    ::proto_rs::encoding::int32::encode(1, &value, buf);
+            fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let value: &Self = *value;
+                let raw = *value as i32;
+                if raw != 0 {
+                    ::proto_rs::encoding::int32::encoded_len(1, &raw)
+                } else {
+                    0
+                }
+            }
+
+            fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value: &Self = value;
+                let raw = *value as i32;
+                if raw != 0 {
+                    ::proto_rs::encoding::int32::encode(1, &raw, buf);
                 }
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow<'_>,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -131,20 +158,11 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                     1 => {
                         let mut value: i32 = 0;
                         ::proto_rs::encoding::int32::merge(wire_type, &mut value, buf, ctx)?;
-                        *self = Self::try_from(value)
+                        *shadow = Self::try_from(value)
                             .map_err(|_| ::proto_rs::DecodeError::new("Invalid enum value"))?;
                         Ok(())
                     }
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                }
-            }
-
-            fn encoded_len(&self) -> usize {
-                let value = *self as i32;
-                if value != 0 {
-                    ::proto_rs::encoding::int32::encoded_len(1, &value)
-                } else {
-                    0
                 }
             }
 
@@ -167,18 +185,18 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         impl #generics ::proto_rs::RepeatedField for #name #generics {
             fn encode_repeated_field(
                 tag: u32,
-                values: &[Self],
+                values: &[::proto_rs::OwnedSunOf<'_, Self>],
                 buf: &mut impl ::proto_rs::bytes::BufMut,
             ) {
                 for value in values {
-                    let raw = *value as i32;
+                    let raw = (*value) as i32;
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);
                 }
             }
 
             fn merge_repeated_field(
                 wire_type: ::proto_rs::encoding::WireType,
-                values: &mut ::std::vec::Vec<Self>,
+                values: &mut ::std::vec::Vec<Self::Shadow<'_>>,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
@@ -206,10 +224,10 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+            fn encoded_len_repeated_field(tag: u32, values: &[::proto_rs::OwnedSunOf<'_, Self>]) -> usize {
                 let mut total = 0usize;
                 for value in values {
-                    let raw = *value as i32;
+                    let raw = (*value) as i32;
                     total += ::proto_rs::encoding::int32::encoded_len(tag, &raw);
                 }
                 total
@@ -217,7 +235,8 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::SingularField for #name #generics {
-            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl ::proto_rs::bytes::BufMut) {
+            fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value: &Self = value;
                 let raw: i32 = (*value) as i32;
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);
@@ -226,7 +245,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
 
             fn merge_singular_field(
                 wire_type: ::proto_rs::encoding::WireType,
-                value: &mut Self,
+                value: &mut Self::Shadow<'_>,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
@@ -236,7 +255,8 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 Ok(())
             }
 
-            fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
+            fn encoded_len_singular_field(tag: u32, value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let value: &Self = *value;
                 let raw: i32 = (*value) as i32;
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encoded_len(tag, &raw)

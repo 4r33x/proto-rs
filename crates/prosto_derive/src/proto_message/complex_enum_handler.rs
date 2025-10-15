@@ -107,20 +107,44 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
             #(#original_variants),*
         }
 
+        impl #generics ::proto_rs::ProtoShadow for #name #generics {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
         impl #generics ::proto_rs::ProtoExt for #name #generics {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 #default_value
             }
 
-            fn encode_raw(&self, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                match self {
+            fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let value: &Self = *value;
+                match value {
+                    #(#encoded_len_arms)*
+                }
+            }
+
+            fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value: &Self = value;
+                match value {
                     #(#encode_arms)*
                 }
             }
 
             fn merge_field(
-                &mut self,
+                shadow: &mut Self::Shadow<'_>,
                 tag: u32,
                 wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
@@ -130,12 +154,6 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 match tag {
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                }
-            }
-
-            fn encoded_len(&self) -> usize {
-                match self {
-                    #(#encoded_len_arms)*
                 }
             }
 
@@ -172,7 +190,7 @@ fn generate_variant_arms(name: &syn::Ident, data: &DataEnum) -> syn::Result<(Vec
                         if len != 0 {
                             return Err(::proto_rs::DecodeError::new("Expected empty message for unit variant"));
                         }
-                        *self = #name::#variant_ident;
+                        *shadow = #name::#variant_ident;
                         Ok(())
                     }
                 });
@@ -306,7 +324,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
                 let mut variant_value = #name::#variant_ident(#binding_ident);
                 #(#post_decode_hooks)*
-                *self = variant_value;
+                *shadow = variant_value;
                 Ok(())
             }
         }
@@ -455,7 +473,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
 
             let mut variant_value = #name::#variant_ident { #(#field_bindings_for_decode),* };
             #(#post_decode_hooks)*
-            *self = variant_value;
+            *shadow = variant_value;
             Ok(())
         }
     };

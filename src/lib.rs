@@ -44,10 +44,15 @@ pub use crate::error::UnknownEnumValue;
 pub use crate::name::Name;
 pub use crate::tonic::ProtoCodec;
 pub use crate::traits::MessageField;
+pub use crate::traits::OwnedSunOf;
 pub use crate::traits::ProtoEnum;
 pub use crate::traits::ProtoExt;
+pub use crate::traits::ProtoShadow;
 pub use crate::traits::RepeatedField;
+pub use crate::traits::Shadow;
 pub use crate::traits::SingularField;
+pub use crate::traits::SunOf;
+pub use crate::traits::ViewOf;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled
