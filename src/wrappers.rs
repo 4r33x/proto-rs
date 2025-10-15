@@ -32,8 +32,6 @@ use crate::RepeatedField;
 use crate::SingularField;
 use crate::encoding::DecodeContext;
 use crate::encoding::wire_type::WireType;
-use crate::traits::ProtoShadow;
-use crate::traits::Shadow;
 use crate::traits::ViewOf;
 
 impl<T> SingularField for T
@@ -365,11 +363,4 @@ where
     fn clear(&mut self) {
         HashSet::clear(self);
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const _MESSAGE_IS_OBJECT_SAFE: Option<&dyn ProtoExt> = None;
 }

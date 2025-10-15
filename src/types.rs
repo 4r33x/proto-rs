@@ -367,25 +367,29 @@ impl_narrow_varint!(i8, i32, int32, "i8 overflow");
 impl_narrow_varint!(i16, i32, int32, "i16 overflow");
 
 /// Generic implementation for Option<T>
-impl<'a, T> ProtoShadow for Option<Shadow<'a, T>>
-where
-    T: ProtoExt,
-{
-    type Sun<'b> = Option<SunOf<'b, T>>;
-    type OwnedSun = Option<T>;
-    type View<'b> = Option<ViewOf<'b, T>>;
+impl<T: ProtoShadow> ProtoShadow for Option<T> {
+    type Sun<'a> = Option<T::Sun<'a>>;
 
+    type OwnedSun = Option<T::OwnedSun>;
+    type View<'a> = Option<T::View<'a>>;
+
+    #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        self.map(|shadow| shadow.to_sun()).transpose()
+        // Map Option<T> → Option<T::OwnedSun>
+        self.map(T::to_sun).transpose()
     }
 
-    fn from_sun<'b>(value: Self::Sun<'b>) -> Self::View<'b> {
-        value.map(|inner| <Shadow<'b, T> as ProtoShadow>::from_sun(inner))
+    #[inline]
+    fn from_sun<'a>(v: Self::Sun<'a>) -> Self::View<'a> {
+        v.map(T::from_sun)
     }
 }
 
 impl<T: ProtoExt> ProtoExt for Option<T> {
-    type Shadow<'a> = Option<Shadow<'a, T>>;
+    type Shadow<'a>
+        = Option<Shadow<'a, T>>
+    where
+        T: 'a;
 
     #[inline]
     fn proto_default<'a>() -> Self::Shadow<'a> {
