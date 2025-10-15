@@ -31,40 +31,61 @@ use crate::encoding::string;
 use crate::encoding::uint32;
 use crate::encoding::uint64;
 use crate::encoding::wire_type::WireType;
+use crate::traits::ProtoShadow;
+use crate::traits::Shadow;
+use crate::traits::SunOf;
+use crate::traits::ViewOf;
 
 macro_rules! impl_google_wrapper {
     ($ty:ty, $module:ident, $name:literal, |$value:ident| $is_default:expr, |$clear_value:ident| $clear_body:expr) => {
+        impl ProtoShadow for $ty {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun<'a>(value: Self::Sun<'a>) -> Self::View<'a> {
+                value
+            }
+        }
+
         impl ProtoExt for $ty {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 Default::default()
             }
 
-            fn encode_raw(&self, buf: &mut impl BufMut) {
-                if !{
-                    let $value: &$ty = self;
-                    $is_default
-                } {
-                    $module::encode(1, self, buf);
-                }
-            }
-
-            fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-                if tag == 1 {
-                    $module::merge(wire_type, self, buf, ctx)
-                } else {
-                    skip_field(wire_type, tag, buf, ctx)
-                }
-            }
-
-            fn encoded_len(&self) -> usize {
+            fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
+                let inner: &$ty = *value;
                 if {
-                    let $value: &$ty = self;
+                    let $value: &$ty = inner;
                     $is_default
                 } {
                     0
                 } else {
-                    $module::encoded_len(1, self)
+                    $module::encoded_len(1, inner)
+                }
+            }
+
+            fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut) {
+                if !{
+                    let $value: &$ty = value;
+                    $is_default
+                } {
+                    $module::encode(1, value, buf);
+                }
+            }
+
+            fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    $module::merge(wire_type, value, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
                 }
             }
 
@@ -84,21 +105,23 @@ macro_rules! impl_google_wrapper {
         }
 
         impl RepeatedField for $ty {
-            fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
-                $module::encode_repeated(tag, values, buf);
+            fn encode_repeated_field(tag: u32, values: &[ViewOf<'_, Self>], buf: &mut impl BufMut) {
+                for &value in values {
+                    $module::encode(tag, value, buf);
+                }
             }
 
-            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 $module::merge_repeated(wire_type, values, buf, ctx)
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
-                $module::encoded_len_repeated(tag, values)
+            fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
+                values.iter().map(|value| $module::encoded_len(tag, *value)).sum()
             }
         }
 
         impl SingularField for $ty {
-            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
+            fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if !{
                     let $value: &$ty = value;
                     $is_default
@@ -107,18 +130,19 @@ macro_rules! impl_google_wrapper {
                 }
             }
 
-            fn merge_singular_field(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 $module::merge(wire_type, value, buf, ctx)
             }
 
-            fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
+            fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+                let inner: &$ty = *value;
                 if {
-                    let $value: &$ty = value;
+                    let $value: &$ty = inner;
                     $is_default
                 } {
                     0
                 } else {
-                    $module::encoded_len(tag, value)
+                    $module::encoded_len(tag, inner)
                 }
             }
         }
@@ -137,18 +161,33 @@ impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", |value| value.is_empty(), |va
 impl_google_wrapper!(Bytes, bytes, "BytesValue", |value| value.is_empty(), |value| value.clear());
 
 /// `google.protobuf.Empty`
-impl ProtoExt for () {
-    #[inline]
-    fn proto_default() -> Self {}
+impl ProtoShadow for () {
+    type Sun<'a> = ();
+    type OwnedSun = ();
+    type View<'a> = ();
 
-    fn encode_raw(&self, _buf: &mut impl BufMut) {}
-
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        skip_field(wire_type, tag, buf, ctx)
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        Ok(())
     }
 
-    fn encoded_len(&self) -> usize {
+    fn from_sun<'a>(_: Self::Sun<'a>) -> Self::View<'a> {}
+}
+
+/// `google.protobuf.Empty`
+impl ProtoExt for () {
+    type Shadow<'a> = Self;
+
+    #[inline]
+    fn proto_default<'a>() -> Self::Shadow<'a> {}
+
+    fn encoded_len(_value: &ViewOf<'_, Self>) -> usize {
         0
+    }
+
+    fn encode_raw<'a>(_value: ViewOf<'a, Self>, _buf: &mut impl BufMut) {}
+
+    fn merge_field(_value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        skip_field(wire_type, tag, buf, ctx)
     }
 
     fn clear(&mut self) {}
@@ -183,21 +222,47 @@ macro_rules! impl_narrow_varint {
         impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, false);
     };
     (@impl $ty:ty, $wide_ty:ty, $module:ident, $err:literal, $with_repeated:tt) => {
+        impl ProtoShadow for $ty {
+            type Sun<'a> = &'a Self;
+            type OwnedSun = Self;
+            type View<'a> = &'a Self;
+
+            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+                Ok(self)
+            }
+
+            fn from_sun<'a>(value: Self::Sun<'a>) -> Self::View<'a> {
+                value
+            }
+        }
+
         impl ProtoExt for $ty {
+            type Shadow<'a> = Self;
+
             #[inline]
-            fn proto_default() -> Self {
+            fn proto_default<'a>() -> Self::Shadow<'a> {
                 Self::default()
             }
 
-            fn encode_raw(&self, buf: &mut impl BufMut) {
-                if *self != Self::default() {
-                    let widened: $wide_ty = (*self).into();
+            fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
+                let inner: &$ty = *value;
+                if *inner == Self::default() {
+                    0
+                } else {
+                    let widened: $wide_ty = (*inner).into();
+                    $module::encoded_len(1, &widened)
+                }
+            }
+
+            fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut) {
+                if *value != Self::default() {
+                    let widened: $wide_ty = (*value).into();
                     $module::encode(1, &widened, buf);
                 }
             }
 
             fn merge_field(
-                &mut self,
+                value: &mut Self::Shadow<'_>,
                 tag: u32,
                 wire_type: WireType,
                 buf: &mut impl Buf,
@@ -206,19 +271,10 @@ macro_rules! impl_narrow_varint {
                 if tag == 1 {
                     let mut widened: $wide_ty = <$wide_ty as Default>::default();
                     $module::merge(wire_type, &mut widened, buf, ctx)?;
-                    *self = widened.try_into().map_err(|_| DecodeError::new($err))?;
+                    *value = widened.try_into().map_err(|_| DecodeError::new($err))?;
                     Ok(())
                 } else {
                     skip_field(wire_type, tag, buf, ctx)
-                }
-            }
-
-            fn encoded_len(&self) -> usize {
-                if *self == Self::default() {
-                    0
-                } else {
-                    let widened: $wide_ty = (*self).into();
-                    $module::encoded_len(1, &widened)
                 }
             }
 
@@ -228,7 +284,7 @@ macro_rules! impl_narrow_varint {
         }
 
         impl SingularField for $ty {
-            fn encode_singular_field(tag: u32, value: &Self, buf: &mut impl BufMut) {
+            fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if *value != Self::default() {
                     let widened: $wide_ty = (*value).into();
                     $module::encode(tag, &widened, buf);
@@ -237,7 +293,7 @@ macro_rules! impl_narrow_varint {
 
             fn merge_singular_field(
                 wire_type: WireType,
-                value: &mut Self,
+                value: &mut Self::Shadow<'_>,
                 buf: &mut impl Buf,
                 ctx: DecodeContext,
             ) -> Result<(), DecodeError> {
@@ -247,11 +303,12 @@ macro_rules! impl_narrow_varint {
                 Ok(())
             }
 
-            fn encoded_len_singular_field(tag: u32, value: &Self) -> usize {
-                if *value == Self::default() {
+            fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+                let inner: &$ty = *value;
+                if *inner == Self::default() {
                     0
                 } else {
-                    let widened: $wide_ty = (*value).into();
+                    let widened: $wide_ty = (*inner).into();
                     $module::encoded_len(tag, &widened)
                 }
             }
@@ -261,16 +318,16 @@ macro_rules! impl_narrow_varint {
     };
     (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
         impl RepeatedField for $ty {
-            fn encode_repeated_field(tag: u32, values: &[Self], buf: &mut impl BufMut) {
+            fn encode_repeated_field(tag: u32, values: &[ViewOf<'_, Self>], buf: &mut impl BufMut) {
                 for value in values {
-                    let widened: $wide_ty = (*value).into();
+                    let widened: $wide_ty = (**value).into();
                     $module::encode(tag, &widened, buf);
                 }
             }
 
             fn merge_repeated_field(
                 wire_type: WireType,
-                values: &mut Vec<Self>,
+                values: &mut Vec<Self::Shadow<'_>>,
                 buf: &mut impl Buf,
                 ctx: DecodeContext,
             ) -> Result<(), DecodeError> {
@@ -290,11 +347,11 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[Self]) -> usize {
+            fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
                 values
                     .iter()
                     .map(|value| {
-                        let widened: $wide_ty = (*value).into();
+                        let widened: $wide_ty = (**value).into();
                         $module::encoded_len(tag, &widened)
                     })
                     .sum()
@@ -310,27 +367,44 @@ impl_narrow_varint!(i8, i32, int32, "i8 overflow");
 impl_narrow_varint!(i16, i32, int32, "i16 overflow");
 
 /// Generic implementation for Option<T>
+impl<'a, T> ProtoShadow for Option<Shadow<'a, T>>
+where
+    T: ProtoExt,
+{
+    type Sun<'b> = Option<SunOf<'b, T>>;
+    type OwnedSun = Option<T>;
+    type View<'b> = Option<ViewOf<'b, T>>;
+
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        self.map(|shadow| shadow.to_sun()).transpose()
+    }
+
+    fn from_sun<'b>(value: Self::Sun<'b>) -> Self::View<'b> {
+        value.map(|inner| <Shadow<'b, T> as ProtoShadow>::from_sun(inner))
+    }
+}
+
 impl<T: ProtoExt> ProtoExt for Option<T> {
+    type Shadow<'a> = Option<Shadow<'a, T>>;
+
     #[inline]
-    fn proto_default() -> Self {
+    fn proto_default<'a>() -> Self::Shadow<'a> {
         None
     }
 
-    fn encode_raw(&self, buf: &mut impl BufMut) {
-        if let Some(value) = self {
-            value.encode_raw(buf);
+    fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
+        value.as_ref().map_or(0, |inner| T::encoded_len(inner))
+    }
+
+    fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut) {
+        if let Some(inner) = value {
+            T::encode_raw(inner, buf);
         }
     }
 
-    fn merge_field(&mut self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut value = self.take().unwrap_or_else(T::proto_default);
-        value.merge_field(tag, wire_type, buf, ctx)?;
-        *self = Some(value);
-        Ok(())
-    }
-
-    fn encoded_len(&self) -> usize {
-        self.as_ref().map_or(0, ProtoExt::encoded_len)
+    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let slot = value.get_or_insert_with(T::proto_default);
+        T::merge_field(slot, tag, wire_type, buf, ctx)
     }
 
     fn clear(&mut self) {
