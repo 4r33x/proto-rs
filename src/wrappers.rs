@@ -41,18 +41,22 @@ where
     T: MessageField,
 {
     fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-        let len = <Self as ProtoExt>::Shadow::encoded_len(&value);
+        let len = <Self as ProtoExt>::encoded_len(&value);
         if len != 0 {
-            crate::encoding::message::encode(tag, value, buf);
+            crate::encoding::message::encode::<Self>(tag, value, buf);
         }
     }
 
     fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        crate::encoding::message::merge(wire_type, value, buf, ctx)
+        crate::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
     }
 
     fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
-        if Shadow::encoded_len(value) == 0 { 0 } else { crate::encoding::message::encoded_len(tag, value) }
+        if Self::encoded_len(value) == 0 {
+            0
+        } else {
+            crate::encoding::message::encoded_len::<Self>(tag, value)
+        }
     }
 }
 

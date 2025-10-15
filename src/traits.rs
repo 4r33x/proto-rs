@@ -10,9 +10,9 @@ use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 
 // ---------- conversion trait users implement ----------
-pub trait ProtoShadow<'a>: Sized {
+pub trait ProtoShadow: Sized {
     /// Borrowed or owned form used during encoding.
-    type Sun<'b>: 'b;
+    type Sun<'a>: 'a;
 
     /// The value returned after decoding — can be fully owned
     /// (e.g. `D128`, `String`) or a zero-copy wrapper that still
@@ -24,29 +24,28 @@ pub trait ProtoShadow<'a>: Sized {
     /// Example:
     /// - If Sun<'b> = &'b Self::OwnedSun → ResultShadow<'b> = &'b Self
     /// - If Sun<'b> = Self::OwnedSun → ResultShadow<'b> = Self
-    type View<'b>: 'b;
+    type View<'a>: 'a;
 
     /// Convert this shadow into whatever "owned" representation we chose.
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError>;
 
     /// Build a shadow from an existing Sun (borrowed or owned).
-    fn from_sun(value: Self::Sun<'a>) -> Self::View<'a>;
-
-    fn proto_default() -> Self;
-    fn encoded_len(value: &Self::View<'_>) -> usize;
+    fn from_sun<'a>(value: Self::Sun<'a>) -> Self::View<'a>;
 }
 
 // Helper alias to shorten signatures:
 pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
-pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<'a>>::Sun<'a>;
-pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<'a>>::OwnedSun;
-pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow<'a>>::View<'a>;
+pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::Sun<'a>;
+pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::OwnedSun;
+pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::View<'a>;
 
 pub trait ProtoExt: Sized {
-    type Shadow<'a>: ProtoShadow<'a, OwnedSun = Self>
+    type Shadow<'a>: ProtoShadow<OwnedSun = Self>
     where
         Self: 'a;
 
+    fn proto_default<'a>() -> Self::Shadow<'a>;
+    fn encoded_len(value: &ViewOf<'_, Self>) -> usize;
     #[doc(hidden)]
     fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut);
 
@@ -62,7 +61,7 @@ pub trait ProtoExt: Sized {
     fn encode<'a>(value: SunOf<'a, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let shadow = Self::Shadow::from_sun(value);
 
-        let required = Self::Shadow::encoded_len(&shadow);
+        let required = Self::encoded_len(&shadow);
         let remaining = buf.remaining_mut();
         if required > remaining {
             return Err(EncodeError::new(required, remaining));
@@ -73,7 +72,7 @@ pub trait ProtoExt: Sized {
 
     fn encode_to_vec<'a>(value: SunOf<'a, Self>) -> Vec<u8> {
         let shadow = Self::Shadow::from_sun(value);
-        let len = Self::Shadow::encoded_len(&shadow);
+        let len = Self::encoded_len(&shadow);
         let mut buf = Vec::with_capacity(len);
         Self::encode_raw(shadow, &mut buf);
         buf
@@ -87,7 +86,7 @@ pub trait ProtoExt: Sized {
 
     fn encode_length_delimited<'a>(value: SunOf<'a, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let shadow = Self::Shadow::from_sun(value);
-        let len = Self::Shadow::encoded_len(&shadow);
+        let len = Self::encoded_len(&shadow);
         let required = len + encoded_len_varint(len as u64);
         let remaining = buf.remaining_mut();
         if required > remaining {
@@ -100,7 +99,7 @@ pub trait ProtoExt: Sized {
 
     fn encode_length_delimited_to_vec<'a>(value: SunOf<'a, Self>) -> Vec<u8> {
         let shadow = Self::Shadow::from_sun(value);
-        let len = Self::Shadow::encoded_len(&shadow);
+        let len = Self::encoded_len(&shadow);
         let mut buf = Vec::with_capacity(len + encoded_len_varint(len as u64));
         encode_varint(len as u64, &mut buf);
         Self::encode_raw(shadow, &mut buf);
@@ -109,7 +108,7 @@ pub trait ProtoExt: Sized {
     //N should include encoded_len_varint
     fn encode_length_delimited_to_array<'a, const VAR_INT_LEN: usize>(value: SunOf<'a, Self>) -> [u8; VAR_INT_LEN] {
         let shadow = Self::Shadow::from_sun(value);
-        let len = Self::Shadow::encoded_len(&shadow);
+        let len = Self::encoded_len(&shadow);
         let mut buf = [0; VAR_INT_LEN];
         encode_varint(len as u64, &mut buf.as_mut_slice());
         Self::encode_raw(shadow, &mut buf.as_mut_slice());
@@ -119,13 +118,13 @@ pub trait ProtoExt: Sized {
     // -------- Decoding (read -> Shadow -> post_decode -> Self)
 
     fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
-        let mut shadow = Self::Shadow::proto_default();
+        let mut shadow = Self::proto_default();
         Self::merge(&mut shadow, &mut buf)?;
         Self::post_decode(shadow)
     }
 
     fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError> {
-        let mut shadow = Self::Shadow::proto_default();
+        let mut shadow = Self::proto_default();
         Self::merge_length_delimited(&mut shadow, buf)?;
         Self::post_decode(shadow)
     }
@@ -202,7 +201,7 @@ pub trait SingularField: ProtoExt + Sized {
         if let Some(value) = target.as_mut() {
             Self::merge_singular_field(wire_type, value, buf, ctx)
         } else {
-            let mut value = Self::Shadow::proto_default();
+            let mut value = Self::proto_default();
             Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
             *target = Some(value);
             Ok(())

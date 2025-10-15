@@ -755,7 +755,7 @@ pub mod message {
         M: ProtoExt,
     {
         encode_key(tag, WireType::LengthDelimited, buf);
-        encode_varint(M::Shadow::encoded_len(&msg) as u64, buf);
+        encode_varint(M::encoded_len(&msg) as u64, buf);
         M::encode_raw(msg, buf);
     }
 
@@ -777,7 +777,7 @@ pub mod message {
     pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
     where
         M: ProtoExt,
-        for<'a> M::Shadow<'a>: ProtoShadow<'a, Sun<'a> = &'a M, OwnedSun = M>,
+        for<'a> M::Shadow<'a>: ProtoShadow<Sun<'a> = &'a M, OwnedSun = M>,
     {
         for msg in messages {
             let shadow = M::Shadow::from_sun(msg);
@@ -790,7 +790,7 @@ pub mod message {
         M: ProtoExt,
     {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
-        let mut msg = M::Shadow::proto_default();
+        let mut msg = M::proto_default();
         merge::<M, _>(WireType::LengthDelimited, &mut msg, buf, ctx)?;
         messages.push(M::post_decode(msg)?);
         Ok(())
@@ -801,7 +801,7 @@ pub mod message {
     where
         M: ProtoExt,
     {
-        let len = M::Shadow::encoded_len(msg);
+        let len = M::encoded_len(msg);
         key_len(tag) + encoded_len_varint(len as u64) + len
     }
 
@@ -814,7 +814,7 @@ pub mod message {
             + messages
                 .iter()
                 .map(|x| {
-                    let shadow = M::Shadow::encoded_len(x);
+                    let shadow = M::encoded_len(x);
                     shadow
                 })
                 .map(|len| len + encoded_len_varint(len as u64))
