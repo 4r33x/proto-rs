@@ -747,7 +747,10 @@ pub mod message {
     use super::encoded_len_varint;
     use super::key_len;
     use super::merge_loop;
+    use crate::traits::OwnedSunOf;
     use crate::traits::ProtoShadow;
+    use crate::traits::Shadow;
+    use crate::traits::SunOf;
     use crate::traits::ViewOf;
 
     pub fn encode<M>(tag: u32, msg: ViewOf<'_, M>, buf: &mut impl BufMut)
@@ -774,17 +777,7 @@ pub mod message {
         Ok(())
     }
 
-    pub fn encode_repeated<M>(tag: u32, messages: &[M], buf: &mut impl BufMut)
-    where
-        M: ProtoExt,
-        for<'a> M::Shadow<'a>: ProtoShadow<Sun<'a> = &'a M, OwnedSun = M>,
-    {
-        for msg in messages {
-            let shadow = M::Shadow::from_sun(msg);
-            encode::<M>(tag, shadow, buf);
-        }
-    }
-
+    #[inline]
     pub fn merge_repeated<M>(wire_type: WireType, messages: &mut Vec<M>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
     where
         M: ProtoExt,
@@ -795,6 +788,38 @@ pub mod message {
         messages.push(M::post_decode(msg)?);
         Ok(())
     }
+    #[inline]
+    pub fn encode_repeated<M>(tag: u32, messages: &[OwnedSunOf<'_, M>], buf: &mut impl BufMut)
+    where
+        M: ProtoExt,
+        for<'a> M::Shadow<'a>: ProtoShadow<Sun<'a> = &'a M, OwnedSun = M>,
+    {
+        for msg in messages {
+            // Each element in `messages` is an owned message (M),
+            // so we borrow it as &M to form its shadow for encoding.
+            let shadow = M::Shadow::from_sun(msg);
+            crate::encoding::message::encode::<M>(tag, shadow, buf);
+        }
+    }
+
+    #[inline]
+    pub fn encoded_len_repeated<M>(tag: u32, messages: &[OwnedSunOf<'_, M>]) -> usize
+    where
+        M: ProtoExt,
+        // same bound needed here so from_sun(&M) type-checks
+        for<'a> M::Shadow<'a>: ProtoShadow<Sun<'a> = &'a M, OwnedSun = M>,
+    {
+        key_len(tag) * messages.len()
+            + messages
+                .iter()
+                .map(|msg| {
+                    // msg: &M
+                    let view = M::Shadow::from_sun(msg);
+                    let len = M::encoded_len(&view);
+                    len + encoded_len_varint(len as u64)
+                })
+                .sum::<usize>()
+    }
 
     #[inline]
     pub fn encoded_len<M>(tag: u32, msg: &ViewOf<'_, M>) -> usize
@@ -803,22 +828,6 @@ pub mod message {
     {
         let len = M::encoded_len(msg);
         key_len(tag) + encoded_len_varint(len as u64) + len
-    }
-
-    #[inline]
-    pub fn encoded_len_repeated<M>(tag: u32, messages: &[ViewOf<'_, M>]) -> usize
-    where
-        M: ProtoExt,
-    {
-        key_len(tag) * messages.len()
-            + messages
-                .iter()
-                .map(|x| {
-                    let shadow = M::encoded_len(x);
-                    shadow
-                })
-                .map(|len| len + encoded_len_varint(len as u64))
-                .sum::<usize>()
     }
 }
 

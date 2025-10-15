@@ -31,6 +31,7 @@ use crate::encoding::string;
 use crate::encoding::uint32;
 use crate::encoding::uint64;
 use crate::encoding::wire_type::WireType;
+use crate::traits::OwnedSunOf;
 use crate::traits::ProtoShadow;
 use crate::traits::Shadow;
 use crate::traits::SunOf;
@@ -105,8 +106,8 @@ macro_rules! impl_google_wrapper {
         }
 
         impl RepeatedField for $ty {
-            fn encode_repeated_field(tag: u32, values: &[ViewOf<'_, Self>], buf: &mut impl BufMut) {
-                for &value in values {
+            fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
+                for value in values {
                     $module::encode(tag, value, buf);
                 }
             }
@@ -115,8 +116,8 @@ macro_rules! impl_google_wrapper {
                 $module::merge_repeated(wire_type, values, buf, ctx)
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
-                values.iter().map(|value| $module::encoded_len(tag, *value)).sum()
+            fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
+                values.iter().map(|value| $module::encoded_len(tag, value)).sum()
             }
         }
 
@@ -318,9 +319,9 @@ macro_rules! impl_narrow_varint {
     };
     (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
         impl RepeatedField for $ty {
-            fn encode_repeated_field(tag: u32, values: &[ViewOf<'_, Self>], buf: &mut impl BufMut) {
+            fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
                 for value in values {
-                    let widened: $wide_ty = (**value).into();
+                    let widened: $wide_ty = (*value).into();
                     $module::encode(tag, &widened, buf);
                 }
             }
@@ -347,11 +348,11 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
+            fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
                 values
                     .iter()
                     .map(|value| {
-                        let widened: $wide_ty = (**value).into();
+                        let widened: $wide_ty = (*value).into();
                         $module::encoded_len(tag, &widened)
                     })
                     .sum()

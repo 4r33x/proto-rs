@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use bytes::Buf;
 use bytes::BufMut;
 
@@ -26,7 +28,6 @@ pub trait ProtoShadow: Sized {
     /// - If Sun<'b> = Self::OwnedSun → ResultShadow<'b> = Self
     type View<'a>: 'a;
 
-    /// Convert this shadow into whatever "owned" representation we chose.
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError>;
 
     /// Build a shadow from an existing Sun (borrowed or owned).
@@ -220,11 +221,11 @@ pub trait SingularField: ProtoExt + Sized {
 /// every possible `T`.
 pub trait RepeatedField: ProtoExt + Sized {
     /// Encodes `values` as a repeated field with the provided tag.
-    fn encode_repeated_field(tag: u32, values: &[ViewOf<'_, Self>], buf: &mut impl BufMut);
+    fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut);
 
     /// Merges repeated field occurrences into `values`.
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Shadow<'_, Self>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     /// Returns the encoded length of a repeated field with the provided tag.
-    fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize;
+    fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize;
 }
