@@ -24,10 +24,10 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        // Build [T::OwnedSun; N] fallibly, dropping initialized items on error
+        // Create an uninitialized array
         let mut out: [MaybeUninit<T::OwnedSun>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut written = 0;
 
+        let mut written = 0;
         for (i, elem) in self.into_iter().enumerate() {
             match elem.to_sun() {
                 Ok(v) => {
@@ -35,37 +35,36 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
                     written += 1;
                 }
                 Err(e) => {
-                    // Drop any initialized elements
+                    // Drop initialized elements
                     for j in 0..written {
-                        // SAFETY: Only the first `written` elements were initialized.
-                        unsafe {
-                            out[j].assume_init_drop();
-                        }
+                        unsafe { out[j].assume_init_drop() };
                     }
                     return Err(e);
                 }
             }
         }
 
-        // SAFETY: All N elements have been initialized above.
-        Ok(unsafe { MaybeUninit::array_assume_init(out) })
+        // SAFETY: all N elements are initialized
+        Ok(unsafe { array_assume_init(out) })
     }
 
     #[inline]
     fn from_sun<'a>(v: Self::Sun<'a>) -> Self::View<'a> {
-        // Consume the input array by value and map each element.
         let mut out: [MaybeUninit<T::View<'a>>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut it = v.into_iter();
 
-        for i in 0..N {
-            // We own `v`, moving each element out is fine.
-            let s = it.next().expect("length N mismatch");
-            out[i].write(T::from_sun(s));
+        for (idx, x) in v.into_iter().enumerate() {
+            out[idx].write(T::from_sun(x));
         }
 
-        // SAFETY: All N elements were initialized in the loop.
-        unsafe { MaybeUninit::array_assume_init(out) }
+        unsafe { array_assume_init(out) }
     }
+}
+
+/// Stable replacement for `MaybeUninit::array_assume_init`
+#[inline]
+unsafe fn array_assume_init<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
+    // SAFETY: Caller guarantees all elements are initialized
+    unsafe { core::mem::transmute_copy::<[MaybeUninit<T>; N], [T; N]>(&arr) }
 }
 // -----------------------------------------------------------------------------
 // ProtoExt for arrays — placeholder behavior (encoded/decoded by parent struct)
