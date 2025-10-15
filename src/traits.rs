@@ -1,5 +1,3 @@
-use std::ops::DerefMut;
-
 use bytes::Buf;
 use bytes::BufMut;
 
@@ -27,7 +25,7 @@ pub trait ProtoShadow: Sized {
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError>;
 
     /// Build a shadow from an existing Sun (borrowed or owned).
-    fn from_sun<'a>(value: Self::Sun<'a>) -> Self::View<'a>;
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_>;
 }
 
 // Helper alias to shorten signatures:
@@ -44,7 +42,7 @@ pub trait ProtoExt: Sized {
     fn proto_default<'a>() -> Self::Shadow<'a>;
     fn encoded_len(value: &ViewOf<'_, Self>) -> usize;
     #[doc(hidden)]
-    fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut);
+    fn encode_raw(value: ViewOf<'_, Self>, buf: &mut impl BufMut);
 
     #[doc(hidden)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
@@ -55,7 +53,7 @@ pub trait ProtoExt: Sized {
 
     // -------- Encoding entry points (Sun -> Shadow -> write)
 
-    fn encode<'a>(value: SunOf<'a, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let shadow = Self::Shadow::from_sun(value);
 
         let required = Self::encoded_len(&shadow);
@@ -67,21 +65,21 @@ pub trait ProtoExt: Sized {
         Ok(())
     }
 
-    fn encode_to_vec<'a>(value: SunOf<'a, Self>) -> Vec<u8> {
+    fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         let shadow = Self::Shadow::from_sun(value);
         let len = Self::encoded_len(&shadow);
         let mut buf = Vec::with_capacity(len);
         Self::encode_raw(shadow, &mut buf);
         buf
     }
-    fn encode_to_array<'a, const N: usize>(value: SunOf<'a, Self>) -> [u8; N] {
+    fn encode_to_array<const N: usize>(value: SunOf<'_, Self>) -> [u8; N] {
         let shadow = Self::Shadow::from_sun(value);
         let mut buf = [0; N];
         Self::encode_raw(shadow, &mut buf.as_mut_slice());
         buf
     }
 
-    fn encode_length_delimited<'a>(value: SunOf<'a, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_length_delimited(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let shadow = Self::Shadow::from_sun(value);
         let len = Self::encoded_len(&shadow);
         let required = len + encoded_len_varint(len as u64);
@@ -94,7 +92,7 @@ pub trait ProtoExt: Sized {
         Ok(())
     }
 
-    fn encode_length_delimited_to_vec<'a>(value: SunOf<'a, Self>) -> Vec<u8> {
+    fn encode_length_delimited_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         let shadow = Self::Shadow::from_sun(value);
         let len = Self::encoded_len(&shadow);
         let mut buf = Vec::with_capacity(len + encoded_len_varint(len as u64));
@@ -103,7 +101,7 @@ pub trait ProtoExt: Sized {
         buf
     }
     //N should include encoded_len_varint
-    fn encode_length_delimited_to_array<'a, const VAR_INT_LEN: usize>(value: SunOf<'a, Self>) -> [u8; VAR_INT_LEN] {
+    fn encode_length_delimited_to_array<const VAR_INT_LEN: usize>(value: SunOf<'_, Self>) -> [u8; VAR_INT_LEN] {
         let shadow = Self::Shadow::from_sun(value);
         let len = Self::encoded_len(&shadow);
         let mut buf = [0; VAR_INT_LEN];
@@ -216,5 +214,9 @@ pub trait SingularField: ProtoExt + Sized {
 /// generated structs and enums without requiring ad-hoc implementations for
 /// every possible `T`.
 pub trait RepeatedField: ProtoExt {
-    //TODO
+    fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut);
+
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+
+    fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize;
 }

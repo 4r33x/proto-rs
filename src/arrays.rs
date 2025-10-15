@@ -36,8 +36,9 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
                 }
                 Err(e) => {
                     // Drop initialized elements
-                    for j in 0..written {
-                        unsafe { out[j].assume_init_drop() };
+
+                    for j in out.iter_mut().take(written) {
+                        unsafe { j.assume_init_drop() };
                     }
                     return Err(e);
                 }
@@ -62,9 +63,10 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
 
 /// Stable replacement for `MaybeUninit::array_assume_init`
 #[inline]
+#[allow(clippy::needless_pass_by_value)]
 unsafe fn array_assume_init<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
     // SAFETY: Caller guarantees all elements are initialized
-    let ptr = &arr as *const [MaybeUninit<T>; N] as *const [T; N];
+    let ptr = (&raw const arr).cast::<[T; N]>();
     unsafe { core::ptr::read(ptr) }
 }
 // -----------------------------------------------------------------------------
@@ -89,7 +91,7 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
     }
 
     #[inline]
-    fn encode_raw<'a>(_: ViewOf<'a, Self>, _: &mut impl BufMut) {
+    fn encode_raw<'a>(_: ViewOf<'_, Self>, _: &mut impl BufMut) {
         // Arrays are encoded by the parent struct’s codegen.
     }
 

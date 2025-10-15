@@ -48,7 +48,7 @@ macro_rules! impl_google_wrapper {
                 Ok(self)
             }
 
-            fn from_sun<'a>(value: Self::Sun<'a>) -> Self::View<'a> {
+            fn from_sun<'a>(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
             }
         }
@@ -73,7 +73,7 @@ macro_rules! impl_google_wrapper {
                 }
             }
 
-            fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut) {
+            fn encode_raw<'a>(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if !{
                     let $value: &$ty = value;
                     $is_default
@@ -104,22 +104,22 @@ macro_rules! impl_google_wrapper {
                 googleapis_type_url_for::<Self>()
             }
         }
-        //TODO
-        // impl RepeatedField for $ty {
-        //     fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
-        //         for value in values {
-        //             $module::encode(tag, value, buf);
-        //         }
-        //     }
 
-        //     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        //         $module::merge_repeated(wire_type, values, buf, ctx)
-        //     }
+        impl RepeatedField for $ty {
+            fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
+                for value in values {
+                    $module::encode(tag, value, buf);
+                }
+            }
 
-        //     fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
-        //         values.iter().map(|value| $module::encoded_len(tag, value)).sum()
-        //     }
-        // }
+            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                $module::merge_repeated(wire_type, values, buf, ctx)
+            }
+
+            fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
+                values.iter().map(|value| $module::encoded_len(tag, value)).sum()
+            }
+        }
 
         impl SingularField for $ty {
             fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
@@ -171,7 +171,7 @@ impl ProtoShadow for () {
         Ok(())
     }
 
-    fn from_sun<'a>(_: Self::Sun<'a>) -> Self::View<'a> {}
+    fn from_sun<'a>((): Self::Sun<'_>) -> Self::View<'_> {}
 }
 
 /// `google.protobuf.Empty`
@@ -185,7 +185,7 @@ impl ProtoExt for () {
         0
     }
 
-    fn encode_raw<'a>(_value: ViewOf<'a, Self>, _buf: &mut impl BufMut) {}
+    fn encode_raw<'a>(_value: ViewOf<'_, Self>, _buf: &mut impl BufMut) {}
 
     fn merge_field(_value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         skip_field(wire_type, tag, buf, ctx)
@@ -232,7 +232,7 @@ macro_rules! impl_narrow_varint {
                 Ok(self)
             }
 
-            fn from_sun<'a>(value: Self::Sun<'a>) -> Self::View<'a> {
+            fn from_sun<'a>(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
             }
         }
@@ -255,7 +255,7 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
-            fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut) {
+            fn encode_raw<'a>(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if *value != Self::default() {
                     let widened: $wide_ty = (*value).into();
                     $module::encode(1, &widened, buf);
@@ -318,7 +318,7 @@ macro_rules! impl_narrow_varint {
         impl_narrow_varint!(@maybe_repeated $with_repeated, $ty, $wide_ty, $module, $err);
     };
     (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
-        impl RepeatedField for $ty {
+       impl RepeatedField for $ty {
             fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
                 for value in values {
                     let widened: $wide_ty = (*value).into();
@@ -381,7 +381,7 @@ impl<T: ProtoShadow> ProtoShadow for Option<T> {
     }
 
     #[inline]
-    fn from_sun<'a>(v: Self::Sun<'a>) -> Self::View<'a> {
+    fn from_sun<'a>(v: Self::Sun<'_>) -> Self::View<'_> {
         v.map(T::from_sun)
     }
 }
@@ -401,7 +401,7 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
         value.as_ref().map_or(0, |inner| T::encoded_len(inner))
     }
 
-    fn encode_raw<'a>(value: ViewOf<'a, Self>, buf: &mut impl BufMut) {
+    fn encode_raw<'a>(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
         if let Some(inner) = value {
             T::encode_raw(inner, buf);
         }

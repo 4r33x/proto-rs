@@ -2,17 +2,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
-use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
-#[cfg(feature = "std")]
-use core::hash::BuildHasher;
-#[cfg(feature = "std")]
-use core::hash::Hash;
-#[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(feature = "std")]
-use std::collections::HashSet;
 
 use bytes::Buf;
 use bytes::BufMut;
@@ -20,14 +9,9 @@ use bytes::BufMut;
 use crate::DecodeError;
 use crate::MessageField;
 use crate::ProtoExt;
-use crate::RepeatedField;
 use crate::SingularField;
 use crate::encoding::DecodeContext;
 use crate::encoding::wire_type::WireType;
-use crate::traits::OwnedSunOf;
-use crate::traits::ProtoShadow;
-use crate::traits::Shadow;
-use crate::traits::SunOf;
 use crate::traits::ViewOf;
 
 // ---------------- Blanket impls for MessageField ----------------

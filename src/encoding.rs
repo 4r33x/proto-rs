@@ -747,10 +747,6 @@ pub mod message {
     use super::encoded_len_varint;
     use super::key_len;
     use super::merge_loop;
-    use crate::traits::OwnedSunOf;
-    use crate::traits::ProtoShadow;
-    use crate::traits::Shadow;
-    use crate::traits::SunOf;
     use crate::traits::ViewOf;
 
     pub fn encode<M>(tag: u32, msg: ViewOf<'_, M>, buf: &mut impl BufMut)
@@ -795,7 +791,7 @@ pub mod message {
         M: ProtoExt + 'a,
         I: IntoIterator<Item = ViewOf<'a, M>>,
     {
-        for v in values.into_iter() {
+        for v in values {
             let len = M::encoded_len(&v);
             encode_key(tag, WireType::LengthDelimited, buf);
             encode_varint(len as u64, buf);

@@ -135,7 +135,7 @@ where
     type Item = T;
     type Error = Status;
 
-    #[inline(always)]
+    #[inline]
     fn encode(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         <Self as EncoderExt<T, Mode>>::encode_sun(self, item, dst)
     }
