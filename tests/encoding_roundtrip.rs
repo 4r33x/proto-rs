@@ -27,8 +27,11 @@ pub use encoding_messages::SampleEnumProst;
 pub use encoding_messages::SampleMessage;
 pub use encoding_messages::SampleMessageProst;
 pub use encoding_messages::StatusWithDefaultAttribute;
+pub use encoding_messages::ZeroCopyContainer;
+pub use encoding_messages::ZeroCopyContainerProst;
 pub use encoding_messages::sample_collections_messages as shared_sample_collections_messages;
 pub use encoding_messages::sample_message as shared_sample_message;
+pub use encoding_messages::zero_copy_fixture;
 
 #[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -586,6 +589,19 @@ fn enum_discriminants_match_proto_requirements() {
     assert_eq!(SampleEnum::Zero as i32, 0);
     assert_eq!(SampleEnum::One as i32, 1);
     assert_eq!(SampleEnum::Two as i32, 2);
+}
+
+#[test]
+fn zero_copy_container_roundtrip() {
+    let default_container = ZeroCopyContainer::default();
+    assert_eq!(ZeroCopyContainer::encoded_len(&&default_container), 0);
+
+    let fixture = zero_copy_fixture();
+    assert!(ZeroCopyContainer::encoded_len(&&fixture) > 0);
+
+    let encoded = ZeroCopyContainer::encode_to_vec(&fixture);
+    let decoded = ZeroCopyContainer::decode(Bytes::from(encoded)).expect("decode fixture");
+    assert_eq!(decoded, fixture);
 }
 
 #[test]
