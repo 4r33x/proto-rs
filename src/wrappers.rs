@@ -55,23 +55,18 @@ where
 {
     #[inline]
     fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
-        for value in values {
-            let view = <Self::Shadow<'_> as ProtoShadow>::from_sun(value);
-            let len = <Self as ProtoExt>::encoded_len(&view);
-            crate::encoding::encode_key(tag, WireType::LengthDelimited, buf);
-            crate::encoding::encode_varint(len as u64, buf);
-            <Self as ProtoExt>::encode_raw(view, buf);
-        }
+        crate::encoding::message::encode_repeated::<Self, _>(
+            tag,
+            values.iter().map(|value| <Self::Shadow<'_> as ProtoShadow>::from_sun(value)),
+            buf,
+        );
     }
     #[inline]
     fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
-        let mut total = 0usize;
-        for value in values {
-            let view = <Self::Shadow<'_> as ProtoShadow>::from_sun(value);
-            let len = <Self as ProtoExt>::encoded_len(&view);
-            total += crate::encoding::key_len(tag) + crate::encoding::encoded_len_varint(len as u64) + len;
-        }
-        total
+        crate::encoding::message::encoded_len_repeated::<Self, _>(
+            tag,
+            values.iter().map(|value| <Self::Shadow<'_> as ProtoShadow>::from_sun(value)),
+        )
     }
 
     #[inline]
