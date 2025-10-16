@@ -7,6 +7,7 @@ use syn::Fields;
 use syn::Index;
 
 use super::unified_field_handler::FieldAccess;
+use super::unified_field_handler::field_default_expr;
 use super::unified_field_handler::generate_field_decode;
 use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
@@ -24,26 +25,6 @@ pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream 
 
 fn strip_proto_attrs(attrs: &[syn::Attribute]) -> Vec<syn::Attribute> {
     attrs.iter().filter(|a| !a.path().is_ident("proto_message") && !a.path().is_ident("proto")).cloned().collect()
-}
-
-/// Generate smart default value for a field type
-fn generate_field_default(field: &syn::Field) -> TokenStream {
-    let field_ty = &field.ty;
-
-    if is_option_type(field_ty) {
-        return quote! { None };
-    }
-
-    if vec_inner_type(field_ty).is_some() {
-        return quote! { Vec::new() };
-    }
-
-    let cfg = parse_field_config(field);
-    if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
-        quote! { ::core::default::Default::default() }
-    } else {
-        quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
-    }
 }
 
 /// Generate smart clear for a field
@@ -122,6 +103,7 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
+
     }
 }
 
@@ -138,7 +120,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
     let field_types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
 
     // Generate smart defaults
-    let default_values: Vec<_> = fields.unnamed.iter().map(generate_field_default).collect();
+    let default_values: Vec<_> = fields.unnamed.iter().map(field_default_expr).collect();
 
     let mut encode_fields = Vec::new();
     let mut decode_fields = Vec::new();
@@ -275,6 +257,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
+
     }
 }
 
@@ -308,7 +291,7 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         .iter()
         .map(|field| {
             let ident = field.ident.as_ref().unwrap();
-            let default_value = generate_field_default(field);
+            let default_value = field_default_expr(field);
             quote! { #ident: #default_value }
         })
         .collect();

@@ -460,13 +460,13 @@ fn decode_handles_non_canonical_field_order() {
     encoding::int32::encode(8, &(SampleEnumProst::from(source.mode) as i32), &mut buf);
     encoding::bytes::encode(4, &source.data, &mut buf);
     encoding::int64::encode(7, &source.values[0], &mut buf);
-    encoding::message::encode(6, &source.nested_list[0], &mut buf);
+    encoding::message::encode::<NestedMessage>(6, &source.nested_list[0], &mut buf);
     encoding::string::encode(3, &source.name, &mut buf);
     encoding::bool::encode(2, &source.flag, &mut buf);
     encoding::uint32::encode(1, &source.id, &mut buf);
-    encoding::message::encode(6, &source.nested_list[1], &mut buf);
+    encoding::message::encode::<NestedMessage>(6, &source.nested_list[1], &mut buf);
     encoding::int64::encode(7, &source.values[1], &mut buf);
-    encoding::message::encode(5, source.nested.as_ref().expect("missing nested"), &mut buf);
+    encoding::message::encode::<NestedMessage>(5, source.nested.as_ref().expect("missing nested"), &mut buf);
     encoding::int64::encode(7, &source.values[2], &mut buf);
     encoding::int64::encode(7, &source.values[3], &mut buf);
     if let Some(optional_mode) = source.optional_mode {
@@ -580,7 +580,7 @@ fn enum_discriminants_match_proto_requirements() {
 #[test]
 fn merge_option_box_reuses_allocation() {
     let mut buf = BytesMut::new();
-    encoding::message::encode(1, &NestedMessage { value: 123 }, &mut buf);
+    encoding::message::encode::<NestedMessage>(1, &NestedMessage { value: 123 }, &mut buf);
     let mut bytes = buf.freeze();
 
     let (tag, wire_type) = encoding::decode_key(&mut bytes).expect("decode key");
@@ -600,7 +600,7 @@ fn merge_option_box_reuses_allocation() {
 #[test]
 fn merge_option_arc_reuses_allocation() {
     let mut buf = BytesMut::new();
-    encoding::message::encode(1, &NestedMessage { value: 456 }, &mut buf);
+    encoding::message::encode::<NestedMessage>(1, &NestedMessage { value: 456 }, &mut buf);
     let mut bytes = buf.freeze();
 
     let (tag, wire_type) = encoding::decode_key(&mut bytes).expect("decode key");

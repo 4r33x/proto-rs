@@ -16,9 +16,11 @@ use syn::Type;
 
 use crate::utils::MapKind;
 use crate::utils::ParsedFieldType;
+use crate::utils::is_option_type;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::type_info::is_bytes_array;
+use crate::utils::vec_inner_type;
 
 // ---------------------------------------------------------------------------
 // Field access abstraction (named field, tuple index)
@@ -56,6 +58,25 @@ impl EncodedLenTokens {
 
 // ---------------------------------------------------------------------------
 // Public entry points used by struct/enum handlers
+
+pub fn field_default_expr(field: &Field) -> TokenStream {
+    let field_ty = &field.ty;
+
+    if is_option_type(field_ty) {
+        return quote! { None };
+    }
+
+    if vec_inner_type(field_ty).is_some() {
+        return quote! { Vec::new() };
+    }
+
+    let cfg = parse_field_config(field);
+    if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
+        quote! { ::core::default::Default::default() }
+    } else {
+        quote! { <#field_ty as ::proto_rs::ProtoExt>::proto_default() }
+    }
+}
 
 pub fn generate_field_encode(field: &Field, access: TokenStream, tag: u32) -> TokenStream {
     let cfg = parse_field_config(field);
@@ -106,7 +127,7 @@ pub fn generate_field_encode(field: &Field, access: TokenStream, tag: u32) -> To
     }
 
     if cfg.is_message {
-        return encode_message(&access, tag);
+        return encode_message(&access, tag, ty);
     }
 
     encode_scalar(&access, tag, ty)
@@ -170,7 +191,7 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
     }
 
     if cfg.is_message {
-        return decode_message(&access, tag);
+        return decode_message(&access, tag, ty);
     }
 
     decode_scalar(&access, tag, ty)
@@ -224,7 +245,7 @@ pub fn generate_field_encoded_len(field: &Field, access: TokenStream, tag: u32) 
     }
 
     if cfg.is_message {
-        return EncodedLenTokens::new(encoded_len_message(&access, tag), true);
+        return EncodedLenTokens::new(encoded_len_message(&access, tag, ty), true);
     }
 
     EncodedLenTokens::new(encoded_len_scalar(&access, tag, ty), true)
@@ -296,24 +317,24 @@ fn encoded_len_scalar_value(value: &TokenStream, tag: u32, ty: &Type) -> TokenSt
 // ---------------------------------------------------------------------------
 // Message helpers
 
-fn encode_message(access: &TokenStream, tag: u32) -> TokenStream {
+fn encode_message(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
     quote! {
-        if ::proto_rs::ProtoExt::encoded_len(&(#access)) != 0 {
-            ::proto_rs::encoding::message::encode(#tag, &(#access), buf);
+        if <#ty as ::proto_rs::ProtoExt>::encoded_len(&(#access)) != 0 {
+            ::proto_rs::encoding::message::encode::<#ty>(#tag, &(#access), buf);
         }
     }
 }
 
-fn decode_message(access: &TokenStream, tag: u32) -> TokenStream {
+fn decode_message(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
     quote! {
         if #tag == tag {
-            ::proto_rs::encoding::message::merge(wire_type, &mut (#access), buf, ctx.clone())?;
+            ::proto_rs::encoding::message::merge::<#ty, _>(wire_type, &mut (#access), buf, ctx.clone())?;
         }
     }
 }
 
-fn encoded_len_message(access: &TokenStream, tag: u32) -> TokenStream {
-    quote! { ::proto_rs::encoding::message::encoded_len(#tag, &&(#access)) }
+fn encoded_len_message(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
+    quote! { ::proto_rs::encoding::message::encoded_len::<#ty>(#tag, &&(#access)) }
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +396,7 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
     if elem_parsed.is_message_like {
         return quote! {
             for __value in (#access).iter() {
-                ::proto_rs::encoding::message::encode(#tag, __value, buf);
+                ::proto_rs::encoding::message::encode::<#elem_ty>(#tag, __value, buf);
             }
         };
     }
@@ -435,7 +456,7 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                     return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                 }
                 let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-                ::proto_rs::encoding::message::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                ::proto_rs::encoding::message::merge::<#elem_ty, _>(wire_type, &mut __tmp, buf, ctx.clone())?;
                 (#access)[__i] = __tmp;
                 __i += 1;
             }
@@ -462,7 +483,7 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                             if __i >= (#access).len() {
                                 return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                             }
-                            let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                            let mut __tmp: #proto_ty = <#proto_ty as ::proto_rs::ProtoExt>::proto_default();
                             ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
                             (#access)[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
                                 .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
@@ -473,7 +494,7 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                         if __i >= (#access).len() {
                             return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                         }
-                        let mut __tmp: #proto_ty = ::proto_rs::ProtoExt::proto_default();
+                        let mut __tmp: #proto_ty = <#proto_ty as ::proto_rs::ProtoExt>::proto_default();
                         ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
                         (#access)[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
                             .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
@@ -539,7 +560,7 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
                 {
                     let mut __total = 0usize;
                     for __value in (#access).iter() {
-                        __total += ::proto_rs::encoding::message::encoded_len(#tag, __value);
+                        __total += ::proto_rs::encoding::message::encoded_len::<#elem_ty>(#tag, &__value);
                     }
                     __total
                 }
@@ -720,7 +741,12 @@ fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
 fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let inner_ty = &parsed.elem_type;
     quote! {
-        <#inner_ty as ::proto_rs::SingularField>::encode_option_field(#tag, &(#access), buf);
+        {
+            let __proto_rs_value = (#access).as_ref().map(|value| {
+                <<#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+            });
+            <#inner_ty as ::proto_rs::SingularField>::encode_option_field(#tag, __proto_rs_value, buf);
+        }
     }
 }
 
@@ -741,7 +767,12 @@ fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
 fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let inner_ty = &parsed.elem_type;
     quote! {
-        <#inner_ty as ::proto_rs::SingularField>::encoded_len_option_field(#tag, &(#access))
+        {
+            let __proto_rs_value = (#access).as_ref().map(|value| {
+                <<#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+            });
+            <#inner_ty as ::proto_rs::SingularField>::encoded_len_option_field(#tag, __proto_rs_value)
+        }
     }
 }
 
