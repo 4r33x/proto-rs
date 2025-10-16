@@ -1,4 +1,6 @@
 #![allow(clippy::must_use_candidate)]
+#![allow(clippy::cast_possible_truncation)]
+
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;

@@ -451,18 +451,13 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                     ::proto_rs::encoding::encode_varint(u64::from(__proto_rs_converted), buf);
                 }
             },
-            "float" | "fixed32" | "sfixed32" => quote! {
+            "double" | "fixed64" | "sfixed64" | "float" | "fixed32" | "sfixed32" => quote! {
                 for __proto_rs_value in (#access).iter() {
                     let __proto_rs_converted: #proto_ty = #convert;
                     buf.put_slice(&__proto_rs_converted.to_le_bytes());
                 }
             },
-            "double" | "fixed64" | "sfixed64" => quote! {
-                for __proto_rs_value in (#access).iter() {
-                    let __proto_rs_converted: #proto_ty = #convert;
-                    buf.put_slice(&__proto_rs_converted.to_le_bytes());
-                }
-            },
+
             _ => quote! {
                 for __proto_rs_value in (#access).iter() {
                     let __proto_rs_converted: #proto_ty = #convert;

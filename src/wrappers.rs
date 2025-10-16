@@ -59,12 +59,6 @@ where
             crate::encoding::message::encode::<Self>(tag, view, buf);
         }
     }
-
-    #[inline]
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        crate::encoding::message::merge_repeated::<Self>(wire_type, values, buf, ctx)
-    }
-
     #[inline]
     fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
         values
@@ -74,6 +68,11 @@ where
                 crate::encoding::message::encoded_len::<Self>(tag, &view)
             })
             .sum()
+    }
+
+    #[inline]
+    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        crate::encoding::message::merge_repeated::<Self>(wire_type, values, buf, ctx)
     }
 }
 
