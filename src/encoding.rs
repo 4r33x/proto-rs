@@ -804,8 +804,8 @@ pub mod message {
     where
         M: ProtoExt + 'a,
     {
-        values.into_iter().fold(0, |acc, v| {
-            let len = M::encoded_len(&v);
+        values.iter().fold(0, |acc, v| {
+            let len = M::encoded_len(v);
             acc + key_len(tag) + encoded_len_varint(len as u64) + len
         })
     }
