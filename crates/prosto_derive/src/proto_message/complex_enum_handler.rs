@@ -9,6 +9,7 @@ use syn::Fields;
 use syn::Lit;
 use syn::spanned::Spanned;
 
+use super::unified_field_handler::field_default_expr;
 use super::unified_field_handler::generate_field_decode;
 use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
@@ -83,7 +84,8 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
     let default_value = match &default_variant.fields {
         Fields::Unit => quote! { Self::#default_variant_ident },
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
-            quote! { Self::#default_variant_ident(::proto_rs::ProtoExt::proto_default()) }
+            let default_value = field_default_expr(&fields.unnamed[0]);
+            quote! { Self::#default_variant_ident(#default_value) }
         }
         Fields::Named(fields) => {
             let field_defaults: Vec<_> = fields
@@ -91,7 +93,8 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 .iter()
                 .map(|f| {
                     let ident = f.ident.as_ref().unwrap();
-                    quote! { #ident: ::proto_rs::ProtoExt::proto_default() }
+                    let default_value = field_default_expr(f);
+                    quote! { #ident: #default_value }
                 })
                 .collect();
             quote! { Self::#default_variant_ident { #(#field_defaults),* } }
@@ -163,6 +166,7 @@ pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::MessageField for #name #generics {}
+
     }
 }
 
@@ -237,7 +241,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
         value => value.try_into().unwrap(),
     };
-    let field_ty = &field.ty;
+    let binding_default = field_default_expr(field);
 
     let encoded_len_expr = generate_field_encoded_len(field, access_expr.clone(), field_tag);
     let encoded_len_expr_for_encode = encoded_len_expr.tokens.clone();
@@ -318,7 +322,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
                 }
                 let limit = remaining - len;
 
-                let mut #binding_ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default();
+                let mut #binding_ident = #binding_default;
 
                 #decode_loop
 
@@ -377,9 +381,8 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             }
             value => value.try_into().unwrap(),
         };
-        let field_ty = &field.ty;
-
-        field_defaults.push(quote! { let mut #ident = <#field_ty as ::proto_rs::ProtoExt>::proto_default(); });
+        let default_expr = field_default_expr(field);
+        field_defaults.push(quote! { let mut #ident = #default_expr; });
 
         let encoded_len_tokens = generate_field_encoded_len(field, access_expr.clone(), field_tag);
         encoded_len_exprs.push(encoded_len_tokens.tokens.clone());
