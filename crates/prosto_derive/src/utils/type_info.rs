@@ -159,6 +159,7 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
             "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
             "HashSet" => return parse_set_type(path, ty, SetKind::HashSet),
             "BTreeSet" => return parse_set_type(path, ty, SetKind::BTreeSet),
+            "Box" | "Arc" => return parse_box_like_type(path, ty),
             _ => {}
         }
     }
@@ -202,6 +203,17 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         map_key_type: None,
         map_value_type: None,
     }
+}
+
+fn parse_box_like_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("Box-like wrappers must have a single generic argument");
+    };
+
+    let mut inner = parse_field_type(inner_ty);
+    inner.rust_type = ty.clone();
+    inner.elem_type = (*inner_ty).clone();
+    inner
 }
 
 fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {

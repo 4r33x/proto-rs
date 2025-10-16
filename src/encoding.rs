@@ -800,17 +800,15 @@ pub mod message {
     }
 
     #[inline]
-    pub fn encoded_len_repeated<'a, M, I: ?Sized>(tag: u32, values: &I) -> usize
+    pub fn encoded_len_repeated<'a, M, I>(tag: u32, values: I) -> usize
     where
         M: ProtoExt + 'a,
-        for<'b> &'b I: IntoIterator<Item = ViewOf<'a, M>>,
+        I: IntoIterator<Item = ViewOf<'a, M>>,
     {
-        let mut total = 0;
-        for v in <&I as IntoIterator>::into_iter(values) {
+        values.into_iter().fold(0, |acc, v| {
             let len = M::encoded_len(&v);
-            total += key_len(tag) + encoded_len_varint(len as u64) + len;
-        }
-        total
+            acc + key_len(tag) + encoded_len_varint(len as u64) + len
+        })
     }
     #[inline]
     pub fn encoded_len<M>(tag: u32, msg: &ViewOf<'_, M>) -> usize
