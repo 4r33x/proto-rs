@@ -10,7 +10,6 @@ use crate::DecodeError;
 use crate::ProtoExt;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
-use crate::encoding::skip_field;
 use crate::traits::ProtoShadow;
 use crate::traits::ViewOf;
 
@@ -27,17 +26,14 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
         // Create an uninitialized array
         let mut out: [MaybeUninit<T::OwnedSun>; N] = [const { MaybeUninit::uninit() }; N];
 
-        let mut written = 0;
         for (i, elem) in self.into_iter().enumerate() {
             match elem.to_sun() {
                 Ok(v) => {
                     out[i].write(v);
-                    written += 1;
                 }
                 Err(e) => {
                     // Drop initialized elements
-
-                    for j in out.iter_mut().take(written) {
+                    for j in out.iter_mut().take(i - 1) {
                         unsafe { j.assume_init_drop() };
                     }
                     return Err(e);
@@ -96,9 +92,9 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
     }
 
     #[inline]
-    fn merge_field(_: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(_: &mut Self::Shadow<'_>, _tag: u32, _wire_type: WireType, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
         // Arrays are decoded by the parent struct’s codegen.
-        skip_field(wire_type, tag, buf, ctx)
+        Ok(())
     }
 
     #[inline]

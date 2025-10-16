@@ -162,16 +162,14 @@ impl_google_wrapper!(Bytes, bytes, "BytesValue", |value| value.is_empty(), |valu
 
 /// `google.protobuf.Empty`
 impl ProtoShadow for () {
-    type Sun<'a> = &'a Self;
+    type Sun<'a> = Self;
     type OwnedSun = Self;
-    type View<'a> = &'a Self;
+    type View<'a> = Self;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         Ok(())
     }
-    fn from_sun<'a>(value: Self::Sun<'_>) -> Self::View<'_> {
-        value
-    }
+    fn from_sun<'a>(_value: Self::Sun<'_>) -> Self::View<'_> {}
 }
 
 /// `google.protobuf.Empty`
