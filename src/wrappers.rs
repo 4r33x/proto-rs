@@ -18,7 +18,6 @@ use crate::RepeatedField;
 use crate::SingularField;
 use crate::encoding::DecodeContext;
 use crate::encoding::wire_type::WireType;
-use crate::traits::OwnedSunOf;
 use crate::traits::ProtoShadow;
 use crate::traits::ViewOf;
 
@@ -56,8 +55,8 @@ where
     #[inline]
     fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
     where
-        T: ProtoExt + 'a,
-        I: IntoIterator<Item = ViewOf<'a, T>>,
+        Self: 'a,
+        I: IntoIterator<Item = ViewOf<'a, Self>>,
     {
         crate::encoding::message::encode_repeated::<Self, _>(tag, values, buf);
     }
