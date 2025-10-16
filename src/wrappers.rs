@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
@@ -56,18 +57,21 @@ where
     fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
         for value in values {
             let view = <Self::Shadow<'_> as ProtoShadow>::from_sun(value);
-            crate::encoding::message::encode::<Self>(tag, view, buf);
+            let len = <Self as ProtoExt>::encoded_len(&view);
+            crate::encoding::encode_key(tag, WireType::LengthDelimited, buf);
+            crate::encoding::encode_varint(len as u64, buf);
+            <Self as ProtoExt>::encode_raw(view, buf);
         }
     }
     #[inline]
     fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
-        values
-            .iter()
-            .map(|value| {
-                let view = <Self::Shadow<'_> as ProtoShadow>::from_sun(value);
-                crate::encoding::message::encoded_len::<Self>(tag, &view)
-            })
-            .sum()
+        let mut total = 0usize;
+        for value in values {
+            let view = <Self::Shadow<'_> as ProtoShadow>::from_sun(value);
+            let len = <Self as ProtoExt>::encoded_len(&view);
+            total += crate::encoding::key_len(tag) + crate::encoding::encoded_len_varint(len as u64) + len;
+        }
+        total
     }
 
     #[inline]
@@ -95,7 +99,7 @@ where
     }
 }
 
-pub struct BoxedShadow<S>(pub S);
+pub struct BoxedShadow<S>(pub Box<S>);
 
 impl<S, T> ProtoShadow for BoxedShadow<S>
 where
@@ -107,7 +111,8 @@ where
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(Box::write(Box::new_uninit(), self.0.to_sun()?))
+        let inner = *self.0;
+        Ok(Box::write(Box::new_uninit(), inner.to_sun()?))
     }
 
     #[inline]
@@ -128,7 +133,7 @@ where
 
     #[inline]
     fn proto_default<'a>() -> Self::Shadow<'a> {
-        BoxedShadow(T::proto_default())
+        BoxedShadow(Box::new(T::proto_default()))
     }
 
     #[inline]
@@ -143,7 +148,7 @@ where
 
     #[inline]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        T::merge_field(&mut value.0, tag, wire, buf, ctx)
+        T::merge_field(value.0.as_mut(), tag, wire, buf, ctx)
     }
 
     #[inline]
@@ -180,7 +185,7 @@ where
 }
 
 // ---------- Generic adapter: any S: ProtoShadow<OwnedSun = T> -> OwnedSun = Arc<T> ----------
-pub struct ArcedShadow<S>(pub S);
+pub struct ArcedShadow<S>(pub Box<S>);
 
 impl<S, T> ProtoShadow for ArcedShadow<S>
 where
@@ -192,12 +197,14 @@ where
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        let inner = *self.0;
+        let value = inner.to_sun()?;
         // allocate Arc<MaybeUninit<T>>
         let u: Arc<MaybeUninit<T>> = Arc::new_uninit();
 
         // just allocated -> unique; write T directly into the slot
         let slot: &mut MaybeUninit<T> = unsafe { &mut *(Arc::as_ptr(&u).cast_mut()) };
-        slot.write(self.0.to_sun()?);
+        slot.write(value);
 
         // disambiguate: assume_init for Arc<MaybeUninit<T>>
         let arc_t: Arc<T> = unsafe { Arc::<MaybeUninit<T>>::assume_init(u) };
@@ -223,7 +230,7 @@ where
 
     #[inline]
     fn proto_default<'a>() -> Self::Shadow<'a> {
-        ArcedShadow(T::proto_default())
+        ArcedShadow(Box::new(T::proto_default()))
     }
 
     #[inline]
@@ -238,7 +245,7 @@ where
 
     #[inline]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        T::merge_field(&mut value.0, tag, wire_type, buf, ctx)
+        T::merge_field(value.0.as_mut(), tag, wire_type, buf, ctx)
     }
 
     #[inline]

@@ -504,9 +504,6 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
             if __len > (#access).len() {
                 return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
             }
-            if buf.remaining() < __len {
-                return Err(::proto_rs::DecodeError::new("insufficient data for fixed array"));
-            }
             {
                 let (__filled, __rest) = (#access).split_at_mut(__len);
                 buf.copy_to_slice(__filled);
@@ -560,9 +557,6 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                     return Err(::proto_rs::DecodeError::new("packed array field must be length-delimited"));
                 }
                 let __proto_rs_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                if buf.remaining() < __proto_rs_len {
-                    return Err(::proto_rs::DecodeError::new("insufficient data for fixed array"));
-                }
                 let mut __proto_rs_limited = buf.take(__proto_rs_len);
                 let mut __proto_rs_index = 0usize;
                 while __proto_rs_limited.has_remaining() {
