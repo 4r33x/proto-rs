@@ -38,3 +38,12 @@ message SampleMessage {
   optional SampleEnum optional_mode = 9;
 }
 
+message ZeroCopyContainer {
+  bytes bytes32 = 1;
+  repeated uint32 smalls = 2;
+  repeated NestedMessage nested_items = 3;
+  optional NestedMessage boxed = 4;
+  optional NestedMessage shared = 5;
+  map<string, SampleEnum> enum_lookup = 6;
+}
+

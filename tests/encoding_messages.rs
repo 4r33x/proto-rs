@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use proto_rs::proto_message;
 
@@ -54,6 +55,17 @@ pub struct CollectionsMessage {
     pub tree_ids: BTreeSet<i32>,
 }
 
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ZeroCopyContainer {
+    pub bytes32: [u8; 32],
+    pub smalls: [u16; 32],
+    pub nested_items: Vec<NestedMessage>,
+    pub boxed: Option<Box<NestedMessage>>,
+    pub shared: Option<Arc<NestedMessage>>,
+    pub enum_lookup: HashMap<String, SampleEnum>,
+}
+
 #[derive(Clone, PartialEq, prost::Message)]
 #[prost(message, package = "compat")]
 pub struct NestedMessageProst {
@@ -95,6 +107,23 @@ pub struct CollectionsMessageProst {
     pub hash_tags: Vec<String>,
     #[prost(int32, repeated, tag = "4")]
     pub tree_ids: Vec<i32>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+#[prost(message, package = "compat")]
+pub struct ZeroCopyContainerProst {
+    #[prost(bytes, tag = "1")]
+    pub bytes32: Vec<u8>,
+    #[prost(uint32, repeated, tag = "2")]
+    pub smalls: Vec<u32>,
+    #[prost(message, repeated, tag = "3")]
+    pub nested_items: Vec<NestedMessageProst>,
+    #[prost(message, optional, tag = "4")]
+    pub boxed: Option<NestedMessageProst>,
+    #[prost(message, optional, tag = "5")]
+    pub shared: Option<NestedMessageProst>,
+    #[prost(map = "string, enumeration(SampleEnumProst)", tag = "6")]
+    pub enum_lookup: HashMap<String, i32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, prost::Enumeration)]
@@ -192,6 +221,53 @@ impl From<&CollectionsMessageProst> for CollectionsMessage {
     }
 }
 
+impl From<&ZeroCopyContainer> for ZeroCopyContainerProst {
+    fn from(value: &ZeroCopyContainer) -> Self {
+        Self {
+            bytes32: value.bytes32.as_slice().to_vec(),
+            smalls: value.smalls.iter().map(|&entry| u32::from(entry)).collect(),
+            nested_items: value.nested_items.iter().map(NestedMessageProst::from).collect(),
+            boxed: value.boxed.as_ref().map(|boxed| NestedMessageProst::from(boxed.as_ref())),
+            shared: value.shared.as_ref().map(|shared| NestedMessageProst::from(shared.as_ref())),
+            enum_lookup: value.enum_lookup.iter().map(|(key, value)| (key.clone(), SampleEnumProst::from(*value) as i32)).collect(),
+        }
+    }
+}
+
+impl From<&ZeroCopyContainerProst> for ZeroCopyContainer {
+    fn from(value: &ZeroCopyContainerProst) -> Self {
+        let mut bytes32 = [0u8; 32];
+        let copy_len = value.bytes32.len().min(32);
+        bytes32[..copy_len].copy_from_slice(&value.bytes32[..copy_len]);
+
+        let mut smalls = [0u16; 32];
+        for (idx, entry) in value.smalls.iter().copied().enumerate().take(32) {
+            smalls[idx] = u16::try_from(entry).expect("value must fit in u16");
+        }
+
+        let nested_items = value.nested_items.iter().map(NestedMessage::from).collect();
+        let boxed = value.boxed.as_ref().map(|msg| Box::new(NestedMessage::from(msg)));
+        let shared = value.shared.as_ref().map(|msg| Arc::new(NestedMessage::from(msg)));
+        let enum_lookup = value
+            .enum_lookup
+            .iter()
+            .map(|(key, raw)| {
+                let prost = SampleEnumProst::try_from(*raw).expect("invalid enum value");
+                (key.clone(), SampleEnum::from(prost))
+            })
+            .collect();
+
+        Self {
+            bytes32,
+            smalls,
+            nested_items,
+            boxed,
+            shared,
+            enum_lookup,
+        }
+    }
+}
+
 pub fn sample_message() -> SampleMessage {
     SampleMessage {
         id: 42,
@@ -224,4 +300,19 @@ pub fn sample_collections_messages() -> Vec<CollectionsMessage> {
     second.tree_ids.extend([2, 4, 6]);
 
     vec![first, second]
+}
+
+pub fn zero_copy_fixture() -> ZeroCopyContainer {
+    let mut container = ZeroCopyContainer::default();
+    container.bytes32[..8].copy_from_slice(&[1, 3, 5, 7, 9, 11, 13, 15]);
+    for (idx, slot) in container.smalls.iter_mut().enumerate() {
+        *slot = ((idx as u16) + 1) * 2;
+    }
+    container.nested_items.push(NestedMessage { value: 256 });
+    container.nested_items.push(NestedMessage { value: -512 });
+    container.boxed = Some(Box::new(NestedMessage { value: 1024 }));
+    container.shared = Some(Arc::new(NestedMessage { value: -2048 }));
+    container.enum_lookup.insert("alpha".into(), SampleEnum::One);
+    container.enum_lookup.insert("omega".into(), SampleEnum::Two);
+    container
 }

@@ -10,8 +10,10 @@ use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use syn::Field;
+use syn::GenericArgument;
 use syn::Ident;
 use syn::Index;
+use syn::PathArguments;
 use syn::Type;
 
 use crate::utils::MapKind;
@@ -384,13 +386,22 @@ fn encoded_len_enum(access: &TokenStream, tag: u32, enum_ty: &Type) -> TokenStre
 // ---------------------------------------------------------------------------
 // Array helpers (fixed length, no allocations)
 
+fn array_all_default(access: &TokenStream, elem_ty: &Type) -> TokenStream {
+    quote! {
+        (#access).iter().all(|__proto_rs_value| {
+            let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            <#elem_ty as ::proto_rs::ProtoExt>::encoded_len(&__proto_rs_view) == 0
+        })
+    }
+}
+
 fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
     let elem_ty = &*array.elem;
     let elem_parsed = parse_field_type(elem_ty);
 
     if is_bytes_array(&Type::Array(array.clone())) {
         return quote! {
-            if (#access).iter().any(|&b| b != 0u8) {
+            if !(#access).iter().all(|&b| b == 0u8) {
                 ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
                 ::proto_rs::encoding::encode_varint((#access).len() as u64, buf);
                 buf.put_slice(&(#access));
@@ -398,10 +409,76 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
         };
     }
 
+    let all_default = array_all_default(access, elem_ty);
+
     if elem_parsed.is_message_like {
         return quote! {
-            for __value in (#access).iter() {
-                ::proto_rs::encoding::message::encode::<#elem_ty>(#tag, __value, buf);
+            if !#all_default {
+                for __proto_rs_value in (#access).iter() {
+                    ::proto_rs::encoding::message::encode::<#elem_ty>(#tag, __proto_rs_value, buf);
+                }
+            }
+        };
+    }
+
+    if elem_parsed.is_numeric_scalar {
+        let Some(codec) = scalar_codec(&elem_parsed) else {
+            return quote! {};
+        };
+        let proto_ty = &elem_parsed.proto_rust_type;
+        let convert = if needs_numeric_widening(&elem_parsed) {
+            quote! { (*__proto_rs_value) as #proto_ty }
+        } else {
+            quote! { *__proto_rs_value }
+        };
+
+        let body_len = quote! {
+            {
+                let mut __proto_rs_body_len = 0usize;
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                        - ::proto_rs::encoding::key_len(1u32));
+                }
+                __proto_rs_body_len
+            }
+        };
+
+        let emit_values = match elem_parsed.proto_type.as_str() {
+            "bool" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::encode_varint(u64::from(__proto_rs_converted), buf);
+                }
+            },
+            "float" | "fixed32" | "sfixed32" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    buf.put_slice(&__proto_rs_converted.to_le_bytes());
+                }
+            },
+            "double" | "fixed64" | "sfixed64" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    buf.put_slice(&__proto_rs_converted.to_le_bytes());
+                }
+            },
+            _ => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::encode_varint(__proto_rs_converted as u64, buf);
+                }
+            },
+        };
+
+        return quote! {
+            if !#all_default {
+                let __proto_rs_body_len = #body_len;
+                if __proto_rs_body_len != 0 {
+                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                    ::proto_rs::encoding::encode_varint(__proto_rs_body_len as u64, buf);
+                    #emit_values
+                }
             }
         };
     }
@@ -410,18 +487,10 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
         return quote! {};
     };
 
-    if needs_numeric_widening(&elem_parsed) {
-        let proto_ty = &elem_parsed.proto_rust_type;
-        quote! {
-            for __value in (#access).iter() {
-                let __converted: #proto_ty = (*__value) as #proto_ty;
-                ::proto_rs::encoding::#codec::encode(#tag, &__converted, buf);
-            }
-        }
-    } else {
-        quote! {
-            for __value in (#access).iter() {
-                ::proto_rs::encoding::#codec::encode(#tag, __value, buf);
+    quote! {
+        if !#all_default {
+            for __proto_rs_value in (#access).iter() {
+                ::proto_rs::encoding::#codec::encode(#tag, __proto_rs_value, buf);
             }
         }
     }
@@ -456,14 +525,64 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
     if elem_parsed.is_message_like {
         return quote! {
             if #tag == tag {
-                let mut __i = 0usize;
-                if __i >= (#access).len() {
+                let mut __proto_rs_index = 0usize;
+                if __proto_rs_index >= (#access).len() {
                     return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                 }
-                let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-                ::proto_rs::encoding::message::merge::<#elem_ty, _>(wire_type, &mut __tmp, buf, ctx.clone())?;
-                (#access)[__i] = __tmp;
-                __i += 1;
+                let mut __proto_rs_tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                ::proto_rs::encoding::message::merge::<#elem_ty, _>(wire_type, &mut __proto_rs_tmp, buf, ctx.clone())?;
+                (#access)[__proto_rs_index] = __proto_rs_tmp;
+                __proto_rs_index += 1;
+                while __proto_rs_index < (#access).len() {
+                    (#access)[__proto_rs_index] = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                    __proto_rs_index += 1;
+                }
+            }
+        };
+    }
+
+    if elem_parsed.is_numeric_scalar {
+        let Some(codec) = scalar_codec(&elem_parsed) else {
+            return quote! {};
+        };
+        let proto_ty = &elem_parsed.proto_rust_type;
+        let assign_expr = if needs_numeric_widening(&elem_parsed) {
+            let target_ty = &elem_parsed.elem_type;
+            quote! {
+                (#access)[__proto_rs_index] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__proto_rs_tmp)
+                    .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+            }
+        } else {
+            quote! {
+                (#access)[__proto_rs_index] = __proto_rs_tmp;
+            }
+        };
+        let wire = scalar_wire_type(&elem_parsed);
+
+        return quote! {
+            if #tag == tag {
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new("packed array field must be length-delimited"));
+                }
+                let __proto_rs_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                if buf.remaining() < __proto_rs_len {
+                    return Err(::proto_rs::DecodeError::new("insufficient data for fixed array"));
+                }
+                let mut __proto_rs_limited = buf.take(__proto_rs_len);
+                let mut __proto_rs_index = 0usize;
+                while __proto_rs_limited.has_remaining() {
+                    if __proto_rs_index >= (#access).len() {
+                        return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                    }
+                    let mut __proto_rs_tmp: #proto_ty = <#proto_ty as ::proto_rs::ProtoExt>::proto_default();
+                    ::proto_rs::encoding::#codec::merge(#wire, &mut __proto_rs_tmp, &mut __proto_rs_limited, ctx.clone())?;
+                    #assign_expr
+                    __proto_rs_index += 1;
+                }
+                while __proto_rs_index < (#access).len() {
+                    (#access)[__proto_rs_index] = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                    __proto_rs_index += 1;
+                }
             }
         };
     }
@@ -475,65 +594,35 @@ fn decode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
     let wire = scalar_wire_type(&elem_parsed);
     let target_ty = &elem_parsed.elem_type;
 
-    if needs_numeric_widening(&elem_parsed) {
-        let proto_ty = &elem_parsed.proto_rust_type;
-        quote! {
-            if #tag == tag {
-                let mut __i = 0usize;
-                match wire_type {
-                    ::proto_rs::encoding::WireType::LengthDelimited => {
-                        let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                        let mut __limited = buf.take(__len);
-                        while __limited.has_remaining() {
-                            if __i >= (#access).len() {
-                                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                            }
-                            let mut __tmp: #proto_ty = <#proto_ty as ::proto_rs::ProtoExt>::proto_default();
-                            ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
-                            (#access)[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
-                                .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
-                            __i += 1;
-                        }
-                    }
-                    _ => {
+    quote! {
+        if #tag == tag {
+            let mut __i = 0usize;
+            match wire_type {
+                ::proto_rs::encoding::WireType::LengthDelimited => {
+                    let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                    let mut __limited = buf.take(__len);
+                    while __limited.has_remaining() {
                         if __i >= (#access).len() {
                             return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
                         }
-                        let mut __tmp: #proto_ty = <#proto_ty as ::proto_rs::ProtoExt>::proto_default();
-                        ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                        (#access)[__i] = <#target_ty as ::core::convert::TryFrom<#proto_ty>>::try_from(__tmp)
-                            .map_err(|_| ::proto_rs::DecodeError::new("numeric conversion failed"))?;
+                        let mut __tmp: #target_ty = <#target_ty as ::proto_rs::ProtoExt>::proto_default();
+                        ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
+                        (#access)[__i] = __tmp;
+                        __i += 1;
                     }
+                }
+                _ => {
+                    if __i >= (#access).len() {
+                        return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
+                    }
+                    let mut __tmp: #target_ty = <#target_ty as ::proto_rs::ProtoExt>::proto_default();
+                    ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
+                    (#access)[__i] = __tmp;
                 }
             }
-        }
-    } else {
-        quote! {
-            if #tag == tag {
-                let mut __i = 0usize;
-                match wire_type {
-                    ::proto_rs::encoding::WireType::LengthDelimited => {
-                        let __len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                        let mut __limited = buf.take(__len);
-                        while __limited.has_remaining() {
-                            if __i >= (#access).len() {
-                                return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                            }
-                            let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-                            ::proto_rs::encoding::#codec::merge(#wire, &mut __tmp, &mut __limited, ctx.clone())?;
-                            (#access)[__i] = __tmp;
-                            __i += 1;
-                        }
-                    }
-                    _ => {
-                        if __i >= (#access).len() {
-                            return Err(::proto_rs::DecodeError::new("too many elements for fixed array"));
-                        }
-                        let mut __tmp: #elem_ty = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-                        ::proto_rs::encoding::#codec::merge(wire_type, &mut __tmp, buf, ctx.clone())?;
-                        (#access)[__i] = __tmp;
-                    }
-                }
+            while __i < (#access).len() {
+                (#access)[__i] = <#target_ty as ::proto_rs::ProtoExt>::proto_default();
+                __i += 1;
             }
         }
     }
@@ -559,10 +648,14 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
     let elem_ty = &*array.elem;
     let elem_parsed = parse_field_type(elem_ty);
 
+    let all_default = array_all_default(access, elem_ty);
+
     if elem_parsed.is_message_like {
         return EncodedLenTokens::new(
             quote! {
-                {
+                if #all_default {
+                    0
+                } else {
                     let mut __total = 0usize;
                     for __value in (#access).iter() {
                         __total += ::proto_rs::encoding::message::encoded_len::<#elem_ty>(#tag, &__value);
@@ -578,35 +671,59 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
         return EncodedLenTokens::new(quote! { 0 }, false);
     };
 
-    if needs_numeric_widening(&elem_parsed) {
+    if elem_parsed.is_numeric_scalar {
         let proto_ty = &elem_parsed.proto_rust_type;
-        EncodedLenTokens::new(
+        let convert = if needs_numeric_widening(&elem_parsed) {
+            quote! { (*__proto_rs_value) as #proto_ty }
+        } else {
+            quote! { *__proto_rs_value }
+        };
+
+        let body_len = quote! {
+            {
+                let mut __proto_rs_body_len = 0usize;
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                        - ::proto_rs::encoding::key_len(1u32));
+                }
+                __proto_rs_body_len
+            }
+        };
+
+        return EncodedLenTokens::new(
             quote! {
-                {
-                    let mut __total = 0usize;
-                    for __value in (#access).iter() {
-                        let __converted: #proto_ty = (*__value) as #proto_ty;
-                        __total += ::proto_rs::encoding::#codec::encoded_len(#tag, &__converted);
+                if #all_default {
+                    0
+                } else {
+                    let __proto_rs_body_len = #body_len;
+                    if __proto_rs_body_len == 0 {
+                        0
+                    } else {
+                        ::proto_rs::encoding::key_len(#tag)
+                            + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
+                            + __proto_rs_body_len
                     }
-                    __total
                 }
             },
             true,
-        )
-    } else {
-        EncodedLenTokens::new(
-            quote! {
-                {
-                    let mut __total = 0usize;
-                    for __value in (#access).iter() {
-                        __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
-                    }
-                    __total
-                }
-            },
-            true,
-        )
+        );
     }
+
+    EncodedLenTokens::new(
+        quote! {
+            if #all_default {
+                0
+            } else {
+                let mut __total = 0usize;
+                for __value in (#access).iter() {
+                    __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
+                }
+                __total
+            }
+        },
+        true,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -757,6 +874,15 @@ fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
 
 fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let inner_ty = &parsed.elem_type;
+
+    if let Some(box_inner) = inner_box_type(inner_ty) {
+        return decode_option_box(access, tag, &box_inner);
+    }
+
+    if let Some(arc_inner) = inner_arc_type(inner_ty) {
+        return decode_option_arc(access, tag, &arc_inner);
+    }
+
     quote! {
         if #tag == tag {
             <#inner_ty as ::proto_rs::SingularField>::merge_option_field(
@@ -777,6 +903,87 @@ fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) 
                 <<#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
             });
             <#inner_ty as ::proto_rs::SingularField>::encoded_len_option_field(#tag, __proto_rs_value)
+        }
+    }
+}
+
+fn inner_box_type(ty: &Type) -> Option<Type> {
+    if let Type::Path(path) = ty
+        && let Some(segment) = path.path.segments.last()
+        && segment.ident == "Box"
+        && let PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
+    }
+
+    None
+}
+
+fn inner_arc_type(ty: &Type) -> Option<Type> {
+    if let Type::Path(path) = ty
+        && let Some(segment) = path.path.segments.last()
+        && segment.ident == "Arc"
+        && let PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
+    }
+
+    None
+}
+
+fn decode_option_box(access: &TokenStream, tag: u32, inner_ty: &Type) -> TokenStream {
+    quote! {
+        if #tag == tag {
+            if let Some(__proto_rs_existing) = (#access).as_mut() {
+                <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
+                    wire_type,
+                    __proto_rs_existing.as_mut(),
+                    buf,
+                    ctx.clone(),
+                )?;
+            } else {
+                let mut __proto_rs_tmp: <#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> =
+                    <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
+                <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
+                    wire_type,
+                    &mut __proto_rs_tmp,
+                    buf,
+                    ctx.clone(),
+                )?;
+                let __proto_rs_owned = <#inner_ty as ::proto_rs::ProtoExt>::post_decode(__proto_rs_tmp)?;
+                (#access) = Some(::std::boxed::Box::new(__proto_rs_owned));
+            }
+        }
+    }
+}
+
+fn decode_option_arc(access: &TokenStream, tag: u32, inner_ty: &Type) -> TokenStream {
+    quote! {
+        if #tag == tag {
+            if let Some(__proto_rs_existing) = (#access).as_mut() {
+                if let Some(__proto_rs_inner) = ::std::sync::Arc::get_mut(__proto_rs_existing) {
+                    <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
+                        wire_type,
+                        __proto_rs_inner,
+                        buf,
+                        ctx.clone(),
+                    )?;
+                    return Ok(());
+                }
+            }
+
+            let mut __proto_rs_tmp: <#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> =
+                <#inner_ty as ::proto_rs::ProtoExt>::proto_default();
+            <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
+                wire_type,
+                &mut __proto_rs_tmp,
+                buf,
+                ctx.clone(),
+            )?;
+            let __proto_rs_owned = <#inner_ty as ::proto_rs::ProtoExt>::post_decode(__proto_rs_tmp)?;
+            (#access) = Some(::std::sync::Arc::new(__proto_rs_owned));
         }
     }
 }

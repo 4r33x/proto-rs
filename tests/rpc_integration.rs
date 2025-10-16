@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -17,17 +18,22 @@ use encoding_messages::NestedMessageProst;
 use encoding_messages::SampleEnum;
 use encoding_messages::SampleMessage;
 use encoding_messages::SampleMessageProst;
+use encoding_messages::ZeroCopyContainer;
+use encoding_messages::ZeroCopyContainerProst;
 use encoding_messages::sample_collections_messages;
 use encoding_messages::sample_message;
+use encoding_messages::zero_copy_fixture;
 
 #[proto_rpc(rpc_package = "complex_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/tests/complex_rpc.proto")]
-#[proto_imports(encoding = ["SampleMessage", "CollectionsMessage", "NestedMessage"])]
+#[proto_imports(encoding = ["SampleMessage", "CollectionsMessage", "NestedMessage", "ZeroCopyContainer"])]
 pub trait ComplexService {
     type StreamCollectionsStream: Stream<Item = Result<CollectionsMessage, Status>> + Send;
 
     async fn echo_sample(&self, request: Request<SampleMessage>) -> Result<Response<SampleMessage>, Status>;
 
     async fn stream_collections(&self, request: Request<SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status>;
+
+    async fn echo_container(&self, request: Request<ZeroCopyContainer>) -> Result<Response<ZeroCopyContainer>, Status>;
 }
 
 fn request_message() -> SampleMessage {
@@ -46,6 +52,20 @@ fn response_message() -> SampleMessage {
     msg.mode = SampleEnum::One;
     msg.optional_mode = Some(SampleEnum::Two);
     msg
+}
+
+fn request_container() -> ZeroCopyContainer {
+    zero_copy_fixture()
+}
+
+fn response_container() -> ZeroCopyContainer {
+    let mut container = zero_copy_fixture();
+    container.bytes32[0] = 0xAA;
+    container.smalls[0] = 512;
+    container.enum_lookup.insert("response".into(), SampleEnum::Zero);
+    container.boxed = Some(Box::new(NestedMessage { value: 2048 }));
+    container.shared = Some(Arc::new(NestedMessage { value: -999 }));
+    container
 }
 
 fn response_collections() -> Vec<CollectionsMessage> {
@@ -146,6 +166,40 @@ fn collections_from_tonic(msg: tonic_prost_test::encoding::CollectionsMessage) -
     CollectionsMessage::from(&prost)
 }
 
+fn container_to_tonic(msg: &ZeroCopyContainer) -> tonic_prost_test::encoding::ZeroCopyContainer {
+    let prost = ZeroCopyContainerProst::from(msg);
+    tonic_prost_test::encoding::ZeroCopyContainer {
+        bytes32: prost.bytes32,
+        smalls: prost.smalls,
+        nested_items: prost.nested_items.into_iter().map(|nested| nested_to_tonic(&nested)).collect(),
+        boxed: prost.boxed.map(|nested| nested_to_tonic(&nested)),
+        shared: prost.shared.map(|nested| nested_to_tonic(&nested)),
+        enum_lookup: prost.enum_lookup,
+    }
+}
+
+fn container_from_tonic(msg: tonic_prost_test::encoding::ZeroCopyContainer) -> ZeroCopyContainer {
+    let tonic_prost_test::encoding::ZeroCopyContainer {
+        bytes32,
+        smalls,
+        nested_items,
+        boxed,
+        shared,
+        enum_lookup,
+    } = msg;
+
+    let prost = ZeroCopyContainerProst {
+        bytes32,
+        smalls,
+        nested_items: nested_items.into_iter().map(nested_from_tonic).collect(),
+        boxed: boxed.map(nested_from_tonic),
+        shared: shared.map(nested_from_tonic),
+        enum_lookup,
+    };
+
+    ZeroCopyContainer::from(&prost)
+}
+
 struct OurService;
 
 #[tonic::async_trait]
@@ -159,6 +213,10 @@ impl ComplexService for OurService {
     async fn stream_collections(&self, _request: Request<SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status> {
         let stream = tokio_stream::iter(response_collections().into_iter().map(Ok));
         Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn echo_container(&self, _request: Request<ZeroCopyContainer>) -> Result<Response<ZeroCopyContainer>, Status> {
+        Ok(Response::new(response_container()))
     }
 }
 
@@ -175,6 +233,10 @@ impl tonic_prost_test::complex_rpc::complex_service_server::ComplexService for P
     async fn stream_collections(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status> {
         let items = response_collections().into_iter().map(|msg| Ok(collections_to_tonic(&msg)));
         Ok(Response::new(Box::pin(tokio_stream::iter(items))))
+    }
+
+    async fn echo_container(&self, _request: Request<tonic_prost_test::encoding::ZeroCopyContainer>) -> Result<Response<tonic_prost_test::encoding::ZeroCopyContainer>, Status> {
+        Ok(Response::new(container_to_tonic(&response_container())))
     }
 }
 
@@ -243,6 +305,12 @@ async fn tonic_client_roundtrip_against_proto_server() {
 
     assert_eq!(received, response_collections());
 
+    drop(stream);
+
+    let container_request = container_to_tonic(&request_container());
+    let container_response = client.echo_container(container_request).await.unwrap().into_inner();
+    assert_eq!(container_from_tonic(container_response), response_container());
+
     shutdown.send(()).unwrap();
     handle.await.unwrap().unwrap();
 }
@@ -265,6 +333,11 @@ async fn proto_client_roundtrip_against_prost_server() {
 
     assert_eq!(received, response_collections());
 
+    drop(stream);
+
+    let container_response = client.echo_container(request_container()).await.unwrap().into_inner();
+    assert_eq!(container_response, response_container());
+
     shutdown.send(()).unwrap();
     handle.await.unwrap().unwrap();
 }
@@ -286,6 +359,11 @@ async fn proto_client_roundtrip_against_proto_server() {
     }
 
     assert_eq!(received, response_collections());
+
+    drop(stream);
+
+    let container_response = client.echo_container(request_container()).await.unwrap().into_inner();
+    assert_eq!(container_response, response_container());
 
     shutdown.send(()).unwrap();
     handle.await.unwrap().unwrap();
