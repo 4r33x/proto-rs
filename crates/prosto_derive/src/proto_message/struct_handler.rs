@@ -13,6 +13,7 @@ use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
 use crate::utils::is_option_type;
 use crate::utils::parse_field_config;
+use crate::utils::parse_field_type;
 use crate::utils::vec_inner_type;
 
 pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
@@ -37,6 +38,11 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     }
 
     if vec_inner_type(field_ty).is_some() {
+        return quote! { #access_tokens.clear(); };
+    }
+
+    let parsed_ty = parse_field_type(field_ty);
+    if parsed_ty.map_kind.is_some() || parsed_ty.set_kind.is_some() {
         return quote! { #access_tokens.clear(); };
     }
 

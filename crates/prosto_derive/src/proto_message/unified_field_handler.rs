@@ -70,6 +70,11 @@ pub fn field_default_expr(field: &Field) -> TokenStream {
         return quote! { Vec::new() };
     }
 
+    let parsed_ty = parse_field_type(field_ty);
+    if parsed_ty.map_kind.is_some() || parsed_ty.set_kind.is_some() {
+        return quote! { ::core::default::Default::default() };
+    }
+
     let cfg = parse_field_config(field);
     if cfg.into_type.is_some() || cfg.from_type.is_some() || cfg.into_fn.is_some() || cfg.from_fn.is_some() || cfg.skip {
         quote! { ::core::default::Default::default() }
@@ -651,9 +656,9 @@ fn encode_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kind: Ma
         if !(#access).is_empty() {
             #module::encode(
                 |tag, key, buf| <#key_ty as ::proto_rs::SingularField>::encode_singular_field(tag, key, buf),
-                |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, key),
+                |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &key),
                 |tag, value, buf| <#value_ty as ::proto_rs::SingularField>::encode_singular_field(tag, value, buf),
-                |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, value),
+                |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &value),
                 #tag,
                 &(#access),
                 buf,
@@ -687,8 +692,8 @@ fn encoded_len_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kin
 
     quote! {
         #module::encoded_len(
-            |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, key),
-            |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, value),
+            |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &key),
+            |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &value),
             #tag,
             &(#access),
         )

@@ -9,6 +9,8 @@ use bytes::Bytes;
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
+use proto_rs::ProtoShadow;
+use proto_rs::Shadow;
 use proto_rs::SingularField;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
@@ -350,9 +352,14 @@ fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_e
     assert_eq!(decoded_prost, *prost_expected);
 }
 
-fn encode_proto_message<M: ProtoExt>(value: &M) -> Bytes {
-    let mut buf = BytesMut::with_capacity(value.encoded_len());
-    value.encode(&mut buf).expect("proto encode failed");
+fn encode_proto_message<M>(value: &M) -> Bytes
+where
+    M: ProtoExt,
+    for<'a> Shadow<'a, M>: ProtoShadow<Sun<'a> = &'a M, View<'a> = &'a M>,
+{
+    let len = <M as ProtoExt>::encoded_len(&value);
+    let mut buf = BytesMut::with_capacity(len);
+    <M as ProtoExt>::encode(value, &mut buf).expect("proto encode failed");
     buf.freeze()
 }
 
@@ -362,10 +369,14 @@ fn encode_prost_message<M: ProstMessage>(value: &M) -> Bytes {
     buf.freeze()
 }
 
-fn encode_proto_length_delimited<M: ProtoExt>(value: &M) -> Bytes {
-    let len = value.encoded_len();
+fn encode_proto_length_delimited<M>(value: &M) -> Bytes
+where
+    M: ProtoExt,
+    for<'a> Shadow<'a, M>: ProtoShadow<Sun<'a> = &'a M, View<'a> = &'a M>,
+{
+    let len = <M as ProtoExt>::encoded_len(&value);
     let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
-    value.encode_length_delimited(&mut buf).expect("proto length-delimited encode failed");
+    <M as ProtoExt>::encode_length_delimited(value, &mut buf).expect("proto length-delimited encode failed");
     buf.freeze()
 }
 
@@ -384,10 +395,10 @@ fn enum_default_attribute_maps_to_zero_discriminant() {
     assert_eq!(StatusWithDefaultAttribute::Inactive as i32, 2);
     assert_eq!(StatusWithDefaultAttribute::Completed as i32, 3);
 
-    let default_bytes = StatusWithDefaultAttribute::Active.encode_to_vec();
+    let default_bytes = <StatusWithDefaultAttribute as ProtoExt>::encode_to_vec(&StatusWithDefaultAttribute::Active);
     assert!(default_bytes.is_empty(), "default enum variant must encode to empty payload");
 
-    let pending_bytes = StatusWithDefaultAttribute::Pending.encode_to_vec();
+    let pending_bytes = <StatusWithDefaultAttribute as ProtoExt>::encode_to_vec(&StatusWithDefaultAttribute::Pending);
     assert!(!pending_bytes.is_empty(), "non-default enum variant must encode field value");
     let decoded = StatusWithDefaultAttribute::decode(Bytes::from(pending_bytes)).expect("decode enum with explicit value");
     assert_eq!(decoded, StatusWithDefaultAttribute::Pending);
@@ -413,7 +424,7 @@ fn proto_and_prost_encodings_are_equivalent() {
     let normalized_proto = encode_proto_message(&proto_decoded_from_prost);
     assert_eq!(normalized_proto, proto_bytes, "proto re-encode mismatch");
 
-    assert_eq!(proto_msg.encoded_len(), proto_bytes.len());
+    assert_eq!(SampleMessage::encoded_len(&&proto_msg), proto_bytes.len());
 }
 
 #[test]
@@ -587,14 +598,16 @@ fn merge_option_box_reuses_allocation() {
     assert_eq!(tag, 1);
     assert_eq!(wire_type, encoding::WireType::LengthDelimited);
 
-    let mut target = Some(Box::new(NestedMessage { value: 0 }));
-    let ptr_before = target.as_ref().map(|b| &raw const **b).unwrap();
+    let mut target: Option<Shadow<'_, Box<NestedMessage>>> = Some(<Box<NestedMessage> as ProtoExt>::proto_default());
+    let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
     <Box<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
-    let ptr_after = target.as_ref().map(|b| &raw const **b).unwrap();
-    assert_eq!(ptr_before, ptr_after, "Box allocation should be reused");
-    assert_eq!(target.as_ref().unwrap().value, 123);
+    let ptr_after = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
+    assert_eq!(ptr_before, ptr_after, "Box shadow should be reused");
+
+    let boxed = target.unwrap().to_sun().expect("into owned box");
+    assert_eq!(boxed.value, 123);
 }
 
 #[test]
@@ -607,14 +620,16 @@ fn merge_option_arc_reuses_allocation() {
     assert_eq!(tag, 1);
     assert_eq!(wire_type, encoding::WireType::LengthDelimited);
 
-    let mut target = Some(Arc::new(NestedMessage { value: 0 }));
-    let ptr_before = Arc::as_ptr(target.as_ref().unwrap());
+    let mut target: Option<Shadow<'_, Arc<NestedMessage>>> = Some(<Arc<NestedMessage> as ProtoExt>::proto_default());
+    let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
     <Arc<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
-    let ptr_after = Arc::as_ptr(target.as_ref().unwrap());
-    assert_eq!(ptr_before, ptr_after, "Arc allocation should be reused when unique");
-    assert_eq!(target.as_ref().unwrap().value, 456);
+    let ptr_after = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
+    assert_eq!(ptr_before, ptr_after, "Arc shadow should be reused when unique");
+
+    let arc = target.unwrap().to_sun().expect("into owned arc");
+    assert_eq!(arc.value, 456);
 }
 
 #[test]
