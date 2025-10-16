@@ -716,6 +716,8 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
                     <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                 })
                 .collect();
+            let __proto_rs_len = <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views);
+            let _ = __proto_rs_len;
             <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
     }
@@ -739,14 +741,13 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
         if (#access).is_empty() {
             0
         } else {
-            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_iter(
-                #tag,
-                (#access)
-                    .iter()
-                    .map(|value| {
-                        <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-                    }),
-            )
+            let __proto_rs_views: ::proto_rs::alloc::vec::Vec<_> = (#access)
+                .iter()
+                .map(|value| {
+                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+                })
+                .collect();
+            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views)
         }
     }
 }
@@ -819,6 +820,8 @@ fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Token
                     <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                 })
                 .collect();
+            let __proto_rs_len = <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views);
+            let _ = __proto_rs_len;
             <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
     }
@@ -846,14 +849,13 @@ fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
         if (#access).is_empty() {
             0
         } else {
-            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_iter(
-                #tag,
-                (#access)
-                    .iter()
-                    .map(|value| {
-                        <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-                    }),
-            )
+            let __proto_rs_views: ::proto_rs::alloc::vec::Vec<_> = (#access)
+                .iter()
+                .map(|value| {
+                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+                })
+                .collect();
+            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views)
         }
     }
 }

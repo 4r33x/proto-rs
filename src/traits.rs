@@ -217,21 +217,11 @@ pub trait SingularField: ProtoExt + Sized {
 /// generated structs and enums without requiring ad-hoc implementations for
 /// every possible `T`.
 pub trait RepeatedField: ProtoExt {
-    fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+    fn encode_repeated_field<'a>(tag: u32, values: Vec<ViewOf<'a, Self>>, buf: &mut impl BufMut)
     where
-        Self: ProtoExt + 'a,
-        I: IntoIterator<Item = ViewOf<'a, Self>>;
+        Self: ProtoExt + 'a;
 
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize;
-
-    fn encoded_len_repeated_iter<'a, I>(tag: u32, values: I) -> usize
-    where
-        Self: ProtoExt + 'a,
-        I: IntoIterator<Item = ViewOf<'a, Self>>,
-    {
-        let __proto_rs_views: Vec<_> = values.into_iter().collect();
-        Self::encoded_len_repeated_field(tag, &__proto_rs_views)
-    }
 }

@@ -53,12 +53,11 @@ where
     for<'a> <T as ProtoExt>::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, View<'a> = &'a T, OwnedSun = T>,
 {
     #[inline]
-    fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+    fn encode_repeated_field<'a>(tag: u32, values: Vec<ViewOf<'a, Self>>, buf: &mut impl BufMut)
     where
-        T: ProtoExt + 'a,
-        I: IntoIterator<Item = ViewOf<'a, T>>,
+        Self: 'a,
     {
-        crate::encoding::message::encode_repeated::<Self, _>(tag, values, buf);
+        crate::encoding::message::encode_repeated::<Self>(tag, values, buf);
     }
     #[inline]
     fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {

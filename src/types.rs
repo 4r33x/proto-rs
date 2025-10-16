@@ -104,10 +104,9 @@ macro_rules! impl_google_wrapper {
         }
 
         impl RepeatedField for $ty {
-            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+            fn encode_repeated_field<'a>(tag: u32, values: Vec<ViewOf<'a, Self>>, buf: &mut impl BufMut)
             where
-                Self: ProtoExt + 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
+                Self: 'a,
             {
                 for value in values {
                     $module::encode(tag, value, buf);
@@ -320,10 +319,9 @@ macro_rules! impl_narrow_varint {
     };
     (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
        impl RepeatedField for $ty {
-            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+            fn encode_repeated_field<'a>(tag: u32, values: Vec<ViewOf<'a, Self>>, buf: &mut impl BufMut)
             where
-                Self: ProtoExt + 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
+                Self: 'a,
             {
                 for value in values {
                     let widened: $wide_ty = (*value).into();

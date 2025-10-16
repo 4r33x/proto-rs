@@ -183,14 +183,13 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::RepeatedField for #name #generics {
-            fn encode_repeated_field<'a, I>(
+            fn encode_repeated_field<'a>(
                 tag: u32,
-                values: I,
+                values: ::proto_rs::alloc::vec::Vec<::proto_rs::ViewOf<'a, Self>>,
                 buf: &mut impl ::proto_rs::bytes::BufMut,
             )
             where
-                Self: ::proto_rs::ProtoExt + 'a,
-                I: ::core::iter::IntoIterator<Item = ::proto_rs::ViewOf<'a, Self>>,
+                Self: 'a,
             {
                 for value in values {
                     let raw = (*value) as i32;

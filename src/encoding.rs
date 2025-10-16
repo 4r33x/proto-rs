@@ -786,10 +786,9 @@ pub mod message {
     }
 
     #[inline]
-    pub fn encode_repeated<'a, M, I>(tag: u32, values: I, buf: &mut impl BufMut)
+    pub fn encode_repeated<'a, M>(tag: u32, values: Vec<ViewOf<'a, M>>, buf: &mut impl BufMut)
     where
         M: ProtoExt + 'a,
-        I: IntoIterator<Item = ViewOf<'a, M>>,
     {
         for v in values {
             let len = M::encoded_len(&v);
