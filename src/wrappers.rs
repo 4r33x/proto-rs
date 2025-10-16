@@ -55,18 +55,11 @@ where
 {
     #[inline]
     fn encode_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>], buf: &mut impl BufMut) {
-        crate::encoding::message::encode_repeated::<Self, _>(
-            tag,
-            values.iter().map(|value| <Self::Shadow<'_> as ProtoShadow>::from_sun(value)),
-            buf,
-        );
+        crate::encoding::message::encode_repeated::<Self, _>(tag, values.iter().map(<Self::Shadow<'_> as ProtoShadow>::from_sun), buf);
     }
     #[inline]
     fn encoded_len_repeated_field(tag: u32, values: &[OwnedSunOf<'_, Self>]) -> usize {
-        crate::encoding::message::encoded_len_repeated::<Self, _>(
-            tag,
-            values.iter().map(|value| <Self::Shadow<'_> as ProtoShadow>::from_sun(value)),
-        )
+        crate::encoding::message::encoded_len_repeated::<Self, _>(tag, values.iter().map(<Self::Shadow<'_> as ProtoShadow>::from_sun))
     }
 
     #[inline]
