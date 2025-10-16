@@ -18,7 +18,6 @@ use crate::RepeatedField;
 use crate::SingularField;
 use crate::encoding::DecodeContext;
 use crate::encoding::wire_type::WireType;
-use crate::traits::OwnedSunOf;
 use crate::traits::ProtoShadow;
 use crate::traits::ViewOf;
 

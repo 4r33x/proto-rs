@@ -183,11 +183,15 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
         }
 
         impl #generics ::proto_rs::RepeatedField for #name #generics {
-            fn encode_repeated_field(
+            fn encode_repeated_field<'a, I>(
                 tag: u32,
-                values: &[::proto_rs::OwnedSunOf<'_, Self>],
+                values: I,
                 buf: &mut impl ::proto_rs::bytes::BufMut,
-            ) {
+            )
+            where
+                Self: ::proto_rs::ProtoExt + 'a,
+                I: ::core::iter::IntoIterator<Item = ::proto_rs::ViewOf<'a, Self>>,
+            {
                 for value in values {
                     let raw = (*value) as i32;
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);
@@ -224,10 +228,10 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[::proto_rs::OwnedSunOf<'_, Self>]) -> usize {
+            fn encoded_len_repeated_field(tag: u32, values: &[::proto_rs::ViewOf<'_, Self>]) -> usize {
                 let mut total = 0usize;
                 for value in values {
-                    let raw = (*value) as i32;
+                    let raw = (**value) as i32;
                     total += ::proto_rs::encoding::int32::encoded_len(tag, &raw);
                 }
                 total
