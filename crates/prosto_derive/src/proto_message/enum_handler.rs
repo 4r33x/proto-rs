@@ -228,13 +228,18 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[::proto_rs::ViewOf<'_, Self>]) -> usize {
-                let mut total = 0usize;
-                for value in values {
-                    let raw = (**value) as i32;
-                    total += ::proto_rs::encoding::int32::encoded_len(tag, &raw);
-                }
-                total
+            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ::proto_rs::ViewOf<'a, Self>>,
+            {
+                values
+                    .into_iter()
+                    .map(|value| {
+                        let raw = (*value) as i32;
+                        ::proto_rs::encoding::int32::encoded_len(tag, &raw)
+                    })
+                    .sum()
             }
         }
 

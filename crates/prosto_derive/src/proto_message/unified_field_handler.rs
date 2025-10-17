@@ -380,13 +380,32 @@ fn encoded_len_enum(access: &TokenStream, tag: u32, enum_ty: &Type) -> TokenStre
 // ---------------------------------------------------------------------------
 // Array helpers (fixed length, no allocations)
 
-fn array_all_default(access: &TokenStream, elem_ty: &Type) -> TokenStream {
-    quote! {
+fn array_bytes_all_default(access: &TokenStream) -> TokenStream {
+    quote! {{
+        let __proto_rs_default = <u8 as ::proto_rs::ProtoExt>::proto_default();
+        (#access).iter().all(|&__proto_rs_value| __proto_rs_value == __proto_rs_default)
+    }}
+}
+
+fn array_all_default(access: &TokenStream, elem_ty: &Type, parsed: &ParsedFieldType) -> TokenStream {
+    if parsed.is_numeric_scalar {
+        return quote! {{
+            let __proto_rs_default = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+            (#access)
+                .iter()
+                .all(|__proto_rs_value| *__proto_rs_value == __proto_rs_default)
+        }};
+    }
+
+    quote! {{
+        let __proto_rs_default = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+        let __proto_rs_default_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(&__proto_rs_default);
+        let __proto_rs_default_len = <#elem_ty as ::proto_rs::ProtoExt>::encoded_len(&__proto_rs_default_view);
         (#access).iter().all(|__proto_rs_value| {
             let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
-            <#elem_ty as ::proto_rs::ProtoExt>::encoded_len(&__proto_rs_view) == 0
+            <#elem_ty as ::proto_rs::ProtoExt>::encoded_len(&__proto_rs_view) == __proto_rs_default_len
         })
-    }
+    }}
 }
 
 fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> TokenStream {
@@ -394,25 +413,29 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
     let elem_parsed = parse_field_type(elem_ty);
 
     if is_bytes_array(&Type::Array(array.clone())) {
-        return quote! {
-            if !(#access).iter().all(|&b| b == 0u8) {
+        let all_default = array_bytes_all_default(access);
+        return quote! {{
+            if !#all_default {
                 ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
                 ::proto_rs::encoding::encode_varint((#access).len() as u64, buf);
                 buf.put_slice(&(#access));
             }
-        };
+        }};
     }
 
-    let all_default = array_all_default(access, elem_ty);
+    let all_default = array_all_default(access, elem_ty, &elem_parsed);
 
     if elem_parsed.is_message_like {
-        return quote! {
+        return quote! {{
             if !#all_default {
-                for __proto_rs_value in (#access).iter() {
-                    ::proto_rs::encoding::message::encode::<#elem_ty>(#tag, __proto_rs_value, buf);
-                }
+                let __proto_rs_views = (#access)
+                    .iter()
+                    .map(|value| {
+                        <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+                    });
+                <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
             }
-        };
+        }};
     }
 
     if elem_parsed.is_numeric_scalar {
@@ -460,29 +483,26 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
             },
         };
 
-        return quote! {
+        return quote! {{
             if !#all_default {
                 let __proto_rs_body_len = #body_len;
-                if __proto_rs_body_len != 0 {
-                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                    ::proto_rs::encoding::encode_varint(__proto_rs_body_len as u64, buf);
-                    #emit_values
-                }
+                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint(__proto_rs_body_len as u64, buf);
+                #emit_values
             }
-        };
+        }};
     }
 
-    let Some(codec) = scalar_codec(&elem_parsed) else {
-        return quote! {};
-    };
-
-    quote! {
+    quote! {{
         if !#all_default {
-            for __proto_rs_value in (#access).iter() {
-                ::proto_rs::encoding::#codec::encode(#tag, __proto_rs_value, buf);
-            }
+            let __proto_rs_views = (#access)
+                .iter()
+                .map(|value| {
+                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+                });
+            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
-    }
+    }}
 }
 
 fn decode_array(access: &TokenStream, _tag: u32, array: &syn::TypeArray) -> TokenStream {
@@ -607,17 +627,18 @@ fn decode_array(access: &TokenStream, _tag: u32, array: &syn::TypeArray) -> Toke
 
 fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> EncodedLenTokens {
     if is_bytes_array(&Type::Array(array.clone())) {
+        let all_default = array_bytes_all_default(access);
         return EncodedLenTokens::new(
-            quote! {
-                if (#access).iter().all(|&b| b == 0u8) {
+            quote! {{
+                if #all_default {
                     0
                 } else {
-                    let l = (#access).len();
+                    let __proto_rs_len = (#access).len();
                     ::proto_rs::encoding::key_len(#tag)
-                        + ::proto_rs::encoding::encoded_len_varint(l as u64)
-                        + l
+                        + ::proto_rs::encoding::encoded_len_varint(__proto_rs_len as u64)
+                        + __proto_rs_len
                 }
-            },
+            }},
             true,
         );
     }
@@ -625,21 +646,22 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
     let elem_ty = &*array.elem;
     let elem_parsed = parse_field_type(elem_ty);
 
-    let all_default = array_all_default(access, elem_ty);
+    let all_default = array_all_default(access, elem_ty, &elem_parsed);
 
     if elem_parsed.is_message_like {
         return EncodedLenTokens::new(
-            quote! {
+            quote! {{
                 if #all_default {
                     0
                 } else {
-                    let mut __total = 0usize;
-                    for __value in (#access).iter() {
-                        __total += ::proto_rs::encoding::message::encoded_len::<#elem_ty>(#tag, &__value);
-                    }
-                    __total
+                    let __proto_rs_views = (#access)
+                        .iter()
+                        .map(|value| {
+                            <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+                        });
+                    <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
                 }
-            },
+            }},
             true,
         );
     }
@@ -656,49 +678,39 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
             quote! { *__proto_rs_value }
         };
 
-        let body_len = quote! {
-            {
-                let mut __proto_rs_body_len = 0usize;
-                for __proto_rs_value in (#access).iter() {
-                    let __proto_rs_converted: #proto_ty = #convert;
-                    __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
-                        - ::proto_rs::encoding::key_len(1u32));
-                }
-                __proto_rs_body_len
-            }
-        };
-
         return EncodedLenTokens::new(
-            quote! {
+            quote! {{
                 if #all_default {
                     0
                 } else {
-                    let __proto_rs_body_len = #body_len;
-                    if __proto_rs_body_len == 0 {
-                        0
-                    } else {
-                        ::proto_rs::encoding::key_len(#tag)
-                            + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
-                            + __proto_rs_body_len
+                    let mut __proto_rs_body_len = 0usize;
+                    for __proto_rs_value in (#access).iter() {
+                        let __proto_rs_converted: #proto_ty = #convert;
+                        __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                            - ::proto_rs::encoding::key_len(1u32));
                     }
+                    ::proto_rs::encoding::key_len(#tag)
+                        + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
+                        + __proto_rs_body_len
                 }
-            },
+            }},
             true,
         );
     }
 
     EncodedLenTokens::new(
-        quote! {
+        quote! {{
             if #all_default {
                 0
             } else {
-                let mut __total = 0usize;
-                for __value in (#access).iter() {
-                    __total += ::proto_rs::encoding::#codec::encoded_len(#tag, __value);
-                }
-                __total
+                let __proto_rs_views = (#access)
+                    .iter()
+                    .map(|value| {
+                        <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+                    });
+                <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
             }
-        },
+        }},
         true,
     )
 }
@@ -708,17 +720,64 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
 
 fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
+    if parsed.is_numeric_scalar {
+        let Some(codec) = scalar_codec(parsed) else {
+            return quote! {};
+        };
+        let proto_ty = &parsed.proto_rust_type;
+        let convert = if needs_numeric_widening(parsed) {
+            quote! { (*__proto_rs_value) as #proto_ty }
+        } else {
+            quote! { *__proto_rs_value }
+        };
+
+        let body_len = quote! {{
+            let mut __proto_rs_body_len = 0usize;
+            for __proto_rs_value in (#access).iter() {
+                let __proto_rs_converted: #proto_ty = #convert;
+                __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                    - ::proto_rs::encoding::key_len(1u32));
+            }
+            __proto_rs_body_len
+        }};
+
+        let emit_values = match parsed.proto_type.as_str() {
+            "bool" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::encode_varint(u64::from(__proto_rs_converted), buf);
+                }
+            },
+            "double" | "fixed64" | "sfixed64" | "float" | "fixed32" | "sfixed32" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    buf.put_slice(&__proto_rs_converted.to_le_bytes());
+                }
+            },
+            _ => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::encode_varint(__proto_rs_converted as u64, buf);
+                }
+            },
+        };
+
+        return quote! {{
+            if !(#access).is_empty() {
+                let __proto_rs_body_len = #body_len;
+                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint(__proto_rs_body_len as u64, buf);
+                #emit_values
+            }
+        }};
+    }
+
     quote! {
         {
-            let __proto_rs_views: ::proto_rs::alloc::vec::Vec<_> = (#access)
-                .iter()
-                .map(|value| {
-                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-                })
-                .collect();
-            let __proto_rs_len = <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views);
-            let _ = __proto_rs_len;
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views.into_iter(), buf);
+            let __proto_rs_views = (#access).iter().map(|value| {
+                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+            });
+            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
     }
 }
@@ -737,19 +796,42 @@ fn decode_repeated(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) ->
 
 fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
-    quote! {
-        if (#access).is_empty() {
-            0
+    if parsed.is_numeric_scalar {
+        let Some(codec) = scalar_codec(parsed) else {
+            return quote! { 0 };
+        };
+        let proto_ty = &parsed.proto_rust_type;
+        let convert = if needs_numeric_widening(parsed) {
+            quote! { (*__proto_rs_value) as #proto_ty }
         } else {
-            let __proto_rs_views: ::proto_rs::alloc::vec::Vec<_> = (#access)
-                .iter()
-                .map(|value| {
-                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-                })
-                .collect();
-            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views)
-        }
+            quote! { *__proto_rs_value }
+        };
+
+        return quote! {{
+            if (#access).is_empty() {
+                0
+            } else {
+                let mut __proto_rs_body_len = 0usize;
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                        - ::proto_rs::encoding::key_len(1u32));
+                }
+                ::proto_rs::encoding::key_len(#tag)
+                    + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
+                    + __proto_rs_body_len
+            }
+        }};
     }
+
+    quote! {{
+        let __proto_rs_views = (#access)
+            .iter()
+            .map(|value| {
+                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+            });
+        <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+    }}
 }
 
 fn map_module(kind: MapKind) -> TokenStream {
@@ -812,19 +894,66 @@ fn encoded_len_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kin
 
 fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
-    quote! {
-        if !(#access).is_empty() {
-            let __proto_rs_views: ::proto_rs::alloc::vec::Vec<_> = (#access)
-                .iter()
-                .map(|value| {
-                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-                })
-                .collect();
-            let __proto_rs_len = <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views);
-            let _ = __proto_rs_len;
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views.into_iter(), buf);
-        }
+    if parsed.is_numeric_scalar {
+        let Some(codec) = scalar_codec(parsed) else {
+            return quote! {};
+        };
+        let proto_ty = &parsed.proto_rust_type;
+        let convert = if needs_numeric_widening(parsed) {
+            quote! { (*__proto_rs_value) as #proto_ty }
+        } else {
+            quote! { *__proto_rs_value }
+        };
+
+        let body_len = quote! {{
+            let mut __proto_rs_body_len = 0usize;
+            for __proto_rs_value in (#access).iter() {
+                let __proto_rs_converted: #proto_ty = #convert;
+                __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                    - ::proto_rs::encoding::key_len(1u32));
+            }
+            __proto_rs_body_len
+        }};
+
+        let emit_values = match parsed.proto_type.as_str() {
+            "bool" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::encode_varint(u64::from(__proto_rs_converted), buf);
+                }
+            },
+            "double" | "fixed64" | "sfixed64" | "float" | "fixed32" | "sfixed32" => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    buf.put_slice(&__proto_rs_converted.to_le_bytes());
+                }
+            },
+            _ => quote! {
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::encode_varint(__proto_rs_converted as u64, buf);
+                }
+            },
+        };
+
+        return quote! {{
+            if !(#access).is_empty() {
+                let __proto_rs_body_len = #body_len;
+                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint(__proto_rs_body_len as u64, buf);
+                #emit_values
+            }
+        }};
     }
+
+    quote! {{
+        if !(#access).is_empty() {
+            let __proto_rs_views = (#access).iter().map(|value| {
+                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+            });
+            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+        }
+    }}
 }
 
 fn decode_set(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> TokenStream {
@@ -845,19 +974,42 @@ fn decode_set(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> Toke
 
 fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
-    quote! {
-        if (#access).is_empty() {
-            0
+    if parsed.is_numeric_scalar {
+        let Some(codec) = scalar_codec(parsed) else {
+            return quote! { 0 };
+        };
+        let proto_ty = &parsed.proto_rust_type;
+        let convert = if needs_numeric_widening(parsed) {
+            quote! { (*__proto_rs_value) as #proto_ty }
         } else {
-            let __proto_rs_views: ::proto_rs::alloc::vec::Vec<_> = (#access)
-                .iter()
-                .map(|value| {
-                    <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-                })
-                .collect();
-            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, &__proto_rs_views)
-        }
+            quote! { *__proto_rs_value }
+        };
+
+        return quote! {{
+            if (#access).is_empty() {
+                0
+            } else {
+                let mut __proto_rs_body_len = 0usize;
+                for __proto_rs_value in (#access).iter() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
+                        - ::proto_rs::encoding::key_len(1u32));
+                }
+                ::proto_rs::encoding::key_len(#tag)
+                    + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
+                    + __proto_rs_body_len
+            }
+        }};
     }
+
+    quote! {{
+        let __proto_rs_views = (#access)
+            .iter()
+            .map(|value| {
+                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
+            });
+        <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+    }}
 }
 
 // ---------------------------------------------------------------------------
