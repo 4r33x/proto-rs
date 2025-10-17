@@ -8,6 +8,8 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 
+extern crate self as proto_rs;
+
 pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;

@@ -11,16 +11,17 @@ use super::unified_field_handler::field_default_expr;
 use super::unified_field_handler::generate_field_decode;
 use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
+use crate::parse::UnifiedProtoConfig;
 use crate::utils::is_option_type;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::vec_inner_type;
 
-pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
     match &data.fields {
-        Fields::Named(_) => handle_named_struct(input, data),
-        Fields::Unnamed(_) => handle_tuple_struct(input, data),
-        Fields::Unit => handle_unit_struct(input),
+        Fields::Named(_) => handle_named_struct(input, data, config),
+        Fields::Unnamed(_) => handle_tuple_struct(input, data, config),
+        Fields::Unit => handle_unit_struct(input, config),
     }
 }
 
@@ -54,45 +55,85 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     }
 }
 
-fn handle_unit_struct(input: DeriveInput) -> TokenStream {
+fn handle_unit_struct(input: DeriveInput, config: &UnifiedProtoConfig) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
     let generics = &input.generics;
 
+    let shadow_ty = quote! { #name #generics };
+    let target_ty = if let Some(sun) = &config.sun {
+        let ty = &sun.ty;
+        quote! { #ty }
+    } else {
+        shadow_ty.clone()
+    };
+
+    let proto_shadow_impl = if config.sun.is_some() {
+        quote! {}
+    } else {
+        quote! {
+            impl #generics ::proto_rs::ProtoShadow for #name #generics {
+                type Sun<'a> = &'a Self;
+                type OwnedSun = Self;
+                type View<'a> = &'a Self;
+
+                fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                    Ok(self)
+                }
+
+                fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                    value
+                }
+            }
+        }
+    };
+
+    let encoded_len_binding = if config.sun.is_some() {
+        quote! { let _value = value; }
+    } else {
+        quote! { let _value: &Self = *value; }
+    };
+
+    let encode_binding = if config.sun.is_some() {
+        quote! { let _value = &value; }
+    } else {
+        quote! { let _value: &Self = value; }
+    };
+
+    let clear_impl = if config.sun.is_some() {
+        quote! {
+            fn clear(&mut self) {
+                if let Ok(default) = Self::post_decode(Self::proto_default()) {
+                    *self = default;
+                }
+            }
+        }
+    } else {
+        quote! { fn clear(&mut self) {} }
+    };
+
     quote! {
         #(#attrs)*
         #vis struct #name #generics;
 
-        impl #generics ::proto_rs::ProtoShadow for #name #generics {
-            type Sun<'a> = &'a Self;
-            type OwnedSun = Self;
-            type View<'a> = &'a Self;
+        #proto_shadow_impl
 
-            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
-                Ok(self)
-            }
-
-            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-                value
-            }
-        }
-
-        impl #generics ::proto_rs::ProtoExt for #name #generics {
-            type Shadow<'a> = Self;
+        impl #generics ::proto_rs::ProtoExt for #target_ty {
+            type Shadow<'a> = #shadow_ty;
 
             #[inline]
             fn proto_default<'a>() -> Self::Shadow<'a> {
-                Self
+                #name
             }
 
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                let _value: &Self = *value;
+                #encoded_len_binding
                 0
             }
 
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, _buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let _value: &Self = value;
+                #encode_binding
             }
 
             fn merge_field(
@@ -105,15 +146,14 @@ fn handle_unit_struct(input: DeriveInput) -> TokenStream {
                 ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
             }
 
-            fn clear(&mut self) {}
+            #clear_impl
         }
 
-        impl #generics ::proto_rs::MessageField for #name #generics {}
-
+        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }
 
-fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -205,39 +245,83 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         }
     };
 
+    let shadow_ty = quote! { #name #generics };
+    let target_ty = if let Some(sun) = &config.sun {
+        let ty = &sun.ty;
+        quote! { #ty }
+    } else {
+        shadow_ty.clone()
+    };
+
+    let proto_shadow_impl = if config.sun.is_some() {
+        quote! {}
+    } else {
+        quote! {
+            impl #generics ::proto_rs::ProtoShadow for #name #generics {
+                type Sun<'a> = &'a Self;
+                type OwnedSun = Self;
+                type View<'a> = &'a Self;
+
+                fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                    Ok(self)
+                }
+
+                fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                    value
+                }
+            }
+        }
+    };
+
+    let encoded_len_binding = if config.sun.is_some() {
+        quote! {}
+    } else {
+        quote! { let value: &Self = *value; }
+    };
+
+    let encode_binding = if config.sun.is_some() {
+        quote! { let value = &value; }
+    } else {
+        quote! { let value: &Self = value; }
+    };
+
+    let clear_impl = if config.sun.is_some() {
+        quote! {
+            fn clear(&mut self) {
+                if let Ok(default) = Self::post_decode(Self::proto_default()) {
+                    *self = default;
+                }
+            }
+        }
+    } else {
+        quote! {
+            fn clear(&mut self) {
+                #(#clear_fields)*
+            }
+        }
+    };
+
     quote! {
         #(#attrs)*
         #vis struct #name #generics(#(pub #field_types),*);
 
-        impl #generics ::proto_rs::ProtoShadow for #name #generics {
-            type Sun<'a> = &'a Self;
-            type OwnedSun = Self;
-            type View<'a> = &'a Self;
+        #proto_shadow_impl
 
-            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
-                Ok(self)
-            }
-
-            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-                value
-            }
-        }
-
-        impl #generics ::proto_rs::ProtoExt for #name #generics {
-            type Shadow<'a> = Self;
+        impl #generics ::proto_rs::ProtoExt for #target_ty {
+            type Shadow<'a> = #shadow_ty;
 
             #[inline]
             fn proto_default<'a>() -> Self::Shadow<'a> {
-                Self(#(#default_values),*)
+                #shadow_ty(#(#default_values),*)
             }
 
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                let value: &Self = *value;
+                #encoded_len_binding
                 0 #(+ #encoded_len_fields)*
             }
 
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value: &Self = value;
+                #encode_binding
                 #(#encode_fields)*
             }
 
@@ -255,19 +339,16 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             }
 
-            fn clear(&mut self) {
-                #(#clear_fields)*
-            }
+            #clear_impl
 
             #post_decode_impl
         }
 
-        impl #generics ::proto_rs::MessageField for #name #generics {}
-
+        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }
 
-fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStream {
+fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -379,6 +460,62 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
         }
     };
 
+    let shadow_ty = quote! { #name #generics };
+    let target_ty = if let Some(sun) = &config.sun {
+        let ty = &sun.ty;
+        quote! { #ty }
+    } else {
+        shadow_ty.clone()
+    };
+
+    let proto_shadow_impl = if config.sun.is_some() {
+        quote! {}
+    } else {
+        quote! {
+            impl #generics ::proto_rs::ProtoShadow for #name #generics {
+                type Sun<'a> = &'a Self;
+                type OwnedSun = Self;
+                type View<'a> = &'a Self;
+
+                fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
+                    Ok(self)
+                }
+
+                fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                    value
+                }
+            }
+        }
+    };
+
+    let encoded_len_binding = if config.sun.is_some() {
+        quote! {}
+    } else {
+        quote! { let value: &Self = *value; }
+    };
+
+    let encode_binding = if config.sun.is_some() {
+        quote! { let value = &value; }
+    } else {
+        quote! { let value: &Self = value; }
+    };
+
+    let clear_impl = if config.sun.is_some() {
+        quote! {
+            fn clear(&mut self) {
+                if let Ok(default) = Self::post_decode(Self::proto_default()) {
+                    *self = default;
+                }
+            }
+        }
+    } else {
+        quote! {
+            fn clear(&mut self) {
+                #(#clear_fields)*
+            }
+        }
+    };
+
     quote! {
         #(#attrs)*
         #vis struct #name #generics {
@@ -388,37 +525,25 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
             )*
         }
 
-        impl #generics ::proto_rs::ProtoShadow for #name #generics {
-            type Sun<'a> = &'a Self;
-            type OwnedSun = Self;
-            type View<'a> = &'a Self;
+        #proto_shadow_impl
 
-            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
-                Ok(self)
-            }
-
-            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-                value
-            }
-        }
-
-        impl #generics ::proto_rs::ProtoExt for #name #generics {
-            type Shadow<'a> = Self;
+        impl #generics ::proto_rs::ProtoExt for #target_ty {
+            type Shadow<'a> = #shadow_ty;
 
             #[inline]
             fn proto_default<'a>() -> Self::Shadow<'a> {
-                Self {
+                #shadow_ty {
                     #(#default_field_values),*
                 }
             }
 
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                let value: &Self = *value;
+                #encoded_len_binding
                 0 #(+ #encoded_len_fields)*
             }
 
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value: &Self = value;
+                #encode_binding
                 #(#encode_fields)*
             }
 
@@ -436,13 +561,11 @@ fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct) -> TokenStrea
                 }
             }
 
-            fn clear(&mut self) {
-                #(#clear_fields)*
-            }
+            #clear_impl
 
             #post_decode_impl
         }
 
-        impl #generics ::proto_rs::MessageField for #name #generics {}
+        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }

@@ -19,23 +19,24 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let type_ident = input.ident.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
+    let proto_name = config.sun.as_ref().map(|sun| sun.message_ident.clone()).unwrap_or_else(|| type_ident.clone());
 
     let (proto, rust_code) = match input.data.clone() {
         Data::Struct(data) => {
-            let proto = generate_struct_proto(&type_ident, &data.fields);
+            let proto = generate_struct_proto(&proto_name, &data.fields);
 
-            let rust_code = struct_handler::handle_struct(input, &data);
+            let rust_code = struct_handler::handle_struct(input, &data, &config);
             (proto, rust_code)
         }
         Data::Enum(data) => {
             let is_simple_enum = data.variants.iter().all(|v| matches!(v.fields, Fields::Unit));
             if is_simple_enum {
-                let proto = generate_simple_enum_proto(&type_ident, &data);
+                let proto = generate_simple_enum_proto(&proto_name, &data);
 
                 let rust_code = enum_handler::handle_enum(input, &data);
                 (proto, rust_code)
             } else {
-                let proto = generate_complex_enum_proto(&type_ident, &data);
+                let proto = generate_complex_enum_proto(&proto_name, &data);
 
                 let rust_code = complex_enum_handler::handle_complex_enum(input, &data);
                 (proto, rust_code)
@@ -44,7 +45,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Union(_) => panic!("proto_message can only be used on structs and enums"),
     };
 
-    config.register_and_emit_proto(&type_ident, &proto);
+    config.register_and_emit_proto(&proto_name, &proto);
     let proto = config.imports_mat;
     quote! {
         #proto
