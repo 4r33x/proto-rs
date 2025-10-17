@@ -260,7 +260,9 @@ macro_rules! varint {
                 Ok(())
             }
 
-            encode_repeated!($ty);
+            pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
+                encode_packed(tag, values, buf);
+            }
 
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() { return; }
@@ -285,13 +287,6 @@ macro_rules! varint {
 
             #[inline]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-                key_len(tag) * values.len() + values.iter().map(|$to_uint64_value| {
-                    encoded_len_varint($to_uint64)
-                }).sum::<usize>()
-            }
-
-            #[inline]
-            pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
                 } else {
@@ -300,6 +295,11 @@ macro_rules! varint {
                                     .sum::<usize>();
                     key_len(tag) + encoded_len_varint(len as u64) + len
                 }
+            }
+
+            #[inline]
+            pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
+                encoded_len_repeated(tag, values)
             }
 
             #[cfg(test)]
@@ -385,7 +385,9 @@ macro_rules! fixed_width {
                 Ok(())
             }
 
-            encode_repeated!($ty);
+            pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
+                encode_packed(tag, values, buf);
+            }
 
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() {
@@ -410,17 +412,17 @@ macro_rules! fixed_width {
 
             #[inline]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-                (key_len(tag) + $width) * values.len()
-            }
-
-            #[inline]
-            pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
                 } else {
                     let len = $width * values.len();
                     key_len(tag) + encoded_len_varint(len as u64) + len
                 }
+            }
+
+            #[inline]
+            pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
+                encoded_len_repeated(tag, values)
             }
 
             #[cfg(test)]
@@ -748,6 +750,77 @@ pub mod message {
     use super::key_len;
     use super::merge_loop;
     use crate::traits::ViewOf;
+    use bytes::buf::UninitSlice;
+    use core::convert::TryFrom;
+    use core::ptr;
+
+    struct CountingBufMut<'a, B> {
+        inner: &'a mut B,
+        written: usize,
+    }
+
+    impl<'a, B> CountingBufMut<'a, B> {
+        fn new(inner: &'a mut B) -> Self {
+            Self { inner, written: 0 }
+        }
+
+        fn written(&self) -> usize {
+            self.written
+        }
+
+        fn into_inner(self) -> &'a mut B {
+            self.inner
+        }
+    }
+
+    unsafe impl<'a, B> BufMut for CountingBufMut<'a, B>
+    where
+        B: BufMut,
+    {
+        #[inline]
+        fn remaining_mut(&self) -> usize {
+            self.inner.remaining_mut()
+        }
+
+        #[inline]
+        unsafe fn advance_mut(&mut self, cnt: usize) {
+            unsafe { self.inner.advance_mut(cnt) };
+            self.written = self.written.checked_add(cnt).expect("encoded payload length overflowed usize");
+        }
+
+        #[inline]
+        fn chunk_mut(&mut self) -> &mut UninitSlice {
+            self.inner.chunk_mut()
+        }
+    }
+
+    fn padded_varint(mut value: u64) -> [u8; 10] {
+        let mut bytes = [0u8; 10];
+        let mut index = 0usize;
+
+        loop {
+            let mut byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value == 0 {
+                bytes[index] = byte;
+                index += 1;
+                break;
+            } else {
+                byte |= 0x80;
+                bytes[index] = byte;
+                index += 1;
+            }
+        }
+
+        while index < bytes.len() {
+            let last = index - 1;
+            bytes[last] |= 0x80;
+            bytes[index] = 0;
+            index += 1;
+        }
+
+        bytes
+    }
 
     pub fn encode<M>(tag: u32, msg: ViewOf<'_, M>, buf: &mut impl BufMut)
     where
@@ -791,11 +864,26 @@ pub mod message {
         M: ProtoExt + 'a,
         I: IntoIterator<Item = ViewOf<'a, M>>,
     {
-        for v in values {
-            let len = M::encoded_len(&v);
+        for value in values {
             encode_key(tag, WireType::LengthDelimited, buf);
-            encode_varint(len as u64, buf);
-            M::encode_raw(v, buf);
+
+            buf.put_bytes(0, 10);
+
+            let mut counting = CountingBufMut::new(buf);
+            M::encode_raw(value, &mut counting);
+            let written = counting.written();
+            let buf = counting.into_inner();
+
+            let len_bytes = padded_varint(u64::try_from(written).expect("encoded payload length overflowed u64"));
+
+            let header_ptr = unsafe {
+                let tail_ptr = buf.chunk_mut().as_mut_ptr();
+                tail_ptr.sub(written + 10)
+            };
+
+            unsafe {
+                ptr::copy_nonoverlapping(len_bytes.as_ptr(), header_ptr, len_bytes.len());
+            }
         }
     }
 
@@ -806,7 +894,7 @@ pub mod message {
     {
         values.iter().fold(0, |acc, v| {
             let len = M::encoded_len(v);
-            acc + key_len(tag) + encoded_len_varint(len as u64) + len
+            acc + key_len(tag) + 10 + len
         })
     }
     #[inline]

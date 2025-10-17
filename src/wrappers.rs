@@ -61,8 +61,15 @@ where
         crate::encoding::message::encode_repeated::<Self, _>(tag, values, buf);
     }
     #[inline]
-    fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
-        crate::encoding::message::encoded_len_repeated::<Self>(tag, values)
+    fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+    where
+        Self: 'a,
+        I: IntoIterator<Item = ViewOf<'a, Self>>,
+    {
+        values.into_iter().fold(0, |acc, value| {
+            let len = <Self as ProtoExt>::encoded_len(&value);
+            if len == 0 { acc } else { acc + crate::encoding::message::encoded_len::<Self>(tag, &value) }
+        })
     }
 
     #[inline]
@@ -253,86 +260,3 @@ where
 
 // ---------- MessageField passthrough ----------
 impl<T: MessageField> MessageField for Arc<T> {}
-
-impl<S> ProtoShadow for Vec<S>
-where
-    S: ProtoShadow,
-{
-    type Sun<'a>
-        = &'a [S::Sun<'a>]
-    where
-        Self: 'a;
-
-    type OwnedSun = Vec<S::OwnedSun>;
-
-    // Use a slice view to avoid allocating a Vec of views during encode paths.
-    type View<'a>
-        = Vec<S::View<'a>>
-    where
-        Self: 'a;
-
-    #[inline]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        self.into_iter().map(|x| x.to_sun()).collect::<Result<Vec<_>, DecodeError>>()
-    }
-
-    #[inline]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.into_iter().map(|&x| S::from_sun(x)).collect()
-    }
-}
-
-// ---------- Vec<T>: ProtoExt ----------
-impl<T> ProtoExt for Vec<T>
-where
-    T: ProtoExt + RepeatedField,
-    // Ensure element shadows are the by-ref identity so the cast above is valid:
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, View<'a> = &'a T, OwnedSun = T>,
-{
-    type Shadow<'a>
-        = Vec<T::Shadow<'a>>
-    where
-        T: 'a;
-
-    #[inline]
-    fn proto_default<'a>() -> Self::Shadow<'a> {
-        Vec::new()
-    }
-
-    #[inline]
-    fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
-        // ViewOf<Vec<T>> = &[&T]
-        if value.is_empty() { 0 } else { T::encoded_len_repeated_field(1, value) }
-    }
-
-    #[inline]
-    fn encode_raw(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-        // value: &[&T] → iterator of &T without extra alloc/copies
-        if !value.is_empty() {
-            T::encode_repeated_field(1, value.iter().copied(), buf);
-        }
-    }
-
-    #[inline]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>, // Vec<T::Shadow<'_>>
-        _tag: u32,
-        wire_type: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        T::merge_repeated_field(wire_type, value, buf, ctx)
-    }
-
-    #[inline]
-    fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
-        // Vec<T::Shadow<'_>> → Vec<T>
-        value.to_sun()
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        // Avoid recursive call to the trait method:
-        Vec::<T>::clear(self);
-    }
-}

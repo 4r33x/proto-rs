@@ -118,8 +118,12 @@ macro_rules! impl_google_wrapper {
                 $module::merge_repeated(wire_type, values, buf, ctx)
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
-                values.iter().map(|value| $module::encoded_len(tag, *value)).sum()
+            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ViewOf<'a, Self>>,
+            {
+                values.into_iter().map(|value| $module::encoded_len(tag, value)).sum()
             }
         }
 
@@ -353,11 +357,15 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
-            fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize {
+            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ViewOf<'a, Self>>,
+            {
                 values
-                    .iter()
+                    .into_iter()
                     .map(|value| {
-                        let widened: $wide_ty = (**value).into();
+                        let widened: $wide_ty = (*value).into();
                         $module::encoded_len(tag, &widened)
                     })
                     .sum()

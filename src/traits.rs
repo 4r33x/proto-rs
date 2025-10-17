@@ -224,5 +224,8 @@ pub trait RepeatedField: ProtoExt {
 
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
-    fn encoded_len_repeated_field(tag: u32, values: &[ViewOf<'_, Self>]) -> usize;
+    fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+    where
+        Self: ProtoExt + 'a,
+        I: IntoIterator<Item = ViewOf<'a, Self>>;
 }
