@@ -45,7 +45,11 @@ mod tests {
         encode_varint((BYTES - 1) as u64, &mut buf);
         buf.extend(std::iter::repeat(0u8).take(BYTES - 1));
 
-        let err = <ByteSeq as ProtoExt>::decode(buf.as_slice()).expect_err("invalid length should fail");
-        assert!(err.to_string().contains("expected"));
+        match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
+            Ok(_) => panic!("invalid length should fail"),
+            Err(err) => {
+                assert!(err.to_string().contains("invalid length for Solana byte array"));
+            }
+        }
     }
 }
