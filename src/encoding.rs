@@ -735,6 +735,11 @@ pub mod bytes {
 }
 
 pub mod message {
+    use core::convert::TryFrom;
+    use core::ptr;
+
+    use bytes::buf::UninitSlice;
+
     use super::Buf;
     use super::BufMut;
     use super::DecodeContext;
@@ -750,9 +755,6 @@ pub mod message {
     use super::key_len;
     use super::merge_loop;
     use crate::traits::ViewOf;
-    use bytes::buf::UninitSlice;
-    use core::convert::TryFrom;
-    use core::ptr;
 
     struct CountingBufMut<'a, B> {
         inner: &'a mut B,
@@ -773,7 +775,7 @@ pub mod message {
         }
     }
 
-    unsafe impl<'a, B> BufMut for CountingBufMut<'a, B>
+    unsafe impl<B> BufMut for CountingBufMut<'_, B>
     where
         B: BufMut,
     {
@@ -805,11 +807,10 @@ pub mod message {
                 bytes[index] = byte;
                 index += 1;
                 break;
-            } else {
-                byte |= 0x80;
-                bytes[index] = byte;
-                index += 1;
             }
+            byte |= 0x80;
+            bytes[index] = byte;
+            index += 1;
         }
 
         while index < bytes.len() {
