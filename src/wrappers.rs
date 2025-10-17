@@ -17,6 +17,7 @@ use crate::ProtoExt;
 use crate::RepeatedField;
 use crate::SingularField;
 use crate::encoding::DecodeContext;
+use crate::encoding::key_len;
 use crate::encoding::wire_type::WireType;
 use crate::traits::ProtoShadow;
 use crate::traits::ViewOf;
@@ -68,7 +69,7 @@ where
     {
         values.into_iter().fold(0, |acc, value| {
             let len = <Self as ProtoExt>::encoded_len(&value);
-            if len == 0 { acc } else { acc + crate::encoding::message::encoded_len::<Self>(tag, &value) }
+            if len == 0 { acc } else { acc + key_len(tag) + 10 + len }
         })
     }
 

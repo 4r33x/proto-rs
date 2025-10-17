@@ -320,7 +320,7 @@ macro_rules! varint {
                     }
                     #[test]
                     fn check_repeated(value: Vec<$ty>, tag in MIN_TAG..=MAX_TAG) {
-                        check_collection_type(value, tag, WireType::Varint,
+                        check_collection_type(value, tag, WireType::LengthDelimited,
                                               encode_repeated, merge_repeated,
                                               encoded_len_repeated)?;
                     }
@@ -441,7 +441,7 @@ macro_rules! fixed_width {
                     }
                     #[test]
                     fn check_repeated(value: Vec<$ty>, tag in MIN_TAG..=MAX_TAG) {
-                        check_collection_type(value, tag, $wire_type,
+                        check_collection_type(value, tag, WireType::LengthDelimited,
                                               encode_repeated, merge_repeated,
                                               encoded_len_repeated)?;
                     }
