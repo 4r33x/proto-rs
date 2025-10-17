@@ -10,6 +10,7 @@ use syn::Attribute;
 use syn::Data;
 use syn::ItemTrait;
 use syn::Lit;
+use syn::Type;
 
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
@@ -59,6 +60,13 @@ pub struct UnifiedProtoConfig {
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
+    pub sun: Option<SunConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SunConfig {
+    pub ty: Type,
+    pub message_ident: String,
 }
 
 impl UnifiedProtoConfig {
@@ -112,6 +120,10 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             if let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>() {
                 config.proto_path = Some(lit_str.value());
             }
+        } else if meta.path.is_ident("sun") {
+            let ty: Type = meta.value()?.parse()?;
+            let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
+            config.sun = Some(SunConfig { ty, message_ident });
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {
                 config.rpc_server = lit_bool.value;
@@ -129,6 +141,13 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     });
 
     let _ = syn::parse::Parser::parse(parser, attr);
+}
+
+fn extract_type_ident(ty: &Type) -> Option<String> {
+    match ty {
+        Type::Path(path) => path.path.segments.last().map(|segment| segment.ident.to_string()),
+        _ => None,
+    }
 }
 
 /// Extract `proto_imports` from item attributes

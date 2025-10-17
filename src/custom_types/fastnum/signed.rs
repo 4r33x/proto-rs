@@ -1,12 +1,13 @@
+use core::convert::TryInto;
+
 use fastnum::D128;
 
-use crate::ProtoExt;
-use crate::proto_dump;
-extern crate self as proto_rs;
+use crate::DecodeError;
+use crate::ProtoShadow;
+use crate::proto_message;
 
-//DO NOT USE IT FOR ENCODE\DECODE
-#[proto_dump(proto_path = "protos/fastnum.proto")]
-struct D128Proto {
+#[proto_message(proto_path = "protos/fastnum.proto", sun = D128)]
+pub struct D128Proto {
     #[proto(tag = 1)]
     /// Lower 64 bits of the digits
     pub lo: u64,
@@ -21,38 +22,83 @@ struct D128Proto {
     pub is_negative: bool,
 }
 
+impl ProtoShadow for D128Proto {
+    type Sun<'a> = &'a D128;
+    type OwnedSun = D128;
+    type View<'a> = Self;
+
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        let digits = ((self.hi as u128) << 64) | (self.lo as u128);
+
+        let mut result = D128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
+
+        if self.fractional_digits_count > 0 {
+            result /= D128::TEN.powi(self.fractional_digits_count);
+        } else if self.fractional_digits_count < 0 {
+            result *= D128::TEN.powi(-self.fractional_digits_count);
+        }
+
+        if self.is_negative {
+            result = -result;
+        }
+
+        Ok(result)
+    }
+
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+        let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
+        let lo = digits as u64;
+        let hi = (digits >> 64) as u64;
+
+        Self {
+            lo,
+            hi,
+            fractional_digits_count: i32::from(value.fractional_digits_count()),
+            is_negative: value.is_sign_negative(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use fastnum::dec128;
 
     use super::*;
 
+    fn encode(value: &D128) -> D128Proto {
+        <D128Proto as ProtoShadow>::from_sun(value)
+    }
+
+    fn decode(proto: D128Proto) -> D128 {
+        ProtoShadow::to_sun(proto).unwrap()
+    }
+
     #[test]
     fn test_roundtrip() {
         let original = dec128!(123456789.987654321);
-        let proto = original.to_proto();
-        let restored = D128::from_proto(proto).unwrap();
+        let proto = encode(&original);
+        let restored = decode(proto);
         assert_eq!(original, restored);
     }
 
     #[test]
     fn test_negative_value() {
         let val = dec128!(-123.45);
-        let proto = val.to_proto();
+        let proto = encode(&val);
         assert!(proto.is_negative);
         assert_eq!(proto.fractional_digits_count, 2);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
     #[test]
     fn test_positive_value() {
         let val = dec128!(123.45);
-        let proto = val.to_proto();
+        let proto = encode(&val);
         assert!(!proto.is_negative);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
@@ -60,10 +106,10 @@ mod tests {
     fn test_fractional_digits() {
         // Test case from docs: 123.45 has 2 fractional digits
         let val = dec128!(123.45);
-        let proto = val.to_proto();
+        let proto = encode(&val);
         assert_eq!(proto.fractional_digits_count, 2);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
@@ -71,28 +117,28 @@ mod tests {
     fn test_scientific_notation() {
         // Test case: 5e9 has -9 fractional digits
         let val = dec128!(5e9);
-        let proto = val.to_proto();
-        let restored = D128::from_proto(proto).unwrap();
+        let proto = encode(&val);
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
     #[test]
     fn test_negative_scientific() {
         let val = dec128!(-5e9);
-        let proto = val.to_proto();
+        let proto = encode(&val);
         assert!(proto.is_negative);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
     #[test]
     fn test_no_fractional_part() {
         let val = dec128!(12345);
-        let proto = val.to_proto();
+        let proto = encode(&val);
         assert_eq!(proto.fractional_digits_count, 0);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
@@ -100,47 +146,47 @@ mod tests {
     fn test_small_fractional() {
         // Test case: 0.0000012345 has 10 fractional digits
         let val = dec128!(0.0000012345);
-        let proto = val.to_proto();
+        let proto = encode(&val);
         assert_eq!(proto.fractional_digits_count, 10);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(val, restored);
     }
 
     #[test]
     fn test_max_value() {
         let max_val = D128::MAX;
-        let proto = max_val.to_proto();
-        let restored = D128::from_proto(proto).unwrap();
+        let proto = encode(&max_val);
+        let restored = decode(proto);
         assert_eq!(max_val, restored);
     }
 
     #[test]
     fn test_min_value() {
         let min_val = D128::MIN;
-        let proto = min_val.to_proto();
+        let proto = encode(&min_val);
         assert!(proto.is_negative);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(min_val, restored);
     }
 
     #[test]
     fn test_zero() {
         let zero = D128::ZERO;
-        let proto = zero.to_proto();
+        let proto = encode(&zero);
         assert!(!proto.is_negative);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(zero, restored);
     }
 
     #[test]
     fn test_negative_zero() {
         let neg_zero = dec128!(-0.0);
-        let proto = neg_zero.to_proto();
+        let proto = encode(&neg_zero);
 
-        let restored = D128::from_proto(proto).unwrap();
+        let restored = decode(proto);
         assert_eq!(neg_zero, restored);
     }
 
@@ -148,7 +194,7 @@ mod tests {
     fn test_proto_fields() {
         // Verify proto structure for -123.45
         let val = dec128!(-123.45);
-        let proto = val.to_proto();
+        let proto = encode(&val);
 
         // digits = 12345 (absolute value), fractional_count = 2, negative = true
         let digits = ((proto.hi as u128) << 64) | (proto.lo as u128);
