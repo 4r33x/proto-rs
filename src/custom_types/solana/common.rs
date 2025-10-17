@@ -33,7 +33,6 @@ macro_rules! impl_protoext_for_byte_array {
 
             #[inline]
             fn encode_raw(value: $crate::traits::ViewOf<'_, Self>, buf: &mut impl ::bytes::BufMut) {
-                debug_assert_eq!(value.as_ref().len(), $bytes);
                 $crate::encoding::encode_key(1, $crate::encoding::WireType::LengthDelimited, buf);
                 $crate::encoding::encode_varint($bytes as u64, buf);
                 buf.put_slice(value.as_ref());

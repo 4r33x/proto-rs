@@ -6,6 +6,7 @@ use crate::impl_protoext_for_byte_array;
 
 extern crate self as proto_rs;
 
+#[allow(dead_code)]
 #[proto_dump(proto_path = "protos/solana.proto")]
 pub struct SignatureProto {
     #[proto(tag = 1)]
@@ -18,7 +19,9 @@ impl_protoext_for_byte_array!(ByteSeq, BYTES);
 mod tests {
     use super::*;
     use crate::ProtoExt;
-    use crate::encoding::{WireType, encode_key, encode_varint};
+    use crate::encoding::WireType;
+    use crate::encoding::encode_key;
+    use crate::encoding::encode_varint;
 
     fn sample_signature_bytes() -> [u8; BYTES] {
         let mut data = [0u8; BYTES];
@@ -41,7 +44,7 @@ mod tests {
         let mut buf = Vec::new();
         encode_key(1, WireType::LengthDelimited, &mut buf);
         encode_varint((BYTES - 2) as u64, &mut buf);
-        buf.extend(std::iter::repeat(0u8).take(BYTES - 2));
+        buf.extend(std::iter::repeat_n(0u8, BYTES - 2));
 
         match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
             Ok(_) => panic!("invalid length should fail"),

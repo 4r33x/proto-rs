@@ -6,6 +6,7 @@ use crate::impl_protoext_for_byte_array;
 
 extern crate self as proto_rs;
 
+#[allow(dead_code)]
 #[proto_dump(proto_path = "protos/solana.proto")]
 struct AddressProto {
     #[proto(tag = 1)]
@@ -43,7 +44,7 @@ mod tests {
         let mut buf = Vec::new();
         encode_key(1, WireType::LengthDelimited, &mut buf);
         encode_varint((BYTES - 1) as u64, &mut buf);
-        buf.extend(std::iter::repeat(0u8).take(BYTES - 1));
+        buf.extend(std::iter::repeat_n(0u8, BYTES - 1));
 
         match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
             Ok(_) => panic!("invalid length should fail"),
