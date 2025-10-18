@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use encoding_messages::ZeroCopyContainer;
+use proto_rs::ToZeroCopy;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
@@ -321,10 +322,10 @@ async fn proto_client_roundtrip_against_prost_server() {
 
     let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
 
-    let response = client.echo_sample(request_message()).await.unwrap().into_inner();
+    let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
-    let mut stream = client.stream_collections(request_message()).await.unwrap().into_inner();
+    let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
 
     let mut received = Vec::new();
     while let Some(item) = stream.next().await {
@@ -335,7 +336,7 @@ async fn proto_client_roundtrip_against_prost_server() {
 
     drop(stream);
 
-    let container_response = client.echo_container(request_container()).await.unwrap().into_inner();
+    let container_response = client.echo_container(tonic::Request::new(request_container())).await.unwrap().into_inner();
     assert_eq!(container_response, response_container());
 
     shutdown.send(()).unwrap();
@@ -348,10 +349,10 @@ async fn proto_client_roundtrip_against_proto_server() {
 
     let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
 
-    let response = client.echo_sample(request_message()).await.unwrap().into_inner();
+    let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
-    let mut stream = client.stream_collections(request_message()).await.unwrap().into_inner();
+    let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
 
     let mut received = Vec::new();
     while let Some(item) = stream.next().await {
@@ -362,8 +363,29 @@ async fn proto_client_roundtrip_against_proto_server() {
 
     drop(stream);
 
-    let container_response = client.echo_container(request_container()).await.unwrap().into_inner();
+    let container_response = client.echo_container(tonic::Request::new(request_container())).await.unwrap().into_inner();
     assert_eq!(container_response, response_container());
+
+    shutdown.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proto_client_accepts_borrowed_requests() {
+    let (addr, shutdown, handle) = spawn_our_server().await;
+
+    let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
+
+    let request = request_message();
+
+    let zero_copy: proto_rs::ZeroCopyRequest<_> = tonic::Request::new(&request).into();
+    let response = client.echo_sample(zero_copy).await.unwrap().into_inner();
+    assert_eq!(response, response_message());
+
+    let owned_request = tonic::Request::new(request_message());
+    let zero_copy_owned = tonic::Request::from_parts(owned_request.metadata().clone(), owned_request.extensions().clone(), owned_request.get_ref()).to_zero_copy();
+    let response = client.echo_sample(zero_copy_owned).await.unwrap().into_inner();
+    assert_eq!(response, response_message());
 
     shutdown.send(()).unwrap();
     handle.await.unwrap().unwrap();

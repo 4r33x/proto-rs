@@ -320,7 +320,9 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
-    let codec_init = generate_codec_init();
+    let encode_type = quote! { #response_proto };
+    let decode_type = quote! { #request_proto };
+    let codec_init = generate_codec_init(encode_type, decode_type, None);
 
     quote! {
         #route_path => {
@@ -374,7 +376,9 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(inner_type);
 
-    let codec_init = generate_codec_init();
+    let encode_type = quote! { #response_proto };
+    let decode_type = quote! { #request_proto };
+    let codec_init = generate_codec_init(encode_type, decode_type, None);
 
     quote! {
         #route_path => {
