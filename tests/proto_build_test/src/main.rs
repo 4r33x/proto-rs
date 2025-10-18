@@ -1,3 +1,6 @@
+#![feature(impl_trait_in_assoc_type)]
+#![allow(incomplete_features)]
+
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
