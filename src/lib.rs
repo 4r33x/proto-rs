@@ -51,6 +51,7 @@ pub use crate::tonic::EncoderExt;
 pub use crate::tonic::ProtoCodec;
 pub use crate::tonic::ProtoEncoder;
 pub use crate::tonic::ProtoRequest;
+pub use crate::tonic::ProtoResponse;
 pub use crate::tonic::SunByRef;
 pub use crate::tonic::SunByVal;
 pub use crate::tonic::ToZeroCopyRequest;

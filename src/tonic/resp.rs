@@ -45,7 +45,7 @@ impl<T> ZeroCopyResponse<T> {
 
 impl<T> From<ZeroCopyResponse<T>> for Response<Vec<u8>> {
     fn from(request: ZeroCopyResponse<T>) -> Self {
-        request.into_request()
+        request.into_response()
     }
 }
 
@@ -87,7 +87,7 @@ pub trait ProtoResponse<T>: Sized {
     type Encode: Send + Sync + 'static;
     type Mode: Send + Sync + 'static;
 
-    fn into_request(self) -> Response<Self::Encode>;
+    fn into_response(self) -> Response<Self::Encode>;
 }
 
 impl<T> ProtoResponse<T> for Response<T>
@@ -98,7 +98,7 @@ where
     type Encode = T;
     type Mode = SunByRef;
 
-    fn into_request(self) -> Response<Self::Encode> {
+    fn into_response(self) -> Response<Self::Encode> {
         self
     }
 }
@@ -111,7 +111,7 @@ where
     type Encode = T;
     type Mode = SunByRef;
 
-    fn into_request(self) -> Response<Self::Encode> {
+    fn into_response(self) -> Response<Self::Encode> {
         Response::new(self)
     }
 }
@@ -120,7 +120,7 @@ impl<T> ProtoResponse<T> for ZeroCopyResponse<T> {
     type Encode = Vec<u8>;
     type Mode = BytesMode;
 
-    fn into_request(self) -> Response<Self::Encode> {
+    fn into_response(self) -> Response<Self::Encode> {
         self.inner
     }
 }
