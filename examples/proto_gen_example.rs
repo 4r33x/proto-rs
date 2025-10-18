@@ -1,5 +1,4 @@
 #![feature(impl_trait_in_assoc_type)]
-#![allow(incomplete_features)]
 #![allow(clippy::missing_errors_doc)]
 
 use std::pin::Pin;

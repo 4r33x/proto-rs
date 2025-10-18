@@ -42,7 +42,7 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
         }
 
         // SAFETY: all N elements are initialized
-        Ok(unsafe { array_assume_init(out) })
+        Ok(unsafe { MaybeUninit::array_assume_init(out) })
     }
 
     #[inline]
@@ -58,6 +58,7 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
 }
 
 /// Stable replacement for `MaybeUninit::array_assume_init`
+/// TODO! use it when we hit stable
 #[inline]
 #[allow(clippy::needless_pass_by_value)]
 unsafe fn array_assume_init<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
