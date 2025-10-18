@@ -56,8 +56,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tonic::async_trait]
 impl SigmaRpc for S {
+    type RizzPingResponse = tonic::Response<GoonPong>;
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
-    async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+    async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Self::RizzPingResponse, Status> {
         Ok(Response::new(GoonPong {}))
     }
     async fn rizz_uni(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {

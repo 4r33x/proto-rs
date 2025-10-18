@@ -2,6 +2,7 @@ use core::marker::PhantomData;
 
 use bytes::BufMut;
 use tonic::Request;
+use tonic::Response;
 use tonic::Status;
 use tonic::codec::Codec;
 use tonic::codec::DecodeBuf;
@@ -45,6 +46,73 @@ impl<T> ZeroCopyRequest<T> {
     #[inline]
     pub fn as_request_mut(&mut self) -> &mut Request<Vec<u8>> {
         &mut self.inner
+    }
+}
+
+/// A wrapper around [`tonic::Response<Vec<u8>>`] that preserves the protobuf
+/// message type used to produce the encoded bytes.
+#[derive(Debug)]
+pub struct ZeroCopyResponse<T> {
+    inner: Response<Vec<u8>>,
+    _marker: PhantomData<T>,
+}
+
+impl<T> ZeroCopyResponse<T> {
+    #[inline]
+    pub fn from_response(response: Response<Vec<u8>>) -> Self {
+        Self {
+            inner: response,
+            _marker: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self::from_response(Response::new(bytes))
+    }
+
+    #[inline]
+    pub fn into_response(self) -> Response<Vec<u8>> {
+        self.inner
+    }
+
+    #[inline]
+    pub fn as_response(&self) -> &Response<Vec<u8>> {
+        &self.inner
+    }
+
+    #[inline]
+    pub fn as_response_mut(&mut self) -> &mut Response<Vec<u8>> {
+        &mut self.inner
+    }
+}
+
+impl<T> ZeroCopyResponse<T>
+where
+    T: ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+{
+    #[inline]
+    pub fn from_message(message: T) -> Self {
+        Response::new(message).into()
+    }
+}
+
+impl<T> From<Response<T>> for ZeroCopyResponse<T>
+where
+    T: ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+{
+    fn from(response: Response<T>) -> Self {
+        let (metadata, message, extensions) = response.into_parts();
+        let encoded = T::encode_to_vec(&message);
+        ZeroCopyResponse::from_response(Response::from_parts(metadata, encoded, extensions))
+    }
+}
+
+impl<T> From<ZeroCopyResponse<T>> for Response<Vec<u8>> {
+    fn from(response: ZeroCopyResponse<T>) -> Self {
+        response.into_response()
     }
 }
 
@@ -127,6 +195,52 @@ impl<T> ProtoRequest<T> for ZeroCopyRequest<T> {
 
     fn into_request(self) -> Request<Self::Encode> {
         self.into_request()
+    }
+}
+
+pub trait ProtoResponse<T>: Sized {
+    type Encode: Send + Sync + 'static;
+    type Mode: Send + Sync + 'static;
+
+    fn into_response(self) -> Result<Response<Self::Encode>, Status>;
+}
+
+impl<T> ProtoResponse<T> for Response<T>
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = T;
+    type Mode = SunByRef;
+
+    fn into_response(self) -> Result<Response<Self::Encode>, Status> {
+        Ok(self)
+    }
+}
+
+impl<T> ProtoResponse<T> for T
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = T;
+    type Mode = SunByRef;
+
+    fn into_response(self) -> Result<Response<Self::Encode>, Status> {
+        Ok(Response::new(self))
+    }
+}
+
+impl<T> ProtoResponse<T> for ZeroCopyResponse<T>
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = Vec<u8>;
+    type Mode = BytesMode;
+
+    fn into_response(self) -> Result<Response<Self::Encode>, Status> {
+        Ok(self.into_response())
     }
 }
 

@@ -11,6 +11,7 @@ use syn::Type;
 use syn::TypePath;
 
 use crate::utils::MethodInfo;
+use crate::utils::to_pascal_case;
 
 /// Extract methods and associated types from the trait definition
 pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<TokenStream>) {
@@ -43,7 +44,27 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                     (None, None)
                 };
 
-                let user_method_signature = generate_user_method_signature(&method.attrs, &method_name, &request_type, &response_type, is_streaming, stream_type_name.as_ref());
+                let response_assoc = if is_streaming {
+                    None
+                } else {
+                    Some(syn::Ident::new(&format!("{}Response", to_pascal_case(&method_name.to_string())), method_name.span()))
+                };
+
+                let user_method_signature = generate_user_method_signature(
+                    &method.attrs,
+                    &method_name,
+                    &request_type,
+                    &response_type,
+                    is_streaming,
+                    stream_type_name.as_ref(),
+                    response_assoc.as_ref(),
+                );
+
+                if let Some(response_assoc) = &response_assoc {
+                    user_associated_types.push(quote! {
+                        type #response_assoc: ::proto_rs::ProtoResponse<#response_type>;
+                    });
+                }
 
                 methods.push(MethodInfo {
                     name: method_name,
@@ -52,6 +73,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                     is_streaming,
                     stream_type_name,
                     inner_response_type,
+                    response_associated_type: response_assoc,
                     user_method_signature,
                 });
             }
@@ -77,9 +99,10 @@ fn generate_user_method_signature(
     attrs: &[syn::Attribute],
     method_name: &syn::Ident,
     request_type: &Type,
-    response_type: &Type,
+    _response_type: &Type,
     is_streaming: bool,
     stream_type_name: Option<&syn::Ident>,
+    response_assoc: Option<&syn::Ident>,
 ) -> TokenStream {
     if is_streaming {
         let stream_name = stream_type_name.unwrap();
@@ -98,6 +121,7 @@ fn generate_user_method_signature(
                 Self: 'async_trait;
         }
     } else {
+        let response_assoc = response_assoc.expect("missing response associated type for unary method");
         quote! {
             #(#attrs)*
             fn #method_name<'life0, 'async_trait>(
@@ -105,7 +129,7 @@ fn generate_user_method_signature(
                 request: tonic::Request<#request_type>,
             ) -> ::core::pin::Pin<Box<
                 dyn ::core::future::Future<
-                    Output = Result<tonic::Response<#response_type>, tonic::Status>
+                    Output = Result<Self::#response_assoc, tonic::Status>
                 > + ::core::marker::Send + 'async_trait
             >>
             where

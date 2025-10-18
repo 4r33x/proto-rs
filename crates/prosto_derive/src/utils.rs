@@ -156,6 +156,7 @@ pub struct MethodInfo {
     pub is_streaming: bool,
     pub stream_type_name: Option<syn::Ident>,
     pub inner_response_type: Option<Type>,
+    pub response_associated_type: Option<syn::Ident>,
     pub user_method_signature: TokenStream,
 }
 

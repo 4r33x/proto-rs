@@ -205,10 +205,12 @@ struct OurService;
 
 #[tonic::async_trait]
 impl ComplexService for OurService {
+    type EchoSampleResponse = proto_rs::ZeroCopyResponse<SampleMessage>;
     type StreamCollectionsStream = Pin<Box<dyn Stream<Item = Result<CollectionsMessage, Status>> + Send>>;
+    type EchoContainerResponse = proto_rs::ZeroCopyResponse<ZeroCopyContainer>;
 
-    async fn echo_sample(&self, _request: Request<SampleMessage>) -> Result<Response<SampleMessage>, Status> {
-        Ok(Response::new(response_message()))
+    async fn echo_sample(&self, _request: Request<SampleMessage>) -> Result<Self::EchoSampleResponse, Status> {
+        Ok(proto_rs::ZeroCopyResponse::from_message(response_message()))
     }
 
     async fn stream_collections(&self, _request: Request<SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status> {
@@ -216,8 +218,8 @@ impl ComplexService for OurService {
         Ok(Response::new(Box::pin(stream)))
     }
 
-    async fn echo_container(&self, _request: Request<ZeroCopyContainer>) -> Result<Response<ZeroCopyContainer>, Status> {
-        Ok(Response::new(response_container()))
+    async fn echo_container(&self, _request: Request<ZeroCopyContainer>) -> Result<Self::EchoContainerResponse, Status> {
+        Ok(proto_rs::ZeroCopyResponse::from_message(response_container()))
     }
 }
 

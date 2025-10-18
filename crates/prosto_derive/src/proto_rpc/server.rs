@@ -4,7 +4,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
-use crate::proto_rpc::rpc_common::generate_native_to_proto_response;
 use crate::proto_rpc::rpc_common::generate_proto_to_native_request;
 use crate::proto_rpc::rpc_common::generate_request_proto_type;
 use crate::proto_rpc::rpc_common::generate_response_proto_type;
@@ -28,6 +27,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     let (trait_methods, associated_types) = generate_trait_components(methods);
     let (blanket_types, blanket_methods) = generate_blanket_impl_components(methods, trait_name);
     let route_handlers = methods.iter().map(|m| generate_route_handler(m, package_name, trait_name)).collect::<Vec<_>>();
+    let unary_response_bounds = generate_unary_response_bounds(methods, trait_name);
 
     let service_name_value = format!("{package_name}.{trait_name}");
     let compression_methods = generate_server_compression_methods();
@@ -85,6 +85,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                 T: #trait_name,
                 B: Body + std::marker::Send + 'static,
                 B::Error: Into<StdError> + std::marker::Send + 'static,
+                #(#unary_response_bounds)*
             {
                 type Response = http::Response<tonic::body::Body>;
                 type Error = std::convert::Infallible;
@@ -151,10 +152,33 @@ fn generate_trait_components(methods: &[MethodInfo]) -> (Vec<TokenStream>, Vec<T
 
         if is_streaming_method(method) {
             associated_types.push(generate_stream_associated_type(method));
+        } else {
+            associated_types.push(generate_unary_associated_type(method));
         }
     }
 
     (trait_methods, associated_types)
+}
+
+fn generate_unary_response_bounds(methods: &[MethodInfo], trait_name: &syn::Ident) -> Vec<TokenStream> {
+    methods
+        .iter()
+        .filter(|method| !is_streaming_method(method))
+        .map(|method| {
+            let response_proto = generate_response_proto_type(&method.response_type);
+            let response_assoc = method.response_associated_type.as_ref().expect("missing response associated type for unary method");
+
+            quote! {
+                ::proto_rs::ProtoEncoder<
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >: ::proto_rs::EncoderExt<
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >,
+            }
+        })
+        .collect()
 }
 
 fn generate_trait_method(method: &MethodInfo) -> TokenStream {
@@ -176,19 +200,35 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
                 Self: 'async_trait;
         }
     } else {
-        let response_type = &method.response_type;
-        let response_proto = generate_response_proto_type(response_type);
+        let response_proto = generate_response_proto_type(&method.response_type);
+        let response_assoc = method.response_associated_type.as_ref().expect("missing response associated type for unary method");
         quote! {
             #[must_use]
             #[allow(elided_named_lifetimes, clippy::type_complexity, clippy::type_repetition_in_bounds)]
             fn #method_name<'life0, 'async_trait>(
                 &'life0 self,
                 request: tonic::Request<#request_proto>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<Self::#response_assoc, tonic::Status>> + ::core::marker::Send + 'async_trait>>
             where
                 'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: 'async_trait,
+                ::proto_rs::ProtoEncoder<
+                    <Self::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <Self::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >: ::proto_rs::EncoderExt<
+                    <Self::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <Self::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >;
         }
+    }
+}
+
+fn generate_unary_associated_type(method: &MethodInfo) -> TokenStream {
+    let assoc_name = method.response_associated_type.as_ref().expect("missing response associated type for unary method");
+    let response_proto = generate_response_proto_type(&method.response_type);
+
+    quote! {
+        type #assoc_name: ::proto_rs::ProtoResponse<#response_proto>;
     }
 }
 
@@ -213,6 +253,8 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
     for method in methods {
         if is_streaming_method(method) {
             blanket_types.push(generate_blanket_stream_type(method, trait_name));
+        } else {
+            blanket_types.push(generate_blanket_unary_type(method, trait_name));
         }
         blanket_methods.push(generate_blanket_method(method, trait_name));
     }
@@ -223,6 +265,11 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
 fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
     quote! { type #stream_name = <Self as super::#trait_name>::#stream_name; }
+}
+
+fn generate_blanket_unary_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
+    let assoc_name = method.response_associated_type.as_ref().expect("missing response associated type for unary method");
+    quote! { type #assoc_name = <Self as super::#trait_name>::#assoc_name; }
 }
 
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
@@ -236,18 +283,16 @@ fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> Toke
 fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     let method_name = &method.name;
     let request_type = &method.request_type;
-    let response_type = &method.response_type;
     let request_proto = generate_request_proto_type(request_type);
-    let response_proto = generate_response_proto_type(response_type);
+    let response_assoc = method.response_associated_type.as_ref().expect("missing response associated type for unary method");
 
     let request_conversion = generate_proto_to_native_request(request_type);
-    let response_conversion = generate_native_to_proto_response();
 
     quote! {
         fn #method_name<'life0, 'async_trait>(
             &'life0 self,
             request: tonic::Request<#request_proto>,
-        ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+        ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<Self::#response_assoc, tonic::Status>> + ::core::marker::Send + 'async_trait>>
         where
             'life0: 'async_trait,
             Self: 'async_trait
@@ -260,7 +305,7 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
                     native_request
                 ).await?;
 
-                #response_conversion
+                Ok(native_response)
             })
         }
     }
@@ -319,24 +364,40 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let response_type = &method.response_type;
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
+    let response_assoc = method.response_associated_type.as_ref().expect("missing response associated type for unary method");
 
-    let encode_type = quote! { #response_proto };
+    let encode_type = quote! {
+        <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+    };
+    let mode_type = quote! {
+        <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode
+    };
     let decode_type = quote! { #request_proto };
-    let codec_init = generate_codec_init(encode_type, decode_type, None);
+    let codec_init = generate_codec_init(encode_type.clone(), decode_type, Some(mode_type.clone()));
 
     quote! {
         #route_path => {
             #[allow(non_camel_case_types)]
             struct #svc_name<T: #trait_name>(pub Arc<T>);
 
-            impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
-                type Response = #response_proto;
+            impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T>
+            where
+                ::proto_rs::ProtoEncoder<
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >: ::proto_rs::EncoderExt<
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >,
+            {
+                type Response = #encode_type;
                 type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
                     let fut = async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
+                        let native_response = <T as #trait_name>::#method_name(&inner, request).await?;
+                        <<T as #trait_name>::#response_assoc as ::proto_rs::ProtoResponse<#response_proto>>::into_response(native_response)
                     };
                     Box::pin(fut)
                 }
