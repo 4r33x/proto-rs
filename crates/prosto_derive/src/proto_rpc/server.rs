@@ -166,28 +166,28 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
         let stream_name = method.stream_type_name.as_ref().unwrap();
         quote! {
             #[must_use]
-            #[allow(elided_named_lifetimes, clippy::type_complexity, clippy::type_repetition_in_bounds)]
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
+            fn #method_name(
+                &self,
                 request: tonic::Request<#request_proto>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> impl std::future::Future<
+                Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+            > + std::marker::Send + '_
             where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: std::marker::Send + std::marker::Sync;
         }
     } else {
         let response_type = &method.response_type;
         let response_proto = generate_response_proto_type(response_type);
         quote! {
             #[must_use]
-            #[allow(elided_named_lifetimes, clippy::type_complexity, clippy::type_repetition_in_bounds)]
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
+            fn #method_name(
+                &self,
                 request: tonic::Request<#request_proto>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> impl std::future::Future<
+                Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>
+            > + std::marker::Send + '_
             where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: std::marker::Send + std::marker::Sync;
         }
     }
 }
@@ -244,15 +244,13 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let response_conversion = generate_native_to_proto_response();
 
     quote! {
-        fn #method_name<'life0, 'async_trait>(
-            &'life0 self,
+        fn #method_name(
+            &self,
             request: tonic::Request<#request_proto>,
-        ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
-        where
-            'life0: 'async_trait,
-            Self: 'async_trait
-        {
-            Box::pin(async move {
+        ) -> impl std::future::Future<
+            Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>
+        > + std::marker::Send + '_ {
+            async move {
                 #request_conversion
 
                 let native_response = <Self as super::#trait_name>::#method_name(
@@ -261,7 +259,7 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
                 ).await?;
 
                 #response_conversion
-            })
+            }
         }
     }
 }
@@ -275,15 +273,13 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let request_conversion = generate_proto_to_native_request(request_type);
 
     quote! {
-        fn #method_name<'life0, 'async_trait>(
-            &'life0 self,
+        fn #method_name(
+            &self,
             request: tonic::Request<#request_proto>,
-        ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
-        where
-            'life0: 'async_trait,
-            Self: 'async_trait
-        {
-            Box::pin(async move {
+        ) -> impl std::future::Future<
+            Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+        > + std::marker::Send + '_ {
+            async move {
                 #request_conversion
 
                 let native_response = <Self as super::#trait_name>::#method_name(
@@ -292,7 +288,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                 ).await?;
 
                 Ok(native_response)
-            })
+            }
         }
     }
 }

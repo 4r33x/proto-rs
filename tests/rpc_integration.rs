@@ -203,7 +203,6 @@ fn container_from_tonic(msg: tonic_prost_test::encoding::ZeroCopyContainer) -> Z
 
 struct OurService;
 
-#[tonic::async_trait]
 impl ComplexService for OurService {
     type StreamCollectionsStream = Pin<Box<dyn Stream<Item = Result<CollectionsMessage, Status>> + Send>>;
 

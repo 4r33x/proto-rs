@@ -15,7 +15,6 @@ use tonic::Status;
 // A dummy server impl
 struct S;
 
-#[tonic::async_trait]
 impl SigmaRpc for S {
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
