@@ -132,7 +132,7 @@ where
 
     #[inline]
     fn proto_default<'a>() -> Self::Shadow<'a> {
-        BoxedShadow(Box::new(T::proto_default()))
+        BoxedShadow(Box::write(Box::new_uninit(), T::proto_default()))
     }
 
     #[inline]
@@ -229,7 +229,7 @@ where
 
     #[inline]
     fn proto_default<'a>() -> Self::Shadow<'a> {
-        ArcedShadow(Box::new(T::proto_default()))
+        ArcedShadow(Box::write(Box::new_uninit(), T::proto_default()))
     }
 
     #[inline]
@@ -255,7 +255,7 @@ where
 
     #[inline]
     fn clear(&mut self) {
-        T::clear(Arc::get_mut(self).unwrap());
+        T::clear(Arc::get_mut(self).expect("Arc should be always unique here"));
     }
 }
 
