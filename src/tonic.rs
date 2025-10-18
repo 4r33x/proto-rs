@@ -117,6 +117,19 @@ where
     }
 }
 
+impl<T> ProtoRequest<T> for T
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = T;
+    type Mode = SunByRef;
+
+    fn into_request(self) -> Request<Self::Encode> {
+        Request::new(self)
+    }
+}
+
 impl<T> ProtoRequest<T> for ZeroCopyRequest<T> {
     type Encode = Vec<u8>;
     type Mode = BytesMode;
