@@ -110,7 +110,7 @@ where
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let inner = *self.0;
+        let inner = self.0;
         Ok(Box::write(Box::new_uninit(), inner.to_sun()?))
     }
 

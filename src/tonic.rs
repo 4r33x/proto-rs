@@ -88,15 +88,6 @@ where
     }
 }
 
-impl<T> Clone for ZeroCopyRequest<T> {
-    fn clone(&self) -> Self {
-        let metadata = self.as_request().metadata().clone();
-        let extensions = self.as_request().extensions().clone();
-        let payload = self.as_request().get_ref().clone();
-        ZeroCopyRequest::from_request(Request::from_parts(metadata, extensions, payload))
-    }
-}
-
 pub trait ProtoRequest<T>: Sized {
     type Encode: Send + Sync + 'static;
     type Mode: Send + Sync + 'static;
@@ -140,30 +131,29 @@ impl<T> ProtoRequest<T> for ZeroCopyRequest<T> {
 }
 
 pub trait ToZeroCopy<T> {
-    fn to_zero_copy(&self) -> ZeroCopyRequest<T>;
+    fn to_zero_copy(self) -> ZeroCopyRequest<T>;
 }
 
-impl<'a, T> ToZeroCopy<T> for &'a T
+impl<T> ToZeroCopy<T> for &T
 where
     T: ProtoExt,
     for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
 {
-    fn to_zero_copy(&self) -> ZeroCopyRequest<T> {
-        let encoded = T::encode_to_vec(*self);
-        ZeroCopyRequest::from_request(Request::new(encoded))
+    fn to_zero_copy(self) -> ZeroCopyRequest<T> {
+        let encoded = T::encode_to_vec(self);
+        ZeroCopyRequest::from_bytes(encoded)
     }
 }
 
-impl<'a, T> ToZeroCopy<T> for Request<&'a T>
+impl<T> ToZeroCopy<T> for Request<&T>
 where
     T: ProtoExt,
     for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
 {
-    fn to_zero_copy(&self) -> ZeroCopyRequest<T> {
-        let metadata = self.metadata().clone();
-        let extensions = self.extensions().clone();
-        let encoded = T::encode_to_vec(self.get_ref());
-        ZeroCopyRequest::from_request(Request::from_parts(metadata, extensions, encoded))
+    fn to_zero_copy(self) -> ZeroCopyRequest<T> {
+        let (meta, ext, t) = self.into_parts();
+        let encoded = T::encode_to_vec(t);
+        ZeroCopyRequest::from_request(Request::from_parts(meta, ext, encoded))
     }
 }
 

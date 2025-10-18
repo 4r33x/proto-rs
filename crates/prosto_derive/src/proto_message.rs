@@ -19,7 +19,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let type_ident = input.ident.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
-    let proto_name = config.sun.as_ref().map(|sun| sun.message_ident.clone()).unwrap_or_else(|| type_ident.clone());
+    let proto_name = config.sun.as_ref().map_or_else(|| type_ident.clone(), |sun| sun.message_ident.clone());
 
     let (proto, rust_code) = match input.data.clone() {
         Data::Struct(data) => {
