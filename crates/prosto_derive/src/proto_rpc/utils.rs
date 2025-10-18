@@ -85,32 +85,26 @@ fn generate_user_method_signature(
         let stream_name = stream_type_name.unwrap();
         quote! {
             #(#attrs)*
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
+            fn #method_name(
+                &self,
                 request: tonic::Request<#request_type>,
-            ) -> ::core::pin::Pin<Box<
-                dyn ::core::future::Future<
-                    Output = Result<tonic::Response<Self::#stream_name>, tonic::Status>
-                > + ::core::marker::Send + 'async_trait
-            >>
+            ) -> impl std::future::Future<
+                Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+            > + ::core::marker::Send
             where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: std::marker::Send + std::marker::Sync;
         }
     } else {
         quote! {
             #(#attrs)*
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
+            fn #method_name(
+                &self,
                 request: tonic::Request<#request_type>,
-            ) -> ::core::pin::Pin<Box<
-                dyn ::core::future::Future<
-                    Output = Result<tonic::Response<#response_type>, tonic::Status>
-                > + ::core::marker::Send + 'async_trait
-            >>
+            ) -> impl std::future::Future<
+                Output = std::result::Result<tonic::Response<#response_type>, tonic::Status>
+            > + ::core::marker::Send
             where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: std::marker::Send + std::marker::Sync;
         }
     }
 }
