@@ -1,5 +1,3 @@
-#![feature(impl_trait_in_assoc_type)]
-#![allow(incomplete_features)]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::cast_possible_truncation)]

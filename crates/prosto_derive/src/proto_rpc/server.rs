@@ -327,15 +327,14 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
                 type Response = #response_proto;
-                type Future = impl std::future::Future<
-                        Output = std::result::Result<tonic::Response<Self::Response>, tonic::Status>
-                    > + std::marker::Send + 'static;
+                type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    async move {
+                    let fut = async move {
                         <T as #trait_name>::#method_name(&inner, request).await
-                    }
+                    };
+                    Box::pin(fut)
                 }
             }
 
@@ -385,15 +384,14 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = #response_proto;
                 type ResponseStream = T::#stream_name;
-                type Future = impl std::future::Future<
-                        Output = std::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status>
-                    > + std::marker::Send + 'static;
+                type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    async move {
+                    let fut = async move {
                         <T as #trait_name>::#method_name(&inner, request).await
-                    }
+                    };
+                    Box::pin(fut)
                 }
             }
 

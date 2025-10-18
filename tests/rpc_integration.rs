@@ -1,6 +1,3 @@
-#![feature(impl_trait_in_assoc_type)]
-#![allow(incomplete_features)]
-
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
