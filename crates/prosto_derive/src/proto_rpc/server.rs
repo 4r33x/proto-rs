@@ -315,6 +315,10 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let response_type = &method.response_type;
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
+    let future_name = syn::Ident::new(
+        &format!("{}Future", to_pascal_case(&method_name.to_string())),
+        method_name.span(),
+    );
 
     let encode_type = quote! { #response_proto };
     let decode_type = quote! { #request_proto };
@@ -327,14 +331,11 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
                 type Response = #response_proto;
-                type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                type Future = <T as #trait_name>::#future_name<'static>;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    let fut = async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    };
-                    Box::pin(fut)
+                    <T as #trait_name>::#method_name(&inner, request)
                 }
             }
 
@@ -371,6 +372,10 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(inner_type);
+    let future_name = syn::Ident::new(
+        &format!("{}Future", to_pascal_case(&method_name.to_string())),
+        method_name.span(),
+    );
 
     let encode_type = quote! { #response_proto };
     let decode_type = quote! { #request_proto };
@@ -384,14 +389,11 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = #response_proto;
                 type ResponseStream = T::#stream_name;
-                type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                type Future = <T as #trait_name>::#future_name<'static>;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    let fut = async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    };
-                    Box::pin(fut)
+                    <T as #trait_name>::#method_name(&inner, request)
                 }
             }
 
