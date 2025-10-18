@@ -17,13 +17,15 @@ pub fn generate_proto_to_native_request(_request_type: &Type) -> TokenStream {
 }
 
 /// Generate native-to-proto request conversion (used in client - unary)
-pub fn generate_native_to_proto_request_unary() -> TokenStream {
-    quote! { let mut proto_req = request.into_request(); }
+pub fn generate_native_to_proto_request_unary(request_type: &Type) -> TokenStream {
+    let _ = request_type;
+    quote! {}
 }
 
 /// Generate native-to-proto request conversion (used in client - streaming)
-pub fn generate_native_to_proto_request_streaming() -> TokenStream {
-    quote! { let proto_req = request.into_request(); }
+pub fn generate_native_to_proto_request_streaming(request_type: &Type) -> TokenStream {
+    let _ = request_type;
+    quote! {}
 }
 
 /// Generate proto-to-native response conversion (used in client)
@@ -60,8 +62,12 @@ pub fn generate_route_path(package_name: &str, trait_name: &syn::Ident, method_n
 }
 
 /// Generate codec initialization
-pub fn generate_codec_init() -> TokenStream {
-    quote! { let codec = ::proto_rs::ProtoCodec::default(); }
+pub fn generate_codec_init(encode: TokenStream, decode: TokenStream, mode: Option<TokenStream>) -> TokenStream {
+    if let Some(mode) = mode {
+        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode, #mode>::default(); }
+    } else {
+        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode>::default(); }
+    }
 }
 
 // ============================================================================
