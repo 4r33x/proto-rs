@@ -5,6 +5,10 @@
 //!
 //! This module is `pub`, but is only for prost internal use. The `prost-derive` crate needs access for its `Message` implementations.
 
+/// Used to optimize repeated encoding via a backpatch approach that iterates over items only once, avoiding allocations.
+/// Unfortunately, due to the current `BufMut` design, we rely on an unsafe approach that assumes we always operate on a contiguous byte chunk.
+pub const REPEATED_VARINT_SIZE: usize = 10;
+
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
@@ -754,6 +758,7 @@ pub mod message {
     use super::encoded_len_varint;
     use super::key_len;
     use super::merge_loop;
+    use crate::encoding::REPEATED_VARINT_SIZE;
     use crate::traits::ViewOf;
 
     struct CountingBufMut<'a, B> {
@@ -796,8 +801,8 @@ pub mod message {
         }
     }
 
-    fn padded_varint(mut value: u64) -> [u8; 10] {
-        let mut bytes = [0u8; 10];
+    fn padded_varint(mut value: u64) -> [u8; REPEATED_VARINT_SIZE] {
+        let mut bytes = [0u8; REPEATED_VARINT_SIZE];
         let mut index = 0usize;
 
         loop {
@@ -868,7 +873,7 @@ pub mod message {
         for value in values {
             encode_key(tag, WireType::LengthDelimited, buf);
 
-            buf.put_bytes(0, 10);
+            buf.put_bytes(0, REPEATED_VARINT_SIZE);
 
             let mut counting = CountingBufMut::new(buf);
             M::encode_raw(value, &mut counting);
@@ -879,7 +884,7 @@ pub mod message {
 
             let header_ptr = unsafe {
                 let tail_ptr = buf.chunk_mut().as_mut_ptr();
-                tail_ptr.sub(written + 10)
+                tail_ptr.sub(written + REPEATED_VARINT_SIZE)
             };
 
             unsafe {
@@ -895,7 +900,7 @@ pub mod message {
     {
         values.iter().fold(0, |acc, v| {
             let len = M::encoded_len(v);
-            acc + key_len(tag) + 10 + len
+            acc + key_len(tag) + REPEATED_VARINT_SIZE + len
         })
     }
     #[inline]
