@@ -1,12 +1,11 @@
 #![feature(impl_trait_in_assoc_type)]
 
-
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use encoding_messages::ZeroCopyContainer;
-use proto_rs::ToZeroCopy;
+use proto_rs::ToZeroCopyRequest;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;

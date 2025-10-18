@@ -88,7 +88,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             {
                 type Response = http::Response<tonic::body::Body>;
                 type Error = std::convert::Infallible;
-                type Future = BoxFuture<Self::Response, Self::Error>;
+                type Future = impl std::future::Future<Output = std::result::Result<Self::Response, Self::Error>> + std::marker::Send;
 
                 fn poll_ready(
                     &mut self,
@@ -98,21 +98,28 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                 }
 
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
-                    match req.uri().path() {
-                        #(#route_handlers)*
-                        _ => Box::pin(async move {
-                            let mut response = http::Response::new(tonic::body::Body::default());
-                            let headers = response.headers_mut();
-                            headers.insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                            headers.insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                            Ok(response)
-                        }),
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    async move {
+                        match req.uri().path() {
+                            #(#route_handlers)*
+                            _ =>  {
+                                let mut response = http::Response::new(tonic::body::Body::default());
+                                let headers = response.headers_mut();
+                                headers.insert(
+                                    tonic::Status::GRPC_STATUS,
+                                    (tonic::Code::Unimplemented as i32).into(),
+                                );
+                                headers.insert(
+                                    http::header::CONTENT_TYPE,
+                                    tonic::metadata::GRPC_CONTENT_TYPE,
+                                );
+                                Ok(response)
+                            },
+                        }
                     }
                 }
             }
@@ -339,28 +346,19 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
                 }
             }
 
-            let accept_compression_encodings = self.accept_compression_encodings;
-            let send_compression_encodings = self.send_compression_encodings;
-            let max_decoding_message_size = self.max_decoding_message_size;
-            let max_encoding_message_size = self.max_encoding_message_size;
-            let inner = self.inner.clone();
-
-            let fut = async move {
-                let method = #svc_name(inner);
-                #codec_init
-                let mut grpc = tonic::server::Grpc::new(codec)
-                    .apply_compression_config(
-                        accept_compression_encodings,
-                        send_compression_encodings,
-                    )
-                    .apply_max_message_size_config(
-                        max_decoding_message_size,
-                        max_encoding_message_size,
-                    );
-                let res = grpc.unary(method, req).await;
-                Ok(res)
-            };
-            Box::pin(fut)
+            let method = #svc_name(inner);
+            #codec_init
+            let mut grpc = tonic::server::Grpc::new(codec)
+                .apply_compression_config(
+                    accept_compression_encodings,
+                    send_compression_encodings,
+                )
+                .apply_max_message_size_config(
+                    max_decoding_message_size,
+                    max_encoding_message_size,
+                );
+            let res = grpc.unary(method, req).await;
+            Ok(res)
         }
     }
 }
@@ -397,28 +395,22 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
                 }
             }
 
-            let accept_compression_encodings = self.accept_compression_encodings;
-            let send_compression_encodings = self.send_compression_encodings;
-            let max_decoding_message_size = self.max_decoding_message_size;
-            let max_encoding_message_size = self.max_encoding_message_size;
-            let inner = self.inner.clone();
 
-            let fut = async move {
-                let method = #svc_name(inner);
-                #codec_init
-                let mut grpc = tonic::server::Grpc::new(codec)
-                    .apply_compression_config(
-                        accept_compression_encodings,
-                        send_compression_encodings,
-                    )
-                    .apply_max_message_size_config(
-                        max_decoding_message_size,
-                        max_encoding_message_size,
-                    );
-                let res = grpc.server_streaming(method, req).await;
-                Ok(res)
-            };
-            Box::pin(fut)
+
+
+            let method = #svc_name(inner);
+            #codec_init
+            let mut grpc = tonic::server::Grpc::new(codec)
+                .apply_compression_config(
+                    accept_compression_encodings,
+                    send_compression_encodings,
+                )
+                .apply_max_message_size_config(
+                    max_decoding_message_size,
+                    max_encoding_message_size,
+                );
+            let res = grpc.server_streaming(method, req).await;
+            Ok(res)
         }
     }
 }
