@@ -52,64 +52,88 @@ pub trait ProtoExt: Sized {
         value.to_sun()
     }
 
+    #[inline]
+    fn with_shadow<R, F>(value: SunOf<'_, Self>, f: F) -> R
+    where
+        F: FnOnce(ViewOf<'_, Self>) -> R,
+    {
+        let shadow = Self::Shadow::from_sun(value);
+        f(shadow)
+    }
+
+    #[inline]
+    fn ensure_capacity(buf: &mut impl BufMut, required: usize) -> Result<(), EncodeError> {
+        let remaining = buf.remaining_mut();
+        if required > remaining { Err(EncodeError::new(required, remaining)) } else { Ok(()) }
+    }
+
+    #[inline]
+    fn length_delimited_capacity(len: usize) -> usize {
+        len + encoded_len_varint(len as u64)
+    }
+
     // -------- Encoding entry points (Sun -> Shadow -> write)
 
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        let shadow = Self::Shadow::from_sun(value);
-
-        let required = Self::encoded_len(&shadow);
-        let remaining = buf.remaining_mut();
-        if required > remaining {
-            return Err(EncodeError::new(required, remaining));
-        }
-        Self::encode_raw(shadow, buf);
-        Ok(())
+        Self::with_shadow(value, |shadow| {
+            let required = Self::encoded_len(&shadow);
+            Self::ensure_capacity(buf, required)?;
+            Self::encode_raw(shadow, buf);
+            Ok(())
+        })
     }
 
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
-        let shadow = Self::Shadow::from_sun(value);
-        let len = Self::encoded_len(&shadow);
-        let mut buf = Vec::with_capacity(len);
-        Self::encode_raw(shadow, &mut buf);
-        buf
+        Self::with_shadow(value, |shadow| {
+            let len = Self::encoded_len(&shadow);
+            let mut buf = Vec::with_capacity(len);
+            Self::encode_raw(shadow, &mut buf);
+            buf
+        })
     }
     fn encode_to_array<const N: usize>(value: SunOf<'_, Self>) -> [u8; N] {
-        let shadow = Self::Shadow::from_sun(value);
-        let mut buf = [0; N];
-        Self::encode_raw(shadow, &mut buf.as_mut_slice());
-        buf
+        Self::with_shadow(value, |shadow| {
+            let len = Self::encoded_len(&shadow);
+            debug_assert!(len <= N, "encode_to_array called with insufficient capacity");
+            let mut buf = [0; N];
+            Self::encode_raw(shadow, &mut buf.as_mut_slice());
+            buf
+        })
     }
 
     fn encode_length_delimited(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        let shadow = Self::Shadow::from_sun(value);
-        let len = Self::encoded_len(&shadow);
-        let required = len + encoded_len_varint(len as u64);
-        let remaining = buf.remaining_mut();
-        if required > remaining {
-            return Err(EncodeError::new(required, remaining));
-        }
+        Self::with_shadow(value, |shadow| {
+            let len = Self::encoded_len(&shadow);
+            let required = Self::length_delimited_capacity(len);
+            Self::ensure_capacity(buf, required)?;
 
-        encode_varint(len as u64, buf);
-        Self::encode_raw(shadow, buf);
-        Ok(())
+            encode_varint(len as u64, buf);
+            Self::encode_raw(shadow, buf);
+            Ok(())
+        })
     }
 
     fn encode_length_delimited_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
-        let shadow = Self::Shadow::from_sun(value);
-        let len = Self::encoded_len(&shadow);
-        let mut buf = Vec::with_capacity(len + encoded_len_varint(len as u64));
-        encode_varint(len as u64, &mut buf);
-        Self::encode_raw(shadow, &mut buf);
-        buf
+        Self::with_shadow(value, |shadow| {
+            let len = Self::encoded_len(&shadow);
+            let mut buf = Vec::with_capacity(Self::length_delimited_capacity(len));
+            encode_varint(len as u64, &mut buf);
+            Self::encode_raw(shadow, &mut buf);
+            buf
+        })
     }
     //N should include encoded_len_varint
     fn encode_length_delimited_to_array<const VAR_INT_LEN: usize>(value: SunOf<'_, Self>) -> [u8; VAR_INT_LEN] {
-        let shadow = Self::Shadow::from_sun(value);
-        let len = Self::encoded_len(&shadow);
-        let mut buf = [0; VAR_INT_LEN];
-        encode_varint(len as u64, &mut buf.as_mut_slice());
-        Self::encode_raw(shadow, &mut buf.as_mut_slice());
-        buf
+        Self::with_shadow(value, |shadow| {
+            let len = Self::encoded_len(&shadow);
+            let required = Self::length_delimited_capacity(len);
+            debug_assert!(required <= VAR_INT_LEN, "encode_length_delimited_to_array called with insufficient capacity");
+            let mut buf = [0; VAR_INT_LEN];
+            let mut slice = buf.as_mut_slice();
+            encode_varint(len as u64, &mut slice);
+            Self::encode_raw(shadow, &mut slice);
+            buf
+        })
     }
 
     // -------- Decoding (read -> Shadow -> post_decode -> Self)
