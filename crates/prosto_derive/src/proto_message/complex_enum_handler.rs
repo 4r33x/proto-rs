@@ -248,9 +248,16 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     let binding_default = field_default_expr(field);
 
     if !cfg.skip && !has_wrapper && !has_conversion {
+        let encode_value = if parsed.is_message_like {
+            quote! { ::proto_rs::encoding::message::encode::<#field_ty>(#tag, #access_expr, buf); }
+        } else {
+            let codec_ident = syn::Ident::new(&parsed.proto_type, Span::call_site());
+            quote! { ::proto_rs::encoding::#codec_ident::encode(#tag, #access_expr, buf); }
+        };
+
         let encode_arm = quote! {
             #name::#variant_ident(#binding_ident) => {
-                <#field_ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &(#access_expr), buf);
+                #encode_value
             }
         };
 
@@ -268,9 +275,16 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             }
         };
 
+        let encoded_len_value = if parsed.is_message_like {
+            quote! { ::proto_rs::encoding::message::encoded_len::<#field_ty>(#tag, &(#access_expr)) }
+        } else {
+            let codec_ident = syn::Ident::new(&parsed.proto_type, Span::call_site());
+            quote! { ::proto_rs::encoding::#codec_ident::encoded_len(#tag, #access_expr) }
+        };
+
         let encoded_len_arm = quote! {
             #name::#variant_ident(#binding_ident) => {
-                <#field_ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&(#access_expr))
+                #encoded_len_value
             }
         };
 

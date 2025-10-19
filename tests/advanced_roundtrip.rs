@@ -555,3 +555,13 @@ fn advanced_complex_enum_roundtrip_variants() {
 
     assert_union_roundtrip(AdvancedComplexUnion::Unit);
 }
+
+#[test]
+fn advanced_complex_enum_preserves_default_payloads() {
+    assert_union_roundtrip(AdvancedComplexUnion::Nested(AdvancedNested::default()));
+
+    assert_union_roundtrip(AdvancedComplexUnion::Named {
+        label: String::new(),
+        count: 0,
+    });
+}
