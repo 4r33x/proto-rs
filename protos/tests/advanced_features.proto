@@ -9,6 +9,20 @@ enum Stage {
   GAMMA = 3;
 }
 
+message AdvancedComplexUnionUnit {}
+
+message AdvancedComplexUnionNamed {
+  string label = 1;
+  int32 count = 2;
+}
+message AdvancedComplexUnion {
+  oneof value {
+    AdvancedComplexUnionUnit unit = 1;
+    AdvancedComplexUnionNamed named = 2;
+    AdvancedNested nested = 3;
+  }
+}
+
 message AdvancedEdgeCase {
   uint64 id = 1;
   optional string note = 2;
@@ -38,19 +52,6 @@ message AdvancedOrigin {
     string raw = 1;
     AdvancedNested nested = 2;
     AdvancedOriginMissing missing = 3;
-  }
-}
-
-message AdvancedComplexUnionUnit {}
-message AdvancedComplexUnionNamed {
-  string label = 1;
-  int32 count = 2;
-}
-message AdvancedComplexUnion {
-  oneof value {
-    AdvancedComplexUnionUnit unit = 1;
-    AdvancedComplexUnionNamed named = 2;
-    AdvancedNested nested = 3;
   }
 }
 

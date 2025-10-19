@@ -488,6 +488,7 @@ fn assert_roundtrip(message: AdvancedEdgeCase) {
     assert_eq!(decoded_from_prost, message);
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn assert_union_roundtrip(value: AdvancedComplexUnion) {
     let proto_bytes = AdvancedComplexUnion::encode_to_vec(&value);
     let decoded_proto = AdvancedComplexUnion::decode(proto_bytes.as_slice()).expect("decode proto union");
@@ -560,8 +561,5 @@ fn advanced_complex_enum_roundtrip_variants() {
 fn advanced_complex_enum_preserves_default_payloads() {
     assert_union_roundtrip(AdvancedComplexUnion::Nested(AdvancedNested::default()));
 
-    assert_union_roundtrip(AdvancedComplexUnion::Named {
-        label: String::new(),
-        count: 0,
-    });
+    assert_union_roundtrip(AdvancedComplexUnion::Named { label: String::new(), count: 0 });
 }
