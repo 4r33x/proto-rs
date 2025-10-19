@@ -45,14 +45,14 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             use tonic::codegen::*;
             use super::*;
 
-            pub trait #trait_name: std::marker::Send + std::marker::Sync + 'static {
+            pub trait #trait_name: ::core::marker::Send + ::core::marker::Sync + 'static {
                 #(#associated_types)*
                 #(#trait_methods)*
             }
 
             impl<T> #trait_name for T
             where
-                T: super::#trait_name + std::marker::Send + std::marker::Sync + 'static,
+                T: super::#trait_name + ::core::marker::Send + ::core::marker::Sync + 'static,
             {
                 #(#blanket_types)*
                 #(#blanket_methods)*
@@ -82,17 +82,17 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             impl<T, B> tonic::codegen::Service<http::Request<B>> for #server_struct<T>
             where
                 T: #trait_name,
-                B: Body + std::marker::Send + 'static,
-                B::Error: Into<StdError> + std::marker::Send + 'static,
+                B: Body + ::core::marker::Send + 'static,
+                B::Error: Into<StdError> + ::core::marker::Send + 'static,
             {
                 type Response = http::Response<tonic::body::Body>;
-                type Error = std::convert::Infallible;
-                type Future = impl std::future::Future<Output = std::result::Result<Self::Response, Self::Error>> + std::marker::Send;
+                type Error = ::core::convert::Infallible;
+                type Future = impl ::core::future::Future<Output = ::core::result::Result<Self::Response, Self::Error>> + ::core::marker::Send;
 
                 fn poll_ready(
                     &mut self,
                     _cx: &mut Context<'_>
-                ) -> Poll<std::result::Result<(), Self::Error>> {
+                ) -> Poll<::core::result::Result<(), Self::Error>> {
                     Poll::Ready(Ok(()))
                 }
 
@@ -175,11 +175,11 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
             fn #method_name(
                 &self,
                 request: tonic::Request<#request_proto>,
-            ) -> impl std::future::Future<
-                Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
-            > + std::marker::Send + '_
+            ) -> impl ::core::future::Future<
+                Output = ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+            > + ::core::marker::Send + '_
             where
-                Self: std::marker::Send + std::marker::Sync;
+                Self: ::core::marker::Send + ::core::marker::Sync;
         }
     } else {
         let response_type = &method.response_type;
@@ -190,16 +190,16 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
             fn #method_name(
                 &self,
                 request: tonic::Request<#request_proto>,
-            ) -> impl std::future::Future<
-                Output = std::result::Result<
+            ) -> impl ::core::future::Future<
+                Output = ::core::result::Result<
                     tonic::Response<
                         <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
                     >,
                     tonic::Status
                 >
-            > + std::marker::Send + '_
+            > + ::core::marker::Send + '_
             where
-                Self: std::marker::Send + std::marker::Sync;
+                Self: ::core::marker::Send + ::core::marker::Sync;
         }
     }
 }
@@ -210,7 +210,7 @@ fn generate_stream_associated_type(method: &MethodInfo) -> TokenStream {
     let response_proto = generate_response_proto_type(inner_type);
 
     quote! {
-        type #stream_name: tonic::codegen::tokio_stream::Stream<Item = std::result::Result<#response_proto, tonic::Status>> + std::marker::Send + 'static;
+        type #stream_name: tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#response_proto, tonic::Status>> + ::core::marker::Send + 'static;
     }
 }
 
@@ -264,14 +264,14 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
         fn #method_name(
             &self,
             request: tonic::Request<#request_proto>,
-        ) -> impl std::future::Future<
-            Output = std::result::Result<
+        ) -> impl ::core::future::Future<
+            Output = ::core::result::Result<
                 tonic::Response<
                     <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
                 >,
                 tonic::Status
             >
-        > + std::marker::Send + '_ {
+        > + ::core::marker::Send + '_ {
             async move {
                 #request_conversion
 
@@ -302,9 +302,9 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
         fn #method_name(
             &self,
             request: tonic::Request<#request_proto>,
-        ) -> impl std::future::Future<
-            Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
-        > + std::marker::Send + '_ {
+        ) -> impl ::core::future::Future<
+            Output = ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+        > + ::core::marker::Send + '_ {
             async move {
                 #request_conversion
 
@@ -359,9 +359,9 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
                 type Response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
-                type Future = impl std::future::Future<
-                        Output = std::result::Result<tonic::Response<Self::Response>, tonic::Status>
-                    > + std::marker::Send + 'static;
+                type Future = impl ::core::future::Future<
+                        Output = ::core::result::Result<tonic::Response<Self::Response>, tonic::Status>
+                    > + ::core::marker::Send + 'static;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
@@ -408,9 +408,9 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = #response_proto;
                 type ResponseStream = T::#stream_name;
-                type Future = impl std::future::Future<
-                        Output = std::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status>
-                    > + std::marker::Send + 'static;
+                type Future = impl ::core::future::Future<
+                        Output = ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status>
+                    > + ::core::marker::Send + 'static;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);

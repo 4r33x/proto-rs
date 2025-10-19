@@ -5,7 +5,6 @@ use alloc::borrow::Cow;
 use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
-
 use core::fmt;
 
 /// A Protobuf message decoding error.

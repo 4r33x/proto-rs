@@ -1096,15 +1096,15 @@ fn decode_option_box(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenS
                 ctx.clone(),
             )?;
         } else {
-            let mut __proto_rs_tmp: <::std::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::Shadow<'_> =
-                <::std::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::proto_default();
-            <::std::boxed::Box<#inner_ty> as ::proto_rs::SingularField>::merge_singular_field(
+            let mut __proto_rs_tmp: <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::Shadow<'_> =
+                <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::proto_default();
+            <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::SingularField>::merge_singular_field(
                 wire_type,
                 &mut __proto_rs_tmp,
                 buf,
                 ctx.clone(),
             )?;
-            let __proto_rs_owned = <::std::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::post_decode(__proto_rs_tmp)?;
+            let __proto_rs_owned = <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::post_decode(__proto_rs_tmp)?;
             (#access) = Some(__proto_rs_owned);
         }
     }
@@ -1112,21 +1112,21 @@ fn decode_option_box(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenS
 
 fn decode_option_arc(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenStream {
     let decode_new = quote! {
-        let mut __proto_rs_tmp: <::std::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::Shadow<'_> =
-            <::std::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::proto_default();
-        <::std::sync::Arc<#inner_ty> as ::proto_rs::SingularField>::merge_singular_field(
+        let mut __proto_rs_tmp: <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::Shadow<'_> =
+            <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::proto_default();
+        <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::SingularField>::merge_singular_field(
             wire_type,
             &mut __proto_rs_tmp,
             buf,
             ctx.clone(),
         )?;
-        let __proto_rs_owned = <::std::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::post_decode(__proto_rs_tmp)?;
+        let __proto_rs_owned = <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::post_decode(__proto_rs_tmp)?;
         (#access) = Some(__proto_rs_owned);
     };
 
     quote! {
         if let Some(__proto_rs_existing) = (#access).as_mut() {
-            if let Some(__proto_rs_inner) = ::std::sync::Arc::get_mut(__proto_rs_existing) {
+            if let Some(__proto_rs_inner) = ::proto_rs::alloc::sync::Arc::get_mut(__proto_rs_existing) {
                 <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
                     wire_type,
                     __proto_rs_inner,

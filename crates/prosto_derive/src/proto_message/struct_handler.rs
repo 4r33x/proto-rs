@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use alloc::collections::BTreeSet;
 
 use proc_macro2::TokenStream;
 use quote::quote;

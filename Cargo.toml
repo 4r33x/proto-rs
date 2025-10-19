@@ -41,13 +41,13 @@ resolver = "3"
 prosto_derive = { version = "0.6", path = "crates/prosto_derive" }
 proto_rs = { version = "0.6", path = "./" }
 prost = "0.14.1"
-bytes = "1.10"
+bytes = { version = "1.10", default-features = false }
 
 
 [dependencies]
 prosto_derive.workspace = true
 bytes.workspace = true
-tonic = "0.14.2"
+tonic = { version = "0.14.2", optional = true }
 fastnum = { version = "0.7.2", optional = true }
 inventory = { version = "0.3.21", optional = true }
 solana-address = { version = "1", optional = true }
@@ -72,7 +72,7 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 
 [features]
-std = []
+std = ["dep:tonic", "bytes/std"]
 fastnum = ["dep:fastnum"]
 solana = ["dep:solana-address", "dep:solana-signature"]
 # Schema collection for build scripts

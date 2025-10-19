@@ -1,10 +1,9 @@
 use bytes::Buf;
 use bytes::BufMut;
 
-use crate::alloc::vec::Vec;
-
 use crate::DecodeError;
 use crate::EncodeError;
+use crate::alloc::vec::Vec;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_key;

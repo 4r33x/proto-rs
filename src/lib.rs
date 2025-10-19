@@ -9,6 +9,7 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate self as proto_rs;
 
@@ -31,6 +32,7 @@ pub use bytes;
 
 mod error;
 mod name;
+#[cfg(feature = "std")]
 mod tonic;
 mod traits;
 mod types;
@@ -46,17 +48,29 @@ pub use crate::error::DecodeError;
 pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
 pub use crate::name::Name;
+#[cfg(feature = "std")]
 pub use crate::tonic::BytesMode;
+#[cfg(feature = "std")]
 pub use crate::tonic::EncoderExt;
+#[cfg(feature = "std")]
 pub use crate::tonic::ProtoCodec;
+#[cfg(feature = "std")]
 pub use crate::tonic::ProtoEncoder;
+#[cfg(feature = "std")]
 pub use crate::tonic::ProtoRequest;
+#[cfg(feature = "std")]
 pub use crate::tonic::ProtoResponse;
+#[cfg(feature = "std")]
 pub use crate::tonic::SunByRef;
+#[cfg(feature = "std")]
 pub use crate::tonic::SunByVal;
+#[cfg(feature = "std")]
 pub use crate::tonic::ToZeroCopyRequest;
+#[cfg(feature = "std")]
 pub use crate::tonic::ToZeroCopyResponse;
+#[cfg(feature = "std")]
 pub use crate::tonic::ZeroCopyRequest;
+#[cfg(feature = "std")]
 pub use crate::tonic::ZeroCopyResponse;
 pub use crate::traits::MessageField;
 pub use crate::traits::OwnedSunOf;
@@ -71,7 +85,7 @@ pub use crate::traits::ViewOf;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled
-#[cfg(feature = "build-schemas")]
+#[cfg(all(feature = "build-schemas", feature = "std"))]
 pub mod schemas {
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -205,7 +219,7 @@ pub mod schemas {
 }
 
 // Example build.rs that users can copy:
-#[cfg(all(feature = "build-schemas", doc))]
+#[cfg(all(feature = "build-schemas", feature = "std", doc))]
 /// Example build.rs for consuming projects
 ///
 /// ```no_run

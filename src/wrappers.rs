@@ -1,12 +1,10 @@
 // ---------- imports (adjust for no_std) ----------
-#![cfg_attr(not(feature = "std"), no_std)]
-
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
-use std::mem::MaybeUninit;
-use std::sync::Arc;
+use core::mem::MaybeUninit;
 
 use bytes::Buf;
 use bytes::BufMut;

@@ -1,5 +1,6 @@
-use crate::DecodeError;
 use alloc::format;
+
+use crate::DecodeError;
 
 /// Represent the wire type for protobuf encoding.
 ///
