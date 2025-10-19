@@ -20,6 +20,69 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
 - **`no_std` by default runtime** – Runtime helpers lean entirely on `core` and `alloc`; enabling the `std` feature layers on Tonic integration and filesystem tooling without changing the API.
 
+## Custom encode/decode pipelines with `ProtoShadow`
+
+`ProtoExt` types pair with a companion `Shadow` type that implements [`ProtoShadow`](src/traits.rs). This trait defines how a value is lowered into the bytes that will be sent over the wire and how it is rebuilt during decoding. The default derive covers most standard Rust types, but you can substitute a custom representation when you need to interoperate with an existing protocol or avoid lossy conversions.
+
+The [`fastnum` decimal adapter](src/custom_types/fastnum/signed.rs) shows how to map `fastnum::D128` into a compact integer layout while still exposing ergonomic Rust APIs:
+
+```rust
+#[proto_message(proto_path = "protos/fastnum.proto", sun = D128)]
+pub struct D128Proto {
+    #[proto(tag = 1)]
+    pub lo: u64,
+    #[proto(tag = 2)]
+    pub hi: u64,
+    #[proto(tag = 3)]
+    pub fractional_digits_count: i32,
+    #[proto(tag = 4)]
+    pub is_negative: bool,
+}
+
+impl ProtoShadow for D128Proto {
+    type Sun<'a> = &'a D128;
+    type OwnedSun = D128;
+    type View<'a> = Self;
+
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> { /* deserialize */ }
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> { /* serialize */ }
+}
+```
+
+By hand-tuning `from_sun` and `to_sun` you can remove redundant allocations, hook into validation logic, or bridge Rust-only types into your RPC surface without ever touching `.proto` definitions directly.
+
+## Zero-copy server responses
+
+Service handlers produced by `#[proto_rpc]` work with [`ZeroCopyResponse`](src/tonic/resp.rs) to avoid cloning payloads. Any borrowed message (`&T`) can be turned into an owned response buffer via [`ToZeroCopyResponse::to_zero_copy`](src/tonic.rs), and the macro also supports infallible method signatures that return a response directly. The server example in [`examples/proto_gen_example.rs`](examples/proto_gen_example.rs) demonstrates both patterns:
+
+```rust
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, ...)]
+pub trait SigmaRpc {
+    async fn zero_copy_ping(&self, Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
+    async fn infallible_zero_copy_ping(&self, Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
+}
+
+impl SigmaRpc for ServerImpl {
+    async fn zero_copy_ping(&self, _: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status> {
+        Ok(GoonPong {}.to_zero_copy())
+    }
+}
+```
+
+This approach keeps the encoded bytes around without materializing a fresh `GoonPong` for each call. Compared to Prost-based services—where `&T` data must first be cloned into an owned `T` before encoding—`ZeroCopyResponse` removes at least one allocation and copy per RPC, which shows up as lower tail latencies for large payloads.
+
+## Zero-copy client requests
+
+Clients get the same treatment through [`ZeroCopyRequest`](src/tonic/req.rs). The generated stubs accept any type that implements `ProtoRequest`, so you can hand them an owned message, a `tonic::Request<T>`, or a zero-copy wrapper created from an existing borrow:
+
+```rust
+let payload = RizzPing {};
+let zero_copy = (&payload).to_zero_copy();
+client.rizz_ping(zero_copy).await?;
+```
+
+If you already have a configured `tonic::Request<&T>`, call `request.to_zero_copy()` to preserve metadata while still avoiding a clone. The async tests in [`examples/proto_gen_example.rs`](examples/proto_gen_example.rs) and [`tests/rpc_integration.rs`](tests/rpc_integration.rs) show how to mix borrowed and owned requests seamlessly, matching the server-side savings when round-tripping large messages.
+
 ## Getting started
 
 Add `proto_rs` to your `Cargo.toml` and optionally enable features you need (for example to eagerly emit `.proto` files during development):
