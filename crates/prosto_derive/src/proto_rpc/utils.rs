@@ -129,7 +129,7 @@ pub(crate) fn associated_future_type(future_output: TokenStream, requires_static
     if cfg!(feature = "stable") {
         quote! {
             ::core::pin::Pin<
-                ::std::boxed::Box<
+                ::proto_rs::alloc::boxed::Box<
                     dyn ::core::future::Future<Output = #future_output>
                         + ::core::marker::Send
                         #static_bound
@@ -145,7 +145,7 @@ pub(crate) fn associated_future_type(future_output: TokenStream, requires_static
 
 pub(crate) fn wrap_async_block(block: TokenStream, boxed: bool) -> TokenStream {
     if boxed && cfg!(feature = "stable") {
-        quote! { ::std::boxed::Box::pin(#block) }
+        quote! { ::proto_rs::alloc::boxed::Box::pin(#block) }
     } else {
         block
     }

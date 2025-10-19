@@ -21,24 +21,24 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
     let proto_name = config.sun.as_ref().map_or_else(|| type_ident.clone(), |sun| sun.message_ident.clone());
 
-    let (proto, rust_code) = match input.data.clone() {
+    let (proto, rust_code) = match &input.data {
         Data::Struct(data) => {
             let proto = generate_struct_proto(&proto_name, &data.fields);
 
-            let rust_code = struct_handler::handle_struct(input, &data, &config);
+            let rust_code = struct_handler::handle_struct(&input, data, &config);
             (proto, rust_code)
         }
         Data::Enum(data) => {
             let is_simple_enum = data.variants.iter().all(|v| matches!(v.fields, Fields::Unit));
             if is_simple_enum {
-                let proto = generate_simple_enum_proto(&proto_name, &data);
+                let proto = generate_simple_enum_proto(&proto_name, data);
 
-                let rust_code = enum_handler::handle_enum(input, &data);
+                let rust_code = enum_handler::handle_enum(&input, data);
                 (proto, rust_code)
             } else {
-                let proto = generate_complex_enum_proto(&proto_name, &data);
+                let proto = generate_complex_enum_proto(&proto_name, data);
 
-                let rust_code = complex_enum_handler::handle_complex_enum(input, &data);
+                let rust_code = complex_enum_handler::handle_complex_enum(&input, data);
                 (proto, rust_code)
             }
         }
