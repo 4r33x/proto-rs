@@ -41,3 +41,16 @@ message AdvancedOrigin {
   }
 }
 
+message AdvancedComplexUnionUnit {}
+message AdvancedComplexUnionNamed {
+  string label = 1;
+  int32 count = 2;
+}
+message AdvancedComplexUnion {
+  oneof value {
+    AdvancedComplexUnionUnit unit = 1;
+    AdvancedComplexUnionNamed named = 2;
+    AdvancedNested nested = 3;
+  }
+}
+
