@@ -3,9 +3,7 @@
 
 use std::pin::Pin;
 
-use proto_rs::ToZeroCopyRequest;
 use proto_rs::ToZeroCopyResponse;
-use proto_rs::ZeroCopyRequest;
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
