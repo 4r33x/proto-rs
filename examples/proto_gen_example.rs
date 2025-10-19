@@ -3,7 +3,9 @@
 
 use std::pin::Pin;
 
+use proto_rs::ToZeroCopyRequest;
 use proto_rs::ToZeroCopyResponse;
+use proto_rs::ZeroCopyRequest;
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
@@ -134,5 +136,18 @@ mod tests {
         while let Some(v) = res.next().await {
             println!("{:?}", v.unwrap())
         }
+    }
+
+    #[tokio::test]
+    async fn test_zero_copy_client_requests() {
+        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+
+        let borrowed = RizzPing {};
+        let zero_copy: ZeroCopyRequest<_> = (&borrowed).to_zero_copy();
+        client.rizz_ping(zero_copy).await.unwrap();
+
+        let request = tonic::Request::new(&borrowed);
+        let zero_copy_with_metadata = request.to_zero_copy();
+        client.rizz_ping(zero_copy_with_metadata).await.unwrap();
     }
 }
