@@ -153,6 +153,8 @@ pub struct MethodInfo {
     pub name: syn::Ident,
     pub request_type: Box<Type>,
     pub response_type: Box<Type>,
+    pub response_return_type: Box<Type>,
+    pub response_is_result: bool,
     pub is_streaming: bool,
     pub stream_type_name: Option<syn::Ident>,
     pub inner_response_type: Option<Type>,

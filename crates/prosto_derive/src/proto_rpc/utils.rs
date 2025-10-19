@@ -21,7 +21,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
         match item {
             TraitItem::Fn(method) => {
                 let method_name = method.sig.ident.clone();
-                let (request_type, response_type) = extract_types(&method.sig);
+                let (request_type, response_type, response_return_type, response_is_result) = extract_types(&method.sig);
                 let is_streaming = is_stream_response(&method.sig);
 
                 let (stream_type_name, inner_response_type) = if is_streaming {
@@ -43,12 +43,22 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                     (None, None)
                 };
 
-                let user_method_signature = generate_user_method_signature(&method.attrs, &method_name, &request_type, &response_type, is_streaming, stream_type_name.as_ref());
+                let user_method_signature = generate_user_method_signature(
+                    &method.attrs,
+                    &method_name,
+                    &request_type,
+                    &response_return_type,
+                    response_is_result,
+                    is_streaming,
+                    stream_type_name.as_ref(),
+                );
 
                 methods.push(MethodInfo {
                     name: method_name,
                     request_type,
                     response_type,
+                    response_return_type,
+                    response_is_result,
                     is_streaming,
                     stream_type_name,
                     inner_response_type,
@@ -77,7 +87,8 @@ fn generate_user_method_signature(
     attrs: &[syn::Attribute],
     method_name: &syn::Ident,
     request_type: &Type,
-    response_type: &Type,
+    response_return_type: &Type,
+    response_is_result: bool,
     is_streaming: bool,
     stream_type_name: Option<&syn::Ident>,
 ) -> TokenStream {
@@ -95,24 +106,40 @@ fn generate_user_method_signature(
                 Self: std::marker::Send + std::marker::Sync;
         }
     } else {
-        quote! {
-            #(#attrs)*
-            fn #method_name(
-                &self,
-                request: tonic::Request<#request_type>,
-            ) -> impl std::future::Future<
-                Output = std::result::Result<tonic::Response<#response_type>, tonic::Status>
-            > + ::core::marker::Send
-            where
-                Self: std::marker::Send + std::marker::Sync;
+        if response_is_result {
+            quote! {
+                #(#attrs)*
+                fn #method_name(
+                    &self,
+                    request: tonic::Request<#request_type>,
+                ) -> impl std::future::Future<
+                    Output = std::result::Result<#response_return_type, tonic::Status>
+                > + ::core::marker::Send
+                where
+                    Self: std::marker::Send + std::marker::Sync;
+            }
+        } else {
+            quote! {
+                #(#attrs)*
+                fn #method_name(
+                    &self,
+                    request: tonic::Request<#request_type>,
+                ) -> impl std::future::Future<
+                    Output = #response_return_type
+                > + ::core::marker::Send
+                where
+                    Self: std::marker::Send + std::marker::Sync;
+            }
         }
     }
 }
 
 /// Extract request and response types from method signature
-pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>) {
+pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>, Box<Type>, bool) {
     let mut request_type = None;
     let mut response_type = None;
+    let mut response_return_type = None;
+    let mut response_is_result = false;
 
     // Extract request type from arguments
     for arg in &sig.inputs {
@@ -128,21 +155,50 @@ pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>) {
     }
 
     // Extract response type from return type
-    if let ReturnType::Type(_, ty) = &sig.output
-        && let Type::Path(TypePath { path, .. }) = &**ty
-        && let Some(segment) = path.segments.last()
-        && segment.ident == "Result"
-        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-        && let Some(syn::GenericArgument::Type(Type::Path(TypePath { path, .. }))) = args.args.first()
-        && let Some(response_segment) = path.segments.last()
-        && response_segment.ident == "Response"
-        && let syn::PathArguments::AngleBracketed(response_args) = &response_segment.arguments
-        && let Some(syn::GenericArgument::Type(inner_ty)) = response_args.args.first()
-    {
-        response_type = Some(Box::new(inner_ty.clone()));
+    if let ReturnType::Type(_, ty) = &sig.output {
+        if let Type::Path(TypePath { path, .. }) = &**ty {
+            if let Some(segment) = path.segments.last() {
+                if segment.ident == "Result" {
+                    response_is_result = true;
+                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                        if let Some(syn::GenericArgument::Type(success_ty)) = args.args.first() {
+                            response_return_type = Some(Box::new(success_ty.clone()));
+                        }
+                    }
+                } else {
+                    response_return_type = Some(Box::new((**ty).clone()));
+                }
+            }
+        } else {
+            response_return_type = Some(Box::new((**ty).clone()));
+        }
     }
 
-    (request_type.expect("Could not extract request type"), response_type.expect("Could not extract response type"))
+    if let Some(success_ty) = &response_return_type {
+        response_type = Some(extract_proto_type(success_ty));
+    }
+
+    (
+        request_type.expect("Could not extract request type"),
+        response_type.expect("Could not extract response type"),
+        response_return_type.expect("Could not extract response return type"),
+        response_is_result,
+    )
+}
+
+fn extract_proto_type(success_ty: &Type) -> Box<Type> {
+    if let Type::Path(TypePath { path, .. }) = success_ty {
+        if let Some(segment) = path.segments.last() {
+            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                && (segment.ident == "Response" || segment.ident == "ZeroCopyResponse")
+                && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+            {
+                return Box::new(inner_ty.clone());
+            }
+        }
+    }
+
+    Box::new(success_ty.clone())
 }
 
 /// Check if the response type is a stream
@@ -207,9 +263,47 @@ mod tests {
             ) -> Result<tonic::Response<MyResponse>, tonic::Status>
         };
 
-        let (req_type, resp_type) = extract_types(&sig);
+        let (req_type, resp_type, return_type, is_result) = extract_types(&sig);
         assert_eq!(quote!(#req_type).to_string(), "MyRequest");
         assert_eq!(quote!(#resp_type).to_string(), "MyResponse");
+        assert_eq!(quote!(#return_type).to_string(), "tonic :: Response < MyResponse >");
+        assert!(is_result);
+
+        let sig_plain: syn::Signature = parse_quote! {
+            async fn plain(
+                &self,
+                request: tonic::Request<MyRequest>
+            ) -> MyResponse
+        };
+
+        let (_, plain_resp, plain_return, plain_is_result) = extract_types(&sig_plain);
+        assert_eq!(quote!(#plain_resp).to_string(), "MyResponse");
+        assert_eq!(quote!(#plain_return).to_string(), "MyResponse");
+        assert!(!plain_is_result);
+
+        let sig_zero_copy: syn::Signature = parse_quote! {
+            async fn zero_copy(
+                &self,
+                request: tonic::Request<MyRequest>
+            ) -> Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>
+        };
+
+        let (_, zero_copy_resp, zero_copy_return, zero_copy_is_result) = extract_types(&sig_zero_copy);
+        assert_eq!(quote!(#zero_copy_resp).to_string(), "MyResponse");
+        assert_eq!(quote!(#zero_copy_return).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
+        assert!(zero_copy_is_result);
+
+        let sig_result_plain: syn::Signature = parse_quote! {
+            async fn result_plain(
+                &self,
+                request: tonic::Request<MyRequest>
+            ) -> Result<MyResponse, tonic::Status>
+        };
+
+        let (_, result_plain_resp, result_plain_return, result_plain_is_result) = extract_types(&sig_result_plain);
+        assert_eq!(quote!(#result_plain_resp).to_string(), "MyResponse");
+        assert_eq!(quote!(#result_plain_return).to_string(), "MyResponse");
+        assert!(result_plain_is_result);
     }
 
     #[test]
