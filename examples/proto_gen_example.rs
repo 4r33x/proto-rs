@@ -3,7 +3,6 @@
 
 use std::pin::Pin;
 
-use proto_rs::ProtoResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -33,8 +32,7 @@ pub struct BarSub;
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
-    type GoonPong<GoonPong>: ProtoResponse<GoonPong>;
-    async fn zero_copy_ping<R: ProtoResponse<GoonPong>>(&self, request: Request<RizzPing>) -> Result<R, Status>;
+    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
@@ -59,6 +57,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
 impl SigmaRpc for S {
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
+    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        Ok(Response::new(GoonPong {}))
+    }
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {}))
     }

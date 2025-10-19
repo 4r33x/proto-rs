@@ -71,6 +71,12 @@ impl<Encode, Decode, Mode> ProtoCodec<Encode, Decode, Mode> {
     }
 }
 
+pub fn assert_encoder_ext<Encode, Mode>()
+where
+    ProtoEncoder<Encode, Mode>: EncoderExt<Encode, Mode>,
+{
+}
+
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
 where
     Encode: Send + 'static,

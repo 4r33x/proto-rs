@@ -6,6 +6,8 @@ use crate::BytesMode;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::SunByRef;
+use crate::tonic::EncoderExt;
+use crate::tonic::ProtoEncoder;
 use crate::tonic::ToZeroCopyResponse;
 
 /// A wrapper around [`tonic::Response<Vec<u8>>`] that remembers the protobuf
@@ -83,7 +85,10 @@ where
     }
 }
 
-pub trait ProtoResponse<T>: Sized {
+pub trait ProtoResponse<T>: Sized
+where
+    ProtoEncoder<Self::Encode, Self::Mode>: EncoderExt<Self::Encode, Self::Mode>,
+{
     type Encode: Send + Sync + 'static;
     type Mode: Send + Sync + 'static;
 

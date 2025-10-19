@@ -58,6 +58,7 @@ pub use crate::tonic::ToZeroCopyRequest;
 pub use crate::tonic::ToZeroCopyResponse;
 pub use crate::tonic::ZeroCopyRequest;
 pub use crate::tonic::ZeroCopyResponse;
+pub use crate::tonic::assert_encoder_ext;
 pub use crate::traits::MessageField;
 pub use crate::traits::OwnedSunOf;
 pub use crate::traits::ProtoEnum;

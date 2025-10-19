@@ -159,6 +159,10 @@ fn generate_trait_components(methods: &[MethodInfo]) -> (Vec<TokenStream>, Vec<T
         if is_streaming_method(method) {
             associated_types.push(generate_stream_associated_type(method));
         }
+
+        if method.impl_proto_response {
+            associated_types.push(generate_impl_proto_response_associated_type(method));
+        }
     }
 
     (trait_methods, associated_types)
@@ -185,16 +189,31 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
     } else {
         let response_type = &method.response_type;
         let response_proto = generate_response_proto_type(response_type);
-        quote! {
-            #[must_use]
-            fn #method_name(
-                &self,
-                request: tonic::Request<#request_proto>,
-            ) -> impl std::future::Future<
-                Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>
-            > + std::marker::Send + '_
-            where
-                Self: std::marker::Send + std::marker::Sync;
+        if method.impl_proto_response {
+            let assoc_name = method.associated_response_type.as_ref().expect("missing associated response type");
+            quote! {
+                #[must_use]
+                fn #method_name(
+                    &self,
+                    request: tonic::Request<#request_proto>,
+                ) -> impl std::future::Future<
+                    Output = std::result::Result<Self::#assoc_name, tonic::Status>
+                > + std::marker::Send + '_
+                where
+                    Self: std::marker::Send + std::marker::Sync;
+            }
+        } else {
+            quote! {
+                #[must_use]
+                fn #method_name(
+                    &self,
+                    request: tonic::Request<#request_proto>,
+                ) -> impl std::future::Future<
+                    Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>
+                > + std::marker::Send + '_
+                where
+                    Self: std::marker::Send + std::marker::Sync;
+            }
         }
     }
 }
@@ -206,6 +225,16 @@ fn generate_stream_associated_type(method: &MethodInfo) -> TokenStream {
 
     quote! {
         type #stream_name: tonic::codegen::tokio_stream::Stream<Item = std::result::Result<#response_proto, tonic::Status>> + std::marker::Send + 'static;
+    }
+}
+
+fn generate_impl_proto_response_associated_type(method: &MethodInfo) -> TokenStream {
+    let assoc_name = method.associated_response_type.as_ref().expect("missing associated response type");
+    let response_type = &method.response_type;
+    let response_proto = generate_response_proto_type(response_type);
+
+    quote! {
+        type #assoc_name: ::proto_rs::ProtoResponse<#response_proto> + std::marker::Send + 'static;
     }
 }
 
@@ -221,6 +250,10 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
         if is_streaming_method(method) {
             blanket_types.push(generate_blanket_stream_type(method, trait_name));
         }
+
+        if method.impl_proto_response {
+            blanket_types.push(generate_blanket_impl_proto_response_type(method));
+        }
         blanket_methods.push(generate_blanket_method(method, trait_name));
     }
 
@@ -235,8 +268,20 @@ fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) ->
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     if is_streaming_method(method) {
         generate_blanket_streaming_method(method, trait_name)
+    } else if method.impl_proto_response {
+        generate_blanket_impl_proto_response_method(method, trait_name)
     } else {
         generate_blanket_unary_method(method, trait_name)
+    }
+}
+
+fn generate_blanket_impl_proto_response_type(method: &MethodInfo) -> TokenStream {
+    let assoc_name = method.associated_response_type.as_ref().expect("missing associated response type");
+    let response_type = &method.response_type;
+    let response_proto = generate_response_proto_type(response_type);
+
+    quote! {
+        type #assoc_name = impl ::proto_rs::ProtoResponse<#response_proto> + std::marker::Send + 'static;
     }
 }
 
@@ -266,6 +311,35 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
                 ).await?;
 
                 #response_conversion
+            }
+        }
+    }
+}
+
+fn generate_blanket_impl_proto_response_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
+    let method_name = &method.name;
+    let request_type = &method.request_type;
+    let assoc_name = method.associated_response_type.as_ref().expect("missing associated response type");
+    let request_proto = generate_request_proto_type(request_type);
+
+    let request_conversion = generate_proto_to_native_request(request_type);
+
+    quote! {
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_proto>,
+        ) -> impl std::future::Future<
+            Output = std::result::Result<Self::#assoc_name, tonic::Status>
+        > + std::marker::Send + '_ {
+            async move {
+                #request_conversion
+
+                let native_response = <Self as super::#trait_name>::#method_name(
+                    self,
+                    native_request
+                ).await?;
+
+                Ok(native_response)
             }
         }
     }
@@ -323,31 +397,75 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
-    let encode_type = quote! { #response_proto };
     let decode_type = quote! { #request_proto };
-    let codec_init = generate_codec_init(encode_type, decode_type, None);
+
+    let (codec_init, call_body, response_type_definition, where_clause, encoder_assert) = if method.impl_proto_response {
+        let assoc_name = method.associated_response_type.as_ref().expect("missing associated response type");
+        let encode_type = quote! { <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Encode };
+        let mode_type = quote! { <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Mode };
+        let codec_init = generate_codec_init(encode_type.clone(), decode_type.clone(), Some(mode_type));
+        let call_body = quote! {
+            let inner = Arc::clone(&self.0);
+            async move {
+                let native_response = <T as #trait_name>::#method_name(&inner, request).await?;
+                let response = <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::into_response(native_response);
+                Ok(response)
+            }
+        };
+        (
+            codec_init,
+            call_body,
+            quote! { type Response = #encode_type; },
+            quote! {
+                where
+                    ::proto_rs::ProtoEncoder<
+                        <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                        <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                    >: ::proto_rs::EncoderExt<
+                        <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                        <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                    >,
+            },
+            quote! {
+                ::proto_rs::assert_encoder_ext::<
+                    <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                    <T::#assoc_name as ::proto_rs::ProtoResponse<#response_proto>>::Mode,
+                >();
+            },
+        )
+    } else {
+        let encode_type = quote! { #response_proto };
+        let codec_init = generate_codec_init(encode_type.clone(), decode_type.clone(), None);
+        let call_body = quote! {
+            let inner = Arc::clone(&self.0);
+            async move {
+                <T as #trait_name>::#method_name(&inner, request).await
+            }
+        };
+        (codec_init, call_body, quote! { type Response = #encode_type; }, TokenStream::new(), TokenStream::new())
+    };
 
     quote! {
         #route_path => {
             #[allow(non_camel_case_types)]
             struct #svc_name<T: #trait_name>(pub Arc<T>);
 
-            impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
-                type Response = #response_proto;
+            impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T>
+                #where_clause
+            {
+                #response_type_definition
                 type Future = impl std::future::Future<
                         Output = std::result::Result<tonic::Response<Self::Response>, tonic::Status>
                     > + std::marker::Send + 'static;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
-                    let inner = Arc::clone(&self.0);
-                    async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    }
+                    #call_body
                 }
             }
 
             let method = #svc_name(inner);
             #codec_init
+            #encoder_assert
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(
                     accept_compression_encodings,
