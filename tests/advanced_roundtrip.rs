@@ -1,6 +1,7 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_lossless)]
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -195,12 +196,8 @@ impl From<&tonic_prost_test::advanced::AdvancedNested> for AdvancedNested {
 impl From<&AdvancedOrigin> for tonic_prost_test::advanced::AdvancedOrigin {
     fn from(value: &AdvancedOrigin) -> Self {
         let value = match value {
-            AdvancedOrigin::Raw(text) => Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(tonic_prost_test::advanced::AdvancedOriginRaw {
-                raw: text.clone(),
-            })),
-            AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(tonic_prost_test::advanced::AdvancedOriginNested {
-                nested: Some(tonic_prost_test::advanced::AdvancedNested::from(nested)),
-            })),
+            AdvancedOrigin::Raw(text) => Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(text.clone())),
+            AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(nested))),
             AdvancedOrigin::Missing => Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(tonic_prost_test::advanced::AdvancedOriginMissing {})),
         };
 
@@ -211,13 +208,12 @@ impl From<&AdvancedOrigin> for tonic_prost_test::advanced::AdvancedOrigin {
 impl From<&tonic_prost_test::advanced::AdvancedOrigin> for AdvancedOrigin {
     fn from(value: &tonic_prost_test::advanced::AdvancedOrigin) -> Self {
         match value.value.as_ref() {
-            Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(raw)) => AdvancedOrigin::Raw(raw.raw.clone()),
+            Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(raw)) => AdvancedOrigin::Raw(raw.clone()),
             Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(nested)) => {
-                let nested_value = nested.nested.as_ref().map(AdvancedNested::from).unwrap_or_default();
+                let nested_value = AdvancedNested::from(nested);
                 AdvancedOrigin::Nested(nested_value)
             }
-            Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(_)) => AdvancedOrigin::Missing,
-            None => AdvancedOrigin::Missing,
+            Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(_)) | None => AdvancedOrigin::Missing,
         }
     }
 }
@@ -289,7 +285,7 @@ impl From<&tonic_prost_test::advanced::AdvancedEdgeCase> for AdvancedEdgeCase {
             zipped: value.zipped.clone(),
             stage_lookup,
             ordered_lookup,
-            origin: value.origin.as_ref().map(AdvancedOrigin::from).unwrap_or(AdvancedOrigin::Missing),
+            origin: value.origin.as_ref().map_or(AdvancedOrigin::Missing, AdvancedOrigin::from),
             nested,
             nested_list: value.nested_list.iter().map(AdvancedNested::from).collect(),
             stage_history: value.stage_history.iter().map(|stage| Stage::try_from(*stage).expect("invalid stage history")).collect(),
@@ -434,6 +430,7 @@ fn sample_optional_blob_message() -> AdvancedEdgeCase {
     message
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn assert_roundtrip(message: AdvancedEdgeCase) {
     assert_eq!(message.digest, compute_digest(&message));
 
@@ -442,10 +439,7 @@ fn assert_roundtrip(message: AdvancedEdgeCase) {
     assert_eq!(decoded_proto, message);
 
     let prost_message = tonic_prost_test::advanced::AdvancedEdgeCase::from(&message);
-    let decoded_prost = tonic_prost_test::advanced::AdvancedEdgeCase::decode(proto_bytes.as_slice()).expect(
-        "decode prost edge cas
-e",
-    );
+    let decoded_prost = tonic_prost_test::advanced::AdvancedEdgeCase::decode(proto_bytes.as_slice()).expect("decode prost edge case");
     assert_eq!(decoded_prost, prost_message);
 
     let prost_bytes = prost_message.encode_to_vec();
@@ -487,10 +481,7 @@ fn advanced_optional_fields_match_between_impls() {
 #[test]
 fn advanced_optional_blob_roundtrip_preserves_digest() {
     let message = sample_optional_blob_message();
-    let expected_blob = message
-        .optional_blob
-        .clone()
-        .expect("fixture provides optional blob");
+    let expected_blob = message.optional_blob.clone().expect("fixture provides optional blob");
 
     let prost_message = tonic_prost_test::advanced::AdvancedEdgeCase::from(&message);
     assert_eq!(prost_message.optional_blob.as_deref(), Some(expected_blob.as_ref()));

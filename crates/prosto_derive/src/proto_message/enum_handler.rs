@@ -298,7 +298,7 @@ mod tests {
 
         let syn::Data::Enum(data) = input.data.clone() else { panic!("Expected enum") };
 
-        let output = handle_enum(input, &data);
+        let output = handle_enum(&input, &data);
         let output_str = output.to_string();
 
         assert!(output_str.contains("enum Status"));
