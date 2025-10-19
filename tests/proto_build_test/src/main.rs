@@ -1,9 +1,9 @@
 #![feature(impl_trait_in_assoc_type)]
 
-
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
+use tonic::Response;
 use tonic::Status;
 
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]

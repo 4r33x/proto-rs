@@ -105,31 +105,29 @@ fn generate_user_method_signature(
             where
                 Self: std::marker::Send + std::marker::Sync;
         }
+    } else if response_is_result {
+        quote! {
+            #(#attrs)*
+            fn #method_name(
+                &self,
+                request: tonic::Request<#request_type>,
+            ) -> impl std::future::Future<
+                Output = std::result::Result<#response_return_type, tonic::Status>
+            > + ::core::marker::Send
+            where
+                Self: std::marker::Send + std::marker::Sync;
+        }
     } else {
-        if response_is_result {
-            quote! {
-                #(#attrs)*
-                fn #method_name(
-                    &self,
-                    request: tonic::Request<#request_type>,
-                ) -> impl std::future::Future<
-                    Output = std::result::Result<#response_return_type, tonic::Status>
-                > + ::core::marker::Send
-                where
-                    Self: std::marker::Send + std::marker::Sync;
-            }
-        } else {
-            quote! {
-                #(#attrs)*
-                fn #method_name(
-                    &self,
-                    request: tonic::Request<#request_type>,
-                ) -> impl std::future::Future<
-                    Output = #response_return_type
-                > + ::core::marker::Send
-                where
-                    Self: std::marker::Send + std::marker::Sync;
-            }
+        quote! {
+            #(#attrs)*
+            fn #method_name(
+                &self,
+                request: tonic::Request<#request_type>,
+            ) -> impl std::future::Future<
+                Output = #response_return_type
+            > + ::core::marker::Send
+            where
+                Self: std::marker::Send + std::marker::Sync;
         }
     }
 }
@@ -160,10 +158,10 @@ pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>, Box<Type>, 
             if let Some(segment) = path.segments.last() {
                 if segment.ident == "Result" {
                     response_is_result = true;
-                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                        if let Some(syn::GenericArgument::Type(success_ty)) = args.args.first() {
-                            response_return_type = Some(Box::new(success_ty.clone()));
-                        }
+                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                        && let Some(syn::GenericArgument::Type(success_ty)) = args.args.first()
+                    {
+                        response_return_type = Some(Box::new(success_ty.clone()));
                     }
                 } else {
                     response_return_type = Some(Box::new((**ty).clone()));
@@ -187,15 +185,13 @@ pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>, Box<Type>, 
 }
 
 fn extract_proto_type(success_ty: &Type) -> Box<Type> {
-    if let Type::Path(TypePath { path, .. }) = success_ty {
-        if let Some(segment) = path.segments.last() {
-            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-                && (segment.ident == "Response" || segment.ident == "ZeroCopyResponse")
-                && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-            {
-                return Box::new(inner_ty.clone());
-            }
-        }
+    if let Type::Path(TypePath { path, .. }) = success_ty
+        && let Some(segment) = path.segments.last()
+        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && (segment.ident == "Response" || segment.ident == "ZeroCopyResponse")
+        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+    {
+        return Box::new(inner_ty.clone());
     }
 
     Box::new(success_ty.clone())
