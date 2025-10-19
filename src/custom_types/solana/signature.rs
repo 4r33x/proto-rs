@@ -44,7 +44,7 @@ mod tests {
         let mut buf = Vec::new();
         encode_key(1, WireType::LengthDelimited, &mut buf);
         encode_varint((BYTES - 2) as u64, &mut buf);
-        buf.extend(core::iter::repeat(0u8).take(BYTES - 2));
+        buf.extend(std::iter::repeat_n(0u8, BYTES - 2));
 
         match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
             Ok(_) => panic!("invalid length should fail"),

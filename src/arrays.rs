@@ -33,7 +33,7 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
                 }
                 Err(e) => {
                     // Drop initialized elements
-                    for j in out.iter_mut().take(i - 1) {
+                    for j in out.iter_mut().take(i) {
                         unsafe { j.assume_init_drop() };
                     }
                     return Err(e);
