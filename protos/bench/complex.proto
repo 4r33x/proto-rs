@@ -1,0 +1,68 @@
+syntax = "proto3";
+package bench_types;
+
+enum SimpleEnum {
+  SIMPLE_ENUM_ALPHA = 0;
+  SIMPLE_ENUM_BETA = 1;
+  SIMPLE_ENUM_GAMMA = 2;
+  SIMPLE_ENUM_DELTA = 3;
+}
+
+message NestedLeaf {
+  uint64 id = 1;
+  string name = 2;
+  bool active = 3;
+  repeated int32 scores = 4;
+  bytes payload = 5;
+  repeated bytes attachments = 6;
+}
+
+message ExtraDetails {
+  string description = 1;
+  map<string, uint32> counters = 2;
+}
+
+message DeepMessage {
+  string label = 1;
+  bytes blob = 2;
+  repeated NestedLeaf leaves = 3;
+  map<string, NestedLeaf> leaf_lookup = 4;
+  repeated SimpleEnum simple_codes = 5;
+  map<string, SimpleEnum> simple_lookup = 6;
+  optional NestedLeaf focus = 7;
+  optional ExtraDetails details = 8;
+}
+
+message ComplexEnumEmpty {}
+
+message ComplexEnum {
+  oneof kind {
+    NestedLeaf leaf = 1;
+    DeepMessage deep = 2;
+    ExtraDetails details = 3;
+    ComplexEnumEmpty empty = 4;
+  }
+}
+
+message ComplexRoot {
+  string id = 1;
+  bytes payload = 2;
+  repeated NestedLeaf leaves = 3;
+  repeated DeepMessage deep_list = 4;
+  map<string, NestedLeaf> leaf_lookup = 5;
+  map<string, DeepMessage> deep_lookup = 6;
+  ComplexEnum status = 7;
+  repeated ComplexEnum status_history = 8;
+  map<string, ComplexEnum> status_lookup = 9;
+  repeated SimpleEnum codes = 10;
+  map<string, SimpleEnum> code_lookup = 11;
+  repeated bytes attachments = 12;
+  repeated string tags = 13;
+  int64 count = 14;
+  double ratio = 15;
+  bool active = 16;
+  repeated uint64 big_numbers = 17;
+  map<string, DeepMessage> audit_log = 18;
+  optional NestedLeaf primary_focus = 19;
+  optional DeepMessage secondary_focus = 20;
+}
