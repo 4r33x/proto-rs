@@ -119,5 +119,10 @@ The test suite exercises more than 400 codec and integration scenarios to ensure
 - `build-schemas` – register generated schemas at compile time so they can be written later.
 - `emit-proto-files` – eagerly write `.proto` files during compilation.
 - `fastnum`, `solana` – enable extra type support.
+- `stable` – compile everything on the stable toolchain by boxing async state. See below for trade-offs.
+
+### Stable vs. nightly builds
+
+The crate defaults to the nightly toolchain so it can use `impl Trait` in associated types for zero-cost futures when deriving RPC services. If you need to stay on stable Rust, enable the `stable` feature. Doing so switches the generated service code to heap-allocate and pin boxed futures, which keeps the API identical but introduces one allocation per RPC invocation and a small amount of dynamic dispatch. Disable the feature when you can use nightly to get the leanest possible generated code.
 
 For the full API surface and macro documentation see [docs.rs/proto_rs](https://docs.rs/proto_rs).

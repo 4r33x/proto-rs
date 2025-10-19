@@ -16,7 +16,7 @@ use super::unified_field_handler::generate_field_encoded_len;
 use crate::utils::find_marked_default_variant;
 use crate::utils::parse_field_config;
 
-pub fn handle_complex_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
+pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
     let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
     let vis = &input.vis;
