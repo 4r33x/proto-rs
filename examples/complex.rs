@@ -49,12 +49,11 @@ pub struct FooResponse;
 pub struct BarSub;
 
 // Define trait with the proto_rpc macro
-#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
+#[proto_rpc(rpc_package = "sigma_rpc_complex", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc_complex.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"] )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 

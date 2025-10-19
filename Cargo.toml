@@ -93,6 +93,10 @@ all-features = true
 [workspace.lints.rust]
 unsafe_code = { level = "forbid", priority = 0 }
 
+
+# [lints.rust]
+# unsafe_code = { level = "forbid", priority = 0 }
+
 [workspace.lints.clippy]
 #cargo = { level = "deny", priority = -1 }
 complexity = { level = "deny", priority = -1 }
