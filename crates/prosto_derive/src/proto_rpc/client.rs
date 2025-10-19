@@ -60,8 +60,8 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             where
                 T: tonic::client::GrpcService<tonic::body::Body>,
                 T::Error: Into<StdError>,
-                T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + std::marker::Send + 'static,
-                <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+                T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + ::core::marker::Send + 'static,
+                <T::ResponseBody as Body>::Error: Into<StdError> + ::core::marker::Send,
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
@@ -109,7 +109,7 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
         pub async fn #method_name<R>(
             &mut self,
             request: R,
-        ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status>
+        ) -> ::core::result::Result<tonic::Response<#response_type>, tonic::Status>
         where
             R: ::proto_rs::ProtoRequest<#request_type>,
             ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
@@ -144,7 +144,7 @@ fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, tra
         pub async fn #method_name<R>(
             &mut self,
             request: R,
-        ) -> std::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = Result<#inner_response_type, tonic::Status>>>, tonic::Status>
+        ) -> ::core::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#inner_response_type, tonic::Status>>>, tonic::Status>
         where
             R: ::proto_rs::ProtoRequest<#request_type>,
             ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,

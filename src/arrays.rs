@@ -1,7 +1,7 @@
 //! `ProtoExt` implementations for fixed-size arrays using new trait system
 
 use core::array;
-use std::mem::MaybeUninit;
+use core::mem::MaybeUninit;
 
 use bytes::Buf;
 use bytes::BufMut;

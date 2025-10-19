@@ -126,7 +126,7 @@ pub fn server_struct_name(trait_name: &syn::Ident) -> syn::Ident {
 /// Generate common service struct fields (used by server)
 pub fn generate_service_struct_fields() -> TokenStream {
     quote! {
-        inner: Arc<T>,
+        inner: ::proto_rs::alloc::sync::Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
@@ -138,10 +138,10 @@ pub fn generate_service_struct_fields() -> TokenStream {
 pub fn generate_service_constructors() -> TokenStream {
     quote! {
         pub fn new(inner: T) -> Self {
-            Self::from_arc(Arc::new(inner))
+            Self::from_arc(::proto_rs::alloc::sync::Arc::new(inner))
         }
 
-        pub fn from_arc(inner: Arc<T>) -> Self {
+        pub fn from_arc(inner: ::proto_rs::alloc::sync::Arc<T>) -> Self {
             Self {
                 inner,
                 accept_compression_encodings: Default::default(),
@@ -164,7 +164,7 @@ pub fn generate_client_with_interceptor(client_struct: &syn::Ident) -> TokenStre
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<http::Request<tonic::body::Body>, Response = http::Response<<T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody>>,
-            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + ::core::marker::Send + ::core::marker::Sync,
         {
             #client_struct::new(InterceptedService::new(inner, interceptor))
         }

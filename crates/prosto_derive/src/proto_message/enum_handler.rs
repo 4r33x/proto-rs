@@ -200,7 +200,7 @@ pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
 
             fn merge_repeated_field(
                 wire_type: ::proto_rs::encoding::WireType,
-                values: &mut ::std::vec::Vec<Self::Shadow<'_>>,
+                values: &mut ::proto_rs::alloc::vec::Vec<Self::Shadow<'_>>,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {

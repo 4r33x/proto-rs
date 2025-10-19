@@ -151,9 +151,9 @@ pub fn vec_inner_type(ty: &Type) -> Option<Type> {
 
 pub struct MethodInfo {
     pub name: syn::Ident,
-    pub request_type: Box<Type>,
-    pub response_type: Box<Type>,
-    pub response_return_type: Box<Type>,
+    pub request_type: Type,
+    pub response_type: Type,
+    pub response_return_type: Type,
     pub response_is_result: bool,
     pub is_streaming: bool,
     pub stream_type_name: Option<syn::Ident>,

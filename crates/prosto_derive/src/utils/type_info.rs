@@ -140,7 +140,7 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
         is_repeated: true,
         is_message_like,
         is_numeric_scalar,
-        proto_rust_type: parse_quote! { ::std::vec::Vec<#inner_proto> },
+        proto_rust_type: parse_quote! { ::proto_rs::alloc::vec::Vec<#inner_proto> },
         elem_type: elem,
         is_rust_enum: inner.is_rust_enum,
         map_kind: None,
@@ -183,7 +183,16 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     };
 
     if matches!(inner_ty, Type::Path(p) if last_ident(p).is_some_and(|id| id == "u8")) {
-        return ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::std::vec::Vec<u8> }, (*inner_ty).clone(), false);
+        return ParsedFieldType::new(
+            ty.clone(),
+            "bytes",
+            quote! { bytes },
+            false,
+            false,
+            parse_quote! { ::proto_rs::alloc::vec::Vec<u8> },
+            (*inner_ty).clone(),
+            false,
+        );
     }
 
     let inner = parse_field_type(inner_ty);
@@ -228,7 +237,16 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone(), false),
                     "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone(), false),
                     "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
-                    "String" => ParsedFieldType::new(ty.clone(), "string", quote! { string }, false, false, parse_quote! { ::std::string::String }, ty.clone(), false),
+                    "String" => ParsedFieldType::new(
+                        ty.clone(),
+                        "string",
+                        quote! { string },
+                        false,
+                        false,
+                        parse_quote! { ::proto_rs::alloc::string::String },
+                        ty.clone(),
+                        false,
+                    ),
                     "Bytes" => ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::proto_rs::bytes::Bytes }, ty.clone(), false),
                     _ => parse_custom_type(ty),
                 };
@@ -269,7 +287,7 @@ fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType 
     let value_proto_ty = value_info.proto_rust_type.clone();
     let proto_rust_type = match kind {
         MapKind::HashMap => parse_quote! { ::std::collections::HashMap<#key_proto_ty, #value_proto_ty> },
-        MapKind::BTreeMap => parse_quote! { ::alloc::collections::BTreeMap<#key_proto_ty, #value_proto_ty> },
+        MapKind::BTreeMap => parse_quote! { ::proto_rs::alloc::collections::BTreeMap<#key_proto_ty, #value_proto_ty> },
     };
 
     ParsedFieldType {

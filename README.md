@@ -18,6 +18,7 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 - **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
 - **Workspace and even beyond schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs).
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
+- **`no_std` friendly core** – Runtime helpers rely on `core`/`alloc` so they keep working even when the `std` feature is disabled.
 
 ## Getting started
 
@@ -61,6 +62,17 @@ pub trait SigmaRpc {
 
 Once compiled, the trait can be implemented just like a normal Tonic service, but the `.proto` schema is generated for you whenever emission is enabled.
 
+### Running without `std`
+
+Disable the default feature set if you only need message encoding/decoding in `no_std` contexts:
+
+```toml
+[dependencies]
+proto_rs = { version = "0.6", default-features = false }
+```
+
+All core traits (`ProtoExt`, `MessageField`, wrappers, etc.) remain available. Re-enable the `std` feature (on by default) when you want the Tonic codec helpers and RPC generation macros.
+
 ## Collecting schemas across a workspace
 
 Enable the `build-schemas` feature for the crate that should aggregate `.proto` files and call the helper at build or runtime:
@@ -103,9 +115,9 @@ The test suite exercises more than 400 codec and integration scenarios to ensure
 
 ## Optional features
 
+- `std` *(default)* – pulls in the Tonic dependency tree and enables the RPC helpers.
 - `build-schemas` – register generated schemas at compile time so they can be written later.
 - `emit-proto-files` – eagerly write `.proto` files during compilation.
-- `fastnum`, `solana` – enable extra type support
+- `fastnum`, `solana` – enable extra type support.
 
-TODO! (no good docs yet)
 For the full API surface and macro documentation see [docs.rs/proto_rs](https://docs.rs/proto_rs).

@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::similar_names)]
+extern crate alloc;
 use proc_macro::TokenStream;
 
 mod emit_proto;
