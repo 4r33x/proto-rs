@@ -4,6 +4,8 @@
 use std::pin::Pin;
 
 use proto_rs::ProtoResponse;
+use proto_rs::ToZeroCopyResponse;
+use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -32,9 +34,13 @@ pub struct BarSub;
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
-    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
-    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
+    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
+    async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong>, Status>;
+    async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
+    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
+    async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
+    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 
@@ -57,9 +63,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl SigmaRpc for S {
+    type ZeroCopyPingResp = ZeroCopyResponse<GoonPong>;
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
-    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
-        Ok(Response::new(GoonPong {}))
+    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<Self::ZeroCopyPingResp, Status> {
+        Ok(GoonPong {}.to_zero_copy())
     }
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {}))
