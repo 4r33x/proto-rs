@@ -1,4 +1,4 @@
-#![feature(impl_trait_in_assoc_type)]
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;

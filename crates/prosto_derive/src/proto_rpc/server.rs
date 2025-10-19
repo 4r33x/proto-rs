@@ -13,6 +13,9 @@ use crate::proto_rpc::rpc_common::generate_service_struct_fields;
 use crate::proto_rpc::rpc_common::is_streaming_method;
 use crate::proto_rpc::rpc_common::server_module_name;
 use crate::proto_rpc::rpc_common::server_struct_name;
+use crate::proto_rpc::utils::associated_future_type;
+use crate::proto_rpc::utils::method_future_return_type;
+use crate::proto_rpc::utils::wrap_async_block;
 use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 
@@ -32,6 +35,30 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     let compression_methods = generate_server_compression_methods();
     let service_fields = generate_service_struct_fields();
     let service_constructors = generate_service_constructors();
+    let service_future_type = associated_future_type(quote! { ::core::result::Result<Self::Response, Self::Error> }, false);
+    let call_future_body = wrap_async_block(
+        quote! {
+            async move {
+                match req.uri().path() {
+                    #(#route_handlers)*
+                    _ =>  {
+                        let mut response = http::Response::new(tonic::body::Body::default());
+                        let headers = response.headers_mut();
+                        headers.insert(
+                            tonic::Status::GRPC_STATUS,
+                            (tonic::Code::Unimplemented as i32).into(),
+                        );
+                        headers.insert(
+                            http::header::CONTENT_TYPE,
+                            tonic::metadata::GRPC_CONTENT_TYPE,
+                        );
+                        Ok(response)
+                    },
+                }
+            }
+        },
+        true,
+    );
 
     quote! {
         #vis mod #server_module {
@@ -87,7 +114,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             {
                 type Response = http::Response<tonic::body::Body>;
                 type Error = ::core::convert::Infallible;
-                type Future = impl ::core::future::Future<Output = ::core::result::Result<Self::Response, Self::Error>> + ::core::marker::Send;
+                type Future = #service_future_type;
 
                 fn poll_ready(
                     &mut self,
@@ -102,24 +129,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                     let max_decoding_message_size = self.max_decoding_message_size;
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
-                    async move {
-                        match req.uri().path() {
-                            #(#route_handlers)*
-                            _ =>  {
-                                let mut response = http::Response::new(tonic::body::Body::default());
-                                let headers = response.headers_mut();
-                                headers.insert(
-                                    tonic::Status::GRPC_STATUS,
-                                    (tonic::Code::Unimplemented as i32).into(),
-                                );
-                                headers.insert(
-                                    http::header::CONTENT_TYPE,
-                                    tonic::metadata::GRPC_CONTENT_TYPE,
-                                );
-                                Ok(response)
-                            },
-                        }
-                    }
+                    #call_future_body
                 }
             }
 
@@ -170,14 +180,15 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
 
     if is_streaming_method(method) {
         let stream_name = method.stream_type_name.as_ref().unwrap();
+        let future_type = method_future_return_type(quote! {
+            ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+        });
         quote! {
             #[must_use]
             fn #method_name(
                 &self,
                 request: tonic::Request<#request_proto>,
-            ) -> impl ::core::future::Future<
-                Output = ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
-            > + ::core::marker::Send + '_
+            ) -> #future_type
             where
                 Self: ::core::marker::Send + ::core::marker::Sync;
         }
@@ -185,19 +196,20 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
         let response_type = &method.response_type;
         let response_return_type = &method.response_return_type;
         let response_proto = generate_response_proto_type(response_type);
+        let future_type = method_future_return_type(quote! {
+            ::core::result::Result<
+                tonic::Response<
+                    <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+                >,
+                tonic::Status
+            >
+        });
         quote! {
             #[must_use]
             fn #method_name(
                 &self,
                 request: tonic::Request<#request_proto>,
-            ) -> impl ::core::future::Future<
-                Output = ::core::result::Result<
-                    tonic::Response<
-                        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
-                    >,
-                    tonic::Status
-                >
-            > + ::core::marker::Send + '_
+            ) -> #future_type
             where
                 Self: ::core::marker::Send + ::core::marker::Sync;
         }
@@ -260,18 +272,16 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
         quote! { .await }
     };
 
-    quote! {
-        fn #method_name(
-            &self,
-            request: tonic::Request<#request_proto>,
-        ) -> impl ::core::future::Future<
-            Output = ::core::result::Result<
-                tonic::Response<
-                    <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
-                >,
-                tonic::Status
-            >
-        > + ::core::marker::Send + '_ {
+    let future_type = method_future_return_type(quote! {
+        ::core::result::Result<
+            tonic::Response<
+                <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+            >,
+            tonic::Status
+        >
+    });
+    let future_body = wrap_async_block(
+        quote! {
             async move {
                 #request_conversion
 
@@ -286,6 +296,16 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
 
                 Ok(response)
             }
+        },
+        false,
+    );
+
+    quote! {
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_proto>,
+        ) -> #future_type {
+            #future_body
         }
     }
 }
@@ -297,14 +317,11 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
-
-    quote! {
-        fn #method_name(
-            &self,
-            request: tonic::Request<#request_proto>,
-        ) -> impl ::core::future::Future<
-            Output = ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
-        > + ::core::marker::Send + '_ {
+    let future_type = method_future_return_type(quote! {
+        ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+    });
+    let future_body = wrap_async_block(
+        quote! {
             async move {
                 #request_conversion
 
@@ -315,6 +332,16 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
 
                 Ok(native_response)
             }
+        },
+        false,
+    );
+
+    quote! {
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_proto>,
+        ) -> #future_type {
+            #future_body
         }
     }
 }
@@ -351,6 +378,15 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     };
     let decode_type = quote! { #request_proto };
     let codec_init = generate_codec_init(encode_type.clone(), decode_type, Some(mode_type));
+    let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::Response>, tonic::Status> }, true);
+    let call_future = wrap_async_block(
+        quote! {
+            async move {
+                <T as #trait_name>::#method_name(&inner, request).await
+            }
+        },
+        true,
+    );
 
     quote! {
         #route_path => {
@@ -359,15 +395,11 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
                 type Response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
-                type Future = impl ::core::future::Future<
-                        Output = ::core::result::Result<tonic::Response<Self::Response>, tonic::Status>
-                    > + ::core::marker::Send + 'static;
+                type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    }
+                    #call_future
                 }
             }
 
@@ -399,6 +431,15 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let encode_type = quote! { #response_proto };
     let decode_type = quote! { #request_proto };
     let codec_init = generate_codec_init(encode_type, decode_type, None);
+    let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
+    let call_future = wrap_async_block(
+        quote! {
+            async move {
+                <T as #trait_name>::#method_name(&inner, request).await
+            }
+        },
+        true,
+    );
 
     quote! {
         #route_path => {
@@ -408,15 +449,11 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = #response_proto;
                 type ResponseStream = T::#stream_name;
-                type Future = impl ::core::future::Future<
-                        Output = ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status>
-                    > + ::core::marker::Send + 'static;
+                type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    }
+                    #call_future
                 }
             }
 

@@ -1,4 +1,4 @@
-#![feature(impl_trait_in_assoc_type)]
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -214,7 +214,8 @@ impl ComplexService for OurService {
 
     async fn stream_collections(&self, _request: Request<SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status> {
         let stream = tokio_stream::iter(response_collections().into_iter().map(Ok));
-        Ok(Response::new(Box::pin(stream)))
+        let boxed_stream: Self::StreamCollectionsStream = Box::pin(stream);
+        Ok(Response::new(boxed_stream))
     }
 
     async fn echo_container(&self, _request: Request<ZeroCopyContainer>) -> Result<Response<ZeroCopyContainer>, Status> {

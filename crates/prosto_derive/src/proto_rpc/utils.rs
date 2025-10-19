@@ -100,14 +100,54 @@ fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::I
 
     let request_type = &signature.request_type;
 
+    let future_type = method_future_return_type(future_output);
+
     quote! {
         #(#attrs)*
         fn #method_name(
             &self,
             request: tonic::Request<#request_type>,
-        ) -> impl ::core::future::Future<Output = #future_output> + ::core::marker::Send
+        ) -> #future_type
         where
             Self: ::core::marker::Send + ::core::marker::Sync;
+    }
+}
+
+pub(crate) fn method_future_return_type(future_output: TokenStream) -> TokenStream {
+    quote! {
+        impl ::core::future::Future<Output = #future_output> + ::core::marker::Send + '_
+    }
+}
+
+pub(crate) fn associated_future_type(future_output: TokenStream, requires_static: bool) -> TokenStream {
+    let static_bound = if requires_static {
+        quote! { + 'static }
+    } else {
+        quote! {}
+    };
+
+    if cfg!(feature = "stable") {
+        quote! {
+            ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<Output = #future_output>
+                        + ::core::marker::Send
+                        #static_bound
+                >
+            >
+        }
+    } else {
+        quote! {
+            impl ::core::future::Future<Output = #future_output> + ::core::marker::Send #static_bound
+        }
+    }
+}
+
+pub(crate) fn wrap_async_block(block: TokenStream, boxed: bool) -> TokenStream {
+    if boxed && cfg!(feature = "stable") {
+        quote! { ::std::boxed::Box::pin(#block) }
+    } else {
+        block
     }
 }
 
