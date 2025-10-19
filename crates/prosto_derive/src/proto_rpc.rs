@@ -29,7 +29,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     // Generate .proto file if requested
     let service_content = generate_service_content(trait_name, &methods, &config.type_imports);
     config.register_and_emit_proto(&ty_ident, &service_content);
-    let proto = config.imports_mat;
+    let proto = config.imports_mat.clone();
 
     // Generate user-facing trait
     let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();

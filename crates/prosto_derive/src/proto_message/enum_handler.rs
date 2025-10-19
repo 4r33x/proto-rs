@@ -9,7 +9,7 @@ use syn::spanned::Spanned;
 use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
 
-pub fn handle_enum(input: DeriveInput, data: &DataEnum) -> TokenStream {
+pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
     let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
     let vis = &input.vis;

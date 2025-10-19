@@ -17,7 +17,7 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::vec_inner_type;
 
-pub fn handle_struct(input: DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
+pub fn handle_struct(input: &DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
     match &data.fields {
         Fields::Named(_) => handle_named_struct(input, data, config),
         Fields::Unnamed(_) => handle_tuple_struct(input, data, config),
@@ -55,7 +55,7 @@ fn generate_field_clear(field: &syn::Field, access: &FieldAccess) -> TokenStream
     }
 }
 
-fn handle_unit_struct(input: DeriveInput, config: &UnifiedProtoConfig) -> TokenStream {
+fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -153,7 +153,7 @@ fn handle_unit_struct(input: DeriveInput, config: &UnifiedProtoConfig) -> TokenS
     }
 }
 
-fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
+fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
@@ -348,7 +348,7 @@ fn handle_tuple_struct(input: DeriveInput, data: &syn::DataStruct, config: &Unif
     }
 }
 
-fn handle_named_struct(input: DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
+fn handle_named_struct(input: &DeriveInput, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream {
     let name = &input.ident;
     let attrs = strip_proto_attrs(&input.attrs);
     let vis = &input.vis;
