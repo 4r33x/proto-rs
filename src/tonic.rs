@@ -43,16 +43,9 @@ impl<const N: usize> AsBytes for [u8; N] {
 #[derive(Clone, Copy, Default)]
 pub struct BytesMode;
 #[derive(Clone, Copy, Default)]
-pub struct SunByVal {} // Sun<'a> = T
+pub struct SunByVal; // Sun<'a> = T
 #[derive(Clone, Copy, Default)]
-pub struct SunByRef {} // Sun<'a> = &'a T
-
-unsafe impl Send for BytesMode {}
-unsafe impl Sync for BytesMode {}
-unsafe impl Send for SunByVal {}
-unsafe impl Sync for SunByVal {}
-unsafe impl Send for SunByRef {}
-unsafe impl Sync for SunByRef {}
+pub struct SunByRef; // Sun<'a> = &'a T
 
 #[derive(Debug, Clone)]
 pub struct ProtoCodec<Encode = (), Decode = (), Mode = SunByRef> {

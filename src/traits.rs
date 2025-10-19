@@ -48,6 +48,7 @@ pub trait ProtoExt: Sized {
     #[doc(hidden)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
+    #[inline]
     fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
         value.to_sun()
     }
@@ -73,7 +74,7 @@ pub trait ProtoExt: Sized {
     }
 
     // -------- Encoding entry points (Sun -> Shadow -> write)
-
+    #[inline]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
             let required = Self::encoded_len(&shadow);
@@ -82,7 +83,7 @@ pub trait ProtoExt: Sized {
             Ok(())
         })
     }
-
+    #[inline]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -91,6 +92,7 @@ pub trait ProtoExt: Sized {
             buf
         })
     }
+    #[inline]
     fn encode_to_array<const N: usize>(value: SunOf<'_, Self>) -> [u8; N] {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -101,6 +103,7 @@ pub trait ProtoExt: Sized {
         })
     }
 
+    #[inline]
     fn encode_length_delimited(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -113,6 +116,7 @@ pub trait ProtoExt: Sized {
         })
     }
 
+    #[inline]
     fn encode_length_delimited_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -122,7 +126,8 @@ pub trait ProtoExt: Sized {
             buf
         })
     }
-    //N should include encoded_len_varint
+    #[inline]
+    ///N should include encoded_len_varint
     fn encode_length_delimited_to_array<const VAR_INT_LEN: usize>(value: SunOf<'_, Self>) -> [u8; VAR_INT_LEN] {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -136,24 +141,23 @@ pub trait ProtoExt: Sized {
         })
     }
 
-    // -------- Decoding (read -> Shadow -> post_decode -> Self)
-
+    #[inline]
     fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
         let mut shadow = Self::proto_default();
         Self::merge(&mut shadow, &mut buf)?;
         Self::post_decode(shadow)
     }
-
+    #[inline]
     fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError> {
         let mut shadow = Self::proto_default();
         Self::merge_length_delimited(&mut shadow, buf)?;
         Self::post_decode(shadow)
     }
-
+    #[inline]
     fn merge_length_delimited(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
         crate::encoding::message::merge::<Self, _>(WireType::LengthDelimited, value, &mut buf, DecodeContext::default())
     }
-
+    #[inline]
     fn merge(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
         let ctx = DecodeContext::default();
         while buf.has_remaining() {
