@@ -15,6 +15,7 @@ use super::unified_field_handler::generate_field_encode;
 use super::unified_field_handler::generate_field_encoded_len;
 use crate::utils::find_marked_default_variant;
 use crate::utils::parse_field_config;
+use crate::utils::parse_field_type;
 
 pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
@@ -230,18 +231,79 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     let binding_ident = syn::Ident::new("inner", Span::call_site());
     let access_expr = quote! { #binding_ident };
     let cfg = parse_field_config(field);
+    let field_ty = &field.ty;
+    let parsed = parse_field_type(field_ty);
+    if let Some(custom_tag) = cfg.custom_tag {
+        if custom_tag == 0 {
+            return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
+        }
+
+        if custom_tag != 1 {
+            return Err(syn::Error::new(field.span(), "tuple enum fields cannot override their protobuf tag"));
+        }
+    }
+    let is_array = matches!(field_ty, syn::Type::Array(_));
+    let has_wrapper = parsed.is_option || parsed.is_repeated || parsed.map_kind.is_some() || parsed.set_kind.is_some() || is_array;
+    let has_conversion = cfg.into_type.is_some() || cfg.into_fn.is_some() || cfg.from_type.is_some() || cfg.from_fn.is_some();
+    let binding_default = field_default_expr(field);
+
+    if !cfg.skip && !has_wrapper && !has_conversion {
+        let encode_arm = quote! {
+            #name::#variant_ident(#binding_ident) => {
+                <#field_ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &(#access_expr), buf);
+            }
+        };
+
+        let decode_arm = quote! {
+            #tag => {
+                let mut #binding_ident = #binding_default;
+                <#field_ty as ::proto_rs::SingularField>::merge_singular_field(
+                    wire_type,
+                    &mut #binding_ident,
+                    buf,
+                    ctx.clone(),
+                )?;
+                *shadow = #name::#variant_ident(#binding_ident);
+                Ok(())
+            }
+        };
+
+        let encoded_len_arm = quote! {
+            #name::#variant_ident(#binding_ident) => {
+                <#field_ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&(#access_expr))
+            }
+        };
+
+        return Ok((encode_arm, decode_arm, encoded_len_arm));
+    }
+
     let binding_pattern_encode = if cfg.skip {
         quote! { _ }
     } else {
         quote! { #binding_ident }
     };
+
     let field_tag = match cfg.custom_tag.unwrap_or(1) {
         0 => {
             return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
         }
         value => value.try_into().unwrap(),
     };
-    let binding_default = field_default_expr(field);
+
+    let mut post_hooks = Vec::new();
+    if cfg.skip
+        && let Some(fun) = &cfg.skip_deser_fn
+    {
+        let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
+        let skip_binding = syn::Ident::new("__value", Span::call_site());
+        let computed_ident = syn::Ident::new("__skip_value", Span::call_site());
+        post_hooks.push(quote! {
+            let #computed_ident = #fun_path(&variant_value);
+            if let #name::#variant_ident(ref mut #skip_binding) = variant_value {
+                *#skip_binding = #computed_ident;
+            }
+        });
+    }
 
     let encoded_len_expr = generate_field_encoded_len(field, access_expr.clone(), field_tag);
     let encoded_len_expr_for_encode = encoded_len_expr.tokens.clone();
@@ -255,23 +317,9 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
         decode_match.push(quote! {
             #field_tag => {
+                let wire_type = field_wire_type;
                 #decode_body
                 Ok(())
-            }
-        });
-    }
-
-    let mut post_hooks = Vec::new();
-    if cfg.skip
-        && let Some(fun) = &cfg.skip_deser_fn
-    {
-        let fun_path: syn::Path = syn::parse_str(fun).expect("invalid skip function path");
-        let skip_binding = syn::Ident::new("__value", Span::call_site());
-        let computed_ident = syn::Ident::new("__skip_value", Span::call_site());
-        post_hooks.push(quote! {
-            let #computed_ident = #fun_path(&variant_value);
-            if let #name::#variant_ident(ref mut #skip_binding) = variant_value {
-                *#skip_binding = #computed_ident;
             }
         });
     }
@@ -398,6 +446,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
             decode_match.push(quote! {
                 #field_tag => {
+                    let wire_type = field_wire_type;
                     #decode_body
                     Ok(())
                 }

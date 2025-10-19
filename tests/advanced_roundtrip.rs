@@ -42,6 +42,18 @@ pub enum AdvancedOrigin {
     Missing,
 }
 
+#[proto_message(proto_path = "protos/tests/advanced_features.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum AdvancedComplexUnion {
+    #[default]
+    #[proto(tag = 1)]
+    Unit,
+    #[proto(tag = 2)]
+    Named { label: String, count: i32 },
+    #[proto(tag = 3)]
+    Nested(AdvancedNested),
+}
+
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct AdvancedTimestamp {
     pub seconds: i64,
@@ -214,6 +226,35 @@ impl From<&tonic_prost_test::advanced::AdvancedOrigin> for AdvancedOrigin {
                 AdvancedOrigin::Nested(nested_value)
             }
             Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(_)) | None => AdvancedOrigin::Missing,
+        }
+    }
+}
+
+impl From<&AdvancedComplexUnion> for tonic_prost_test::advanced::AdvancedComplexUnion {
+    fn from(value: &AdvancedComplexUnion) -> Self {
+        let value = match value {
+            AdvancedComplexUnion::Unit => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Unit(tonic_prost_test::advanced::AdvancedComplexUnionUnit {})),
+            AdvancedComplexUnion::Named { label, count } => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Named(
+                tonic_prost_test::advanced::AdvancedComplexUnionNamed { label: label.clone(), count: *count },
+            )),
+            AdvancedComplexUnion::Nested(nested) => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(
+                nested,
+            ))),
+        };
+
+        Self { value }
+    }
+}
+
+impl From<&tonic_prost_test::advanced::AdvancedComplexUnion> for AdvancedComplexUnion {
+    fn from(value: &tonic_prost_test::advanced::AdvancedComplexUnion) -> Self {
+        match value.value.as_ref() {
+            Some(tonic_prost_test::advanced::advanced_complex_union::Value::Unit(_)) | None => AdvancedComplexUnion::Unit,
+            Some(tonic_prost_test::advanced::advanced_complex_union::Value::Named(named)) => AdvancedComplexUnion::Named {
+                label: named.label.clone(),
+                count: named.count,
+            },
+            Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(nested)) => AdvancedComplexUnion::Nested(AdvancedNested::from(nested)),
         }
     }
 }
@@ -447,6 +488,20 @@ fn assert_roundtrip(message: AdvancedEdgeCase) {
     assert_eq!(decoded_from_prost, message);
 }
 
+fn assert_union_roundtrip(value: AdvancedComplexUnion) {
+    let proto_bytes = AdvancedComplexUnion::encode_to_vec(&value);
+    let decoded_proto = AdvancedComplexUnion::decode(proto_bytes.as_slice()).expect("decode proto union");
+    assert_eq!(decoded_proto, value);
+
+    let prost_value = tonic_prost_test::advanced::AdvancedComplexUnion::from(&value);
+    let decoded_prost = tonic_prost_test::advanced::AdvancedComplexUnion::decode(proto_bytes.as_slice()).expect("decode prost union");
+    assert_eq!(decoded_prost, prost_value);
+
+    let prost_bytes = prost_value.encode_to_vec();
+    let decoded_from_prost = AdvancedComplexUnion::decode(prost_bytes.as_slice()).expect("decode proto from prost union bytes");
+    assert_eq!(decoded_from_prost, value);
+}
+
 #[test]
 fn advanced_roundtrip_handles_raw_origin() {
     assert_roundtrip(sample_raw_message());
@@ -487,4 +542,16 @@ fn advanced_optional_blob_roundtrip_preserves_digest() {
     assert_eq!(prost_message.optional_blob.as_deref(), Some(expected_blob.as_ref()));
 
     assert_roundtrip(message);
+}
+
+#[test]
+fn advanced_complex_enum_roundtrip_variants() {
+    assert_union_roundtrip(AdvancedComplexUnion::Named { label: "alpha".into(), count: 7 });
+
+    assert_union_roundtrip(AdvancedComplexUnion::Nested(AdvancedNested {
+        value: 21,
+        labels: vec!["named".into(), "nested".into()],
+    }));
+
+    assert_union_roundtrip(AdvancedComplexUnion::Unit);
 }
