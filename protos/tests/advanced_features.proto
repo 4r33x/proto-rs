@@ -1,0 +1,51 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package advanced;
+
+enum Stage {
+  UNSPECIFIED = 0;
+  ALPHA = 1;
+  BETA = 2;
+  GAMMA = 3;
+}
+
+message AdvancedNested {
+  int64 value = 1;
+  repeated string labels = 2;
+}
+
+message AdvancedOriginRaw {
+  string raw = 1;
+}
+
+message AdvancedOriginNested {
+  AdvancedNested nested = 1;
+}
+
+message AdvancedOriginMissing {}
+
+message AdvancedOrigin {
+  oneof value {
+    AdvancedOriginRaw raw = 1;
+    AdvancedOriginNested nested = 2;
+    AdvancedOriginMissing missing = 3;
+  }
+}
+
+message AdvancedEdgeCase {
+  uint64 id = 1;
+  optional string note = 2;
+  bytes blob = 3;
+  repeated int32 zipped = 4;
+  map<string, Stage> stage_lookup = 5;
+  map<string, Stage> ordered_lookup = 6;
+  optional AdvancedOrigin origin = 7;
+  optional AdvancedNested nested = 8;
+  repeated AdvancedNested nested_list = 9;
+  repeated Stage stage_history = 10;
+  repeated bytes attachments = 11;
+  bool flag = 12;
+  bytes explicit_bytes = 15;
+  int64 event_time = 16;
+  optional bytes optional_blob = 18;
+}
