@@ -4,7 +4,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
-use crate::proto_rpc::rpc_common::generate_native_to_proto_response;
 use crate::proto_rpc::rpc_common::generate_proto_to_native_request;
 use crate::proto_rpc::rpc_common::generate_request_proto_type;
 use crate::proto_rpc::rpc_common::generate_response_proto_type;
@@ -184,6 +183,7 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
         }
     } else {
         let response_type = &method.response_type;
+        let response_return_type = &method.response_return_type;
         let response_proto = generate_response_proto_type(response_type);
         quote! {
             #[must_use]
@@ -191,7 +191,12 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
                 &self,
                 request: tonic::Request<#request_proto>,
             ) -> impl std::future::Future<
-                Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>
+                Output = std::result::Result<
+                    tonic::Response<
+                        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+                    >,
+                    tonic::Status
+                >
             > + std::marker::Send + '_
             where
                 Self: std::marker::Send + std::marker::Sync;
@@ -244,18 +249,28 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let method_name = &method.name;
     let request_type = &method.request_type;
     let response_type = &method.response_type;
+    let response_return_type = &method.response_return_type;
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
-    let response_conversion = generate_native_to_proto_response();
+    let await_suffix = if method.response_is_result {
+        quote! { .await? }
+    } else {
+        quote! { .await }
+    };
 
     quote! {
         fn #method_name(
             &self,
             request: tonic::Request<#request_proto>,
         ) -> impl std::future::Future<
-            Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>
+            Output = std::result::Result<
+                tonic::Response<
+                    <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+                >,
+                tonic::Status
+            >
         > + std::marker::Send + '_ {
             async move {
                 #request_conversion
@@ -263,9 +278,13 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
                 let native_response = <Self as super::#trait_name>::#method_name(
                     self,
                     native_request
-                ).await?;
+                )#await_suffix;
 
-                #response_conversion
+                let response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::into_response(
+                    native_response
+                );
+
+                Ok(response)
             }
         }
     }
@@ -320,12 +339,18 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let method_name = &method.name;
     let request_type = &method.request_type;
     let response_type = &method.response_type;
+    let response_return_type = &method.response_return_type;
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
-    let encode_type = quote! { #response_proto };
+    let encode_type = quote! {
+        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+    };
+    let mode_type = quote! {
+        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Mode
+    };
     let decode_type = quote! { #request_proto };
-    let codec_init = generate_codec_init(encode_type, decode_type, None);
+    let codec_init = generate_codec_init(encode_type.clone(), decode_type, Some(mode_type));
 
     quote! {
         #route_path => {
@@ -333,7 +358,7 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
             struct #svc_name<T: #trait_name>(pub Arc<T>);
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
-                type Response = #response_proto;
+                type Response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
                 type Future = impl std::future::Future<
                         Output = std::result::Result<tonic::Response<Self::Response>, tonic::Status>
                     > + std::marker::Send + 'static;

@@ -33,11 +33,6 @@ pub fn generate_proto_to_native_response(_response_type: &Type) -> TokenStream {
     quote! { Ok(response) }
 }
 
-/// Generate native-to-proto response conversion (used in server)
-pub fn generate_native_to_proto_response() -> TokenStream {
-    quote! { Ok(native_response) }
-}
-
 // ============================================================================
 // PROTO TYPE HELPERS
 // ============================================================================

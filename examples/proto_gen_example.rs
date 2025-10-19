@@ -3,7 +3,6 @@
 
 use std::pin::Pin;
 
-use proto_rs::ProtoResponse;
 use proto_rs::ToZeroCopyResponse;
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
@@ -35,7 +34,7 @@ pub struct BarSub;
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
     async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
-    async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong>, Status>;
+    async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong, Status>;
     async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
     async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
     async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
@@ -63,11 +62,28 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl SigmaRpc for S {
-    type ZeroCopyPingResp = ZeroCopyResponse<GoonPong>;
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
-    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<Self::ZeroCopyPingResp, Status> {
+
+    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status> {
         Ok(GoonPong {}.to_zero_copy())
     }
+
+    async fn just_ping(&self, _request: Request<RizzPing>) -> Result<GoonPong, Status> {
+        Ok(GoonPong {})
+    }
+
+    async fn infallible_just_ping(&self, _request: Request<RizzPing>) -> GoonPong {
+        GoonPong {}
+    }
+
+    async fn infallible_zero_copy_ping(&self, _request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong> {
+        GoonPong {}.to_zero_copy()
+    }
+
+    async fn infallible_ping(&self, _request: Request<RizzPing>) -> Response<GoonPong> {
+        Response::new(GoonPong {})
+    }
+
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {}))
     }
