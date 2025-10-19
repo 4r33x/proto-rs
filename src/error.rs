@@ -1,9 +1,6 @@
 //! Protobuf encoding and decoding errors.
 
 use alloc::borrow::Cow;
-#[cfg(not(feature = "std"))]
-use alloc::boxed::Box;
-#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -14,11 +11,6 @@ use core::fmt;
 /// general it is not possible to exactly pinpoint why data is malformed.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DecodeError {
-    inner: Box<Inner>,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-struct Inner {
     /// A 'best effort' root cause description.
     description: Cow<'static, str>,
     /// A stack of (message, field) name pairs, which identify the specific
@@ -35,10 +27,8 @@ impl DecodeError {
     #[cold]
     pub fn new(description: impl Into<Cow<'static, str>>) -> DecodeError {
         DecodeError {
-            inner: Box::new(Inner {
-                description: description.into(),
-                stack: Vec::new(),
-            }),
+            description: description.into(),
+            stack: Vec::new(),
         }
     }
 
@@ -47,23 +37,23 @@ impl DecodeError {
     /// Meant to be used only by `Message` implementations.
     #[doc(hidden)]
     pub fn push(&mut self, message: &'static str, field: &'static str) {
-        self.inner.stack.push((message, field));
+        self.stack.push((message, field));
     }
 }
 
 impl fmt::Debug for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DecodeError").field("description", &self.inner.description).field("stack", &self.inner.stack).finish()
+        f.debug_struct("DecodeError").field("description", &self.description).field("stack", &self.stack).finish()
     }
 }
 
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("failed to decode Protobuf message: ")?;
-        for &(message, field) in &self.inner.stack {
+        for &(message, field) in &self.stack {
             write!(f, "{message}.{field}: ")?;
         }
-        f.write_str(&self.inner.description)
+        f.write_str(&self.description)
     }
 }
 

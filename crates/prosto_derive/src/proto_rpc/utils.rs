@@ -254,22 +254,27 @@ mod tests {
             .collect();
 
         let unary = &signatures[0];
-        assert_eq!(quote!(#unary.request_type).to_string(), "MyRequest");
-        assert_eq!(quote!(#unary.response_type).to_string(), "MyResponse");
+        let request_ty = &unary.request_type;
+        let response_ty = &unary.response_type;
+        assert_eq!(quote!(#request_ty).to_string(), "MyRequest");
+        assert_eq!(quote!(#response_ty).to_string(), "MyResponse");
         assert!(unary.response_is_result);
         assert!(!unary.is_streaming);
 
         let zero_copy = &signatures[1];
-        assert_eq!(quote!(#zero_copy.response_return_type).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
+        let zero_copy_return = &zero_copy.response_return_type;
+        assert_eq!(quote!(#zero_copy_return).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
         assert!(zero_copy.response_is_result);
 
         let streaming = &signatures[2];
         assert!(streaming.is_streaming);
         assert_eq!(streaming.stream_type_name.as_ref().unwrap().to_string(), "MyStream");
-        assert_eq!(quote!(#streaming.inner_response_type.as_ref().unwrap()).to_string(), "MyResponse");
+        let stream_inner = streaming.inner_response_type.as_ref().unwrap();
+        assert_eq!(quote!(#stream_inner).to_string(), "MyResponse");
 
         let plain = &signatures[3];
         assert!(!plain.response_is_result);
-        assert_eq!(quote!(#plain.response_return_type).to_string(), "MyResponse");
+        let plain_return = &plain.response_return_type;
+        assert_eq!(quote!(#plain_return).to_string(), "MyResponse");
     }
 }

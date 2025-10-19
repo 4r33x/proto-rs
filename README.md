@@ -1,6 +1,6 @@
-# proto_rs
+# proto_rs 2.0
 
-`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions. The crate ships a set of procedural macros and runtime helpers that derive message encoders/decoders, generate `.proto` files on demand, and wire traits directly into Tonic servers and clients.
+`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions. Version 2.0 tightens the ergonomics of every macro, removes redundant code paths in the runtime, and makes the crate's `no_std` story first class. The crate ships a set of procedural macros and runtime helpers that derive message encoders/decoders, generate `.proto` files on demand, and wire traits directly into Tonic servers and clients.
 
 ## Motivation
 
@@ -13,12 +13,12 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 
 ## Key capabilities
 
-- **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code.
-- **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits can stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts.
+- **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code. The generated codec now reuses internal helpers to avoid redundant buffering and unnecessary copies.
+- **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts, and the macro avoids needless boxing/casting in the conversion layer.
 - **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
-- **Workspace and even beyond schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs).
+- **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs). The helper deduplicates inputs and writes canonical packages derived from the file path.
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
-- **`no_std` friendly core** – Runtime helpers rely on `core`/`alloc` so they keep working even when the `std` feature is disabled.
+- **`no_std` by default runtime** – Runtime helpers lean entirely on `core` and `alloc`; enabling the `std` feature layers on Tonic integration and filesystem tooling without changing the API.
 
 ## Getting started
 
@@ -71,7 +71,7 @@ Disable the default feature set if you only need message encoding/decoding in `n
 proto_rs = { version = "0.6", default-features = false }
 ```
 
-All core traits (`ProtoExt`, `MessageField`, wrappers, etc.) remain available. Re-enable the `std` feature (on by default) when you want the Tonic codec helpers and RPC generation macros.
+All core traits (`ProtoExt`, `MessageField`, wrappers, etc.) remain available. Re-enable the `std` feature (enabled by default) when you want the Tonic codec helpers and RPC generation macros.
 
 ## Collecting schemas across a workspace
 
