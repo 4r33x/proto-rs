@@ -37,6 +37,8 @@ pub enum AdvancedOrigin {
     Raw(String),
     #[proto(tag = 2)]
     Nested(AdvancedNested),
+    #[proto(tag = 4)]
+    Detailed { code: i32, label: String },
     #[default]
     #[proto(tag = 3)]
     Missing,
@@ -118,6 +120,11 @@ fn compute_digest(value: &AdvancedEdgeCase) -> u32 {
             acc = acc.wrapping_add(2);
             acc = acc.wrapping_add(nested.value as u32);
         }
+        AdvancedOrigin::Detailed { code, label } => {
+            acc = acc.wrapping_add(4);
+            acc = acc.wrapping_add(*code as u32);
+            acc = acc.wrapping_add(label.len() as u32);
+        }
         AdvancedOrigin::Missing => acc = acc.wrapping_add(3),
     }
 
@@ -198,6 +205,10 @@ impl From<&AdvancedOrigin> for tonic_prost_test::advanced::AdvancedOrigin {
         let value = match value {
             AdvancedOrigin::Raw(text) => Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(text.clone())),
             AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(nested))),
+            AdvancedOrigin::Detailed { code, label } => Some(tonic_prost_test::advanced::advanced_origin::Value::Detailed(tonic_prost_test::advanced::AdvancedOriginDetailed {
+                code: *code,
+                label: label.clone(),
+            })),
             AdvancedOrigin::Missing => Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(tonic_prost_test::advanced::AdvancedOriginMissing {})),
         };
 
@@ -213,6 +224,10 @@ impl From<&tonic_prost_test::advanced::AdvancedOrigin> for AdvancedOrigin {
                 let nested_value = AdvancedNested::from(nested);
                 AdvancedOrigin::Nested(nested_value)
             }
+            Some(tonic_prost_test::advanced::advanced_origin::Value::Detailed(detailed)) => AdvancedOrigin::Detailed {
+                code: detailed.code,
+                label: detailed.label.clone(),
+            },
             Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(_)) | None => AdvancedOrigin::Missing,
         }
     }
@@ -377,6 +392,13 @@ fn sample_nested_message() -> AdvancedEdgeCase {
     message
 }
 
+fn sample_detailed_message() -> AdvancedEdgeCase {
+    let mut message = sample_raw_message();
+    message.origin = AdvancedOrigin::Detailed { code: 404, label: "not-found".into() };
+    message.digest = compute_digest(&message);
+    message
+}
+
 fn sample_missing_origin_message() -> AdvancedEdgeCase {
     let mut message = AdvancedEdgeCase {
         id: 7,
@@ -455,6 +477,11 @@ fn advanced_roundtrip_handles_raw_origin() {
 #[test]
 fn advanced_roundtrip_handles_nested_origin() {
     assert_roundtrip(sample_nested_message());
+}
+
+#[test]
+fn advanced_roundtrip_handles_detailed_origin() {
+    assert_roundtrip(sample_detailed_message());
 }
 
 #[test]

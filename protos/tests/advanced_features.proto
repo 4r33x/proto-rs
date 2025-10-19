@@ -33,11 +33,16 @@ message AdvancedNested {
 }
 
 message AdvancedOriginMissing {}
+message AdvancedOriginDetailed {
+  int32 code = 1;
+  string label = 2;
+}
 message AdvancedOrigin {
   oneof value {
     string raw = 1;
     AdvancedNested nested = 2;
     AdvancedOriginMissing missing = 3;
+    AdvancedOriginDetailed detailed = 4;
   }
 }
 

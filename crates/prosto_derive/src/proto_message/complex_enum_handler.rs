@@ -235,31 +235,10 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     } else {
         quote! { #binding_ident }
     };
-    let field_tag = match cfg.custom_tag.unwrap_or(1) {
-        0 => {
-            return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
-        }
-        value => value.try_into().unwrap(),
-    };
     let binding_default = field_default_expr(field);
 
-    let encoded_len_expr = generate_field_encoded_len(field, access_expr.clone(), field_tag);
-    let encoded_len_expr_for_encode = encoded_len_expr.tokens.clone();
-    let encoded_len_expr_for_len = encoded_len_expr.tokens.clone();
-
-    let mut encode_fields = Vec::new();
-    let mut decode_match = Vec::new();
-
-    if !cfg.skip {
-        encode_fields.push(generate_field_encode(field, access_expr.clone(), field_tag));
-        let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
-        decode_match.push(quote! {
-            #field_tag => {
-                #decode_body
-                Ok(())
-            }
-        });
-    }
+    let encoded_len_tokens = generate_field_encoded_len(field, access_expr.clone(), tag);
+    let encoded_len_for_len = encoded_len_tokens.tokens.clone();
 
     let mut post_hooks = Vec::new();
     if cfg.skip
@@ -276,56 +255,38 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         });
     }
 
-    let encode_arm = {
-        let encode_body = encode_fields.clone();
-        let msg_len_expr = encoded_len_expr_for_encode;
+    let encode_arm = if cfg.skip {
+        quote! {
+            #name::#variant_ident(_) => {}
+        }
+    } else {
+        let encode_tokens = generate_field_encode(field, access_expr.clone(), tag);
         quote! {
             #name::#variant_ident(#binding_pattern_encode) => {
-                let msg_len = #msg_len_expr;
-                ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
-                #(#encode_body)*
+                #encode_tokens
             }
         }
     };
 
-    let decode_loop = if decode_match.is_empty() {
+    let decode_arm = if cfg.skip {
+        let post_decode_hooks = post_hooks.clone();
+        let binding_default_clone = binding_default.clone();
         quote! {
-            while buf.remaining() > limit {
-                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
-                ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx.clone())?;
+            #tag => {
+                ::proto_rs::encoding::skip_field(wire_type, #tag, buf, ctx.clone())?;
+                let mut variant_value = #name::#variant_ident(#binding_default_clone);
+                #(#post_decode_hooks)*
+                *shadow = variant_value;
+                Ok(())
             }
         }
     } else {
-        quote! {
-            while buf.remaining() > limit {
-                let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
-                match field_tag {
-                    #(#decode_match,)*
-                    _ => {
-                        ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, ctx.clone())?;
-                        Ok(())
-                    }
-                }?;
-            }
-        }
-    };
-
-    let decode_arm = {
+        let decode_tokens = generate_field_decode(field, access_expr.clone(), tag);
         let post_decode_hooks = post_hooks.clone();
         quote! {
             #tag => {
-                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                let remaining = buf.remaining();
-                if len > remaining {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
-                let limit = remaining - len;
-
                 let mut #binding_ident = #binding_default;
-
-                #decode_loop
-
+                #decode_tokens
                 let mut variant_value = #name::#variant_ident(#binding_ident);
                 #(#post_decode_hooks)*
                 *shadow = variant_value;
@@ -334,19 +295,19 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         }
     };
 
-    let encoded_len_arm = {
-        let msg_len_expr = encoded_len_expr_for_len;
-        let binding_pattern_len = if cfg.skip || !encoded_len_expr.uses_access {
+    let encoded_len_arm = if cfg.skip {
+        quote! {
+            #name::#variant_ident(_) => 0
+        }
+    } else {
+        let binding_pattern_len = if cfg.skip || !encoded_len_tokens.uses_access {
             quote! { _ }
         } else {
             quote! { #binding_ident }
         };
         quote! {
             #name::#variant_ident(#binding_pattern_len) => {
-                let msg_len = #msg_len_expr;
-                ::proto_rs::encoding::key_len(#tag)
-                    + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
-                    + msg_len
+                #encoded_len_for_len
             }
         }
     };
@@ -398,6 +359,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
             decode_match.push(quote! {
                 #field_tag => {
+                    let wire_type = field_wire_type;
                     #decode_body
                     Ok(())
                 }
