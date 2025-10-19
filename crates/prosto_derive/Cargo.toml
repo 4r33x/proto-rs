@@ -23,6 +23,7 @@ syn = { version = "2", features = ["full"] }
 [features]
 # Emission control - checked in utils.rs during macro expansion
 emit-proto-files = []
+stable = []
 
 [lints]
 workspace = true

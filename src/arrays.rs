@@ -42,7 +42,7 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
         }
 
         // SAFETY: all N elements are initialized
-        Ok(unsafe { MaybeUninit::array_assume_init(out) })
+        Ok(unsafe { assume_init_array(out) })
     }
 
     #[inline]
@@ -53,18 +53,24 @@ impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
             out[idx].write(T::from_sun(x));
         }
 
-        unsafe { array_assume_init(out) }
+        unsafe { assume_init_array(out) }
     }
 }
 
-/// Stable replacement for `MaybeUninit::array_assume_init`
-/// TODO! use it when we hit stable
+#[cfg(feature = "stable")]
 #[inline]
 #[allow(clippy::needless_pass_by_value)]
-unsafe fn array_assume_init<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
+unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
     // SAFETY: Caller guarantees all elements are initialized
     let ptr = (&raw const arr).cast::<[T; N]>();
     unsafe { core::ptr::read(ptr) }
+}
+
+#[cfg(not(feature = "stable"))]
+#[inline]
+#[allow(clippy::needless_pass_by_value)]
+unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
+    unsafe { MaybeUninit::array_assume_init(arr) }
 }
 // -----------------------------------------------------------------------------
 // ProtoExt for arrays — placeholder behavior (encoded/decoded by parent struct)

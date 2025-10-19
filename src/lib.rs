@@ -1,5 +1,4 @@
-#![feature(impl_trait_in_assoc_type)]
-#![feature(maybe_uninit_array_assume_init)]
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type, maybe_uninit_array_assume_init))]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::cast_possible_truncation)]

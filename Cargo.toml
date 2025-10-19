@@ -80,6 +80,9 @@ build-schemas = ["inventory"]
 # Enable live proto dumping
 emit-proto-files = ["prosto_derive/emit-proto-files"]
 
+# Compile on the stable toolchain
+stable = ["prosto_derive/stable"]
+
 no-recursion-limit = []
 #TODO!
 default = ["std"]

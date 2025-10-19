@@ -1,4 +1,4 @@
-#![feature(impl_trait_in_assoc_type)]
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 #![allow(clippy::missing_errors_doc)]
 
 use std::pin::Pin;
@@ -87,6 +87,7 @@ impl SigmaRpc for S {
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {}))
     }
+
     async fn rizz_uni(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
