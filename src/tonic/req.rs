@@ -1,10 +1,6 @@
-use core::any::TypeId;
 use core::marker::PhantomData;
-use core::mem::ManuallyDrop;
 
 use tonic::Request;
-
-use bytes::Bytes;
 
 use crate::BytesMode;
 use crate::ProtoExt;
@@ -55,51 +51,31 @@ impl<T> From<ZeroCopyRequest<T>> for Request<Vec<u8>> {
 
 impl<T> From<Request<T>> for ZeroCopyRequest<T>
 where
-    T: ProtoExt + 'static,
+    T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
 {
     fn from(request: Request<T>) -> Self {
         let (metadata, extensions, message) = request.into_parts();
-        let mut message = ManuallyDrop::new(message);
-        let type_id = TypeId::of::<T>();
-
-        let encoded = if type_id == TypeId::of::<Vec<u8>>() {
-            unsafe { core::ptr::read((&mut *message) as *mut T as *mut Vec<u8>) }
-        } else if type_id == TypeId::of::<Bytes>() {
-            let bytes = unsafe { core::ptr::read((&mut *message) as *mut T as *mut Bytes) };
-            bytes.to_vec()
-        } else {
-            let encoded = T::encode_to_vec(&*message);
-            unsafe { ManuallyDrop::drop(&mut message); }
-            encoded
-        };
-
+        let encoded = T::encode_to_vec(&message);
         ZeroCopyRequest::from_request(Request::from_parts(metadata, extensions, encoded))
     }
 }
 
 impl<'a, T> From<Request<&'a T>> for ZeroCopyRequest<T>
 where
-    T: ProtoExt + 'static,
+    T: ProtoExt,
     for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
 {
     fn from(request: Request<&'a T>) -> Self {
         let (metadata, extensions, message) = request.into_parts();
-        let type_id = TypeId::of::<T>();
-        let encoded = if type_id == TypeId::of::<Vec<u8>>() {
-            unsafe { (&*(message as *const T as *const Vec<u8>)).clone() }
-        } else if type_id == TypeId::of::<Bytes>() {
-            unsafe { (&*(message as *const T as *const Bytes)).to_vec() }
-        } else {
-            T::encode_to_vec(message)
-        };
+        let encoded = T::encode_to_vec(message);
         ZeroCopyRequest::from_request(Request::from_parts(metadata, extensions, encoded))
     }
 }
 
 impl<T> ZeroCopyRequest<T>
 where
-    T: ProtoExt + 'static,
+    T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
 {
     pub fn from_message(message: T) -> Self {

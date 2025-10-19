@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use proto_rs::ProtoExt;
 use proto_rs::ToZeroCopyRequest;
 use proto_rs::ToZeroCopyResponse;
@@ -84,15 +83,4 @@ fn zero_copy_response_roundtrip_maintains_bytes_identity() {
     let zero_from_borrowed = tonic::Response::new(&message).to_zero_copy();
 
     assert_eq!(zero_from_owned.as_response().get_ref(), zero_from_borrowed.as_response().get_ref());
-}
-
-#[test]
-fn zero_copy_bytes_mode_supports_direct_payloads() {
-    let payload = Bytes::from_static(b"raw-bytes");
-    let mut request = tonic::Request::new(payload.clone());
-
-    request.metadata_mut().insert("mode", "bytes".parse().unwrap());
-
-    let zero_copy: proto_rs::ZeroCopyRequest<_> = request.into();
-    assert_eq!(zero_copy.as_request().get_ref(), &payload);
 }

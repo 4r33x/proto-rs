@@ -1,5 +1,5 @@
 pub mod advanced {
-    tonic::include_proto!("advanced");
+    tonic::include_proto!("advanced_features");
 }
 pub mod sigma_rpc {
     tonic::include_proto!("sigma_rpc");
