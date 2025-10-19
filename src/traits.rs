@@ -212,14 +212,14 @@ pub trait SingularField: ProtoExt + Sized {
 
     /// Computes the encoded length for a singular field with the provided tag.
     fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize;
-
+    #[inline]
     /// Encodes an optional field by delegating to [`Self::encode_singular_field`].
     fn encode_option_field(tag: u32, value: Option<ViewOf<'_, Self>>, buf: &mut impl BufMut) {
         if let Some(inner) = value {
             Self::encode_singular_field(tag, inner, buf);
         }
     }
-
+    #[inline]
     /// Decodes an optional field occurrence and stores the result inside
     /// `target`.
     fn merge_option_field(wire_type: WireType, target: &mut Option<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -232,7 +232,7 @@ pub trait SingularField: ProtoExt + Sized {
             Ok(())
         }
     }
-
+    #[inline]
     /// Computes the encoded length for an optional field.
     fn encoded_len_option_field(tag: u32, value: Option<ViewOf<'_, Self>>) -> usize {
         value.as_ref().map_or(0, |inner| Self::encoded_len_singular_field(tag, inner))

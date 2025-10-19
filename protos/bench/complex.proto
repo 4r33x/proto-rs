@@ -1,48 +1,25 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
-package bench_types;
+package complex;
 
-enum SimpleEnum {
-  SIMPLE_ENUM_ALPHA = 0;
-  SIMPLE_ENUM_BETA = 1;
-  SIMPLE_ENUM_GAMMA = 2;
-  SIMPLE_ENUM_DELTA = 3;
-}
-
-message NestedLeaf {
-  uint64 id = 1;
-  string name = 2;
-  bool active = 3;
-  repeated int32 scores = 4;
-  bytes payload = 5;
-  repeated bytes attachments = 6;
-}
-
-message ExtraDetails {
-  string description = 1;
-  map<string, uint32> counters = 2;
-}
-
-message DeepMessage {
-  string label = 1;
-  bytes blob = 2;
-  repeated NestedLeaf leaves = 3;
-  map<string, NestedLeaf> leaf_lookup = 4;
-  repeated SimpleEnum simple_codes = 5;
-  map<string, SimpleEnum> simple_lookup = 6;
-  optional NestedLeaf focus = 7;
-  optional ExtraDetails details = 8;
-}
-
-message ComplexEnumEmpty {}
 
 message ComplexEnum {
-  oneof kind {
+  oneof value {
     NestedLeaf leaf = 1;
     DeepMessage deep = 2;
     ExtraDetails details = 3;
     ComplexEnumEmpty empty = 4;
   }
 }
+
+enum SimpleEnum {
+  ALPHA = 0;
+  BETA = 1;
+  GAMMA = 2;
+  DELTA = 3;
+}
+
+message ComplexEnumEmpty {}
 
 message ComplexRoot {
   string id = 1;
@@ -66,3 +43,29 @@ message ComplexRoot {
   optional NestedLeaf primary_focus = 19;
   optional DeepMessage secondary_focus = 20;
 }
+
+message DeepMessage {
+  string label = 1;
+  bytes blob = 2;
+  repeated NestedLeaf leaves = 3;
+  map<string, NestedLeaf> leaf_lookup = 4;
+  repeated SimpleEnum simple_codes = 5;
+  map<string, SimpleEnum> simple_lookup = 6;
+  optional NestedLeaf focus = 7;
+  optional ExtraDetails details = 8;
+}
+
+message ExtraDetails {
+  string description = 1;
+  map<string, uint32> counters = 2;
+}
+
+message NestedLeaf {
+  uint64 id = 1;
+  string name = 2;
+  bool active = 3;
+  repeated int32 scores = 4;
+  bytes payload = 5;
+  repeated bytes attachments = 6;
+}
+

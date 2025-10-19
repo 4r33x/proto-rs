@@ -44,6 +44,7 @@ impl<T> ZeroCopyResponse<T> {
 }
 
 impl<T> From<ZeroCopyResponse<T>> for Response<Vec<u8>> {
+    #[inline]
     fn from(request: ZeroCopyResponse<T>) -> Self {
         request.into_response()
     }
@@ -54,6 +55,7 @@ where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
 {
+    #[inline]
     fn from(request: Response<T>) -> Self {
         let (metadata, message, extensions) = request.into_parts();
         let encoded = T::encode_to_vec(&message);
@@ -66,6 +68,7 @@ where
     T: ProtoExt,
     for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
 {
+    #[inline]
     fn from(request: Response<&'a T>) -> Self {
         let (metadata, message, extensions) = request.into_parts();
         let encoded = T::encode_to_vec(message);
@@ -78,6 +81,7 @@ where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
 {
+    #[inline]
     pub fn from_message(message: T) -> Self {
         Response::new(message).into()
     }
@@ -97,7 +101,7 @@ where
 {
     type Encode = T;
     type Mode = SunByRef;
-
+    #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         self
     }
@@ -110,7 +114,7 @@ where
 {
     type Encode = T;
     type Mode = SunByRef;
-
+    #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         Response::new(self)
     }
@@ -119,7 +123,7 @@ where
 impl<T> ProtoResponse<T> for ZeroCopyResponse<T> {
     type Encode = Vec<u8>;
     type Mode = BytesMode;
-
+    #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         self.inner
     }
@@ -130,6 +134,7 @@ where
     T: ProtoExt,
     for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
 {
+    #[inline]
     fn to_zero_copy(self) -> ZeroCopyResponse<T> {
         let encoded = T::encode_to_vec(self);
         ZeroCopyResponse::from_bytes(encoded)
@@ -141,6 +146,7 @@ where
     T: ProtoExt,
     for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
 {
+    #[inline]
     fn to_zero_copy(self) -> ZeroCopyResponse<T> {
         let (meta, t, ext) = self.into_parts();
         let encoded = T::encode_to_vec(t);

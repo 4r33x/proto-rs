@@ -6,15 +6,15 @@
 
 | Benchmark | Avg ns/op | Avg µs/op | MB/s |
 | --- | ---: | ---: | ---: |
-| prost decode | 31092.34 | 31.09 | 115.88 |
-| prost encode | 15808.75 | 15.81 | 227.91 |
-| proto_rs decode | 33269.43 | 33.27 | 114.95 |
-| proto_rs encode_to_vec | 28829.23 | 28.83 | 132.65 |
+| prost decode | 13234 | 13 | 0 |
+| prost encode | 6521 | 6 | 0 |
+| proto_rs decode | 15245 | 15 | 0 |
+| proto_rs encode_to_vec | 13172 | 13 | 0 |
 
 ## zero_copy_vs_prost
 
 | Benchmark | Avg ns/op | Avg µs/op | MB/s |
 | --- | ---: | ---: | ---: |
-| prost clone + encode | 24293.64 | 24.29 | 157.42 |
-| proto_rs zero_copy response | 29009.72 | 29.01 | 131.83 |
+| prost clone + encode | 11085 | 11 | 0 |
+| proto_rs zero_copy response | 13151 | 13 | 0 |
 

@@ -198,6 +198,7 @@ pub fn skip_field(wire_type: WireType, tag: u32, buf: &mut impl Buf, ctx: Decode
 /// Helper macro which emits an `encode_repeated` function for the type.
 macro_rules! encode_repeated {
     ($ty:ty) => {
+        #[inline]
         pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
             for value in values {
                 encode(tag, value, buf);
@@ -212,6 +213,7 @@ macro_rules! merge_repeated_numeric {
      $wire_type:expr,
      $merge:ident,
      $merge_repeated:ident) => {
+        #[inline]
         pub fn $merge_repeated(wire_type: WireType, values: &mut Vec<$ty>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
             if wire_type == WireType::LengthDelimited {
                 // Packed.
@@ -251,23 +253,23 @@ macro_rules! varint {
 
          pub mod $proto_ty {
             use crate::encoding::*;
-
+            #[inline]
             pub fn encode(tag: u32, $to_uint64_value: &$ty, buf: &mut impl BufMut) {
                 encode_key(tag, WireType::Varint, buf);
                 encode_varint($to_uint64, buf);
             }
-
+            #[inline]
             pub fn merge(wire_type: WireType, value: &mut $ty, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
                 check_wire_type(WireType::Varint, wire_type)?;
                 let $from_uint64_value = decode_varint(buf)?;
                 *value = $from_uint64;
                 Ok(())
             }
-
+            #[inline]
             pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 encode_packed(tag, values, buf);
             }
-
+            #[inline]
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() { return; }
 
@@ -374,12 +376,12 @@ macro_rules! fixed_width {
      $get:ident) => {
         pub mod $proto_ty {
             use crate::encoding::*;
-
+            #[inline]
             pub fn encode(tag: u32, value: &$ty, buf: &mut impl BufMut) {
                 encode_key(tag, $wire_type, buf);
                 buf.$put(*value);
             }
-
+            #[inline]
             pub fn merge(wire_type: WireType, value: &mut $ty, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
                 check_wire_type($wire_type, wire_type)?;
                 if buf.remaining() < $width {
@@ -388,11 +390,11 @@ macro_rules! fixed_width {
                 *value = buf.$get();
                 Ok(())
             }
-
+            #[inline]
             pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 encode_packed(tag, values, buf);
             }
-
+            #[inline]
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() {
                     return;
@@ -471,7 +473,7 @@ fixed_width!(i64, 8, WireType::SixtyFourBit, sfixed64, put_i64_le, get_i64_le);
 macro_rules! length_delimited {
     ($ty:ty) => {
         encode_repeated!($ty);
-
+        #[inline]
         pub fn merge_repeated(wire_type: WireType, values: &mut Vec<$ty>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
             check_wire_type(WireType::LengthDelimited, wire_type)?;
             let mut value = Default::default();
@@ -509,13 +511,13 @@ pub mod string {
     use super::key_len;
     use super::mem;
     use super::str;
-
+    #[inline]
     pub fn encode(tag: u32, value: &String, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
         encode_varint(value.len() as u64, buf);
         buf.put_slice(value.as_bytes());
     }
-
+    #[inline]
     pub fn merge(wire_type: WireType, value: &mut String, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         // ## Unsafety
         //
