@@ -112,10 +112,12 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             type OwnedSun = Self;
             type View<'a> = &'a Self;
 
+            #[inline]
             fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
                 Ok(self)
             }
 
+            #[inline]
             fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
             }
@@ -129,6 +131,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 Self::#default_variant_ident
             }
 
+            #[inline]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
                 let raw = *value as i32;
@@ -139,6 +142,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value: &Self = value;
                 let raw = *value as i32;
@@ -147,6 +151,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline]
             fn merge_field(
                 shadow: &mut Self::Shadow<'_>,
                 tag: u32,
@@ -166,6 +171,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline]
             fn clear(&mut self) {
                 *self = Self::proto_default();
             }
@@ -196,6 +202,15 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                     let raw = (*value) as i32;
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);
                 }
+            }
+
+            fn encode_repeated_item(
+                tag: u32,
+                value: ::proto_rs::ViewOf<'_, Self>,
+                buf: &mut impl ::proto_rs::bytes::BufMut,
+            ) {
+                let raw = (*value) as i32;
+                ::proto_rs::encoding::int32::encode(tag, &raw, buf);
             }
 
             fn merge_repeated_field(
@@ -233,13 +248,20 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 Self: 'a,
                 I: IntoIterator<Item = ::proto_rs::ViewOf<'a, Self>>,
             {
-                values
-                    .into_iter()
-                    .map(|value| {
-                        let raw = (*value) as i32;
-                        ::proto_rs::encoding::int32::encoded_len(tag, &raw)
-                    })
-                    .sum()
+                let mut total = 0usize;
+                for value in values {
+                    let raw = (*value) as i32;
+                    total += ::proto_rs::encoding::int32::encoded_len(tag, &raw);
+                }
+                total
+            }
+
+            fn encoded_len_repeated_item(
+                tag: u32,
+                value: &::proto_rs::ViewOf<'_, Self>,
+            ) -> usize {
+                let raw = (**value) as i32;
+                ::proto_rs::encoding::int32::encoded_len(tag, &raw)
             }
         }
 

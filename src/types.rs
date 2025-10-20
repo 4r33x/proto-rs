@@ -114,6 +114,10 @@ macro_rules! impl_google_wrapper {
                 }
             }
 
+            fn encode_repeated_item(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+                $module::encode(tag, value, buf);
+            }
+
             fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 $module::merge_repeated(wire_type, values, buf, ctx)
             }
@@ -123,7 +127,16 @@ macro_rules! impl_google_wrapper {
                 Self: 'a,
                 I: IntoIterator<Item = ViewOf<'a, Self>>,
             {
-                values.into_iter().map(|value| $module::encoded_len(tag, value)).sum()
+                let mut total = 0usize;
+                for value in values {
+                    total += $module::encoded_len(tag, value);
+                }
+                total
+            }
+
+            fn encoded_len_repeated_item(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+                let inner: &$ty = *value;
+                $module::encoded_len(tag, inner)
             }
         }
 
@@ -335,6 +348,11 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
+            fn encode_repeated_item(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+                let widened: $wide_ty = (*value).into();
+                $module::encode(tag, &widened, buf);
+            }
+
             fn merge_repeated_field(
                 wire_type: WireType,
                 values: &mut Vec<Self::Shadow<'_>>,
@@ -362,13 +380,18 @@ macro_rules! impl_narrow_varint {
                 Self: 'a,
                 I: IntoIterator<Item = ViewOf<'a, Self>>,
             {
-                values
-                    .into_iter()
-                    .map(|value| {
-                        let widened: $wide_ty = (*value).into();
-                        $module::encoded_len(tag, &widened)
-                    })
-                    .sum()
+                let mut total = 0usize;
+                for value in values {
+                    let widened: $wide_ty = (*value).into();
+                    total += $module::encoded_len(tag, &widened);
+                }
+                total
+            }
+
+            fn encoded_len_repeated_item(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+                let inner: &$ty = *value;
+                let widened: $wide_ty = (*inner).into();
+                $module::encoded_len(tag, &widened)
             }
         }
     };

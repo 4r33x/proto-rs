@@ -66,10 +66,25 @@ where
         Self: 'a,
         I: IntoIterator<Item = ViewOf<'a, Self>>,
     {
-        values.into_iter().fold(0, |acc, value| {
+        let mut total = 0usize;
+        let tag_len = key_len(tag);
+        for value in values {
             let len = <Self as ProtoExt>::encoded_len(&value);
-            if len == 0 { acc } else { acc + key_len(tag) + REPEATED_VARINT_SIZE + len }
-        })
+            if len != 0 {
+                total += tag_len + REPEATED_VARINT_SIZE + len;
+            }
+        }
+        total
+    }
+
+    #[inline]
+    fn encode_repeated_item(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+        crate::encoding::message::encode::<Self>(tag, value, buf);
+    }
+
+    #[inline]
+    fn encoded_len_repeated_item(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+        crate::encoding::message::encoded_len::<Self>(tag, value)
     }
 
     #[inline]

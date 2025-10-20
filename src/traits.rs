@@ -249,10 +249,14 @@ pub trait RepeatedField: ProtoExt {
         Self: ProtoExt + 'a,
         I: IntoIterator<Item = ViewOf<'a, Self>>;
 
+    fn encode_repeated_item(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut);
+
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
     where
         Self: ProtoExt + 'a,
         I: IntoIterator<Item = ViewOf<'a, Self>>;
+
+    fn encoded_len_repeated_item(tag: u32, value: &ViewOf<'_, Self>) -> usize;
 }

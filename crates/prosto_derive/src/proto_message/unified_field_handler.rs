@@ -137,7 +137,7 @@ pub fn generate_field_encode(field: &Field, access: TokenStream, tag: u32) -> To
         return encode_message(&access, tag, ty);
     }
 
-    encode_scalar(&access, tag, ty)
+    encode_scalar(&access, tag, ty, &parsed)
 }
 
 pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> TokenStream {
@@ -255,7 +255,7 @@ pub fn generate_field_encoded_len(field: &Field, access: TokenStream, tag: u32) 
         return EncodedLenTokens::new(encoded_len_message(&access, tag, ty), true);
     }
 
-    EncodedLenTokens::new(encoded_len_scalar(&access, tag, ty), true)
+    EncodedLenTokens::new(encoded_len_scalar(&access, tag, ty, &parsed), true)
 }
 
 // ---------------------------------------------------------------------------
@@ -278,9 +278,53 @@ fn needs_numeric_widening(parsed: &ParsedFieldType) -> bool {
     quote!(#elem).to_string() != quote!(#proto).to_string()
 }
 
-fn encode_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
-    quote! {
-        <#ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &(#access), buf);
+fn encode_scalar(access: &TokenStream, tag: u32, ty: &Type, parsed: &ParsedFieldType) -> TokenStream {
+    match parsed.proto_type.as_str() {
+        "string" => {
+            quote! {{
+                let __proto_rs_value = &(#access);
+                if !__proto_rs_value.is_empty() {
+                    ::proto_rs::encoding::string::encode(#tag, __proto_rs_value, buf);
+                }
+            }}
+        }
+        "bytes" => {
+            quote! {{
+                let __proto_rs_value = &(#access);
+                if !__proto_rs_value.is_empty() {
+                    <#ty as ::proto_rs::SingularField>::encode_singular_field(#tag, __proto_rs_value, buf);
+                }
+            }}
+        }
+        "bool" => {
+            quote! {{
+                let __proto_rs_value = (#access);
+                if __proto_rs_value {
+                    ::proto_rs::encoding::bool::encode(#tag, &__proto_rs_value, buf);
+                }
+            }}
+        }
+        other if parsed.is_numeric_scalar => {
+            let codec = Ident::new(other, Span::call_site());
+            let proto_ty = &parsed.proto_rust_type;
+            let convert = if needs_numeric_widening(parsed) {
+                quote! { __proto_rs_value as #proto_ty }
+            } else {
+                quote! { __proto_rs_value }
+            };
+
+            quote! {{
+                let __proto_rs_ref: &#ty = &(#access);
+                let __proto_rs_value: #ty = *__proto_rs_ref;
+                if __proto_rs_value != <#ty as ::core::default::Default>::default() {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::#codec::encode(#tag, &__proto_rs_converted, buf);
+                }
+            }}
+        }
+        _ => quote! {
+            <#ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &(#access), buf);
+        },
     }
 }
 
@@ -304,9 +348,61 @@ fn decode_scalar(access: &TokenStream, _tag: u32, ty: &Type) -> TokenStream {
     }
 }
 
-fn encoded_len_scalar(access: &TokenStream, tag: u32, ty: &Type) -> TokenStream {
-    quote! {
-        <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&(#access))
+fn encoded_len_scalar(access: &TokenStream, tag: u32, ty: &Type, parsed: &ParsedFieldType) -> TokenStream {
+    match parsed.proto_type.as_str() {
+        "string" => {
+            quote! {{
+                let __proto_rs_value = &(#access);
+                if __proto_rs_value.is_empty() {
+                    0
+                } else {
+                    ::proto_rs::encoding::string::encoded_len(#tag, __proto_rs_value)
+                }
+            }}
+        }
+        "bytes" => {
+            quote! {{
+                let __proto_rs_value = &(#access);
+                if __proto_rs_value.is_empty() {
+                    0
+                } else {
+                    <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &__proto_rs_value)
+                }
+            }}
+        }
+        "bool" => {
+            quote! {{
+                let __proto_rs_value = (#access);
+                if __proto_rs_value {
+                    ::proto_rs::encoding::bool::encoded_len(#tag, &__proto_rs_value)
+                } else {
+                    0
+                }
+            }}
+        }
+        other if parsed.is_numeric_scalar => {
+            let codec = Ident::new(other, Span::call_site());
+            let proto_ty = &parsed.proto_rust_type;
+            let convert = if needs_numeric_widening(parsed) {
+                quote! { __proto_rs_value as #proto_ty }
+            } else {
+                quote! { __proto_rs_value }
+            };
+
+            quote! {{
+                let __proto_rs_ref: &#ty = &(#access);
+                let __proto_rs_value: #ty = *__proto_rs_ref;
+                if __proto_rs_value == <#ty as ::core::default::Default>::default() {
+                    0
+                } else {
+                    let __proto_rs_converted: #proto_ty = #convert;
+                    ::proto_rs::encoding::#codec::encoded_len(#tag, &__proto_rs_converted)
+                }
+            }}
+        }
+        _ => quote! {
+            <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&(#access))
+        },
     }
 }
 
@@ -388,7 +484,7 @@ fn array_bytes_all_default(access: &TokenStream) -> TokenStream {
 }
 
 fn array_all_default(access: &TokenStream, elem_ty: &Type, parsed: &ParsedFieldType) -> TokenStream {
-    if parsed.is_numeric_scalar {
+    if parsed.is_numeric_scalar || parsed.is_rust_enum {
         return quote! {{
             let __proto_rs_default = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
             (#access)
@@ -720,7 +816,7 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
 
 fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
-    if parsed.is_numeric_scalar {
+    if parsed.is_numeric_scalar || parsed.is_rust_enum {
         let Some(codec) = scalar_codec(parsed) else {
             return quote! {};
         };
@@ -732,11 +828,12 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
         };
 
         let body_len = quote! {{
+            let __proto_rs_elem_key_len = ::proto_rs::encoding::key_len(1u32);
             let mut __proto_rs_body_len = 0usize;
             for __proto_rs_value in (#access).iter() {
                 let __proto_rs_converted: #proto_ty = #convert;
                 __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
-                    - ::proto_rs::encoding::key_len(1u32));
+                    - __proto_rs_elem_key_len);
             }
             __proto_rs_body_len
         }};
@@ -772,14 +869,12 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
         }};
     }
 
-    quote! {
-        {
-            let __proto_rs_views = (#access).iter().map(|value| {
-                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-            });
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+    quote! {{
+        for __proto_rs_value in (#access).iter() {
+            let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_item(#tag, __proto_rs_view, buf);
         }
-    }
+    }}
 }
 
 fn decode_repeated(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> TokenStream {
@@ -796,7 +891,7 @@ fn decode_repeated(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) ->
 
 fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
-    if parsed.is_numeric_scalar {
+    if parsed.is_numeric_scalar || parsed.is_rust_enum {
         let Some(codec) = scalar_codec(parsed) else {
             return quote! { 0 };
         };
@@ -811,11 +906,12 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
             if (#access).is_empty() {
                 0
             } else {
+                let __proto_rs_elem_key_len = ::proto_rs::encoding::key_len(1u32);
                 let mut __proto_rs_body_len = 0usize;
                 for __proto_rs_value in (#access).iter() {
                     let __proto_rs_converted: #proto_ty = #convert;
                     __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
-                        - ::proto_rs::encoding::key_len(1u32));
+                        - __proto_rs_elem_key_len);
                 }
                 ::proto_rs::encoding::key_len(#tag)
                     + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
@@ -825,12 +921,13 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
     }
 
     quote! {{
-        let __proto_rs_views = (#access)
-            .iter()
-            .map(|value| {
-                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-            });
-        <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+        let mut __proto_rs_total = 0usize;
+        for __proto_rs_value in (#access).iter() {
+            let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            __proto_rs_total
+                += <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_item(#tag, &__proto_rs_view);
+        }
+        __proto_rs_total
     }}
 }
 
@@ -841,24 +938,28 @@ fn map_module(kind: MapKind) -> TokenStream {
     }
 }
 
-fn encode_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kind: MapKind) -> TokenStream {
-    let module = map_module(kind);
+fn encode_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, _kind: MapKind) -> TokenStream {
     let key_ty = parsed.map_key_type.as_ref().expect("map key type metadata missing");
     let value_ty = parsed.map_value_type.as_ref().expect("map value type metadata missing");
 
-    quote! {
-        if !(#access).is_empty() {
-            #module::encode(
-                |tag, key, buf| <#key_ty as ::proto_rs::SingularField>::encode_singular_field(tag, key, buf),
-                |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &key),
-                |tag, value, buf| <#value_ty as ::proto_rs::SingularField>::encode_singular_field(tag, value, buf),
-                |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &value),
-                #tag,
-                &(#access),
-                buf,
-            );
+    quote! {{
+        for (__proto_rs_key, __proto_rs_value) in (#access).iter() {
+            let __proto_rs_value_view = <<#value_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            let __proto_rs_key_len = <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(1u32, &__proto_rs_key);
+            let __proto_rs_value_len = <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(2u32, &__proto_rs_value_view);
+            let __proto_rs_entry_len = __proto_rs_key_len + __proto_rs_value_len;
+
+            ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+            ::proto_rs::encoding::encode_varint(__proto_rs_entry_len as u64, buf);
+
+            if __proto_rs_key_len != 0 {
+                <#key_ty as ::proto_rs::SingularField>::encode_singular_field(1u32, __proto_rs_key, buf);
+            }
+            if __proto_rs_value_len != 0 {
+                <#value_ty as ::proto_rs::SingularField>::encode_singular_field(2u32, __proto_rs_value_view, buf);
+            }
         }
-    }
+    }}
 }
 
 fn decode_map(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType, kind: MapKind) -> TokenStream {
@@ -877,19 +978,22 @@ fn decode_map(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType, kind: M
     }
 }
 
-fn encoded_len_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, kind: MapKind) -> TokenStream {
-    let module = map_module(kind);
+fn encoded_len_map(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, _kind: MapKind) -> TokenStream {
     let key_ty = parsed.map_key_type.as_ref().expect("map key type metadata missing");
     let value_ty = parsed.map_value_type.as_ref().expect("map value type metadata missing");
 
-    quote! {
-        #module::encoded_len(
-            |tag, key| <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &key),
-            |tag, value| <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &value),
-            #tag,
-            &(#access),
-        )
-    }
+    quote! {{
+        let __proto_rs_tag_len = ::proto_rs::encoding::key_len(#tag);
+        let mut __proto_rs_total = 0usize;
+        for (__proto_rs_key, __proto_rs_value) in (#access).iter() {
+            let __proto_rs_value_view = <<#value_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            let __proto_rs_key_len = <#key_ty as ::proto_rs::SingularField>::encoded_len_singular_field(1u32, &__proto_rs_key);
+            let __proto_rs_value_len = <#value_ty as ::proto_rs::SingularField>::encoded_len_singular_field(2u32, &__proto_rs_value_view);
+            let __proto_rs_entry_len = __proto_rs_key_len + __proto_rs_value_len;
+            __proto_rs_total += __proto_rs_tag_len + ::proto_rs::encoding::encoded_len_varint(__proto_rs_entry_len as u64) + __proto_rs_entry_len;
+        }
+        __proto_rs_total
+    }}
 }
 
 fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> TokenStream {
@@ -947,11 +1051,9 @@ fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Token
     }
 
     quote! {{
-        if !(#access).is_empty() {
-            let __proto_rs_views = (#access).iter().map(|value| {
-                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-            });
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+        for __proto_rs_value in (#access).iter() {
+            let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_item(#tag, __proto_rs_view, buf);
         }
     }}
 }
@@ -989,11 +1091,12 @@ fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
             if (#access).is_empty() {
                 0
             } else {
+                let __proto_rs_elem_key_len = ::proto_rs::encoding::key_len(1u32);
                 let mut __proto_rs_body_len = 0usize;
                 for __proto_rs_value in (#access).iter() {
                     let __proto_rs_converted: #proto_ty = #convert;
                     __proto_rs_body_len += (::proto_rs::encoding::#codec::encoded_len(1u32, &__proto_rs_converted)
-                        - ::proto_rs::encoding::key_len(1u32));
+                        - __proto_rs_elem_key_len);
                 }
                 ::proto_rs::encoding::key_len(#tag)
                     + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
@@ -1003,12 +1106,13 @@ fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
     }
 
     quote! {{
-        let __proto_rs_views = (#access)
-            .iter()
-            .map(|value| {
-                <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
-            });
-        <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+        let mut __proto_rs_total = 0usize;
+        for __proto_rs_value in (#access).iter() {
+            let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
+            __proto_rs_total
+                += <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_item(#tag, &__proto_rs_view);
+        }
+        __proto_rs_total
     }}
 }
 
