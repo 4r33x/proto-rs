@@ -29,9 +29,10 @@ pub extern crate alloc;
 // Re-export the bytes crate for use within derived code.
 pub use bytes;
 
+mod coders;
 mod error;
 mod name;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 mod tonic;
 mod traits;
 mod types;
@@ -40,6 +41,11 @@ mod wrappers;
 #[doc(hidden)]
 pub mod encoding;
 
+pub use crate::coders::BytesMode;
+pub use crate::coders::ProtoCodec;
+pub use crate::coders::ProtoEncoder;
+pub use crate::coders::SunByRef;
+pub use crate::coders::SunByVal;
 pub use crate::encoding::length_delimiter::decode_length_delimiter;
 pub use crate::encoding::length_delimiter::encode_length_delimiter;
 pub use crate::encoding::length_delimiter::length_delimiter_len;
@@ -47,29 +53,19 @@ pub use crate::error::DecodeError;
 pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
 pub use crate::name::Name;
-#[cfg(feature = "std")]
-pub use crate::tonic::BytesMode;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::EncoderExt;
-#[cfg(feature = "std")]
-pub use crate::tonic::ProtoCodec;
-#[cfg(feature = "std")]
-pub use crate::tonic::ProtoEncoder;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoRequest;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoResponse;
-#[cfg(feature = "std")]
-pub use crate::tonic::SunByRef;
-#[cfg(feature = "std")]
-pub use crate::tonic::SunByVal;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ToZeroCopyRequest;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ToZeroCopyResponse;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ZeroCopyRequest;
-#[cfg(feature = "std")]
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ZeroCopyResponse;
 pub use crate::traits::MessageField;
 pub use crate::traits::OwnedSunOf;

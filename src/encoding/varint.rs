@@ -5,6 +5,8 @@ use ::bytes::Buf;
 use ::bytes::BufMut;
 
 use crate::DecodeError;
+#[cfg(not(feature = "std"))]
+use crate::alloc::vec::Vec;
 
 /// Encodes an integer value into LEB128 variable length format, and writes it to the buffer.
 /// The buffer must have enough remaining space (maximum 10 bytes).

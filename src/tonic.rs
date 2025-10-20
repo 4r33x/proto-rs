@@ -1,67 +1,32 @@
-use core::marker::PhantomData;
-
-use bytes::BufMut;
 use tonic::Status;
 use tonic::codec::Codec;
 use tonic::codec::DecodeBuf;
 use tonic::codec::Decoder;
 use tonic::codec::EncodeBuf;
 use tonic::codec::Encoder;
-
-use crate::ProtoExt;
-use crate::alloc::vec::Vec;
-use crate::traits::ProtoShadow;
-
 mod req;
 mod resp;
+use bytes::BufMut;
 pub use req::ProtoRequest;
 pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
 pub use resp::ZeroCopyResponse;
+
+use crate::ProtoExt;
+use crate::ProtoShadow;
+use crate::coders::AsBytes;
+use crate::coders::BytesMode;
+use crate::coders::ProtoCodec;
+use crate::coders::ProtoDecoder;
+use crate::coders::ProtoEncoder;
+use crate::coders::SunByRef;
+use crate::coders::SunByVal;
 
 pub trait ToZeroCopyResponse<T> {
     fn to_zero_copy(self) -> ZeroCopyResponse<T>;
 }
 pub trait ToZeroCopyRequest<T> {
     fn to_zero_copy(self) -> ZeroCopyRequest<T>;
-}
-
-pub trait AsBytes {
-    fn as_bytes(&self) -> &[u8];
-}
-
-impl AsBytes for Vec<u8> {
-    fn as_bytes(&self) -> &[u8] {
-        self
-    }
-}
-impl<const N: usize> AsBytes for [u8; N] {
-    fn as_bytes(&self) -> &[u8] {
-        self
-    }
-}
-#[derive(Clone, Copy, Default)]
-pub struct BytesMode;
-#[derive(Clone, Copy, Default)]
-pub struct SunByVal; // Sun<'a> = T
-#[derive(Clone, Copy, Default)]
-pub struct SunByRef; // Sun<'a> = &'a T
-
-#[derive(Debug, Clone)]
-pub struct ProtoCodec<Encode = (), Decode = (), Mode = SunByRef> {
-    _marker: PhantomData<(Encode, Decode, Mode)>,
-}
-
-impl<Encode, Decode, Mode> Default for ProtoCodec<Encode, Decode, Mode> {
-    fn default() -> Self {
-        Self { _marker: PhantomData }
-    }
-}
-
-impl<Encode, Decode, Mode> ProtoCodec<Encode, Decode, Mode> {
-    pub fn new() -> Self {
-        Self { _marker: PhantomData }
-    }
 }
 
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
@@ -82,17 +47,6 @@ where
 
     fn decoder(&mut self) -> Self::Decoder {
         ProtoDecoder::default()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ProtoEncoder<T, Mode> {
-    _marker: core::marker::PhantomData<(T, Mode)>,
-}
-
-impl<T, Mode> Default for ProtoEncoder<T, Mode> {
-    fn default() -> Self {
-        Self { _marker: PhantomData }
     }
 }
 
@@ -146,16 +100,6 @@ where
     #[inline]
     fn encode(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         <Self as EncoderExt<T, Mode>>::encode_sun(self, item, dst)
-    }
-}
-#[derive(Debug, Clone)]
-pub struct ProtoDecoder<T> {
-    _marker: PhantomData<T>,
-}
-
-impl<T> Default for ProtoDecoder<T> {
-    fn default() -> Self {
-        Self { _marker: PhantomData }
     }
 }
 

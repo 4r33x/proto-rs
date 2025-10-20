@@ -72,7 +72,7 @@ impl DecodeContext {
     // at the previous level of recursion.
     #[cfg(not(feature = "no-recursion-limit"))]
     #[inline]
-    pub(crate) fn enter_recursion(&self) -> DecodeContext {
+    pub(crate) fn enter_recursion(self) -> DecodeContext {
         DecodeContext {
             recurse_count: self.recurse_count - 1,
         }
@@ -81,7 +81,7 @@ impl DecodeContext {
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
     #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub(crate) fn enter_recursion(&self) -> DecodeContext {
+    pub(crate) fn enter_recursion(self) -> DecodeContext {
         DecodeContext {}
     }
 
@@ -92,7 +92,7 @@ impl DecodeContext {
     /// Returns `Err<DecodeError>` if the recursion limit has been reached.
     #[cfg(not(feature = "no-recursion-limit"))]
     #[inline]
-    pub(crate) fn limit_reached(&self) -> Result<(), DecodeError> {
+    pub(crate) fn limit_reached(self) -> Result<(), DecodeError> {
         if self.recurse_count == 0 { Err(DecodeError::new("recursion limit reached")) } else { Ok(()) }
     }
 

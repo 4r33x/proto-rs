@@ -51,7 +51,7 @@ impl ParseFieldAttr for () {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct UnifiedProtoConfig {
     pub proto_path: Option<String>,
     pub rpc_server: bool,
@@ -63,7 +63,7 @@ pub struct UnifiedProtoConfig {
     pub sun: Option<SunConfig>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,

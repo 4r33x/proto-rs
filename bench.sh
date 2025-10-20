@@ -1,1 +1,1 @@
-cargo bench
+cargo bench -p bench_runner

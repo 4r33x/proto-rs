@@ -13,7 +13,6 @@ use syn::TypePath;
 
 use crate::utils::MethodInfo;
 
-#[derive(Debug)]
 struct ParsedMethodSignature {
     request_type: Type,
     response_type: Type,

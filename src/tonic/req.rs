@@ -2,11 +2,11 @@ use core::marker::PhantomData;
 
 use tonic::Request;
 
-use crate::BytesMode;
 use crate::ProtoExt;
 use crate::ProtoShadow;
-use crate::SunByRef;
-use crate::tonic::ToZeroCopyRequest;
+use crate::ToZeroCopyRequest;
+use crate::coders::BytesMode;
+use crate::coders::SunByRef;
 
 /// A wrapper around [`tonic::Request<Vec<u8>>`] that remembers the protobuf
 /// message type that produced the encoded bytes.

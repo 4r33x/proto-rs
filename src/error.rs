@@ -135,7 +135,8 @@ impl std::error::Error for UnknownEnumValue {}
 #[cfg(test)]
 mod test {
     use super::*;
-
+    #[cfg(not(feature = "std"))]
+    use crate::alloc::string::ToString;
     #[test]
     fn test_push() {
         let mut decode_error = DecodeError::new("something failed");

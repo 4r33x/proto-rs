@@ -1,0 +1,20 @@
+[package]
+name = "bench_runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+criterion = { version = "0.7" }
+chrono.workspace = true
+prost = { workspace = true, features = ["derive", "std"] }
+bytes = { workspace = true, default-features = false }
+proto_rs = { workspace = true, features = ["std"] }
+inventory = { workspace = true, optional = true }
+
+
+[features]
+build-schemas = ["inventory"]
+
+[[bench]]
+name = "main_bench"
+harness = false

@@ -19,10 +19,8 @@ use bytes::Bytes;
 use chrono::Utc;
 use criterion::Criterion;
 use criterion::Throughput;
-use criterion::criterion_group;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
-use proto_rs::ToZeroCopyResponse;
 use proto_rs::proto_message;
 
 static BENCH_RECORDER: OnceLock<BenchRecorder> = OnceLock::new();
@@ -60,83 +58,125 @@ impl BenchRecorder {
 
     fn write_markdown(&self) -> io::Result<()> {
         use std::fmt::Write as _;
+        const TOL: f64 = 0.01;
         const MIB: f64 = 1024.0 * 1024.0;
+
+        // ---------------------------------------------------------------------
+        // 1. Explicit compile-time mapping between prost baseline ↔ proto_rs test
+        // ---------------------------------------------------------------------
+        const BASELINE_MAP: &[(&str, &str)] = &[
+            ("prost clone + encode", "proto_rs zero_copy"),
+            ("prost encode_to_vec", "proto_rs encode_to_vec"),
+            ("prost decode canonical input", "proto_rs decode canonical input"),
+            ("prost decode proto_rs input", "proto_rs decode proto_rs input"),
+        ];
+
+        fn baseline_for(bench_name: &str) -> Option<String> {
+            for (prost_name, proto_name) in BASELINE_MAP {
+                if *proto_name == bench_name {
+                    return Some((*prost_name).to_string());
+                }
+            }
+            if bench_name.starts_with("prost ") {
+                return Some(bench_name.to_owned());
+            }
+            None
+        }
 
         let groups = self.groups.lock().map_err(|_| io::Error::other("bench recorder poisoned"))?;
 
         let base: PathBuf = env!("CARGO_MANIFEST_DIR").into();
-        let path = base.join("benches").join("bench.md");
+        let path = base.parent().map(|p| p.join("bench.md")).unwrap_or_else(|| PathBuf::from("../bench.md"));
 
-        // ------------------------------------------------------------------------
-        // 1. Build the new benchmark section into a string buffer
-        // ------------------------------------------------------------------------
+        // ---------------------------------------------------------------------
+        // 2. Build markdown section
+        // ---------------------------------------------------------------------
         let mut buffer = String::new();
         let now = Utc::now();
 
         writeln!(&mut buffer, "\n# Benchmark Run — {}\n", now.format("%Y-%m-%d %H:%M:%S")).map_err(io::Error::other)?;
+        writeln!(&mut buffer, "| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |").map_err(io::Error::other)?;
+        writeln!(&mut buffer, "| --- | --- | ---: | ---: | ---: |").map_err(io::Error::other)?;
 
-        writeln!(&mut buffer, "| Group | Benchmark | Avg ns/op | Avg µs/op | MiB/s | Rel to Prost - lower is better |").map_err(io::Error::other)?;
-        writeln!(&mut buffer, "| --- | --- | ---: | ---: | ---: | ---: |").map_err(io::Error::other)?;
+        // Index avg_us for all benchmarks
+        let mut avg_index: HashMap<(String, String), f64> = HashMap::new();
 
-        // ------------------------------------------------------------------------
-        // 2. Collect prost baselines per group
-        // ------------------------------------------------------------------------
-        let mut prost_baselines: HashMap<String, f64> = HashMap::new();
         for (group_name, benchmarks) in groups.iter() {
             for (bench_name, aggregate) in benchmarks {
                 if aggregate.iterations == 0 {
                     continue;
                 }
-                if bench_name.contains("prost") {
-                    let avg_ns = aggregate.total_duration.as_nanos() as f64 / aggregate.iterations as f64;
-                    prost_baselines.insert(group_name.clone(), avg_ns);
-                }
+                let avg_us = aggregate.total_duration.as_micros() as f64 / aggregate.iterations as f64;
+                avg_index.insert((group_name.clone(), bench_name.clone()), avg_us);
             }
         }
 
-        // ------------------------------------------------------------------------
-        // 3. Fill in all benchmark rows
-        // ------------------------------------------------------------------------
+        // ---------------------------------------------------------------------
+        // 3. Render rows
+        // ---------------------------------------------------------------------
         for (group_name, benchmarks) in groups.iter() {
             for (bench_name, aggregate) in benchmarks {
                 if aggregate.iterations == 0 {
                     continue;
                 }
 
-                let avg_ns = aggregate.total_duration.as_nanos() as f64 / aggregate.iterations as f64;
-                let avg_usecs = avg_ns / 1_000.0;
-                let avg_sec = avg_ns / 1_000_000_000.0;
+                let avg_us = aggregate.total_duration.as_micros() as f64 / aggregate.iterations as f64;
+                let avg_sec = avg_us / 1_000_000.0;
 
-                let throughput = aggregate.bytes.map(|bytes| {
-                    let mib = bytes as f64 / MIB;
-                    if avg_sec > 0.0 { mib / avg_sec } else { 0.0 }
-                });
+                // Ops per second (bigger, more intuitive numbers)
+                let ops_per_sec = if avg_sec > 0.0 { 1.0 / avg_sec } else { 0.0 };
 
-                let throughput_display = throughput.map_or_else(|| "-".to_string(), |v| format!("{v:.2}"));
+                // Throughput in MiB/s
+                let throughput_display = aggregate.bytes.map_or_else(
+                    || "-".to_string(),
+                    |bytes| {
+                        if avg_sec > 0.0 {
+                            let mib = bytes as f64 / MIB;
+                            format!("{:.2}", mib / avg_sec)
+                        } else {
+                            "-".to_string()
+                        }
+                    },
+                );
 
-                let rel_display = if let Some(base_ns) = prost_baselines.get(group_name) {
-                    if *base_ns > 0.0 { format!("{:.2}×", avg_ns / base_ns) } else { "-".to_string() }
+                // Find prost baseline
+                let baseline_avg = if let Some(baseline_name) = baseline_for(bench_name) {
+                    avg_index.get(&(group_name.clone(), baseline_name)).copied().or(Some(avg_us))
+                } else {
+                    Some(avg_us)
+                };
+
+                // Relative speedup
+                let rel_display = if let Some(base_avg_us) = baseline_avg {
+                    if base_avg_us > 0.0 {
+                        let ratio = base_avg_us / avg_us; // prost / ours
+                        if ratio > 1.0 + TOL {
+                            format!("{ratio:.2}× faster")
+                        } else if ratio < 1.0 - TOL {
+                            format!("{ratio:.2}× slower")
+                        } else {
+                            "1.00×".to_string()
+                        }
+                    } else {
+                        "-".to_string()
+                    }
                 } else {
                     "-".to_string()
                 };
 
-                writeln!(&mut buffer, "| {group_name} | {bench_name} | {avg_ns:.2} | {avg_usecs:.2} | {throughput_display} | {rel_display} |").map_err(io::Error::other)?;
+                writeln!(&mut buffer, "| {group_name} | {bench_name} | {ops_per_sec:.2} | {throughput_display} | {rel_display} |").map_err(io::Error::other)?;
             }
         }
 
         writeln!(&mut buffer).map_err(io::Error::other)?;
 
-        // ------------------------------------------------------------------------
-        // 4. Read existing content and prepend
-        // ------------------------------------------------------------------------
+        // ---------------------------------------------------------------------
+        // 4. Prepend to existing markdown file
+        // ---------------------------------------------------------------------
         let old_content = std::fs::read_to_string(&path).unwrap_or_default();
         let new_content = format!("{buffer}{old_content}");
 
-        // ------------------------------------------------------------------------
-        // 5. Write back entire file
-        // ------------------------------------------------------------------------
         let mut file = OpenOptions::new().create(true).write(true).truncate(true).open(&path)?;
-
         file.write_all(new_content.as_bytes())?;
         Ok(())
     }
@@ -161,38 +201,36 @@ fn bench_encode_decode(c: &mut Criterion) {
     });
 
     let mut group = c.benchmark_group("complex_root_encode_decode");
-    group.throughput(Throughput::Bytes(proto_bytes.len() as u64));
 
+    group.throughput(Throughput::Bytes(proto_bytes.len() as u64));
     group.bench_function("proto_rs encode_to_vec", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
                 let start = Instant::now();
-                let encoded = ComplexRoot::encode_to_vec(black_box(&message));
-                black_box(&encoded);
+                let buf = ComplexRoot::encode_to_vec(black_box(&message));
+                black_box(&buf);
                 total += start.elapsed();
             }
             bench_recorder().record("complex_root_encode", "proto_rs encode_to_vec", total, iters, Some(proto_bytes.len() as u64));
-
             total
         });
     });
-
+    group.throughput(Throughput::Bytes(prost_bytes.len() as u64));
     group.bench_function("prost encode_to_vec", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
                 let start = Instant::now();
-                let buf = prost_message.encode_to_vec();
+                let buf = prost::Message::encode_to_vec(black_box(prost_message));
                 black_box(&buf);
                 total += start.elapsed();
             }
             bench_recorder().record("complex_root_encode", "prost encode_to_vec", total, iters, Some(prost_bytes.len() as u64));
-
             total
         });
     });
-
+    group.throughput(Throughput::Bytes(proto_bytes.len() as u64));
     group.bench_function("proto_rs decode proto_rs input", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
@@ -208,7 +246,7 @@ fn bench_encode_decode(c: &mut Criterion) {
             total
         });
     });
-
+    group.throughput(Throughput::Bytes(proto_bytes.len() as u64));
     group.bench_function("prost decode proto_rs input", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
@@ -224,7 +262,7 @@ fn bench_encode_decode(c: &mut Criterion) {
             total
         });
     });
-
+    group.throughput(Throughput::Bytes(prost_bytes.len() as u64));
     group.bench_function("proto_rs decode prost input", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
@@ -235,12 +273,12 @@ fn bench_encode_decode(c: &mut Criterion) {
                 black_box(decoded);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_decode", "proto_rs decode prost input", total, iters, Some(prost_bytes.len() as u64));
+            bench_recorder().record("complex_root_decode", "proto_rs decode canonical input", total, iters, Some(prost_bytes.len() as u64));
 
             total
         });
     });
-
+    group.throughput(Throughput::Bytes(prost_bytes.len() as u64));
     group.bench_function("prost decode prost input", |b| {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
@@ -251,7 +289,7 @@ fn bench_encode_decode(c: &mut Criterion) {
                 black_box(decoded);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_decode", "prost decode prost input", total, iters, Some(prost_bytes.len() as u64));
+            bench_recorder().record("complex_root_decode", "prost decode canonical input", total, iters, Some(prost_bytes.len() as u64));
 
             total
         });
@@ -266,9 +304,9 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
     let prost_len = prost_message.encode_to_vec().len();
     let proto_len = ComplexRoot::encode_to_vec(&message).len();
 
-    let mut group = c.benchmark_group("zero_copy_vs_prost");
-    group.throughput(Throughput::Bytes(proto_len as u64));
+    let mut group = c.benchmark_group("zero_copy_vs_clone");
 
+    group.throughput(Throughput::Bytes(prost_len as u64));
     group.bench_function("prost clone + encode", |b| {
         let mut buf = Vec::with_capacity(prost_len);
         b.iter_custom(|iters| {
@@ -281,24 +319,24 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("bench_zero_copy_vs_prost", "prost clone + encode", total, iters, Some(prost_len as u64));
+            bench_recorder().record("bench_zero_copy_vs_clone", "prost clone + encode", total, iters, Some(prost_len as u64));
 
             total
         });
     });
-
+    group.throughput(Throughput::Bytes(proto_len as u64));
     group.bench_function("proto_rs zero_copy response", |b| {
         let mut buf = Vec::with_capacity(proto_len);
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
                 let start = Instant::now();
-                let zero_copy = (&message).to_zero_copy();
-                buf.put_slice(zero_copy.into_response().get_ref().as_slice());
+                let zero_copy = ComplexRoot::encode_to_vec(&message);
+                buf.put_slice(zero_copy.as_slice());
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("bench_zero_copy_vs_prost", "proto_rs zero_copy response", total, iters, Some(proto_len as u64));
+            bench_recorder().record("bench_zero_copy_vs_clone", "proto_rs zero_copy", total, iters, Some(proto_len as u64));
 
             total
         });
@@ -307,10 +345,18 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_encode_decode, bench_zero_copy_vs_prost);
 fn main() {
-    benches();
-    criterion::Criterion::default().configure_from_args().final_summary();
+    use criterion::Criterion;
+
+    // Configure Criterion (respects CLI args like --bench)
+    let mut c = Criterion::default().configure_from_args();
+
+    // Run each bench manually
+    bench_encode_decode(&mut c);
+    bench_zero_copy_vs_prost(&mut c);
+
+    // Write summary + markdown report
+    c.final_summary();
     bench_recorder().write_markdown().unwrap();
 }
 
