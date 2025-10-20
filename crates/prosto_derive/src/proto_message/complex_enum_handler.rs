@@ -168,9 +168,39 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
             fn clear(&mut self) {
                 *self = Self::proto_default();
             }
-        }
 
-        impl #generics ::proto_rs::MessageField for #name #generics {}
+            fn encode_singular_field(
+                tag: u32,
+                value: ::proto_rs::ViewOf<'_, Self>,
+                buf: &mut impl ::proto_rs::bytes::BufMut,
+            ) {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(&value);
+                if len != 0 {
+                    ::proto_rs::encoding::message::encode::<Self>(tag, value, buf);
+                }
+            }
+
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self::Shadow<'_>,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                ::proto_rs::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
+            }
+
+            fn encoded_len_singular_field(
+                tag: u32,
+                value: &::proto_rs::ViewOf<'_, Self>,
+            ) -> usize {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(value);
+                if len == 0 {
+                    0
+                } else {
+                    ::proto_rs::encoding::message::encoded_len::<Self>(tag, value)
+                }
+            }
+        }
 
     }
 }
@@ -268,7 +298,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         let decode_arm = quote! {
             #tag => {
                 let mut #binding_ident = #binding_default;
-                <#field_ty as ::proto_rs::SingularField>::merge_singular_field(
+                <#field_ty as ::proto_rs::ProtoExt>::merge_singular_field(
                     wire_type,
                     &mut #binding_ident,
                     buf,

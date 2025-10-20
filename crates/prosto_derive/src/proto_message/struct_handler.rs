@@ -154,9 +154,39 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
             }
 
             #clear_impl
-        }
 
-        impl #generics ::proto_rs::MessageField for #target_ty {}
+            fn encode_singular_field(
+                tag: u32,
+                value: ::proto_rs::ViewOf<'_, Self>,
+                buf: &mut impl ::proto_rs::bytes::BufMut,
+            ) {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(&value);
+                if len != 0 {
+                    ::proto_rs::encoding::message::encode::<Self>(tag, value, buf);
+                }
+            }
+
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self::Shadow<'_>,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                ::proto_rs::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
+            }
+
+            fn encoded_len_singular_field(
+                tag: u32,
+                value: &::proto_rs::ViewOf<'_, Self>,
+            ) -> usize {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(value);
+                if len == 0 {
+                    0
+                } else {
+                    ::proto_rs::encoding::message::encoded_len::<Self>(tag, value)
+                }
+            }
+        }
     }
 }
 
@@ -354,10 +384,40 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
 
             #clear_impl
 
+            fn encode_singular_field(
+                tag: u32,
+                value: ::proto_rs::ViewOf<'_, Self>,
+                buf: &mut impl ::proto_rs::bytes::BufMut,
+            ) {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(&value);
+                if len != 0 {
+                    ::proto_rs::encoding::message::encode::<Self>(tag, value, buf);
+                }
+            }
+
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self::Shadow<'_>,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                ::proto_rs::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
+            }
+
+            fn encoded_len_singular_field(
+                tag: u32,
+                value: &::proto_rs::ViewOf<'_, Self>,
+            ) -> usize {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(value);
+                if len == 0 {
+                    0
+                } else {
+                    ::proto_rs::encoding::message::encoded_len::<Self>(tag, value)
+                }
+            }
+
             #post_decode_impl
         }
-
-        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }
 
@@ -580,9 +640,39 @@ fn handle_named_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
 
             #clear_impl
 
+            fn encode_singular_field(
+                tag: u32,
+                value: ::proto_rs::ViewOf<'_, Self>,
+                buf: &mut impl ::proto_rs::bytes::BufMut,
+            ) {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(&value);
+                if len != 0 {
+                    ::proto_rs::encoding::message::encode::<Self>(tag, value, buf);
+                }
+            }
+
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self::Shadow<'_>,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                ::proto_rs::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
+            }
+
+            fn encoded_len_singular_field(
+                tag: u32,
+                value: &::proto_rs::ViewOf<'_, Self>,
+            ) -> usize {
+                let len = <Self as ::proto_rs::ProtoExt>::encoded_len(value);
+                if len == 0 {
+                    0
+                } else {
+                    ::proto_rs::encoding::message::encoded_len::<Self>(tag, value)
+                }
+            }
+
             #post_decode_impl
         }
-
-        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }

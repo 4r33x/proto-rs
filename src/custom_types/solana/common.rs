@@ -73,6 +73,42 @@ macro_rules! impl_protoext_for_byte_array {
             fn clear(&mut self) {
                 *self = Self::default();
             }
+
+            fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::bytes::BufMut) {
+                ::proto_rs::encoding::encode_key(tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
+                ::proto_rs::encoding::encode_varint($bytes as u64, buf);
+                buf.put_slice(value.as_ref());
+            }
+
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self::Shadow<'_>,
+                buf: &mut impl ::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                let _ = ctx;
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new("invalid wire type for Solana byte array"));
+                }
+
+                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                if len != $bytes {
+                    return Err(::proto_rs::DecodeError::new("invalid length for Solana byte array"));
+                }
+
+                if buf.remaining() < $bytes {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+
+                let mut data = [0u8; $bytes];
+                buf.copy_to_slice(&mut data);
+                *value = <$ty as From<[u8; $bytes]>>::from(data);
+                Ok(())
+            }
+
+            fn encoded_len_singular_field(tag: u32, _value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                ::proto_rs::encoding::key_len(tag) + ::proto_rs::encoding::encoded_len_varint($bytes as u64) + $bytes
+            }
         }
     };
 }
