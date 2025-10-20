@@ -3,80 +3,17 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::mem::MaybeUninit;
 
 use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::MessageField;
 use crate::ProtoExt;
-use crate::RepeatedField;
-use crate::SingularField;
 use crate::encoding::DecodeContext;
-use crate::encoding::REPEATED_VARINT_SIZE;
-use crate::encoding::key_len;
 use crate::encoding::wire_type::WireType;
 use crate::traits::ProtoShadow;
 use crate::traits::ViewOf;
-
-// ---------------- Blanket impls for MessageField ----------------
-
-impl<T> SingularField for T
-where
-    T: MessageField,
-{
-    #[inline]
-    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-        let len = <Self as ProtoExt>::encoded_len(&value);
-        if len != 0 {
-            crate::encoding::message::encode::<Self>(tag, value, buf);
-        }
-    }
-
-    #[inline]
-    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        crate::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
-    }
-
-    #[inline]
-    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
-        let len = <Self as ProtoExt>::encoded_len(value);
-        if len == 0 { 0 } else { crate::encoding::message::encoded_len::<Self>(tag, value) }
-    }
-}
-
-impl<T> RepeatedField for T
-where
-    T: MessageField,
-    for<'a> <T as ProtoExt>::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, View<'a> = &'a T, OwnedSun = T>,
-{
-    #[inline]
-    fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-    where
-        Self: 'a,
-        I: IntoIterator<Item = ViewOf<'a, Self>>,
-    {
-        crate::encoding::message::encode_repeated::<Self, _>(tag, values, buf);
-    }
-    #[inline]
-    fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-    where
-        Self: 'a,
-        I: IntoIterator<Item = ViewOf<'a, Self>>,
-    {
-        values.into_iter().fold(0, |acc, value| {
-            let len = <Self as ProtoExt>::encoded_len(&value);
-            if len == 0 { acc } else { acc + key_len(tag) + REPEATED_VARINT_SIZE + len }
-        })
-    }
-
-    #[inline]
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        crate::encoding::message::merge_repeated::<Self>(wire_type, values, buf, ctx)
-    }
-}
 
 impl<T> ProtoShadow for Box<T>
 where
@@ -159,8 +96,6 @@ where
         T::clear(self);
     }
 }
-
-impl<T: MessageField> MessageField for Box<T> {}
 
 // ---------- Identity shadow for Arc<T> (alloc-free fast path when chosen as a shadow) ----------
 impl<T> ProtoShadow for Arc<T>
@@ -257,6 +192,3 @@ where
         T::clear(Arc::get_mut(self).expect("Arc should be always unique here"));
     }
 }
-
-// ---------- MessageField passthrough ----------
-impl<T: MessageField> MessageField for Arc<T> {}

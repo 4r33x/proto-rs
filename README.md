@@ -134,7 +134,7 @@ Disable the default feature set if you only need message encoding/decoding in `n
 proto_rs = { version = "0.6", default-features = false }
 ```
 
-All core traits (`ProtoExt`, `MessageField`, wrappers, etc.) remain available. Re-enable the `std` feature (enabled by default) when you want the Tonic codec helpers and RPC generation macros.
+All core traits (`ProtoExt`, wrappers, etc.) remain available. Re-enable the `std` feature (enabled by default) when you want the Tonic codec helpers and RPC generation macros.
 
 ## Collecting schemas across a workspace
 

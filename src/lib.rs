@@ -67,14 +67,11 @@ pub use crate::tonic::ToZeroCopyResponse;
 pub use crate::tonic::ZeroCopyRequest;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ZeroCopyResponse;
-pub use crate::traits::MessageField;
 pub use crate::traits::OwnedSunOf;
 pub use crate::traits::ProtoEnum;
 pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoShadow;
-pub use crate::traits::RepeatedField;
 pub use crate::traits::Shadow;
-pub use crate::traits::SingularField;
 pub use crate::traits::SunOf;
 pub use crate::traits::ViewOf;
 

@@ -14,11 +14,8 @@ use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
-use crate::MessageField;
 use crate::Name;
 use crate::ProtoExt;
-use crate::RepeatedField;
-use crate::SingularField;
 use crate::encoding::DecodeContext;
 use crate::encoding::bool;
 use crate::encoding::bytes;
@@ -92,42 +89,7 @@ macro_rules! impl_google_wrapper {
                 let $clear_value: &mut $ty = self;
                 $clear_body
             }
-        }
 
-        impl Name for $ty {
-            const NAME: &'static str = $name;
-            const PACKAGE: &'static str = "google.protobuf";
-
-            fn type_url() -> String {
-                googleapis_type_url_for::<Self>()
-            }
-        }
-
-        impl RepeatedField for $ty {
-            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                for value in values {
-                    $module::encode(tag, value, buf);
-                }
-            }
-
-            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-                $module::merge_repeated(wire_type, values, buf, ctx)
-            }
-
-            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                values.into_iter().map(|value| $module::encoded_len(tag, value)).sum()
-            }
-        }
-
-        impl SingularField for $ty {
             fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if !{
                     let $value: &$ty = value;
@@ -151,6 +113,54 @@ macro_rules! impl_google_wrapper {
                 } else {
                     $module::encoded_len(tag, inner)
                 }
+            }
+
+            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ViewOf<'a, Self>>,
+            {
+                for value in values {
+                    if !{
+                        let $value: &$ty = value;
+                        $is_default
+                    } {
+                        $module::encode(tag, value, buf);
+                    }
+                }
+            }
+
+            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                $module::merge_repeated(wire_type, values, buf, ctx)
+            }
+
+            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ViewOf<'a, Self>>,
+            {
+                values
+                    .into_iter()
+                    .map(|value| {
+                        if {
+                            let $value: &$ty = value;
+                            $is_default
+                        } {
+                            0
+                        } else {
+                            $module::encoded_len(tag, value)
+                        }
+                    })
+                    .sum()
+            }
+        }
+
+        impl Name for $ty {
+            const NAME: &'static str = $name;
+            const PACKAGE: &'static str = "google.protobuf";
+
+            fn type_url() -> String {
+                googleapis_type_url_for::<Self>()
             }
         }
     };
@@ -209,8 +219,6 @@ impl Name for () {
     }
 }
 
-impl MessageField for () {}
-
 /// Compute the type URL for the given `google.protobuf` type, using `type.googleapis.com` as the
 /// authority for the URL.
 fn googleapis_type_url_for<T: Name>() -> String {
@@ -222,12 +230,12 @@ fn googleapis_type_url_for<T: Name>() -> String {
 
 macro_rules! impl_narrow_varint {
     ($ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
-        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, true);
+        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err);
     };
     ($ty:ty, $wide_ty:ty, $module:ident, $err:literal, no_repeated) => {
-        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, false);
+        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err);
     };
-    (@impl $ty:ty, $wide_ty:ty, $module:ident, $err:literal, $with_repeated:tt) => {
+    (@impl $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
         impl ProtoShadow for $ty {
             type Sun<'a> = &'a Self;
             type OwnedSun = Self;
@@ -287,9 +295,7 @@ macro_rules! impl_narrow_varint {
             fn clear(&mut self) {
                 *self = Self::default();
             }
-        }
 
-        impl SingularField for $ty {
             fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if *value != Self::default() {
                     let widened: $wide_ty = (*value).into();
@@ -318,12 +324,7 @@ macro_rules! impl_narrow_varint {
                     $module::encoded_len(tag, &widened)
                 }
             }
-        }
 
-        impl_narrow_varint!(@maybe_repeated $with_repeated, $ty, $wide_ty, $module, $err);
-    };
-    (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
-       impl RepeatedField for $ty {
             fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
             where
                 Self: 'a,
@@ -372,7 +373,6 @@ macro_rules! impl_narrow_varint {
             }
         }
     };
-    (@maybe_repeated false, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
 }
 
 impl_narrow_varint!(u8, u32, uint32, "u8 overflow", no_repeated);

@@ -156,7 +156,6 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
             #clear_impl
         }
 
-        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }
 
@@ -357,7 +356,6 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
             #post_decode_impl
         }
 
-        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }
 
@@ -583,6 +581,5 @@ fn handle_named_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
             #post_decode_impl
         }
 
-        impl #generics ::proto_rs::MessageField for #target_ty {}
     }
 }

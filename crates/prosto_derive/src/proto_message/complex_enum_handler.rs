@@ -170,7 +170,6 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
             }
         }
 
-        impl #generics ::proto_rs::MessageField for #name #generics {}
 
     }
 }
@@ -268,7 +267,7 @@ fn generate_tuple_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         let decode_arm = quote! {
             #tag => {
                 let mut #binding_ident = #binding_default;
-                <#field_ty as ::proto_rs::SingularField>::merge_singular_field(
+                <#field_ty as ::proto_rs::ProtoExt>::merge_singular_field(
                     wire_type,
                     &mut #binding_ident,
                     buf,

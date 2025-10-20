@@ -173,20 +173,37 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             fn clear(&mut self) {
                 *self = Self::proto_default();
             }
-        }
 
-        impl #generics TryFrom<i32> for #name #generics {
-            type Error = ::proto_rs::DecodeError;
-
-            fn try_from(value: i32) -> Result<Self, Self::Error> {
-                match value {
-                    #(#try_from_arms,)*
-                    _ => Err(::proto_rs::DecodeError::new("Invalid enum value")),
+            fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let value: &Self = value;
+                let raw: i32 = (*value) as i32;
+                if raw != 0 {
+                    ::proto_rs::encoding::int32::encode(tag, &raw, buf);
                 }
             }
-        }
 
-        impl #generics ::proto_rs::RepeatedField for #name #generics {
+            fn merge_singular_field(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self::Shadow<'_>,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                let mut raw: i32 = 0;
+                ::proto_rs::encoding::int32::merge(wire_type, &mut raw, buf, ctx)?;
+                *value = Self::try_from(raw)?;
+                Ok(())
+            }
+
+            fn encoded_len_singular_field(tag: u32, value: &::proto_rs::ViewOf<'_, Self>) -> usize {
+                let value: &Self = *value;
+                let raw: i32 = (*value) as i32;
+                if raw != 0 {
+                    ::proto_rs::encoding::int32::encoded_len(tag, &raw)
+                } else {
+                    0
+                }
+            }
+
             fn encode_repeated_field<'a, I>(
                 tag: u32,
                 values: I,
@@ -247,37 +264,17 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             }
         }
 
-        impl #generics ::proto_rs::SingularField for #name #generics {
-            fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value: &Self = value;
-                let raw: i32 = (*value) as i32;
-                if raw != 0 {
-                    ::proto_rs::encoding::int32::encode(tag, &raw, buf);
-                }
-            }
+        impl #generics TryFrom<i32> for #name #generics {
+            type Error = ::proto_rs::DecodeError;
 
-            fn merge_singular_field(
-                wire_type: ::proto_rs::encoding::WireType,
-                value: &mut Self::Shadow<'_>,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                let mut raw: i32 = 0;
-                ::proto_rs::encoding::int32::merge(wire_type, &mut raw, buf, ctx)?;
-                *value = Self::try_from(raw)?;
-                Ok(())
-            }
-
-            fn encoded_len_singular_field(tag: u32, value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                let value: &Self = *value;
-                let raw: i32 = (*value) as i32;
-                if raw != 0 {
-                    ::proto_rs::encoding::int32::encoded_len(tag, &raw)
-                } else {
-                    0
+            fn try_from(value: i32) -> Result<Self, Self::Error> {
+                match value {
+                    #(#try_from_arms,)*
+                    _ => Err(::proto_rs::DecodeError::new("Invalid enum value")),
                 }
             }
         }
+
 
         #proto_enum_impl
     }

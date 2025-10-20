@@ -165,7 +165,7 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
 
         return quote! {
             let mut __tmp: #from_ty = <#from_ty as ::proto_rs::ProtoExt>::proto_default();
-            <#from_ty as ::proto_rs::SingularField>::merge_singular_field(
+            <#from_ty as ::proto_rs::ProtoExt>::merge_singular_field(
                 wire_type,
                 &mut __tmp,
                 buf,
@@ -302,7 +302,7 @@ fn encode_scalar(access: &TokenStream, tag: u32, ty: &Type, parsed: &ParsedField
         "float" => encode_numeric_scalar(access, tag, parsed, quote! { 0f32 }),
         _ if parsed.is_numeric_scalar => encode_numeric_scalar(access, tag, parsed, quote! { 0 }),
         _ => quote! {
-            <#ty as ::proto_rs::SingularField>::encode_singular_field(#tag, &(#access), buf);
+            <#ty as ::proto_rs::ProtoExt>::encode_singular_field(#tag, &(#access), buf);
         },
     }
 }
@@ -337,7 +337,7 @@ fn encode_numeric_scalar(access: &TokenStream, tag: u32, parsed: &ParsedFieldTyp
 
 fn decode_scalar(access: &TokenStream, _tag: u32, ty: &Type) -> TokenStream {
     quote! {
-        <#ty as ::proto_rs::SingularField>::merge_singular_field(
+        <#ty as ::proto_rs::ProtoExt>::merge_singular_field(
             wire_type,
             &mut (#access),
             buf,
@@ -373,7 +373,7 @@ fn encoded_len_scalar(access: &TokenStream, tag: u32, ty: &Type, parsed: &Parsed
         "float" => encoded_len_numeric_scalar(access, tag, parsed, quote! { 0f32 }),
         _ if parsed.is_numeric_scalar => encoded_len_numeric_scalar(access, tag, parsed, quote! { 0 }),
         _ => quote! {
-            <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(#tag, &&(#access))
+            <#ty as ::proto_rs::ProtoExt>::encoded_len_singular_field(#tag, &&(#access))
         },
     }
 }
@@ -522,7 +522,7 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                     .map(|value| {
                         <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                     });
-                <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+                <#elem_ty as ::proto_rs::ProtoExt>::encode_repeated_field(#tag, __proto_rs_views, buf);
             }
         }};
     }
@@ -589,7 +589,7 @@ fn encode_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> Token
                 .map(|value| {
                     <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                 });
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+            <#elem_ty as ::proto_rs::ProtoExt>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
     }}
 }
@@ -748,7 +748,7 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
                         .map(|value| {
                             <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                         });
-                    <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+                    <#elem_ty as ::proto_rs::ProtoExt>::encoded_len_repeated_field(#tag, __proto_rs_views)
                 }
             }},
             true,
@@ -797,7 +797,7 @@ fn encoded_len_array(access: &TokenStream, tag: u32, array: &syn::TypeArray) -> 
                     .map(|value| {
                         <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                     });
-                <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+                <#elem_ty as ::proto_rs::ProtoExt>::encoded_len_repeated_field(#tag, __proto_rs_views)
             }
         }},
         true,
@@ -868,7 +868,7 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
                 .map(|value| {
                     <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                 });
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+            <#elem_ty as ::proto_rs::ProtoExt>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
     }
 }
@@ -876,7 +876,7 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
 fn decode_repeated(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
     quote! {
-        <#elem_ty as ::proto_rs::RepeatedField>::merge_repeated_field(
+        <#elem_ty as ::proto_rs::ProtoExt>::merge_repeated_field(
             wire_type,
             &mut (#access),
             buf,
@@ -960,7 +960,7 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
                 .map(|value| {
                     <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
                 });
-            <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+            <#elem_ty as ::proto_rs::ProtoExt>::encoded_len_repeated_field(#tag, __proto_rs_views)
         }
     }}
 }
@@ -991,8 +991,8 @@ fn map_field_codecs(ty: &Type) -> (TokenStream, TokenStream) {
         _ if parsed.is_numeric_scalar => {
             let Some(codec) = scalar_codec(&parsed) else {
                 return (
-                    quote! { |tag, value, buf| <#ty as ::proto_rs::SingularField>::encode_singular_field(tag, value, buf) },
-                    quote! { |tag, value| <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &value) },
+                    quote! { |tag, value, buf| <#ty as ::proto_rs::ProtoExt>::encode_singular_field(tag, value, buf) },
+                    quote! { |tag, value| <#ty as ::proto_rs::ProtoExt>::encoded_len_singular_field(tag, &value) },
                 );
             };
 
@@ -1016,8 +1016,8 @@ fn map_field_codecs(ty: &Type) -> (TokenStream, TokenStream) {
             }
         }
         _ => (
-            quote! { |tag, value, buf| <#ty as ::proto_rs::SingularField>::encode_singular_field(tag, value, buf) },
-            quote! { |tag, value| <#ty as ::proto_rs::SingularField>::encoded_len_singular_field(tag, &value) },
+            quote! { |tag, value, buf| <#ty as ::proto_rs::ProtoExt>::encode_singular_field(tag, value, buf) },
+            quote! { |tag, value| <#ty as ::proto_rs::ProtoExt>::encoded_len_singular_field(tag, &value) },
         ),
     }
 }
@@ -1051,8 +1051,8 @@ fn decode_map(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType, kind: M
 
     quote! {
         #module::merge(
-            |wire_type, key, buf, ctx| <#key_ty as ::proto_rs::SingularField>::merge_singular_field(wire_type, key, buf, ctx),
-            |wire_type, value, buf, ctx| <#value_ty as ::proto_rs::SingularField>::merge_singular_field(wire_type, value, buf, ctx),
+            |wire_type, key, buf, ctx| <#key_ty as ::proto_rs::ProtoExt>::merge_singular_field(wire_type, key, buf, ctx),
+            |wire_type, value, buf, ctx| <#value_ty as ::proto_rs::ProtoExt>::merge_singular_field(wire_type, value, buf, ctx),
             &mut (#access),
             buf,
             ctx.clone(),
@@ -1136,7 +1136,7 @@ fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Token
             let __proto_rs_views = (#access).iter().map(|value| {
                 <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
             });
-            <#elem_ty as ::proto_rs::RepeatedField>::encode_repeated_field(#tag, __proto_rs_views, buf);
+            <#elem_ty as ::proto_rs::ProtoExt>::encode_repeated_field(#tag, __proto_rs_views, buf);
         }
     }}
 }
@@ -1145,7 +1145,7 @@ fn decode_set(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> Toke
     let elem_ty = &parsed.elem_type;
     quote! {
         let mut __tmp: ::proto_rs::alloc::vec::Vec<#elem_ty> = ::proto_rs::alloc::vec::Vec::new();
-        <#elem_ty as ::proto_rs::RepeatedField>::merge_repeated_field(
+        <#elem_ty as ::proto_rs::ProtoExt>::merge_repeated_field(
             wire_type,
             &mut __tmp,
             buf,
@@ -1193,7 +1193,7 @@ fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
             .map(|value| {
                 <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
             });
-        <#elem_ty as ::proto_rs::RepeatedField>::encoded_len_repeated_field(#tag, __proto_rs_views)
+        <#elem_ty as ::proto_rs::ProtoExt>::encoded_len_repeated_field(#tag, __proto_rs_views)
     }}
 }
 
@@ -1242,7 +1242,7 @@ fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, cfg: 
             let __proto_rs_value = (#access).as_ref().map(|value| {
                 <<#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
             });
-            <#inner_ty as ::proto_rs::SingularField>::encode_option_field(#tag, __proto_rs_value, buf);
+            <#inner_ty as ::proto_rs::ProtoExt>::encode_option_field(#tag, __proto_rs_value, buf);
         },
     }
 }
@@ -1280,7 +1280,7 @@ fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
     }
 
     quote! {
-        <#inner_ty as ::proto_rs::SingularField>::merge_option_field(
+        <#inner_ty as ::proto_rs::ProtoExt>::merge_option_field(
             wire_type,
             &mut (#access),
             buf,
@@ -1337,7 +1337,7 @@ fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, 
             let __proto_rs_value = (#access).as_ref().map(|value| {
                 <<#inner_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value)
             });
-            <#inner_ty as ::proto_rs::SingularField>::encoded_len_option_field(#tag, __proto_rs_value)
+            <#inner_ty as ::proto_rs::ProtoExt>::encoded_len_option_field(#tag, __proto_rs_value)
         }},
     }
 }
@@ -1394,7 +1394,7 @@ fn inner_arc_type(ty: &Type) -> Option<Type> {
 fn decode_option_box(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenStream {
     quote! {
         if let Some(__proto_rs_existing) = (#access).as_mut() {
-            <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
+            <#inner_ty as ::proto_rs::ProtoExt>::merge_singular_field(
                 wire_type,
                 __proto_rs_existing.as_mut(),
                 buf,
@@ -1403,7 +1403,7 @@ fn decode_option_box(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenS
         } else {
             let mut __proto_rs_tmp: <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::Shadow<'_> =
                 <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::proto_default();
-            <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::SingularField>::merge_singular_field(
+            <::proto_rs::alloc::boxed::Box<#inner_ty> as ::proto_rs::ProtoExt>::merge_singular_field(
                 wire_type,
                 &mut __proto_rs_tmp,
                 buf,
@@ -1419,7 +1419,7 @@ fn decode_option_arc(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenS
     let decode_new = quote! {
         let mut __proto_rs_tmp: <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::Shadow<'_> =
             <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::proto_default();
-        <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::SingularField>::merge_singular_field(
+        <::proto_rs::alloc::sync::Arc<#inner_ty> as ::proto_rs::ProtoExt>::merge_singular_field(
             wire_type,
             &mut __proto_rs_tmp,
             buf,
@@ -1432,7 +1432,7 @@ fn decode_option_arc(access: &TokenStream, _tag: u32, inner_ty: &Type) -> TokenS
     quote! {
         if let Some(__proto_rs_existing) = (#access).as_mut() {
             if let Some(__proto_rs_inner) = ::proto_rs::alloc::sync::Arc::get_mut(__proto_rs_existing) {
-                <#inner_ty as ::proto_rs::SingularField>::merge_singular_field(
+                <#inner_ty as ::proto_rs::ProtoExt>::merge_singular_field(
                     wire_type,
                     __proto_rs_inner,
                     buf,
