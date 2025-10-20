@@ -89,18 +89,6 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
         }
     };
 
-    let encoded_len_binding = if config.sun.is_some() {
-        quote! { let _value = value; }
-    } else {
-        quote! { let _value: &Self = *value; }
-    };
-
-    let encode_binding = if config.sun.is_some() {
-        quote! { let _value = &value; }
-    } else {
-        quote! { let _value: &Self = value; }
-    };
-
     let clear_impl = if config.sun.is_some() {
         quote! {
             #[inline(always)]
@@ -133,14 +121,11 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
 
             #[inline(always)]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                #encoded_len_binding
                 0
             }
 
             #[inline(always)]
-            fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, _buf: &mut impl ::proto_rs::bytes::BufMut) {
-                #encode_binding
-            }
+            fn encode_raw(_value: ::proto_rs::ViewOf<'_, Self>, _buf: &mut impl ::proto_rs::bytes::BufMut) {}
 
             #[inline(always)]
             fn merge_field(
@@ -311,18 +296,6 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
         }
     };
 
-    let encoded_len_binding = if config.sun.is_some() {
-        quote! {}
-    } else {
-        quote! { let value: &Self = *value; }
-    };
-
-    let encode_binding = if config.sun.is_some() {
-        quote! { let value = &value; }
-    } else {
-        quote! { let value: &Self = value; }
-    };
-
     let clear_impl = if config.sun.is_some() {
         quote! {
             #[inline(always)]
@@ -357,13 +330,11 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
 
             #[inline(always)]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                #encoded_len_binding
                 0 #(+ #encoded_len_fields)*
             }
 
             #[inline(always)]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                #encode_binding
                 #(#encode_fields)*
             }
 
@@ -562,18 +533,6 @@ fn handle_named_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
         }
     };
 
-    let encoded_len_binding = if config.sun.is_some() {
-        quote! {}
-    } else {
-        quote! { let value: &Self = *value; }
-    };
-
-    let encode_binding = if config.sun.is_some() {
-        quote! { let value = &value; }
-    } else {
-        quote! { let value: &Self = value; }
-    };
-
     let clear_impl = if config.sun.is_some() {
         quote! {
             fn clear(&mut self) {
@@ -613,13 +572,11 @@ fn handle_named_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
 
             #[inline(always)]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                #encoded_len_binding
                 0 #(+ #encoded_len_fields)*
             }
 
             #[inline(always)]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                #encode_binding
                 #(#encode_fields)*
             }
 

@@ -143,7 +143,6 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
 
             #[inline(always)]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value: &Self = value;
                 match value {
                     #(#encode_arms)*
                 }

@@ -142,7 +142,6 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
 
             #[inline(always)]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value: &Self = value;
                 let raw = *value as i32;
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encode(1, &raw, buf);
@@ -175,7 +174,6 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             }
 
             fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                let value: &Self = value;
                 let raw = *value as i32;
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);

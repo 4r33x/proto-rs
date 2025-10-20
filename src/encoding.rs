@@ -583,6 +583,7 @@ pub mod string {
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait BytesAdapterEncode {
     fn len(&self) -> usize;
     fn append_to(&self, buf: &mut impl BufMut);
@@ -626,7 +627,7 @@ impl BytesAdapterDecode for Vec<u8> {
     }
 }
 
-impl<'a> BytesAdapterEncode for &'a Vec<u8> {
+impl BytesAdapterEncode for &Vec<u8> {
     fn len(&self) -> usize {
         Vec::len(self)
     }
@@ -636,7 +637,7 @@ impl<'a> BytesAdapterEncode for &'a Vec<u8> {
     }
 }
 
-impl<'a> BytesAdapterEncode for &'a Bytes {
+impl BytesAdapterEncode for &Bytes {
     fn len(&self) -> usize {
         Buf::remaining(*self)
     }
@@ -646,7 +647,7 @@ impl<'a> BytesAdapterEncode for &'a Bytes {
     }
 }
 
-impl<'a> BytesAdapterEncode for &'a [u8] {
+impl BytesAdapterEncode for &[u8] {
     fn len(&self) -> usize {
         (*self).len()
     }
@@ -656,7 +657,7 @@ impl<'a> BytesAdapterEncode for &'a [u8] {
     }
 }
 
-impl<'a, const N: usize> BytesAdapterEncode for &'a [u8; N] {
+impl<const N: usize> BytesAdapterEncode for &[u8; N] {
     fn len(&self) -> usize {
         N
     }
