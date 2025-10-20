@@ -125,7 +125,10 @@ macro_rules! impl_google_wrapper {
                 }
             }
 
-            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            fn merge_repeated_field<C>(wire_type: WireType, values: &mut C, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
+            where
+                C: ::proto_rs::RepeatedCollection<Self>,
+            {
                 $module::merge_repeated(wire_type, values, buf, ctx)
             }
 
@@ -339,24 +342,33 @@ macro_rules! impl_narrow_varint {
             }
         }
 
-        fn merge_repeated_field(
+        fn merge_repeated_field<C>(
             wire_type: WireType,
-            values: &mut Vec<Self::Shadow<'_>>,
+            values: &mut C,
             buf: &mut impl Buf,
             ctx: DecodeContext,
-        ) -> Result<(), DecodeError> {
+        ) -> Result<(), DecodeError>
+        where
+            C: ::proto_rs::RepeatedCollection<Self>,
+        {
             if wire_type == WireType::LengthDelimited {
                 crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
                     let mut widened: $wide_ty = <$wide_ty as Default>::default();
                     $module::merge(WireType::Varint, &mut widened, buf, ctx)?;
-                    values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
+                    let narrowed = widened
+                        .try_into()
+                        .map_err(|_| DecodeError::new($err))?;
+                    values.push(narrowed);
                     Ok(())
                 })
             } else {
                 crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
                 let mut widened: $wide_ty = <$wide_ty as Default>::default();
                 $module::merge(wire_type, &mut widened, buf, ctx)?;
-                values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
+                let narrowed = widened
+                    .try_into()
+                    .map_err(|_| DecodeError::new($err))?;
+                values.push(narrowed);
                 Ok(())
             }
         }

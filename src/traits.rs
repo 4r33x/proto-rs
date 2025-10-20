@@ -1,9 +1,15 @@
 #![allow(clippy::inline_always)]
+#[cfg(feature = "std")]
+use std::collections::HashSet;
+#[cfg(feature = "std")]
+use std::hash::Hash;
+
 use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::EncodeError;
+use crate::alloc::collections::BTreeSet;
 use crate::alloc::vec::Vec;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
@@ -209,10 +215,14 @@ pub trait ProtoExt: Sized {
         }
     }
     #[inline(always)]
-    fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_repeated_field<C>(wire_type: WireType, values: &mut C, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
+    where
+        C: RepeatedCollection<Self>,
+    {
         let mut value = Self::proto_default();
         Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
-        values.push(value);
+        let owned = Self::post_decode(value)?;
+        values.push(owned);
         Ok(())
     }
 
@@ -244,4 +254,50 @@ pub trait ProtoEnum: Copy + Sized {
 
     /// Convert the enum into its raw `i32` representation.
     fn to_i32(self) -> i32;
+}
+pub trait RepeatedCollection<T> {
+    fn reserve_hint(&mut self, _additional: usize) {}
+
+    fn push(&mut self, value: T);
+
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        for value in iter {
+            self.push(value);
+        }
+    }
+}
+
+impl<T> RepeatedCollection<T> for Vec<T> {
+    #[inline]
+    fn reserve_hint(&mut self, additional: usize) {
+        Vec::reserve(self, additional);
+    }
+
+    #[inline]
+    fn push(&mut self, value: T) {
+        Vec::push(self, value);
+    }
+}
+
+impl<T: Ord> RepeatedCollection<T> for BTreeSet<T> {
+    #[inline]
+    fn push(&mut self, value: T) {
+        let _ = BTreeSet::insert(self, value);
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: Eq + Hash> RepeatedCollection<T> for HashSet<T> {
+    #[inline]
+    fn reserve_hint(&mut self, additional: usize) {
+        HashSet::reserve(self, additional);
+    }
+
+    #[inline]
+    fn push(&mut self, value: T) {
+        let _ = HashSet::insert(self, value);
+    }
 }

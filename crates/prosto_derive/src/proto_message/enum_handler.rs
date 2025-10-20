@@ -217,12 +217,15 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
-            fn merge_repeated_field(
+            fn merge_repeated_field<C>(
                 wire_type: ::proto_rs::encoding::WireType,
-                values: &mut ::proto_rs::alloc::vec::Vec<Self::Shadow<'_>>,
+                values: &mut C,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
+            ) -> Result<(), ::proto_rs::DecodeError>
+            where
+                C: ::proto_rs::RepeatedCollection<Self>,
+            {
                 if wire_type == ::proto_rs::encoding::WireType::LengthDelimited {
                     ::proto_rs::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
                         let mut raw: i32 = 0;
