@@ -56,7 +56,7 @@ pub struct DecodeContext {
 
 #[cfg(not(feature = "no-recursion-limit"))]
 impl Default for DecodeContext {
-    #[inline]
+    #[inline(always)]
     fn default() -> DecodeContext {
         DecodeContext {
             recurse_count: crate::RECURSION_LIMIT,
@@ -71,7 +71,7 @@ impl DecodeContext {
     /// to be used at the next level of recursion. Continue to use the old context
     // at the previous level of recursion.
     #[cfg(not(feature = "no-recursion-limit"))]
-    #[inline]
+    #[inline(always)]
     pub(crate) fn enter_recursion(self) -> DecodeContext {
         DecodeContext {
             recurse_count: self.recurse_count - 1,
@@ -79,7 +79,7 @@ impl DecodeContext {
     }
 
     #[cfg(feature = "no-recursion-limit")]
-    #[inline]
+    #[inline(always)]
     #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn enter_recursion(self) -> DecodeContext {
         DecodeContext {}
@@ -91,13 +91,13 @@ impl DecodeContext {
     /// Returns `Ok<()>` if it is ok to continue recursing.
     /// Returns `Err<DecodeError>` if the recursion limit has been reached.
     #[cfg(not(feature = "no-recursion-limit"))]
-    #[inline]
+    #[inline(always)]
     pub(crate) fn limit_reached(self) -> Result<(), DecodeError> {
         if self.recurse_count == 0 { Err(DecodeError::new("recursion limit reached")) } else { Ok(()) }
     }
 
     #[cfg(feature = "no-recursion-limit")]
-    #[inline]
+    #[inline(always)]
     #[allow(clippy::unnecessary_wraps)]
     #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(crate) fn limit_reached(&self) -> Result<(), DecodeError> {
@@ -110,13 +110,13 @@ pub const MAX_TAG: u32 = (1 << 29) - 1;
 
 /// Encodes a Protobuf field key, which consists of a wire type designator and
 /// the field tag.
-#[inline]
+#[inline(always)]
 pub fn encode_key(tag: u32, wire_type: WireType, buf: &mut impl BufMut) {
     debug_assert!((MIN_TAG..=MAX_TAG).contains(&tag));
     let key = (tag << 3) | wire_type as u32;
     encode_varint(u64::from(key), buf);
 }
-#[inline]
+#[inline(always)]
 /// Decodes a Protobuf field key, which consists of a wire type designator and
 /// the field tag.
 pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
@@ -136,7 +136,7 @@ pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
 
 /// Returns the width of an encoded Protobuf field key with the given tag.
 /// The returned width will be between 1 and 5 bytes (inclusive).
-#[inline]
+#[inline(always)]
 pub const fn key_len(tag: u32) -> usize {
     encoded_len_varint((tag << 3) as u64)
 }
@@ -198,7 +198,7 @@ pub fn skip_field(wire_type: WireType, tag: u32, buf: &mut impl Buf, ctx: Decode
 /// Helper macro which emits an `encode_repeated` function for the type.
 macro_rules! encode_repeated {
     ($ty:ty) => {
-        #[inline]
+        #[inline(always)]
         pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
             for value in values {
                 encode(tag, value, buf);
@@ -252,7 +252,7 @@ macro_rules! varint {
 
          pub mod $proto_ty {
             use crate::encoding::*;
-            #[inline]
+            #[inline(always)]
             pub fn encode(tag: u32, $to_uint64_value: &$ty, buf: &mut impl BufMut) {
                 encode_key(tag, WireType::Varint, buf);
                 encode_varint($to_uint64, buf);
@@ -264,11 +264,11 @@ macro_rules! varint {
                 *value = $from_uint64;
                 Ok(())
             }
-            #[inline]
+            #[inline(always)]
             pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 encode_packed(tag, values, buf);
             }
-            #[inline]
+            #[inline(always)]
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() { return; }
 
@@ -285,12 +285,12 @@ macro_rules! varint {
 
             merge_repeated_numeric!($ty, WireType::Varint, merge, merge_repeated);
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len(tag: u32, $to_uint64_value: &$ty) -> usize {
                 key_len(tag) + encoded_len_varint($to_uint64)
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
@@ -302,7 +302,7 @@ macro_rules! varint {
                 }
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 encoded_len_repeated(tag, values)
             }
@@ -375,12 +375,12 @@ macro_rules! fixed_width {
      $get:ident) => {
         pub mod $proto_ty {
             use crate::encoding::*;
-            #[inline]
+            #[inline(always)]
             pub fn encode(tag: u32, value: &$ty, buf: &mut impl BufMut) {
                 encode_key(tag, $wire_type, buf);
                 buf.$put(*value);
             }
-            #[inline]
+            #[inline(always)]
             pub fn merge(wire_type: WireType, value: &mut $ty, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
                 check_wire_type($wire_type, wire_type)?;
                 if buf.remaining() < $width {
@@ -389,11 +389,11 @@ macro_rules! fixed_width {
                 *value = buf.$get();
                 Ok(())
             }
-            #[inline]
+            #[inline(always)]
             pub fn encode_repeated(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 encode_packed(tag, values, buf);
             }
-            #[inline]
+            #[inline(always)]
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() {
                     return;
@@ -410,12 +410,12 @@ macro_rules! fixed_width {
 
             merge_repeated_numeric!($ty, $wire_type, merge, merge_repeated);
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len(tag: u32, _: &$ty) -> usize {
                 key_len(tag) + $width
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
@@ -425,7 +425,7 @@ macro_rules! fixed_width {
                 }
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 encoded_len_repeated(tag, values)
             }
@@ -472,7 +472,7 @@ fixed_width!(i64, 8, WireType::SixtyFourBit, sfixed64, put_i64_le, get_i64_le);
 macro_rules! length_delimited {
     ($ty:ty) => {
         encode_repeated!($ty);
-        #[inline]
+        #[inline(always)]
         pub fn merge_repeated(wire_type: WireType, values: &mut Vec<$ty>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
             check_wire_type(WireType::LengthDelimited, wire_type)?;
             let mut value = Default::default();
@@ -481,13 +481,13 @@ macro_rules! length_delimited {
             Ok(())
         }
 
-        #[inline]
+        #[inline(always)]
         #[allow(clippy::ptr_arg)]
         pub fn encoded_len(tag: u32, value: &$ty) -> usize {
             key_len(tag) + encoded_len_varint(value.len() as u64) + value.len()
         }
 
-        #[inline]
+        #[inline(always)]
         pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
             key_len(tag) * values.len() + values.iter().map(|value| encoded_len_varint(value.len() as u64) + value.len()).sum::<usize>()
         }
@@ -510,13 +510,13 @@ pub mod string {
     use super::key_len;
     use super::mem;
     use super::str;
-    #[inline]
+    #[inline(always)]
     pub fn encode(tag: u32, value: &String, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
         encode_varint(value.len() as u64, buf);
         buf.put_slice(value.as_bytes());
     }
-    #[inline]
+    #[inline(always)]
     pub fn merge(wire_type: WireType, value: &mut String, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         // ## Unsafety
         //
@@ -534,7 +534,7 @@ pub mod string {
         unsafe {
             struct DropGuard<'a>(&'a mut Vec<u8>);
             impl Drop for DropGuard<'_> {
-                #[inline]
+                #[inline(always)]
                 fn drop(&mut self) {
                     self.0.clear();
                 }
@@ -785,18 +785,18 @@ pub mod message {
     where
         B: BufMut,
     {
-        #[inline]
+        #[inline(always)]
         fn remaining_mut(&self) -> usize {
             self.inner.remaining_mut()
         }
 
-        #[inline]
+        #[inline(always)]
         unsafe fn advance_mut(&mut self, cnt: usize) {
             unsafe { self.inner.advance_mut(cnt) };
             self.written = self.written.checked_add(cnt).expect("encoded payload length overflowed usize");
         }
 
-        #[inline]
+        #[inline(always)]
         fn chunk_mut(&mut self) -> &mut UninitSlice {
             self.inner.chunk_mut()
         }
@@ -853,7 +853,7 @@ pub mod message {
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn merge_repeated<M>(wire_type: WireType, messages: &mut Vec<M::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
     where
         M: ProtoExt,
@@ -865,7 +865,7 @@ pub mod message {
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn encode_repeated<'a, M, I>(tag: u32, values: I, buf: &mut impl BufMut)
     where
         M: ProtoExt + 'a,
@@ -894,7 +894,7 @@ pub mod message {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn encoded_len_repeated<'a, M>(tag: u32, values: &[ViewOf<'a, M>]) -> usize
     where
         M: ProtoExt + 'a,
@@ -904,7 +904,7 @@ pub mod message {
             acc + key_len(tag) + REPEATED_VARINT_SIZE + len
         })
     }
-    #[inline]
+    #[inline(always)]
     pub fn encoded_len<M>(tag: u32, msg: &ViewOf<'_, M>) -> usize
     where
         M: ProtoExt,
