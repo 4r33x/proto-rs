@@ -1,3 +1,4 @@
+#![allow(clippy::inline_always)]
 use bytes::Buf;
 use bytes::BufMut;
 
@@ -48,12 +49,12 @@ pub trait ProtoExt: Sized {
     #[doc(hidden)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
-    #[inline]
+    #[inline(always)]
     fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
         value.to_sun()
     }
 
-    #[inline]
+    #[inline(always)]
     fn with_shadow<R, F>(value: SunOf<'_, Self>, f: F) -> R
     where
         F: FnOnce(ViewOf<'_, Self>) -> R,
@@ -62,19 +63,19 @@ pub trait ProtoExt: Sized {
         f(shadow)
     }
 
-    #[inline]
+    #[inline(always)]
     fn ensure_capacity(buf: &mut impl BufMut, required: usize) -> Result<(), EncodeError> {
         let remaining = buf.remaining_mut();
         if required > remaining { Err(EncodeError::new(required, remaining)) } else { Ok(()) }
     }
 
-    #[inline]
+    #[inline(always)]
     fn length_delimited_capacity(len: usize) -> usize {
         len + encoded_len_varint(len as u64)
     }
 
     // -------- Encoding entry points (Sun -> Shadow -> write)
-    #[inline]
+    #[inline(always)]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
             let required = Self::encoded_len(&shadow);
@@ -83,7 +84,7 @@ pub trait ProtoExt: Sized {
             Ok(())
         })
     }
-    #[inline]
+    #[inline(always)]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -92,7 +93,7 @@ pub trait ProtoExt: Sized {
             buf
         })
     }
-    #[inline]
+    #[inline(always)]
     fn encode_to_array<const N: usize>(value: SunOf<'_, Self>) -> [u8; N] {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -103,7 +104,7 @@ pub trait ProtoExt: Sized {
         })
     }
 
-    #[inline]
+    #[inline(always)]
     fn encode_length_delimited(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -116,7 +117,7 @@ pub trait ProtoExt: Sized {
         })
     }
 
-    #[inline]
+    #[inline(always)]
     fn encode_length_delimited_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
             let len = Self::encoded_len(&shadow);
@@ -141,19 +142,19 @@ pub trait ProtoExt: Sized {
         })
     }
 
-    #[inline]
+    #[inline(always)]
     fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
         let mut shadow = Self::proto_default();
         Self::merge(&mut shadow, &mut buf)?;
         Self::post_decode(shadow)
     }
-    #[inline]
+    #[inline(always)]
     fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError> {
         let mut shadow = Self::proto_default();
         Self::merge_length_delimited(&mut shadow, buf)?;
         Self::post_decode(shadow)
     }
-    #[inline]
+    #[inline(always)]
     fn merge_length_delimited(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
         crate::encoding::message::merge::<Self, _>(WireType::LengthDelimited, value, &mut buf, DecodeContext::default())
     }
@@ -173,14 +174,14 @@ pub trait ProtoExt: Sized {
 
     fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize;
 
-    #[inline]
+    #[inline(always)]
     fn encode_option_field(tag: u32, value: Option<ViewOf<'_, Self>>, buf: &mut impl BufMut) {
         if let Some(inner) = value {
             Self::encode_singular_field(tag, inner, buf);
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn merge_option_field(wire_type: WireType, target: &mut Option<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if let Some(value) = target.as_mut() {
             Self::merge_singular_field(wire_type, value, buf, ctx)
@@ -192,12 +193,12 @@ pub trait ProtoExt: Sized {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn encoded_len_option_field(tag: u32, value: Option<ViewOf<'_, Self>>) -> usize {
         value.as_ref().map_or(0, |inner| Self::encoded_len_singular_field(tag, inner))
     }
 
-    #[inline]
+    #[inline(always)]
     fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
     where
         Self: 'a,
@@ -207,7 +208,7 @@ pub trait ProtoExt: Sized {
             Self::encode_singular_field(tag, value, buf);
         }
     }
-
+    #[inline(always)]
     fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let mut value = Self::proto_default();
         Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
@@ -215,7 +216,7 @@ pub trait ProtoExt: Sized {
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
     where
         Self: 'a,
