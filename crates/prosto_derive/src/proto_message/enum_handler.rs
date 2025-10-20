@@ -124,11 +124,12 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
         impl #generics ::proto_rs::ProtoExt for #name #generics {
             type Shadow<'a> = Self;
 
-            #[inline]
+            #[inline(always)]
             fn proto_default<'a>() -> Self::Shadow<'a> {
                 Self::#default_variant_ident
             }
 
+            #[inline(always)]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
                 let raw = *value as i32;
@@ -139,6 +140,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline(always)]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value: &Self = value;
                 let raw = *value as i32;
@@ -147,6 +149,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline(always)]
             fn merge_field(
                 shadow: &mut Self::Shadow<'_>,
                 tag: u32,
@@ -166,6 +169,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline(always)]
             fn clear(&mut self) {
                 *self = Self::proto_default();
             }
