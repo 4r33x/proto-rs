@@ -129,6 +129,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 Self::#default_variant_ident
             }
 
+            #[inline]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
                 let raw = *value as i32;
@@ -139,6 +140,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value: &Self = value;
                 let raw = *value as i32;
@@ -147,6 +149,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline]
             fn merge_field(
                 shadow: &mut Self::Shadow<'_>,
                 tag: u32,
@@ -166,6 +169,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
 
+            #[inline]
             fn clear(&mut self) {
                 *self = Self::proto_default();
             }

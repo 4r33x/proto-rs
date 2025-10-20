@@ -133,6 +133,7 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
                 #default_value
             }
 
+            #[inline]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
                 match value {
@@ -140,6 +141,7 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
                 }
             }
 
+            #[inline]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value: &Self = value;
                 match value {
@@ -147,6 +149,7 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
                 }
             }
 
+            #[inline]
             fn merge_field(
                 shadow: &mut Self::Shadow<'_>,
                 tag: u32,
@@ -161,6 +164,7 @@ pub fn handle_complex_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream 
                 }
             }
 
+            #[inline]
             fn clear(&mut self) {
                 *self = Self::proto_default();
             }

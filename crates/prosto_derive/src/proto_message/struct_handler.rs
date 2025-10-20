@@ -103,6 +103,7 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
 
     let clear_impl = if config.sun.is_some() {
         quote! {
+            #[inline]
             fn clear(&mut self) {
                 if let Ok(default) = Self::post_decode(Self::proto_default()) {
                     *self = default;
@@ -110,7 +111,10 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
             }
         }
     } else {
-        quote! { fn clear(&mut self) {} }
+        quote! {
+            #[inline]
+            fn clear(&mut self) {}
+        }
     };
 
     quote! {
@@ -127,15 +131,18 @@ fn handle_unit_struct(input: &DeriveInput, config: &UnifiedProtoConfig) -> Token
                 #name
             }
 
+            #[inline]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 #encoded_len_binding
                 0
             }
 
+            #[inline]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, _buf: &mut impl ::proto_rs::bytes::BufMut) {
                 #encode_binding
             }
 
+            #[inline]
             fn merge_field(
                 _value: &mut Self::Shadow<'_>,
                 tag: u32,
@@ -287,6 +294,7 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
 
     let clear_impl = if config.sun.is_some() {
         quote! {
+            #[inline]
             fn clear(&mut self) {
                 if let Ok(default) = Self::post_decode(Self::proto_default()) {
                     *self = default;
@@ -295,6 +303,7 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
         }
     } else {
         quote! {
+            #[inline]
             fn clear(&mut self) {
                 #(#clear_fields)*
             }
@@ -315,16 +324,19 @@ fn handle_tuple_struct(input: &DeriveInput, data: &syn::DataStruct, config: &Uni
                 #shadow_ty(#(#default_values),*)
             }
 
+            #[inline]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 #encoded_len_binding
                 0 #(+ #encoded_len_fields)*
             }
 
+            #[inline]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 #encode_binding
                 #(#encode_fields)*
             }
 
+            #[inline]
             fn merge_field(
                 shadow: &mut Self::Shadow<'_>,
                 tag: u32,
