@@ -116,7 +116,7 @@ pub fn encode_key(tag: u32, wire_type: WireType, buf: &mut impl BufMut) {
     let key = (tag << 3) | wire_type as u32;
     encode_varint(u64::from(key), buf);
 }
-
+#[inline]
 /// Decodes a Protobuf field key, which consists of a wire type designator and
 /// the field tag.
 pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
@@ -213,7 +213,6 @@ macro_rules! merge_repeated_numeric {
      $wire_type:expr,
      $merge:ident,
      $merge_repeated:ident) => {
-        #[inline]
         pub fn $merge_repeated(wire_type: WireType, values: &mut Vec<$ty>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
             if wire_type == WireType::LengthDelimited {
                 // Packed.
@@ -258,7 +257,7 @@ macro_rules! varint {
                 encode_key(tag, WireType::Varint, buf);
                 encode_varint($to_uint64, buf);
             }
-            #[inline]
+
             pub fn merge(wire_type: WireType, value: &mut $ty, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
                 check_wire_type(WireType::Varint, wire_type)?;
                 let $from_uint64_value = decode_varint(buf)?;
