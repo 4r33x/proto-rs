@@ -809,24 +809,11 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
             return quote! {};
         };
 
-        if !needs_numeric_widening(parsed) {
-            return quote! {
-                if !(#access).is_empty() {
-                    ::proto_rs::encoding::#codec::encode_packed(#tag, &(#access), buf);
-                }
-            };
-        }
-
-        let proto_ty = &parsed.proto_rust_type;
-        return quote! {{
+        return quote! {
             if !(#access).is_empty() {
-                let __proto_rs_converted: ::proto_rs::alloc::vec::Vec<#proto_ty> = (#access)
-                    .iter()
-                    .map(|value| (*value) as #proto_ty)
-                    .collect();
-                ::proto_rs::encoding::#codec::encode_packed(#tag, &__proto_rs_converted, buf);
+                ::proto_rs::encoding::#codec::encode_packed(#tag, &(#access), buf);
             }
-        }};
+        };
     }
 
     quote! {
@@ -880,28 +867,13 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
             return quote! { 0 };
         };
 
-        if !needs_numeric_widening(parsed) {
-            return quote! {
-                if (#access).is_empty() {
-                    0
-                } else {
-                    ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &(#access))
-                }
-            };
-        }
-
-        let proto_ty = &parsed.proto_rust_type;
-        return quote! {{
+        return quote! {
             if (#access).is_empty() {
                 0
             } else {
-                let __proto_rs_converted: ::proto_rs::alloc::vec::Vec<#proto_ty> = (#access)
-                    .iter()
-                    .map(|value| (*value) as #proto_ty)
-                    .collect();
-                ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &__proto_rs_converted)
+                ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &(#access))
             }
-        }};
+        };
     }
 
     quote! {{
@@ -1097,16 +1069,12 @@ fn encode_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> Token
 fn decode_set(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> TokenStream {
     let elem_ty = &parsed.elem_type;
     quote! {
-        let mut __tmp: ::proto_rs::alloc::vec::Vec<#elem_ty> = ::proto_rs::alloc::vec::Vec::new();
         <#elem_ty as ::proto_rs::ProtoExt>::merge_repeated_field(
             wire_type,
-            &mut __tmp,
+            &mut (#access),
             buf,
             ctx.clone(),
         )?;
-        for __value in __tmp {
-            (#access).insert(__value);
-        }
     }
 }
 
