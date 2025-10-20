@@ -1,3 +1,5 @@
+#![allow(clippy::inline_always)]
+
 //! Utility functions and types for encoding and decoding Protobuf types.
 //!
 //! This module contains the encoding and decoding primatives for Protobuf as described in
