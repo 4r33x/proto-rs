@@ -10,6 +10,7 @@ pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
 pub use crate::name::Name;
 
+#[inline]
 /// Encodes a length delimiter to the buffer.
 ///
 /// See [`Message.encode_length_delimited`] for more info.
@@ -27,6 +28,7 @@ pub fn encode_length_delimiter(length: usize, buf: &mut impl BufMut) -> Result<(
     Ok(())
 }
 
+#[inline]
 /// Returns the encoded length of a length delimiter.
 ///
 /// Applications may use this method to ensure sufficient buffer capacity before calling
@@ -35,6 +37,7 @@ pub fn length_delimiter_len(length: usize) -> usize {
     encoded_len_varint(length as u64)
 }
 
+#[inline]
 /// Decodes a length delimiter from the buffer.
 ///
 /// This method allows the length delimiter to be decoded independently of the message, when the
