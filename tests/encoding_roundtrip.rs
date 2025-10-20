@@ -11,7 +11,6 @@ use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
 use proto_rs::Shadow;
-use proto_rs::SingularField;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
@@ -617,7 +616,7 @@ fn merge_option_box_reuses_allocation() {
     let mut target: Option<Shadow<'_, Box<NestedMessage>>> = Some(<Box<NestedMessage> as ProtoExt>::proto_default());
     let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
-    <Box<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
+    <Box<NestedMessage> as ProtoExt>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
     let ptr_after = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
     assert_eq!(ptr_before, ptr_after, "Box shadow should be reused");
@@ -639,7 +638,7 @@ fn merge_option_arc_reuses_allocation() {
     let mut target: Option<Shadow<'_, Arc<NestedMessage>>> = Some(<Arc<NestedMessage> as ProtoExt>::proto_default());
     let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
-    <Arc<NestedMessage> as SingularField>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
+    <Arc<NestedMessage> as ProtoExt>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
     let ptr_after = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
     assert_eq!(ptr_before, ptr_after, "Arc shadow should be reused when unique");

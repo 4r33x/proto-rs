@@ -14,11 +14,8 @@ use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
-use crate::MessageField;
 use crate::Name;
 use crate::ProtoExt;
-use crate::RepeatedField;
-use crate::SingularField;
 use crate::encoding::DecodeContext;
 use crate::encoding::bool;
 use crate::encoding::bytes;
@@ -92,42 +89,7 @@ macro_rules! impl_google_wrapper {
                 let $clear_value: &mut $ty = self;
                 $clear_body
             }
-        }
 
-        impl Name for $ty {
-            const NAME: &'static str = $name;
-            const PACKAGE: &'static str = "google.protobuf";
-
-            fn type_url() -> String {
-                googleapis_type_url_for::<Self>()
-            }
-        }
-
-        impl RepeatedField for $ty {
-            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                for value in values {
-                    $module::encode(tag, value, buf);
-                }
-            }
-
-            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-                $module::merge_repeated(wire_type, values, buf, ctx)
-            }
-
-            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                values.into_iter().map(|value| $module::encoded_len(tag, value)).sum()
-            }
-        }
-
-        impl SingularField for $ty {
             fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if !{
                     let $value: &$ty = value;
@@ -151,6 +113,37 @@ macro_rules! impl_google_wrapper {
                 } else {
                     $module::encoded_len(tag, inner)
                 }
+            }
+
+            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ViewOf<'a, Self>>,
+            {
+                for value in values {
+                    $module::encode(tag, value, buf);
+                }
+            }
+
+            fn merge_repeated_field(wire_type: WireType, values: &mut Vec<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                $module::merge_repeated(wire_type, values, buf, ctx)
+            }
+
+            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+            where
+                Self: 'a,
+                I: IntoIterator<Item = ViewOf<'a, Self>>,
+            {
+                values.into_iter().map(|value| $module::encoded_len(tag, value)).sum()
+            }
+        }
+
+        impl Name for $ty {
+            const NAME: &'static str = $name;
+            const PACKAGE: &'static str = "google.protobuf";
+
+            fn type_url() -> String {
+                googleapis_type_url_for::<Self>()
             }
         }
     };
@@ -197,6 +190,22 @@ impl ProtoExt for () {
     }
 
     fn clear(&mut self) {}
+
+    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+        let len = <Self as ProtoExt>::encoded_len(&value);
+        if len != 0 {
+            crate::encoding::message::encode::<Self>(tag, value, buf);
+        }
+    }
+
+    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        crate::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
+    }
+
+    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+        let len = <Self as ProtoExt>::encoded_len(value);
+        if len == 0 { 0 } else { crate::encoding::message::encoded_len::<Self>(tag, value) }
+    }
 }
 
 /// `google.protobuf.Empty`
@@ -208,8 +217,6 @@ impl Name for () {
         googleapis_type_url_for::<Self>()
     }
 }
-
-impl MessageField for () {}
 
 /// Compute the type URL for the given `google.protobuf` type, using `type.googleapis.com` as the
 /// authority for the URL.
@@ -287,9 +294,7 @@ macro_rules! impl_narrow_varint {
             fn clear(&mut self) {
                 *self = Self::default();
             }
-        }
 
-        impl SingularField for $ty {
             fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
                 if *value != Self::default() {
                     let widened: $wide_ty = (*value).into();
@@ -318,61 +323,59 @@ macro_rules! impl_narrow_varint {
                     $module::encoded_len(tag, &widened)
                 }
             }
+
+            impl_narrow_varint!(@maybe_repeated_methods $with_repeated, $ty, $wide_ty, $module, $err);
+        }
+    };
+    (@maybe_repeated_methods true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
+        fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
+        where
+            Self: 'a,
+            I: IntoIterator<Item = ViewOf<'a, Self>>,
+        {
+            for value in values {
+                let widened: $wide_ty = (*value).into();
+                $module::encode(tag, &widened, buf);
+            }
         }
 
-        impl_narrow_varint!(@maybe_repeated $with_repeated, $ty, $wide_ty, $module, $err);
-    };
-    (@maybe_repeated true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
-       impl RepeatedField for $ty {
-            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                for value in values {
-                    let widened: $wide_ty = (*value).into();
-                    $module::encode(tag, &widened, buf);
-                }
-            }
-
-            fn merge_repeated_field(
-                wire_type: WireType,
-                values: &mut Vec<Self::Shadow<'_>>,
-                buf: &mut impl Buf,
-                ctx: DecodeContext,
-            ) -> Result<(), DecodeError> {
-                if wire_type == WireType::LengthDelimited {
-                    crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
-                        let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                        $module::merge(WireType::Varint, &mut widened, buf, ctx)?;
-                        values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
-                        Ok(())
-                    })
-                } else {
-                    crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
+        fn merge_repeated_field(
+            wire_type: WireType,
+            values: &mut Vec<Self::Shadow<'_>>,
+            buf: &mut impl Buf,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError> {
+            if wire_type == WireType::LengthDelimited {
+                crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
                     let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                    $module::merge(wire_type, &mut widened, buf, ctx)?;
+                    $module::merge(WireType::Varint, &mut widened, buf, ctx)?;
                     values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
                     Ok(())
-                }
-            }
-
-            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                values
-                    .into_iter()
-                    .map(|value| {
-                        let widened: $wide_ty = (*value).into();
-                        $module::encoded_len(tag, &widened)
-                    })
-                    .sum()
+                })
+            } else {
+                crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
+                let mut widened: $wide_ty = <$wide_ty as Default>::default();
+                $module::merge(wire_type, &mut widened, buf, ctx)?;
+                values.push(widened.try_into().map_err(|_| DecodeError::new($err))?);
+                Ok(())
             }
         }
+
+        fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
+        where
+            Self: 'a,
+            I: IntoIterator<Item = ViewOf<'a, Self>>,
+        {
+            values
+                .into_iter()
+                .map(|value| {
+                    let widened: $wide_ty = (*value).into();
+                    $module::encoded_len(tag, &widened)
+                })
+                .sum()
+        }
     };
-    (@maybe_repeated false, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
+    (@maybe_repeated_methods false, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
 }
 
 impl_narrow_varint!(u8, u32, uint32, "u8 overflow", no_repeated);
@@ -427,6 +430,27 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
 
     fn clear(&mut self) {
         *self = None;
+    }
+
+    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+        if let Some(inner) = value {
+            <T as ProtoExt>::encode_singular_field(tag, inner, buf);
+        }
+    }
+
+    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if let Some(inner) = value.as_mut() {
+            <T as ProtoExt>::merge_singular_field(wire_type, inner, buf, ctx)
+        } else {
+            let mut inner = T::proto_default();
+            <T as ProtoExt>::merge_singular_field(wire_type, &mut inner, buf, ctx)?;
+            *value = Some(inner);
+            Ok(())
+        }
+    }
+
+    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+        value.as_ref().map_or(0, |inner| <T as ProtoExt>::encoded_len_singular_field(tag, inner))
     }
 }
 

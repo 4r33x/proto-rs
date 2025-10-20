@@ -111,4 +111,21 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
             elem.clear();
         }
     }
+
+    #[inline]
+    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
+        let _ = (tag, value, buf);
+    }
+
+    #[inline]
+    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let _ = (wire_type, value, buf, ctx);
+        Ok(())
+    }
+
+    #[inline]
+    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
+        let _ = (tag, value);
+        0
+    }
 }
