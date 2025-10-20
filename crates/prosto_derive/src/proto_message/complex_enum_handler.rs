@@ -433,6 +433,13 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
     for (index, field) in fields_named.named.iter().enumerate() {
         let ident = field.ident.as_ref().unwrap();
         let cfg = parse_field_config(field);
+        let parsed = parse_field_type(&field.ty);
+        let should_copy_scalar = !parsed.is_option
+            && !parsed.is_repeated
+            && parsed.map_kind.is_none()
+            && parsed.set_kind.is_none()
+            && !matches!(field.ty, syn::Type::Array(_))
+            && (parsed.is_numeric_scalar || parsed.proto_type.as_str() == "bool");
         field_bindings.push(quote! { #ident });
         let field_binding_encode = if cfg.skip {
             quote! { #ident: _ }
@@ -440,7 +447,12 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             quote! { #ident }
         };
         field_bindings_encode.push(field_binding_encode);
-        let access_expr = quote! { #ident };
+        let encode_access_expr = if should_copy_scalar {
+            quote! { *#ident }
+        } else {
+            quote! { #ident }
+        };
+        let decode_access_expr = quote! { #ident };
         let field_tag = match cfg.custom_tag.unwrap_or(index + 1) {
             0 => {
                 return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
@@ -450,7 +462,7 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         let default_expr = field_default_expr(field);
         field_defaults.push(quote! { let mut #ident = #default_expr; });
 
-        let encoded_len_tokens = generate_field_encoded_len(field, access_expr.clone(), field_tag);
+        let encoded_len_tokens = generate_field_encoded_len(field, encode_access_expr.clone(), field_tag);
         encoded_len_exprs.push(encoded_len_tokens.tokens.clone());
         let field_binding_len = if cfg.skip || !encoded_len_tokens.uses_access {
             quote! { #ident: _ }
@@ -460,8 +472,8 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
         field_bindings_len.push(field_binding_len);
 
         if !cfg.skip {
-            encode_fields.push(generate_field_encode(field, access_expr.clone(), field_tag));
-            let decode_body = generate_field_decode(field, access_expr.clone(), field_tag);
+            encode_fields.push(generate_field_encode(field, encode_access_expr.clone(), field_tag));
+            let decode_body = generate_field_decode(field, decode_access_expr.clone(), field_tag);
             decode_match.push(quote! {
                 #field_tag => {
                     let wire_type = field_wire_type;
@@ -505,7 +517,6 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             #(#encode_fields_body)*
         }
     };
-
     let decode_loop = if decode_match_arms.is_empty() {
         quote! {
             while buf.remaining() > limit {
@@ -547,7 +558,6 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
             Ok(())
         }
     };
-
     let encoded_len_arm = quote! {
         #name::#variant_ident { #(#field_bindings_for_len),* } => {
             let msg_len = 0 #(+ #encoded_len_exprs_for_len)*;
@@ -556,7 +566,6 @@ fn generate_named_variant_arms(name: &syn::Ident, variant_ident: &syn::Ident, ta
                 + msg_len
         }
     };
-
     Ok((encode_arm, decode_arm, encoded_len_arm))
 }
 

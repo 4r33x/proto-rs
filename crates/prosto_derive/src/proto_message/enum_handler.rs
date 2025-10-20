@@ -8,7 +8,6 @@ use syn::spanned::Spanned;
 
 use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
-
 pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
     let name = &input.ident;
     let attrs: Vec<_> = input.attrs.iter().filter(|a| !a.path().is_ident("proto_message")).collect();
@@ -132,7 +131,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             #[inline(always)]
             fn encoded_len(value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
-                let raw = *value as i32;
+                let raw = ::proto_rs::ProtoEnum::to_i32(*value);
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encoded_len(1, &raw)
                 } else {
@@ -143,7 +142,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             #[inline(always)]
             fn encode_raw(value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value: &Self = value;
-                let raw = *value as i32;
+                let raw = ::proto_rs::ProtoEnum::to_i32(*value);
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encode(1, &raw, buf);
                 }
@@ -161,7 +160,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                     1 => {
                         let mut value: i32 = 0;
                         ::proto_rs::encoding::int32::merge(wire_type, &mut value, buf, ctx)?;
-                        *shadow = Self::try_from(value)
+                        *shadow = ::proto_rs::ProtoEnum::from_i32(value)
                             .map_err(|_| ::proto_rs::DecodeError::new("Invalid enum value"))?;
                         Ok(())
                     }
@@ -196,9 +195,12 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 Self: 'a,
                 I: ::core::iter::IntoIterator<Item = ::proto_rs::ViewOf<'a, Self>>,
             {
+                let mut __proto_rs_values = ::proto_rs::alloc::vec::Vec::new();
                 for value in values {
-                    let raw = (*value) as i32;
-                    ::proto_rs::encoding::int32::encode(tag, &raw, buf);
+                    __proto_rs_values.push(::proto_rs::ProtoEnum::to_i32(*value));
+                }
+                if !__proto_rs_values.is_empty() {
+                    ::proto_rs::encoding::int32::encode_packed(tag, &__proto_rs_values, buf);
                 }
             }
 
@@ -217,7 +219,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                             buf,
                             ctx,
                         )?;
-                        values.push(Self::try_from(raw)?);
+                        values.push(::proto_rs::ProtoEnum::from_i32(raw)?);
                         Ok(())
                     })
                 } else {
@@ -227,7 +229,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                     )?;
                     let mut raw: i32 = 0;
                     ::proto_rs::encoding::int32::merge(wire_type, &mut raw, buf, ctx)?;
-                    values.push(Self::try_from(raw)?);
+                    values.push(::proto_rs::ProtoEnum::from_i32(raw)?);
                     Ok(())
                 }
             }
@@ -237,20 +239,22 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 Self: 'a,
                 I: IntoIterator<Item = ::proto_rs::ViewOf<'a, Self>>,
             {
-                values
-                    .into_iter()
-                    .map(|value| {
-                        let raw = (*value) as i32;
-                        ::proto_rs::encoding::int32::encoded_len(tag, &raw)
-                    })
-                    .sum()
+                let mut __proto_rs_values = ::proto_rs::alloc::vec::Vec::new();
+                for value in values {
+                    __proto_rs_values.push(::proto_rs::ProtoEnum::to_i32(*value));
+                }
+                if __proto_rs_values.is_empty() {
+                    0
+                } else {
+                    ::proto_rs::encoding::int32::encoded_len_packed(tag, &__proto_rs_values)
+                }
             }
         }
 
         impl #generics ::proto_rs::SingularField for #name #generics {
             fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let value: &Self = value;
-                let raw: i32 = (*value) as i32;
+                let raw: i32 = ::proto_rs::ProtoEnum::to_i32(*value);
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encode(tag, &raw, buf);
                 }
@@ -264,13 +268,13 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             ) -> Result<(), ::proto_rs::DecodeError> {
                 let mut raw: i32 = 0;
                 ::proto_rs::encoding::int32::merge(wire_type, &mut raw, buf, ctx)?;
-                *value = Self::try_from(raw)?;
+                *value = ::proto_rs::ProtoEnum::from_i32(raw)?;
                 Ok(())
             }
 
             fn encoded_len_singular_field(tag: u32, value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
-                let raw: i32 = (*value) as i32;
+                let raw: i32 = ::proto_rs::ProtoEnum::to_i32(*value);
                 if raw != 0 {
                     ::proto_rs::encoding::int32::encoded_len(tag, &raw)
                 } else {

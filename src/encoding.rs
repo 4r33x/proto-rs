@@ -583,17 +583,16 @@ pub mod string {
     }
 }
 
-pub trait BytesAdapter: sealed::BytesAdapter {}
+pub trait BytesAdapterEncode: sealed::BytesAdapterEncode {}
+
+pub trait BytesAdapterDecode: BytesAdapterEncode + sealed::BytesAdapterDecode {}
 
 mod sealed {
     use super::Buf;
     use super::BufMut;
 
-    pub trait BytesAdapter: Default + Sized + 'static {
+    pub trait BytesAdapterEncode {
         fn len(&self) -> usize;
-
-        /// Replace contents of this buffer with the contents of another buffer.
-        fn replace_with(&mut self, buf: impl Buf);
 
         /// Appends this buffer to the (contents of) other buffer.
         fn append_to(&self, buf: &mut impl BufMut);
@@ -602,17 +601,17 @@ mod sealed {
             self.len() == 0
         }
     }
+
+    pub trait BytesAdapterDecode: BytesAdapterEncode + Default + Sized + 'static {
+        /// Replace contents of this buffer with the contents of another buffer.
+        fn replace_with(&mut self, buf: impl Buf);
+    }
 }
 
-impl BytesAdapter for Bytes {}
-
-impl sealed::BytesAdapter for Bytes {
+impl BytesAdapterEncode for Bytes {}
+impl sealed::BytesAdapterEncode for Bytes {
     fn len(&self) -> usize {
         Buf::remaining(self)
-    }
-
-    fn replace_with(&mut self, mut buf: impl Buf) {
-        *self = buf.copy_to_bytes(buf.remaining());
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
@@ -620,17 +619,17 @@ impl sealed::BytesAdapter for Bytes {
     }
 }
 
-impl BytesAdapter for Vec<u8> {}
+impl BytesAdapterDecode for Bytes {}
+impl sealed::BytesAdapterDecode for Bytes {
+    fn replace_with(&mut self, mut buf: impl Buf) {
+        *self = buf.copy_to_bytes(buf.remaining());
+    }
+}
 
-impl sealed::BytesAdapter for Vec<u8> {
+impl BytesAdapterEncode for Vec<u8> {}
+impl sealed::BytesAdapterEncode for Vec<u8> {
     fn len(&self) -> usize {
         Vec::len(self)
-    }
-
-    fn replace_with(&mut self, buf: impl Buf) {
-        self.clear();
-        self.reserve(buf.remaining());
-        self.put(buf);
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
@@ -638,10 +637,75 @@ impl sealed::BytesAdapter for Vec<u8> {
     }
 }
 
+impl BytesAdapterDecode for Vec<u8> {}
+impl sealed::BytesAdapterDecode for Vec<u8> {
+    fn replace_with(&mut self, buf: impl Buf) {
+        self.clear();
+        self.reserve(buf.remaining());
+        self.put(buf);
+    }
+}
+
+impl<'a> BytesAdapterEncode for &'a Vec<u8> {}
+impl<'a> sealed::BytesAdapterEncode for &'a Vec<u8> {
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put(self.as_slice());
+    }
+}
+
+impl<'a> BytesAdapterEncode for &'a [u8] {}
+impl<'a> sealed::BytesAdapterEncode for &'a [u8] {
+    fn len(&self) -> usize {
+        <[u8]>::len(self)
+    }
+
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put_slice(self);
+    }
+}
+
+impl<'a> BytesAdapterEncode for &'a Bytes {}
+impl<'a> sealed::BytesAdapterEncode for &'a Bytes {
+    fn len(&self) -> usize {
+        Buf::remaining(*self)
+    }
+
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put((*self).clone());
+    }
+}
+
+impl<const N: usize> BytesAdapterEncode for [u8; N] {}
+impl<const N: usize> sealed::BytesAdapterEncode for [u8; N] {
+    fn len(&self) -> usize {
+        N
+    }
+
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put_slice(&self[..]);
+    }
+}
+
+impl<'a, const N: usize> BytesAdapterEncode for &'a [u8; N] {}
+impl<'a, const N: usize> sealed::BytesAdapterEncode for &'a [u8; N] {
+    fn len(&self) -> usize {
+        N
+    }
+
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put_slice(&self[..]);
+    }
+}
+
 pub mod bytes {
     use super::Buf;
     use super::BufMut;
-    use super::BytesAdapter;
+    use super::BytesAdapterDecode;
+    use super::BytesAdapterEncode;
     use super::DecodeContext;
     use super::DecodeError;
     use super::Vec;
@@ -653,13 +717,13 @@ pub mod bytes {
     use super::encoded_len_varint;
     use super::key_len;
 
-    pub fn encode(tag: u32, value: &impl BytesAdapter, buf: &mut impl BufMut) {
+    pub fn encode(tag: u32, value: &impl BytesAdapterEncode, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
         encode_varint(value.len() as u64, buf);
         value.append_to(buf);
     }
 
-    pub fn merge(wire_type: WireType, value: &mut impl BytesAdapter, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+    pub fn merge(wire_type: WireType, value: &mut impl BytesAdapterDecode, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let len = decode_varint(buf)?;
         if len > buf.remaining() as u64 {
@@ -683,7 +747,7 @@ pub mod bytes {
         Ok(())
     }
 
-    pub(super) fn merge_one_copy(wire_type: WireType, value: &mut impl BytesAdapter, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+    pub(super) fn merge_one_copy(wire_type: WireType, value: &mut impl BytesAdapterDecode, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let len = decode_varint(buf)?;
         if len > buf.remaining() as u64 {
@@ -696,7 +760,28 @@ pub mod bytes {
         Ok(())
     }
 
-    length_delimited!(impl BytesAdapter);
+    pub fn encode_repeated<T: BytesAdapterEncode>(tag: u32, values: &[T], buf: &mut impl BufMut) {
+        for value in values {
+            encode(tag, value, buf);
+        }
+    }
+
+    pub fn merge_repeated<T: BytesAdapterDecode>(wire_type: WireType, values: &mut Vec<T>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
+        let mut value = T::default();
+        merge(wire_type, &mut value, buf, ctx)?;
+        values.push(value);
+        Ok(())
+    }
+
+    #[allow(clippy::ptr_arg)]
+    pub fn encoded_len(tag: u32, value: &impl BytesAdapterEncode) -> usize {
+        key_len(tag) + encoded_len_varint(value.len() as u64) + value.len()
+    }
+
+    pub fn encoded_len_repeated<T: BytesAdapterEncode>(tag: u32, values: &[T]) -> usize {
+        key_len(tag) * values.len() + values.iter().map(|value| encoded_len_varint(value.len() as u64) + value.len()).sum::<usize>()
+    }
 
     #[cfg(test)]
     mod test {

@@ -111,7 +111,7 @@ pub fn generate_field_encode(field: &Field, access: TokenStream, tag: u32) -> To
         return encode_scalar_value(&value, tag, &into_ty, &into_parsed);
     }
 
-    if (cfg.is_rust_enum || parsed.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
+    if (cfg.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
         return encode_enum(&access, tag, ty);
     }
 
@@ -175,7 +175,7 @@ pub fn generate_field_decode(field: &Field, access: TokenStream, tag: u32) -> To
         };
     }
 
-    if (cfg.is_rust_enum || parsed.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
+    if (cfg.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
         return decode_enum(&access, tag, ty);
     }
 
@@ -230,7 +230,7 @@ pub fn generate_field_encoded_len(field: &Field, access: TokenStream, tag: u32) 
         return EncodedLenTokens::new(encoded_len_scalar_value(&value, tag, &into_ty, &into_parsed), true);
     }
 
-    if (cfg.is_rust_enum || parsed.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
+    if (cfg.is_rust_enum || cfg.is_proto_enum) && !parsed.is_option && !parsed.is_repeated {
         return EncodedLenTokens::new(encoded_len_enum(&access, tag, ty), true);
     }
 
@@ -850,17 +850,6 @@ fn encode_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
         }};
     }
 
-    if parsed.is_message_like {
-        return quote! {
-            if !(#access).is_empty() {
-                for value in (#access).iter() {
-                    let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value);
-                    ::proto_rs::encoding::message::encode::<#elem_ty>(#tag, __proto_rs_view, buf);
-                }
-            }
-        };
-    }
-
     quote! {
         if !(#access).is_empty() {
             let __proto_rs_views = (#access)
@@ -932,21 +921,6 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
                     .map(|value| (*value) as #proto_ty)
                     .collect();
                 ::proto_rs::encoding::#codec::encoded_len_packed(#tag, &__proto_rs_converted)
-            }
-        }};
-    }
-
-    if parsed.is_message_like {
-        return quote! {{
-            if (#access).is_empty() {
-                0
-            } else {
-                (#access)
-                    .iter()
-                    .fold(0usize, |__proto_rs_acc, value| {
-                        let __proto_rs_view = <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(value);
-                        __proto_rs_acc + ::proto_rs::encoding::message::encoded_len::<#elem_ty>(#tag, &__proto_rs_view)
-                    })
             }
         }};
     }
@@ -1200,18 +1174,9 @@ fn encoded_len_set(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> 
 // ---------------------------------------------------------------------------
 // Option helpers
 
-fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, cfg: &FieldConfig) -> TokenStream {
+fn encode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, _cfg: &FieldConfig) -> TokenStream {
     let inner_ty = &parsed.elem_type;
     let inner_parsed = parse_field_type(inner_ty);
-
-    if cfg.is_rust_enum || cfg.is_proto_enum || inner_parsed.is_rust_enum {
-        return quote! {
-            if let Some(value) = (#access).as_ref() {
-                let __proto_rs_value: i32 = (*value) as i32;
-                ::proto_rs::encoding::int32::encode(#tag, &__proto_rs_value, buf);
-            }
-        };
-    }
 
     match inner_parsed.proto_type.as_str() {
         "string" => quote! {
@@ -1289,18 +1254,9 @@ fn decode_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType) -> To
     }
 }
 
-fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, cfg: &FieldConfig) -> TokenStream {
+fn encoded_len_option(access: &TokenStream, tag: u32, parsed: &ParsedFieldType, _cfg: &FieldConfig) -> TokenStream {
     let inner_ty = &parsed.elem_type;
     let inner_parsed = parse_field_type(inner_ty);
-
-    if cfg.is_rust_enum || cfg.is_proto_enum || inner_parsed.is_rust_enum {
-        return quote! {{
-            (#access).as_ref().map_or(0usize, |value| {
-                let __proto_rs_value: i32 = (*value) as i32;
-                ::proto_rs::encoding::int32::encoded_len(#tag, &__proto_rs_value)
-            })
-        }};
-    }
 
     match inner_parsed.proto_type.as_str() {
         "string" => quote! {{
