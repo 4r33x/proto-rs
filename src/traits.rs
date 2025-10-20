@@ -290,7 +290,7 @@ impl<T: Ord> RepeatedCollection<T> for BTreeSet<T> {
 }
 
 #[cfg(feature = "std")]
-impl<T: Eq + Hash> RepeatedCollection<T> for HashSet<T> {
+impl<T: Eq + Hash, S: std::hash::BuildHasher> RepeatedCollection<T> for HashSet<T, S> {
     #[inline]
     fn reserve_hint(&mut self, additional: usize) {
         HashSet::reserve(self, additional);
