@@ -21,6 +21,7 @@ use core::str;
 use ::bytes::Buf;
 use ::bytes::BufMut;
 use ::bytes::Bytes;
+pub use message::encode_padded_varint;
 
 use crate::DecodeError;
 use crate::ProtoExt;
@@ -835,9 +836,6 @@ pub mod bytes {
 }
 
 pub mod message {
-    use core::convert::TryFrom;
-    use core::ptr;
-
     use bytes::buf::UninitSlice;
 
     use super::Buf;
@@ -897,33 +895,6 @@ pub mod message {
         }
     }
 
-    fn padded_varint(mut value: u64) -> [u8; REPEATED_VARINT_SIZE] {
-        let mut bytes = [0u8; REPEATED_VARINT_SIZE];
-        let mut index = 0usize;
-
-        loop {
-            let mut byte = (value & 0x7F) as u8;
-            value >>= 7;
-            if value == 0 {
-                bytes[index] = byte;
-                index += 1;
-                break;
-            }
-            byte |= 0x80;
-            bytes[index] = byte;
-            index += 1;
-        }
-
-        while index < bytes.len() {
-            let last = index - 1;
-            bytes[last] |= 0x80;
-            bytes[index] = 0;
-            index += 1;
-        }
-
-        bytes
-    }
-
     pub fn encode<M>(tag: u32, msg: ViewOf<'_, M>, buf: &mut impl BufMut)
     where
         M: ProtoExt,
@@ -959,8 +930,23 @@ pub mod message {
         messages.push(msg);
         Ok(())
     }
-
-    #[inline(always)]
+    //SAFETY: Buffer should be preallocated for 10 bytes and preinit it 0x80 value
+    #[inline]
+    pub unsafe fn encode_padded_varint(mut value: u64, buf: &mut impl bytes::BufMut) {
+        const LAST: usize = REPEATED_VARINT_SIZE - 1;
+        unsafe {
+            let ptr = buf.chunk_mut().as_mut_ptr();
+            for i in 0..REPEATED_VARINT_SIZE {
+                if value < 0x80 {
+                    ptr.add(LAST).write(value as u8);
+                    break;
+                }
+                ptr.add(i).write(((value & 0x7F) | 0x80) as u8);
+                value >>= 7;
+            }
+        }
+    }
+    #[inline]
     pub fn encode_repeated<'a, M, I>(tag: u32, values: I, buf: &mut impl BufMut)
     where
         M: ProtoExt + 'a,
@@ -969,23 +955,19 @@ pub mod message {
         for value in values {
             encode_key(tag, WireType::LengthDelimited, buf);
 
-            buf.put_bytes(0, REPEATED_VARINT_SIZE);
+            buf.put_bytes(0x80, REPEATED_VARINT_SIZE);
 
             let mut counting = CountingBufMut::new(buf);
             M::encode_raw(value, &mut counting);
             let written = counting.written();
             let buf = counting.into_inner();
 
-            let len_bytes = padded_varint(u64::try_from(written).expect("encoded payload length overflowed u64"));
-
-            let header_ptr = unsafe {
+            let mut slice = unsafe {
                 let tail_ptr = buf.chunk_mut().as_mut_ptr();
-                tail_ptr.sub(written + REPEATED_VARINT_SIZE)
+                core::slice::from_raw_parts_mut(tail_ptr.sub(written + REPEATED_VARINT_SIZE), REPEATED_VARINT_SIZE)
             };
 
-            unsafe {
-                ptr::copy_nonoverlapping(len_bytes.as_ptr(), header_ptr, len_bytes.len());
-            }
+            unsafe { encode_padded_varint(written as u64, &mut slice) };
         }
     }
 
