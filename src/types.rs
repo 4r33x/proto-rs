@@ -269,6 +269,13 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
+            fn merge_length_delimited(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
+                let mut widened: $wide_ty = <$wide_ty as Default>::default();
+                $module::merge(WireType::Varint, &mut widened, &mut buf, DecodeContext::default())?;
+                *value = widened.try_into().map_err(|_| DecodeError::new($err))?;
+                Ok(())
+            }
+
             fn clear(&mut self) {
                 *self = Self::default();
             }

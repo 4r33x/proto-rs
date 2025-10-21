@@ -856,6 +856,20 @@ fn decode_repeated(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) ->
             return quote! {};
         };
 
+        if needs_numeric_widening(parsed) {
+            return quote! {
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new("packed numeric field must be length-delimited"));
+                }
+                let __proto_rs_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let mut __proto_rs_limited = buf.take(__proto_rs_len);
+                while __proto_rs_limited.has_remaining() {
+                    let __proto_rs_value = <#elem_ty as ::proto_rs::ProtoExt>::decode_length_delimited(&mut __proto_rs_limited)?;
+                    (#access).push(__proto_rs_value);
+                }
+            };
+        }
+
         return quote! {
             ::proto_rs::encoding::#codec::merge_repeated(
                 wire_type,
@@ -1135,6 +1149,20 @@ fn decode_set(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) -> Toke
         let Some(codec) = scalar_codec(parsed) else {
             return quote! {};
         };
+
+        if needs_numeric_widening(parsed) {
+            return quote! {
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new("packed numeric field must be length-delimited"));
+                }
+                let __proto_rs_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let mut __proto_rs_limited = buf.take(__proto_rs_len);
+                while __proto_rs_limited.has_remaining() {
+                    let __proto_rs_value = <#elem_ty as ::proto_rs::ProtoExt>::decode_length_delimited(&mut __proto_rs_limited)?;
+                    ::proto_rs::RepeatedCollection::push(&mut (#access), __proto_rs_value);
+                }
+            };
+        }
 
         return quote! {
             ::proto_rs::encoding::#codec::merge_repeated(
