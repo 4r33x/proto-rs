@@ -206,24 +206,6 @@ pub trait ProtoExt: Sized {
 
     fn clear(&mut self);
 }
-/// Marker trait for enums encoded as plain `int32` values on the wire.
-///
-/// Derive macros mark unit enums with this trait so other generated code can
-/// reliably treat them as scalar fields. Manual implementations can opt in to
-/// the same behaviour by providing the conversions required here alongside the
-/// appropriate [`ProtoExt`]
-/// implementations.
-pub trait ProtoEnum: Copy + Sized {
-    /// Default value used when decoding absent fields.
-    const DEFAULT_VALUE: Self;
-
-    /// Convert a raw `i32` value into the enum, returning a [`DecodeError`]
-    /// when the value is not recognised.
-    fn from_i32(value: i32) -> Result<Self, DecodeError>;
-
-    /// Convert the enum into its raw `i32` representation.
-    fn to_i32(self) -> i32;
-}
 pub trait RepeatedCollection<T> {
     fn reserve_hint(&mut self, _additional: usize) {}
 

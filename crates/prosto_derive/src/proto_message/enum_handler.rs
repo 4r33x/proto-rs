@@ -87,20 +87,6 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
         })
         .collect();
 
-    let proto_enum_impl = quote! {
-        impl #generics ::proto_rs::ProtoEnum for #name #generics {
-            const DEFAULT_VALUE: Self = Self::#default_variant_ident;
-
-            fn from_i32(value: i32) -> Result<Self, ::proto_rs::DecodeError> {
-                Self::try_from(value)
-            }
-
-            fn to_i32(self) -> i32 {
-                self as i32
-            }
-        }
-    };
-
     quote! {
         #(#attrs)*
         #vis enum #name #generics {
@@ -175,9 +161,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
 
             fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 let raw = *value as i32;
-                if raw != 0 {
-                    ::proto_rs::encoding::int32::encode(tag, &raw, buf);
-                }
+                ::proto_rs::encoding::int32::encode(tag, &raw, buf);
             }
 
             fn merge_singular_field(
@@ -195,11 +179,7 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
             fn encoded_len_singular_field(tag: u32, value: &::proto_rs::ViewOf<'_, Self>) -> usize {
                 let value: &Self = *value;
                 let raw = *value as i32;
-                if raw != 0 {
-                    ::proto_rs::encoding::int32::encoded_len(tag, &raw)
-                } else {
-                    0
-                }
+                ::proto_rs::encoding::int32::encoded_len(tag, &raw)
             }
 
         }
@@ -214,8 +194,6 @@ pub fn handle_enum(input: &DeriveInput, data: &DataEnum) -> TokenStream {
                 }
             }
         }
-
-        #proto_enum_impl
     }
 }
 
