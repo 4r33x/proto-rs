@@ -204,37 +204,6 @@ pub trait ProtoExt: Sized {
         value.as_ref().map_or(0, |inner| Self::encoded_len_singular_field(tag, inner))
     }
 
-    #[inline(always)]
-    fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-    where
-        Self: 'a,
-        I: IntoIterator<Item = ViewOf<'a, Self>>,
-    {
-        for value in values {
-            Self::encode_singular_field(tag, value, buf);
-        }
-    }
-    #[inline(always)]
-    fn merge_repeated_field<C>(wire_type: WireType, values: &mut C, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
-    where
-        C: RepeatedCollection<Self>,
-    {
-        let mut value = Self::proto_default();
-        Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
-        let owned = Self::post_decode(value)?;
-        values.push(owned);
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-    where
-        Self: 'a,
-        I: IntoIterator<Item = ViewOf<'a, Self>>,
-    {
-        values.into_iter().map(|value| Self::encoded_len_singular_field(tag, &value)).sum()
-    }
-
     fn clear(&mut self);
 }
 /// Marker trait for enums encoded as plain `int32` values on the wire.

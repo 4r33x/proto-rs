@@ -114,31 +114,6 @@ macro_rules! impl_google_wrapper {
                     $module::encoded_len(tag, inner)
                 }
             }
-
-            fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                for value in values {
-                    $module::encode(tag, value, buf);
-                }
-            }
-
-            fn merge_repeated_field<C>(wire_type: WireType, values: &mut C, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>
-            where
-                C: ::proto_rs::RepeatedCollection<Self>,
-            {
-                $module::merge_repeated(wire_type, values, buf, ctx)
-            }
-
-            fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-            where
-                Self: 'a,
-                I: IntoIterator<Item = ViewOf<'a, Self>>,
-            {
-                values.into_iter().map(|value| $module::encoded_len(tag, value)).sum()
-            }
         }
 
         impl Name for $ty {
@@ -330,63 +305,7 @@ macro_rules! impl_narrow_varint {
             impl_narrow_varint!(@maybe_repeated_methods $with_repeated, $ty, $wide_ty, $module, $err);
         }
     };
-    (@maybe_repeated_methods true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
-        fn encode_repeated_field<'a, I>(tag: u32, values: I, buf: &mut impl BufMut)
-        where
-            Self: 'a,
-            I: IntoIterator<Item = ViewOf<'a, Self>>,
-        {
-            for value in values {
-                let widened: $wide_ty = (*value).into();
-                $module::encode(tag, &widened, buf);
-            }
-        }
-
-        fn merge_repeated_field<C>(
-            wire_type: WireType,
-            values: &mut C,
-            buf: &mut impl Buf,
-            ctx: DecodeContext,
-        ) -> Result<(), DecodeError>
-        where
-            C: ::proto_rs::RepeatedCollection<Self>,
-        {
-            if wire_type == WireType::LengthDelimited {
-                crate::encoding::merge_loop(values, buf, ctx, |values, buf, ctx| {
-                    let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                    $module::merge(WireType::Varint, &mut widened, buf, ctx)?;
-                    let narrowed = widened
-                        .try_into()
-                        .map_err(|_| DecodeError::new($err))?;
-                    values.push(narrowed);
-                    Ok(())
-                })
-            } else {
-                crate::encoding::check_wire_type(WireType::Varint, wire_type)?;
-                let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                $module::merge(wire_type, &mut widened, buf, ctx)?;
-                let narrowed = widened
-                    .try_into()
-                    .map_err(|_| DecodeError::new($err))?;
-                values.push(narrowed);
-                Ok(())
-            }
-        }
-
-        fn encoded_len_repeated_field<'a, I>(tag: u32, values: I) -> usize
-        where
-            Self: 'a,
-            I: IntoIterator<Item = ViewOf<'a, Self>>,
-        {
-            values
-                .into_iter()
-                .map(|value| {
-                    let widened: $wide_ty = (*value).into();
-                    $module::encoded_len(tag, &widened)
-                })
-                .sum()
-        }
-    };
+    (@maybe_repeated_methods true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
     (@maybe_repeated_methods false, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
 }
 
