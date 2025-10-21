@@ -881,15 +881,43 @@ fn decode_repeated(access: &TokenStream, _tag: u32, parsed: &ParsedFieldType) ->
     }
 
     quote! {
-        let mut __proto_rs_value = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
-        <#elem_ty as ::proto_rs::ProtoExt>::merge_singular_field(
-            wire_type,
-            &mut __proto_rs_value,
-            buf,
-            ctx.clone(),
-        )?;
-        let __proto_rs_owned = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(__proto_rs_value)?;
-        (#access).push(__proto_rs_owned);
+        if wire_type == ::proto_rs::encoding::WireType::LengthDelimited {
+            let __proto_rs_len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+            let mut __proto_rs_limited = buf.take(__proto_rs_len);
+            let __proto_rs_bytes = __proto_rs_limited.copy_to_bytes(__proto_rs_len);
+
+            let mut __proto_rs_value = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+            if let Ok(()) = <#elem_ty as ::proto_rs::ProtoExt>::merge(
+                &mut __proto_rs_value,
+                __proto_rs_bytes.clone(),
+            ) {
+                let __proto_rs_owned = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(__proto_rs_value)?;
+                (#access).push(__proto_rs_owned);
+            } else {
+                let mut __proto_rs_cursor = __proto_rs_bytes.clone();
+                while __proto_rs_cursor.has_remaining() {
+                    let mut __proto_rs_elem = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+                    <#elem_ty as ::proto_rs::ProtoExt>::merge_singular_field(
+                        ::proto_rs::encoding::WireType::Varint,
+                        &mut __proto_rs_elem,
+                        &mut __proto_rs_cursor,
+                        ctx.clone(),
+                    )?;
+                    let __proto_rs_owned = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(__proto_rs_elem)?;
+                    (#access).push(__proto_rs_owned);
+                }
+            }
+        } else {
+            let mut __proto_rs_value = <#elem_ty as ::proto_rs::ProtoExt>::proto_default();
+            <#elem_ty as ::proto_rs::ProtoExt>::merge_singular_field(
+                wire_type,
+                &mut __proto_rs_value,
+                buf,
+                ctx.clone(),
+            )?;
+            let __proto_rs_owned = <#elem_ty as ::proto_rs::ProtoExt>::post_decode(__proto_rs_value)?;
+            (#access).push(__proto_rs_owned);
+        }
     }
 }
 
@@ -937,7 +965,8 @@ fn encoded_len_repeated(access: &TokenStream, tag: u32, parsed: &ParsedFieldType
             for __proto_rs_value in (#access).iter() {
                 let __proto_rs_view =
                     <<#elem_ty as ::proto_rs::ProtoExt>::Shadow<'_> as ::proto_rs::ProtoShadow>::from_sun(__proto_rs_value);
-                __proto_rs_len += <#elem_ty as ::proto_rs::ProtoExt>::encoded_len_singular_field(#tag, &__proto_rs_view);
+                __proto_rs_len +=
+                    <#elem_ty as ::proto_rs::ProtoExt>::encoded_len_singular_field(#tag, &__proto_rs_view);
             }
             __proto_rs_len
         }
