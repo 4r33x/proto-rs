@@ -14,6 +14,7 @@ use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
+use crate::EncodeError;
 use crate::Name;
 use crate::ProtoExt;
 use crate::encoding::DecodeContext;
@@ -33,85 +34,81 @@ use crate::traits::Shadow;
 use crate::traits::ViewOf;
 
 macro_rules! impl_google_wrapper {
-    ($ty:ty, $module:ident, $name:literal, |$value:ident| $is_default:expr, |$clear_value:ident| $clear_body:expr) => {
+    // ---------- Main entry ----------
+    ($ty:ty, $module:ident, $name:literal, $mode:ident,
+        $is_default_encode:tt, $is_default_len:tt, $clear_spec:tt
+    ) => {
         impl ProtoShadow for $ty {
-            type Sun<'a> = &'a Self;
-            type OwnedSun = Self;
-            type View<'a> = &'a Self;
+            type Sun<'a> = impl_google_wrapper!(@sun_ty, $mode, $ty);
+            type OwnedSun = $ty;
+            type View<'a> = impl_google_wrapper!(@view_ty, $mode, $ty);
 
-            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-                Ok(self)
+            #[inline(always)]
+            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> { Ok(self) }
+
+            #[inline(always)]
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> { value }
+        }
+
+        impl crate::traits::ProtoWire for $ty {
+            type EncodeInput<'b> = impl_google_wrapper!(@encode_ty, $mode, $ty);
+
+            const KIND: crate::traits::ProtoKind =
+                impl_google_wrapper!(@kind_ty, $ty);
+
+            #[inline(always)]
+            fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
+                if impl_google_wrapper!(@is_default_len, $mode, $is_default_len, v) {
+                    0
+                } else {
+                    impl_google_wrapper!(@len_call, $mode, $module, 1, v)
+                }
             }
 
-            fn from_sun<'a>(value: Self::Sun<'_>) -> Self::View<'_> {
-                value
+            #[inline(always)]
+            fn encode_raw(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
+                -> Result<(), EncodeError>
+            {
+                if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
+                    return Ok(());
+                }
+                impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
+                Ok(())
+            }
+
+            #[inline(always)]
+            fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError> {
+                <Self as ProtoExt>::decode_length_delimited(buf)
+            }
+
+            #[inline(always)]
+            fn proto_default() -> Self { Default::default() }
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                impl_google_wrapper!(@is_default_len, $mode, $is_default_len, self)
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                impl_google_wrapper!(@clear, $mode, $clear_spec, self)
             }
         }
 
         impl ProtoExt for $ty {
-            type Shadow<'a> = Self;
-
-            #[inline]
-            fn proto_default<'a>() -> Self::Shadow<'a> {
-                Default::default()
-            }
-
-            fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
-                let inner: &$ty = *value;
-                if {
-                    let $value: &$ty = inner;
-                    $is_default
-                } {
-                    0
-                } else {
-                    $module::encoded_len(1, inner)
-                }
-            }
-
-            fn encode_raw<'a>(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-                if !{
-                    let $value: &$ty = value;
-                    $is_default
-                } {
-                    $module::encode(1, value, buf);
-                }
-            }
-
-            fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            type Shadow<'b> = $ty where $ty: 'b;
+            #[inline(always)]
+            fn merge_field(
+                value: &mut Self::Shadow<'_>,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
                 if tag == 1 {
                     $module::merge(wire_type, value, buf, ctx)
                 } else {
                     skip_field(wire_type, tag, buf, ctx)
-                }
-            }
-
-            fn clear(&mut self) {
-                let $clear_value: &mut $ty = self;
-                $clear_body
-            }
-
-            fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-                if !{
-                    let $value: &$ty = value;
-                    $is_default
-                } {
-                    $module::encode(tag, value, buf);
-                }
-            }
-
-            fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-                $module::merge(wire_type, value, buf, ctx)
-            }
-
-            fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
-                let inner: &$ty = *value;
-                if {
-                    let $value: &$ty = inner;
-                    $is_default
-                } {
-                    0
-                } else {
-                    $module::encoded_len(tag, inner)
                 }
             }
         }
@@ -119,26 +116,72 @@ macro_rules! impl_google_wrapper {
         impl Name for $ty {
             const NAME: &'static str = $name;
             const PACKAGE: &'static str = "google.protobuf";
-
             fn type_url() -> String {
-                googleapis_type_url_for::<Self>()
+                format!("type.googleapis.com/{}.{}", Self::PACKAGE, Self::NAME)
             }
         }
     };
+
+    // ---------- Helpers for predicates and clear ----------
+
+    // by_value: pass (== rhs)
+    (@is_default_len, by_value, ($op:tt $rhs:expr), $len:expr) => { (*$len) $op $rhs };
+    (@is_default_encode,  by_value, ($op:tt $rhs:expr), $v:expr)    => { ($v)   $op $rhs };
+    (@clear,           by_value, ($rhs:expr), $this:expr)        => { *$this = $rhs};
+
+    // by_ref: pass (is_empty) and (clear)
+    (@is_default_len, by_ref, ($meth:ident), $len:expr) => { ($len).$meth() };
+    (@is_default_encode, by_ref, ($meth:ident), $v:expr)    => { ($v).$meth() };
+    (@clear,           by_ref, (clear), $this:expr)       => { ($this).clear() };
+
+    // ---------- MODE EXPANSIONS ----------
+    (@sun_ty, by_value, $ty:ty) => { $ty };
+    (@view_ty, by_value, $ty:ty) => { $ty };
+    (@encode_ty, by_value, $ty:ty) => { $ty };
+
+    (@sun_ty, by_ref, $ty:ty) => { &'a $ty };
+    (@view_ty, by_ref, $ty:ty) => { &'a $ty };
+    (@encode_ty, by_ref, $ty:ty) => { &'b $ty };
+
+    (@len_call, by_value, $module:ident, $tag:expr, $v:ident) => {
+        $module::encoded_len($tag, *$v)
+    };
+    (@encode_call, by_value, $module:ident, $tag:expr, $v:ident, $buf:ident) => {
+        $module::encode($tag, $v, $buf)
+    };
+    (@len_call, by_ref, $module:ident, $tag:expr, $v:ident) => {
+        $module::encoded_len($tag, $v)
+    };
+    (@encode_call, by_ref, $module:ident, $tag:expr, $v:ident, $buf:ident) => {
+        $module::encode($tag, $v, $buf)
+    };
+
+    // ---------- TYPE → KIND EXPANSION ----------
+    (@kind_ty, bool)    => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool) };
+    (@kind_ty, u32)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32) };
+    (@kind_ty, u64)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U64) };
+    (@kind_ty, i32)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I32) };
+    (@kind_ty, i64)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I64) };
+    (@kind_ty, f32)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F32) };
+    (@kind_ty, f64)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F64) };
+    (@kind_ty, String)  => { crate::traits::ProtoKind::String };
+    (@kind_ty, Vec<u8>) => { crate::traits::ProtoKind::Bytes };
+    (@kind_ty, Bytes)   => { crate::traits::ProtoKind::Bytes };
+    (@kind_ty, $other:ty) => { crate::traits::ProtoKind::Message };
 }
+impl_google_wrapper!(bool,  bool,   "BoolValue",   by_value, (== false), (== false), (false));
+impl_google_wrapper!(u32,   uint32, "UInt32Value", by_value, (== 0),     (== 0),     (0));
+impl_google_wrapper!(u64,   uint64, "UInt64Value", by_value, (== 0),     (== 0),     (0));
+impl_google_wrapper!(i32,   int32,  "Int32Value",  by_value, (== 0),     (== 0),     (0));
+impl_google_wrapper!(i64,   int64,  "Int64Value",  by_value, (== 0),     (== 0),     (0));
+impl_google_wrapper!(f32,   float,  "FloatValue",  by_value, (== 0.0),   (== 0.0),   (0.0));
+impl_google_wrapper!(f64,   double, "DoubleValue", by_value, (== 0.0),   (== 0.0),   (0.0));
 
-impl_google_wrapper!(bool, bool, "BoolValue", |value| !*value, |value| *value = false);
-impl_google_wrapper!(u32, uint32, "UInt32Value", |value| *value == 0, |value| *value = 0);
-impl_google_wrapper!(u64, uint64, "UInt64Value", |value| *value == 0, |value| *value = 0);
-impl_google_wrapper!(i32, int32, "Int32Value", |value| *value == 0, |value| *value = 0);
-impl_google_wrapper!(i64, int64, "Int64Value", |value| *value == 0, |value| *value = 0);
-impl_google_wrapper!(f32, float, "FloatValue", |value| *value == 0.0, |value| *value = 0.0);
-impl_google_wrapper!(f64, double, "DoubleValue", |value| *value == 0.0, |value| *value = 0.0);
-impl_google_wrapper!(String, string, "StringValue", |value| value.is_empty(), |value| value.clear());
-impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", |value| value.is_empty(), |value| value.clear());
-impl_google_wrapper!(Bytes, bytes, "BytesValue", |value| value.is_empty(), |value| value.clear());
+// by_ref (length-delimited)
+impl_google_wrapper!(String, string, "StringValue", by_ref, (is_empty), (is_empty), (clear));
+impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (is_empty), (is_empty), (clear));
+impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (is_empty), (is_empty), (clear));
 
-/// `google.protobuf.Empty`
 impl ProtoShadow for () {
     type Sun<'a> = Self;
     type OwnedSun = Self;
@@ -150,40 +193,47 @@ impl ProtoShadow for () {
     fn from_sun<'a>(_value: Self::Sun<'_>) -> Self::View<'_> {}
 }
 
-/// `google.protobuf.Empty`
 impl ProtoExt for () {
-    type Shadow<'a> = Self;
+    type Shadow<'b>
+        = Self
+    where
+        Self: 'b;
 
-    #[inline]
-    fn proto_default<'a>() -> Self::Shadow<'a> {}
-
-    fn encoded_len(_value: &ViewOf<'_, Self>) -> usize {
-        0
-    }
-
-    fn encode_raw<'a>(_value: ViewOf<'_, Self>, _buf: &mut impl BufMut) {}
-
+    #[inline(always)]
     fn merge_field(_value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         skip_field(wire_type, tag, buf, ctx)
     }
+}
 
+impl crate::traits::ProtoWire for () {
+    type EncodeInput<'b> = Self;
+    const KIND: crate::traits::ProtoKind = crate::traits::ProtoKind::Message;
+
+    #[inline(always)]
+    fn encoded_len_impl(_v: &Self::EncodeInput<'_>) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    fn encode_raw(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError> {
+        <Self as ProtoExt>::decode_length_delimited(buf)
+    }
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn proto_default() -> Self {}
+
+    #[inline(always)]
     fn clear(&mut self) {}
-
-    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-        let len = <Self as ProtoExt>::encoded_len(&value);
-        if len != 0 {
-            crate::encoding::message::encode::<Self>(tag, value, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        crate::encoding::message::merge::<Self, _>(wire_type, value, buf, ctx)
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
-        let len = <Self as ProtoExt>::encoded_len(value);
-        if len == 0 { 0 } else { crate::encoding::message::encoded_len::<Self>(tag, value) }
-    }
 }
 
 /// `google.protobuf.Empty`
@@ -206,191 +256,98 @@ fn googleapis_type_url_for<T: Name>() -> String {
 // These are not part of protobuf well-known types but needed for internal use
 
 macro_rules! impl_narrow_varint {
-    ($ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {
-        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, true);
-    };
-    ($ty:ty, $wide_ty:ty, $module:ident, $err:literal, no_repeated) => {
-        impl_narrow_varint!(@impl $ty, $wide_ty, $module, $err, false);
-    };
-    (@impl $ty:ty, $wide_ty:ty, $module:ident, $err:literal, $with_repeated:tt) => {
-        impl ProtoShadow for $ty {
-            type Sun<'a> = &'a Self;
+    // $mod: encoding module (uint32, int32, sint32, etc.)
+    // $prim_kind: PrimitiveKind variant for reflection
+    // $wide_ty: widened intermediate type
+    // $err: error message on overflow
+    ($ty:ty, $wide_ty:ty, $mod:ident, $prim_kind:ident, $err:literal) => {
+        /* ---------- ProtoShadow ---------- */
+        impl crate::traits::ProtoShadow for $ty {
+            type Sun<'a> = Self;
             type OwnedSun = Self;
-            type View<'a> = &'a Self;
+            type View<'a> = Self;
 
-            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+            #[inline(always)]
+            fn to_sun(self) -> Result<Self::OwnedSun, crate::DecodeError> {
                 Ok(self)
             }
 
-            fn from_sun<'a>(value: Self::Sun<'_>) -> Self::View<'_> {
+            #[inline(always)]
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
             }
         }
 
-        impl ProtoExt for $ty {
-            type Shadow<'a> = Self;
+        /* ---------- ProtoWire (atomic encoding) ---------- */
+        impl crate::traits::ProtoWire for $ty {
+            type EncodeInput<'b> = Self;
+            const KIND: crate::traits::ProtoKind = crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::$prim_kind);
+            // wire_type() = Varint automatically
 
-            #[inline]
-            fn proto_default<'a>() -> Self::Shadow<'a> {
+            #[inline(always)]
+            fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
+                let widened: $wide_ty = *v as $wide_ty;
+                crate::encoding::encoded_len_varint(widened as u64)
+            }
+
+            #[inline(always)]
+            fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl ::bytes::BufMut) -> Result<(), crate::EncodeError> {
+                let widened: $wide_ty = value as $wide_ty;
+                crate::encoding::encode_varint(widened as u64, buf);
+                Ok(())
+            }
+
+            #[inline(always)]
+            fn decode_atomic(buf: &mut impl ::bytes::Buf) -> Result<Self, crate::DecodeError> {
+                let widened: $wide_ty = crate::encoding::decode_varint(buf)? as $wide_ty;
+                widened.try_into().map_err(|_| crate::DecodeError::new($err))
+            }
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                *self == Self::default()
+            }
+
+            #[inline(always)]
+            fn proto_default() -> Self {
                 Self::default()
             }
 
-            fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
-                let inner: &$ty = *value;
-                if *inner == Self::default() {
-                    0
-                } else {
-                    let widened: $wide_ty = (*inner).into();
-                    $module::encoded_len(1, &widened)
-                }
-            }
-
-            fn encode_raw<'a>(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-                if *value != Self::default() {
-                    let widened: $wide_ty = (*value).into();
-                    $module::encode(1, &widened, buf);
-                }
-            }
-
-            fn merge_field(
-                value: &mut Self::Shadow<'_>,
-                tag: u32,
-                wire_type: WireType,
-                buf: &mut impl Buf,
-                ctx: DecodeContext,
-            ) -> Result<(), DecodeError> {
-                if tag == 1 {
-                    let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                    $module::merge(wire_type, &mut widened, buf, ctx)?;
-                    *value = widened.try_into().map_err(|_| DecodeError::new($err))?;
-                    Ok(())
-                } else {
-                    skip_field(wire_type, tag, buf, ctx)
-                }
-            }
-
-            fn merge_length_delimited(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
-                let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                $module::merge(WireType::Varint, &mut widened, &mut buf, DecodeContext::default())?;
-                *value = widened.try_into().map_err(|_| DecodeError::new($err))?;
-                Ok(())
-            }
-
+            #[inline(always)]
             fn clear(&mut self) {
                 *self = Self::default();
             }
+        }
 
-            fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-                if *value != Self::default() {
-                    let widened: $wide_ty = (*value).into();
-                    $module::encode(tag, &widened, buf);
-                }
-            }
+        /* ---------- ProtoExt (field-level merge) ---------- */
+        impl crate::traits::ProtoExt for $ty {
+            type Shadow<'b>
+                = Self
+            where
+                Self: 'b;
 
-            fn merge_singular_field(
-                wire_type: WireType,
+            #[inline(always)]
+            fn merge_field(
                 value: &mut Self::Shadow<'_>,
-                buf: &mut impl Buf,
-                ctx: DecodeContext,
-            ) -> Result<(), DecodeError> {
-                let mut widened: $wide_ty = <$wide_ty as Default>::default();
-                $module::merge(wire_type, &mut widened, buf, ctx)?;
-                *value = widened.try_into().map_err(|_| DecodeError::new($err))?;
+                _tag: u32,
+                wire_type: crate::encoding::WireType,
+                buf: &mut impl ::bytes::Buf,
+                _ctx: crate::encoding::DecodeContext,
+            ) -> Result<(), crate::DecodeError> {
+                crate::encoding::check_wire_type(wire_type, crate::encoding::WireType::Varint)?;
+                let decoded = <Self as crate::traits::ProtoWire>::decode_atomic(buf)?;
+                *value = decoded;
                 Ok(())
             }
-
-            fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
-                let inner: &$ty = *value;
-                if *inner == Self::default() {
-                    0
-                } else {
-                    let widened: $wide_ty = (*inner).into();
-                    $module::encoded_len(tag, &widened)
-                }
-            }
-
-            impl_narrow_varint!(@maybe_repeated_methods $with_repeated, $ty, $wide_ty, $module, $err);
         }
     };
-    (@maybe_repeated_methods true, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
-    (@maybe_repeated_methods false, $ty:ty, $wide_ty:ty, $module:ident, $err:literal) => {};
 }
 
-impl_narrow_varint!(u8, u32, uint32, "u8 overflow", no_repeated);
-impl_narrow_varint!(u16, u32, uint32, "u16 overflow");
-impl_narrow_varint!(i8, i32, int32, "i8 overflow");
-impl_narrow_varint!(i16, i32, int32, "i16 overflow");
-
-/// Generic implementation for Option<T>
-impl<T: ProtoShadow> ProtoShadow for Option<T> {
-    type Sun<'a> = Option<T::Sun<'a>>;
-
-    type OwnedSun = Option<T::OwnedSun>;
-    type View<'a> = Option<T::View<'a>>;
-
-    #[inline]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        // Map Option<T> → Option<T::OwnedSun>
-        self.map(T::to_sun).transpose()
-    }
-
-    #[inline]
-    fn from_sun<'a>(v: Self::Sun<'_>) -> Self::View<'_> {
-        v.map(T::from_sun)
-    }
-}
-
-impl<T: ProtoExt> ProtoExt for Option<T> {
-    type Shadow<'a>
-        = Option<Shadow<'a, T>>
-    where
-        T: 'a;
-
-    #[inline]
-    fn proto_default<'a>() -> Self::Shadow<'a> {
-        None
-    }
-
-    fn encoded_len(value: &ViewOf<'_, Self>) -> usize {
-        value.as_ref().map_or(0, |inner| T::encoded_len(inner))
-    }
-
-    fn encode_raw<'a>(value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-        if let Some(inner) = value {
-            T::encode_raw(inner, buf);
-        }
-    }
-
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let slot = value.get_or_insert_with(T::proto_default);
-        T::merge_field(slot, tag, wire_type, buf, ctx)
-    }
-
-    fn clear(&mut self) {
-        *self = None;
-    }
-
-    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut) {
-        if let Some(inner) = value {
-            <T as ProtoExt>::encode_singular_field(tag, inner, buf);
-        }
-    }
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if let Some(inner) = value.as_mut() {
-            <T as ProtoExt>::merge_singular_field(wire_type, inner, buf, ctx)
-        } else {
-            let mut inner = T::proto_default();
-            <T as ProtoExt>::merge_singular_field(wire_type, &mut inner, buf, ctx)?;
-            *value = Some(inner);
-            Ok(())
-        }
-    }
-
-    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize {
-        value.as_ref().map_or(0, |inner| <T as ProtoExt>::encoded_len_singular_field(tag, inner))
-    }
-}
+// Unsigned narrow varints (plain varint)
+impl_narrow_varint!(u8, u32, uint32, U8, "u8 overflow");
+impl_narrow_varint!(u16, u32, uint32, U16, "u16 overflow");
+impl_narrow_varint!(i8, i32, sint32, I8, "i8 overflow");
+impl_narrow_varint!(i16, i32, sint32, I16, "i16 overflow");
 
 #[cfg(test)]
 mod tests {

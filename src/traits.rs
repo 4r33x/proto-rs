@@ -11,11 +11,37 @@ use crate::DecodeError;
 use crate::EncodeError;
 use crate::alloc::collections::BTreeSet;
 use crate::alloc::vec::Vec;
+use crate::decode_length_delimiter;
+use crate::encoding;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::encoding::check_wire_type;
 use crate::encoding::decode_key;
+use crate::encoding::decode_varint;
+use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
+use crate::encoding::skip_field;
+
+pub trait RepeatedCollection<T>: Sized + FromIterator<T> {
+    fn new_reserved(capacity: usize) -> Self;
+    fn push(&mut self, value: T);
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        iter.into_iter().collect()
+    }
+
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        for value in iter {
+            self.push(value);
+        }
+    }
+}
 
 // ---------- conversion trait users implement ----------
 pub trait ProtoShadow: Sized {
@@ -42,24 +68,146 @@ pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::Sun<'a>;
 pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::OwnedSun;
 pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::View<'a>;
 
-pub trait ProtoExt: Sized {
-    type Shadow<'a>: ProtoShadow<OwnedSun = Self>
+pub enum ProtoKind {
+    Primitive(PrimitiveKind),
+    SimpleEnum,
+    Message,
+    Bytes,
+    String,
+}
+pub enum PrimitiveKind {
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+    F64,
+    Fixed32,
+    Fixed64,
+    SFixed32,
+    SFixed64,
+    SInt32,
+    SInt64,
+}
+
+impl ProtoKind {
+    #[inline(always)]
+    pub const fn is_packable(&self) -> bool {
+        matches!(self, ProtoKind::Primitive(_) | ProtoKind::SimpleEnum)
+    }
+}
+
+pub trait AsEncodeInput<'a, T: ?Sized> {
+    fn as_encode_input(&self) -> &T;
+}
+
+impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &T {
+    #[inline(always)]
+    fn as_encode_input(&self) -> &T {
+        *self
+    }
+}
+
+impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &&T {
+    #[inline(always)]
+    fn as_encode_input(&self) -> &T {
+        **self
+    }
+}
+
+impl ProtoKind {
+    #[inline(always)]
+    pub const fn wire_type(&self) -> WireType {
+        match self {
+            ProtoKind::Primitive(p) => match p {
+                PrimitiveKind::Bool
+                | PrimitiveKind::I8
+                | PrimitiveKind::I16
+                | PrimitiveKind::I32
+                | PrimitiveKind::I64
+                | PrimitiveKind::U8
+                | PrimitiveKind::U16
+                | PrimitiveKind::U32
+                | PrimitiveKind::U64
+                | PrimitiveKind::SInt32
+                | PrimitiveKind::SInt64 => WireType::Varint,
+
+                PrimitiveKind::Fixed32 | PrimitiveKind::SFixed32 | PrimitiveKind::F32 => WireType::ThirtyTwoBit,
+
+                PrimitiveKind::Fixed64 | PrimitiveKind::SFixed64 | PrimitiveKind::F64 => WireType::SixtyFourBit,
+            },
+
+            ProtoKind::SimpleEnum => WireType::Varint,
+            ProtoKind::Message | ProtoKind::Bytes | ProtoKind::String => WireType::LengthDelimited,
+        }
+    }
+}
+/// ---------- atomic, tag-agnostic wire codec ----------
+pub trait ProtoWire: Sized {
+    type EncodeInput<'b>; //mostly self or &self
+
+    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize;
+
+    #[inline(always)]
+    fn encoded_len<'a, X>(value: X) -> usize
     where
-        Self: 'a;
+        X: AsEncodeInput<'a, Self::EncodeInput<'a>>,
+    {
+        let v = value.as_encode_input();
+        Self::encoded_len_impl(v)
+    }
 
-    fn proto_default<'a>() -> Self::Shadow<'a>;
-    fn encoded_len(value: &ViewOf<'_, Self>) -> usize;
-    #[doc(hidden)]
-    fn encode_raw(value: ViewOf<'_, Self>, buf: &mut impl BufMut);
+    const KIND: ProtoKind;
+    const WIRE_TYPE: WireType = Self::KIND.wire_type();
+    /// Encode *this value only* (no field tag).
+    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>;
+    #[inline(always)]
+    fn encode_maybe_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        match Self::WIRE_TYPE {
+            WireType::LengthDelimited => Self::encode_length_delimited(value, buf),
+            _ => Self::encode_raw(value, buf),
+        }
+    }
 
-    #[doc(hidden)]
+    #[inline(always)]
+    fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        let len = Self::encoded_len(&value);
+        encode_varint(len as u64, buf);
+        Self::encode_raw(value, buf)
+    }
+
+    /// Decode *this value only* (no field tag).
+    fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError>;
+
+    /// Default-ness used to skip fields.
+    fn is_default(&self) -> bool;
+    fn proto_default() -> Self;
+
+    /// Reset to default.
+    fn clear(&mut self);
+}
+
+pub trait ProtoExt: Sized {
+    /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
+    type Shadow<'b>: ProtoShadow<OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>
+    where
+        Self: 'b;
+
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     #[inline(always)]
-    fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
-        value.to_sun()
+    fn merge(value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(buf)?;
+            Self::merge_field(value, tag, wire_type, buf, ctx)?;
+        }
+        Ok(())
     }
-
     #[inline(always)]
     fn with_shadow<R, F>(value: SunOf<'_, Self>, f: F) -> R
     where
@@ -70,185 +218,123 @@ pub trait ProtoExt: Sized {
     }
 
     #[inline(always)]
-    fn ensure_capacity(buf: &mut impl BufMut, required: usize) -> Result<(), EncodeError> {
-        let remaining = buf.remaining_mut();
-        if required > remaining { Err(EncodeError::new(required, remaining)) } else { Ok(()) }
-    }
-
-    #[inline(always)]
-    fn length_delimited_capacity(len: usize) -> usize {
-        len + encoded_len_varint(len as u64)
-    }
-
-    // -------- Encoding entry points (Sun -> Shadow -> write)
-    #[inline(always)]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
-            let required = Self::encoded_len(&shadow);
-            Self::ensure_capacity(buf, required)?;
-            Self::encode_raw(shadow, buf);
-            Ok(())
+            let remaining = buf.remaining_mut();
+            let len = Self::Shadow::encoded_len_impl(&shadow);
+            if len > remaining {
+                return Err(EncodeError::new(len, remaining));
+            }
+            <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, buf)
         })
     }
+
     #[inline(always)]
-    fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
+    fn encode_to_vec(value: SunOf<'_, Self>) -> Result<Vec<u8>, EncodeError> {
         Self::with_shadow(value, |shadow| {
-            let len = Self::encoded_len(&shadow);
+            let len = Self::Shadow::encoded_len_impl(&shadow);
             let mut buf = Vec::with_capacity(len);
-            Self::encode_raw(shadow, &mut buf);
-            buf
-        })
-    }
-    #[inline(always)]
-    fn encode_to_array<const N: usize>(value: SunOf<'_, Self>) -> [u8; N] {
-        Self::with_shadow(value, |shadow| {
-            let len = Self::encoded_len(&shadow);
-            debug_assert!(len <= N, "encode_to_array called with insufficient capacity");
-            let mut buf = [0; N];
-            Self::encode_raw(shadow, &mut buf.as_mut_slice());
-            buf
-        })
-    }
-
-    #[inline(always)]
-    fn encode_length_delimited(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Self::with_shadow(value, |shadow| {
-            let len = Self::encoded_len(&shadow);
-            let required = Self::length_delimited_capacity(len);
-            Self::ensure_capacity(buf, required)?;
-
-            encode_varint(len as u64, buf);
-            Self::encode_raw(shadow, buf);
-            Ok(())
-        })
-    }
-
-    #[inline(always)]
-    fn encode_length_delimited_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
-        Self::with_shadow(value, |shadow| {
-            let len = Self::encoded_len(&shadow);
-            let mut buf = Vec::with_capacity(Self::length_delimited_capacity(len));
-            encode_varint(len as u64, &mut buf);
-            Self::encode_raw(shadow, &mut buf);
-            buf
-        })
-    }
-    #[inline]
-    ///N should include encoded_len_varint
-    fn encode_length_delimited_to_array<const VAR_INT_LEN: usize>(value: SunOf<'_, Self>) -> [u8; VAR_INT_LEN] {
-        Self::with_shadow(value, |shadow| {
-            let len = Self::encoded_len(&shadow);
-            let required = Self::length_delimited_capacity(len);
-            debug_assert!(required <= VAR_INT_LEN, "encode_length_delimited_to_array called with insufficient capacity");
-            let mut buf = [0; VAR_INT_LEN];
-            let mut slice = buf.as_mut_slice();
-            encode_varint(len as u64, &mut slice);
-            Self::encode_raw(shadow, &mut slice);
-            buf
+            <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, &mut buf)?;
+            Ok(buf)
         })
     }
 
     #[inline(always)]
     fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
-        let mut shadow = Self::proto_default();
-        Self::merge(&mut shadow, &mut buf)?;
-        Self::post_decode(shadow)
+        let mut sh = Self::Shadow::proto_default();
+        Self::merge(&mut sh, &mut buf, DecodeContext::default())?;
+        Self::post_decode(sh)
     }
     #[inline(always)]
-    fn decode_length_delimited(buf: impl Buf) -> Result<Self, DecodeError> {
-        let mut shadow = Self::proto_default();
-        Self::merge_length_delimited(&mut shadow, buf)?;
-        Self::post_decode(shadow)
+    fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
+        value.to_sun()
+    }
+
+    #[inline(always)]
+    fn decode_length_delimited(mut buf: impl Buf) -> Result<Self, DecodeError> {
+        let len = decode_length_delimiter(&mut buf)? as usize;
+        let mut sub = buf.take(len);
+        Self::decode(&mut sub)
+    }
+}
+
+//Example implementation
+struct ID {
+    id: u64,
+}
+impl ProtoShadow for ID {
+    type Sun<'a> = &'a Self; // borrowed during encoding
+    type OwnedSun = Self; // owned form after decoding
+    type View<'a> = &'a Self;
+
+    #[inline(always)]
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        Ok(self)
+    }
+
+    #[inline(always)]
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+        value
+    }
+}
+impl ProtoExt for ID {
+    type Shadow<'b>
+        = ID
+    where
+        Self: 'b;
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        match tag {
+            1 => {
+                if wire_type != WireType::Varint {
+                    return Err(DecodeError::new("invalid wire type for ID.id"));
+                }
+                value.id = encoding::decode_varint(buf)? as u64;
+                Ok(())
+            }
+            _ => encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+}
+
+impl ProtoWire for ID {
+    type EncodeInput<'b> = &'b Self;
+    const KIND: ProtoKind = ProtoKind::Message;
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Self { id: ProtoWire::proto_default() }
+    }
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.id.is_default()
     }
     #[inline(always)]
-    fn merge_length_delimited(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
-        crate::encoding::message::merge::<Self, _>(WireType::LengthDelimited, value, &mut buf, DecodeContext::default())
+    fn clear(&mut self) {
+        self.id.clear();
     }
-    #[inline]
-    fn merge(value: &mut Self::Shadow<'_>, mut buf: impl Buf) -> Result<(), DecodeError> {
-        let ctx = DecodeContext::default();
-        while buf.has_remaining() {
-            let (tag, wire_type) = decode_key(&mut buf)?;
-            Self::merge_field(value, tag, wire_type, &mut buf, ctx)?;
+
+    #[inline(always)]
+    /// Returns the encoded length of the message without a length delimiter.
+    fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
+        if v.is_default() { 0 } else { encoding::key_len(1) + v.id.encoded_len() }
+    }
+
+    #[inline(always)]
+    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        // write internal field(s)
+        if value.id != 0 {
+            encode_key(1, WireType::Varint, buf);
+            encode_varint(value.id, buf);
         }
         Ok(())
     }
 
-    fn encode_singular_field(tag: u32, value: ViewOf<'_, Self>, buf: &mut impl BufMut);
-
-    fn merge_singular_field(wire_type: WireType, value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
-
-    fn encoded_len_singular_field(tag: u32, value: &ViewOf<'_, Self>) -> usize;
-
     #[inline(always)]
-    fn encode_option_field(tag: u32, value: Option<ViewOf<'_, Self>>, buf: &mut impl BufMut) {
-        if let Some(inner) = value {
-            Self::encode_singular_field(tag, inner, buf);
-        }
-    }
-
-    #[inline(always)]
-    fn merge_option_field(wire_type: WireType, target: &mut Option<Self::Shadow<'_>>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if let Some(value) = target.as_mut() {
-            Self::merge_singular_field(wire_type, value, buf, ctx)
-        } else {
-            let mut value = Self::proto_default();
-            Self::merge_singular_field(wire_type, &mut value, buf, ctx)?;
-            *target = Some(value);
-            Ok(())
-        }
-    }
-
-    #[inline(always)]
-    fn encoded_len_option_field(tag: u32, value: Option<ViewOf<'_, Self>>) -> usize {
-        value.as_ref().map_or(0, |inner| Self::encoded_len_singular_field(tag, inner))
-    }
-
-    fn clear(&mut self);
-}
-pub trait RepeatedCollection<T> {
-    fn reserve_hint(&mut self, _additional: usize) {}
-
-    fn push(&mut self, value: T);
-
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: IntoIterator<Item = T>,
-    {
-        for value in iter {
-            self.push(value);
-        }
-    }
-}
-
-impl<T> RepeatedCollection<T> for Vec<T> {
-    #[inline]
-    fn reserve_hint(&mut self, additional: usize) {
-        Vec::reserve(self, additional);
-    }
-
-    #[inline]
-    fn push(&mut self, value: T) {
-        Vec::push(self, value);
-    }
-}
-
-impl<T: Ord> RepeatedCollection<T> for BTreeSet<T> {
-    #[inline]
-    fn push(&mut self, value: T) {
-        let _ = BTreeSet::insert(self, value);
-    }
-}
-
-#[cfg(feature = "std")]
-impl<T: Eq + Hash, S: std::hash::BuildHasher> RepeatedCollection<T> for HashSet<T, S> {
-    #[inline]
-    fn reserve_hint(&mut self, additional: usize) {
-        HashSet::reserve(self, additional);
-    }
-
-    #[inline]
-    fn push(&mut self, value: T) {
-        let _ = HashSet::insert(self, value);
+    fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError> {
+        ID::decode_length_delimited(buf)
     }
 }

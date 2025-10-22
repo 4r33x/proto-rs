@@ -5,8 +5,6 @@ use ::bytes::Buf;
 use ::bytes::BufMut;
 
 use crate::DecodeError;
-#[cfg(not(feature = "std"))]
-use crate::alloc::vec::Vec;
 
 /// Encodes an integer value into LEB128 variable length format, and writes it to the buffer.
 /// The buffer must have enough remaining space (maximum 10 bytes).
@@ -81,25 +79,25 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     let mut part0: u32 = u32::from(b);
     if b < 0x80 {
         return Ok((u64::from(part0), 1));
-    }
+    };
     part0 -= 0x80;
     b = unsafe { *bytes.get_unchecked(1) };
     part0 += u32::from(b) << 7;
     if b < 0x80 {
         return Ok((u64::from(part0), 2));
-    }
+    };
     part0 -= 0x80 << 7;
     b = unsafe { *bytes.get_unchecked(2) };
     part0 += u32::from(b) << 14;
     if b < 0x80 {
         return Ok((u64::from(part0), 3));
-    }
+    };
     part0 -= 0x80 << 14;
     b = unsafe { *bytes.get_unchecked(3) };
     part0 += u32::from(b) << 21;
     if b < 0x80 {
         return Ok((u64::from(part0), 4));
-    }
+    };
     part0 -= 0x80 << 21;
     let value = u64::from(part0);
 
@@ -107,25 +105,25 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     let mut part1: u32 = u32::from(b);
     if b < 0x80 {
         return Ok((value + (u64::from(part1) << 28), 5));
-    }
+    };
     part1 -= 0x80;
     b = unsafe { *bytes.get_unchecked(5) };
     part1 += u32::from(b) << 7;
     if b < 0x80 {
         return Ok((value + (u64::from(part1) << 28), 6));
-    }
+    };
     part1 -= 0x80 << 7;
     b = unsafe { *bytes.get_unchecked(6) };
     part1 += u32::from(b) << 14;
     if b < 0x80 {
         return Ok((value + (u64::from(part1) << 28), 7));
-    }
+    };
     part1 -= 0x80 << 14;
     b = unsafe { *bytes.get_unchecked(7) };
     part1 += u32::from(b) << 21;
     if b < 0x80 {
         return Ok((value + (u64::from(part1) << 28), 8));
-    }
+    };
     part1 -= 0x80 << 21;
     let value = value + ((u64::from(part1)) << 28);
 
@@ -133,7 +131,7 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     let mut part2: u32 = u32::from(b);
     if b < 0x80 {
         return Ok((value + (u64::from(part2) << 56), 9));
-    }
+    };
     part2 -= 0x80;
     b = unsafe { *bytes.get_unchecked(9) };
     part2 += u32::from(b) << 7;
@@ -141,7 +139,7 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     // [1]: https://github.com/protocolbuffers/protobuf-go/blob/v1.27.1/encoding/protowire/wire.go#L358
     if b < 0x02 {
         return Ok((value + (u64::from(part2) << 56), 10));
-    }
+    };
 
     // We have overrun the maximum size of a varint (10 bytes) or the final byte caused an overflow.
     // Assume the data is corrupt.
