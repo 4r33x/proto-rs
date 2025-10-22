@@ -11,17 +11,14 @@ use crate::DecodeError;
 use crate::EncodeError;
 use crate::alloc::collections::BTreeSet;
 use crate::alloc::vec::Vec;
-use crate::decode_length_delimiter;
 use crate::encoding;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
 use crate::encoding::decode_key;
-use crate::encoding::decode_varint;
 use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
-use crate::encoding::skip_field;
 
 pub trait RepeatedCollection<T>: Sized + FromIterator<T> {
     fn new_reserved(capacity: usize) -> Self;
@@ -165,49 +162,50 @@ pub trait ProtoWire: Sized {
     const KIND: ProtoKind;
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
     /// Encode *this value only* (no field tag).
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>;
+    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut);
+    #[inline(always)]
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        encode_key(tag, Self::WIRE_TYPE, buf);
+        Self::encode_maybe_length_delimited(value, buf)
+    }
+
     #[inline(always)]
     fn encode_maybe_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         match Self::WIRE_TYPE {
             WireType::LengthDelimited => Self::encode_length_delimited(value, buf),
-            _ => Self::encode_raw(value, buf),
+            _ => Ok(Self::encode_raw(value, buf)),
         }
     }
 
     #[inline(always)]
     fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let len = Self::encoded_len(&value);
+        let required = len + encoded_len_varint(len as u64);
+        let remaining = buf.remaining_mut();
+        if required > remaining {
+            return Err(EncodeError::new(required, remaining));
+        }
         encode_varint(len as u64, buf);
-        Self::encode_raw(value, buf)
+        Ok(Self::encode_raw(value, buf))
     }
 
     /// Decode *this value only* (no field tag).
-    fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError>;
-
+    //fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError>;
+    fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
     /// Default-ness used to skip fields.
     fn is_default(&self) -> bool;
+    /// default value used for decoding
     fn proto_default() -> Self;
-
     /// Reset to default.
     fn clear(&mut self);
 }
 
 pub trait ProtoExt: Sized {
     /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
-    type Shadow<'b>: ProtoShadow<OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>
-    where
-        Self: 'b;
+    type Shadow<'b>: ProtoShadow<OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>;
 
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
-    #[inline(always)]
-    fn merge(value: &mut Self::Shadow<'_>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        while buf.has_remaining() {
-            let (tag, wire_type) = decode_key(buf)?;
-            Self::merge_field(value, tag, wire_type, buf, ctx)?;
-        }
-        Ok(())
-    }
     #[inline(always)]
     fn with_shadow<R, F>(value: SunOf<'_, Self>, f: F) -> R
     where
@@ -215,6 +213,36 @@ pub trait ProtoExt: Sized {
     {
         let shadow = Self::Shadow::from_sun(value);
         f(shadow)
+    }
+    #[inline(always)]
+    fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
+        value.to_sun()
+    }
+
+    #[inline(always)]
+    fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
+        let mut sh = Self::Shadow::proto_default();
+        while buf.has_remaining() {
+            let (tag, wire_type) = decode_key(&mut buf)?;
+            Self::merge_field(&mut sh, tag, wire_type, &mut buf, DecodeContext::default())?;
+        }
+        Self::post_decode(sh)
+    }
+
+    #[inline(always)]
+    fn decode_length_delimited(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
+        let mut sh = Self::Shadow::proto_default();
+        Self::merge_length_delimited(&mut sh, &mut buf, ctx)?;
+        Self::post_decode(sh)
+    }
+
+    #[inline(always)]
+    fn merge_length_delimited<B: Buf>(value: &mut Self::Shadow<'_>, buf: &mut B, ctx: DecodeContext) -> Result<(), DecodeError> {
+        ctx.limit_reached()?;
+        crate::encoding::merge_loop(value, buf, ctx.enter_recursion(), |msg: &mut Shadow<'_, Self>, buf: &mut B, ctx| {
+            let (tag, wire_type) = decode_key(buf)?;
+            Self::merge_field(msg, tag, wire_type, buf, ctx)
+        })
     }
 
     #[inline(always)]
@@ -225,7 +253,7 @@ pub trait ProtoExt: Sized {
             if len > remaining {
                 return Err(EncodeError::new(len, remaining));
             }
-            <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, buf)
+            Ok(<Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, buf))
         })
     }
     //TODO probably should add Result here
@@ -237,24 +265,6 @@ pub trait ProtoExt: Sized {
             <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, &mut buf);
             buf
         })
-    }
-
-    #[inline(always)]
-    fn decode(mut buf: impl Buf) -> Result<Self, DecodeError> {
-        let mut sh = Self::Shadow::proto_default();
-        Self::merge(&mut sh, &mut buf, DecodeContext::default())?;
-        Self::post_decode(sh)
-    }
-    #[inline(always)]
-    fn post_decode(value: Self::Shadow<'_>) -> Result<Self, DecodeError> {
-        value.to_sun()
-    }
-
-    #[inline(always)]
-    fn decode_length_delimited(mut buf: impl Buf) -> Result<Self, DecodeError> {
-        let len = decode_length_delimiter(&mut buf)? as usize;
-        let mut sub = buf.take(len);
-        Self::decode(&mut sub)
     }
 }
 
@@ -324,17 +334,17 @@ impl ProtoWire for ID {
     }
 
     #[inline(always)]
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         // write internal field(s)
         if value.id != 0 {
             encode_key(1, WireType::Varint, buf);
             encode_varint(value.id, buf);
         }
-        Ok(())
     }
 
-    #[inline(always)]
-    fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError> {
-        ID::decode_length_delimited(buf)
+    fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        check_wire_type(WireType::Varint, wire_type)?;
+        *value = ID::decode_length_delimited(buf, ctx)?;
+        Ok(())
     }
 }

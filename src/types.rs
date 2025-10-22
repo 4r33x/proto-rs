@@ -14,12 +14,12 @@ use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
-use crate::EncodeError;
 use crate::Name;
 use crate::ProtoExt;
 use crate::encoding::DecodeContext;
 use crate::encoding::bool;
 use crate::encoding::bytes;
+use crate::encoding::check_wire_type;
 use crate::encoding::double;
 use crate::encoding::float;
 use crate::encoding::int32;
@@ -30,8 +30,6 @@ use crate::encoding::uint32;
 use crate::encoding::uint64;
 use crate::encoding::wire_type::WireType;
 use crate::traits::ProtoShadow;
-use crate::traits::Shadow;
-use crate::traits::ViewOf;
 
 macro_rules! impl_google_wrapper {
     // ---------- Main entry ----------
@@ -67,18 +65,15 @@ macro_rules! impl_google_wrapper {
 
             #[inline(always)]
             fn encode_raw(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
-                -> Result<(), EncodeError>
             {
                 if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
-                    return Ok(());
+                   impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
                 }
-                impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
-                Ok(())
             }
 
             #[inline(always)]
-            fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError> {
-                <Self as ProtoExt>::decode_length_delimited(buf)
+            fn decode_into(wire_type: WireType, value: &mut Self,buf: &mut impl Buf,  ctx: DecodeContext) -> Result<(), DecodeError> {
+                ::proto_rs::encoding::$module::merge(wire_type, value, buf, ctx)
             }
 
             #[inline(always)]
@@ -132,6 +127,10 @@ macro_rules! impl_google_wrapper {
     // by_ref: pass (is_empty) and (clear)
     (@is_default_len, by_ref, ($meth:ident), $len:expr) => { ($len).$meth() };
     (@is_default_encode, by_ref, ($meth:ident), $v:expr)    => { ($v).$meth() };
+
+    (@is_default_len,    by_ref, ($op:tt $rhs:expr), $len:expr) => { (*$len) $op $rhs };
+    (@is_default_encode, by_ref, ($op:tt $rhs:expr), $v:expr)   => { ($v)   $op $rhs };
+
     (@clear,           by_ref, (clear), $this:expr)       => { ($this).clear() };
 
     // ---------- MODE EXPANSIONS ----------
@@ -169,18 +168,18 @@ macro_rules! impl_google_wrapper {
     (@kind_ty, Bytes)   => { crate::traits::ProtoKind::Bytes };
     (@kind_ty, $other:ty) => { crate::traits::ProtoKind::Message };
 }
-impl_google_wrapper!(bool,  bool,   "BoolValue",   by_value, (== false), (== false), (false));
-impl_google_wrapper!(u32,   uint32, "UInt32Value", by_value, (== 0),     (== 0),     (0));
-impl_google_wrapper!(u64,   uint64, "UInt64Value", by_value, (== 0),     (== 0),     (0));
-impl_google_wrapper!(i32,   int32,  "Int32Value",  by_value, (== 0),     (== 0),     (0));
-impl_google_wrapper!(i64,   int64,  "Int64Value",  by_value, (== 0),     (== 0),     (0));
-impl_google_wrapper!(f32,   float,  "FloatValue",  by_value, (== 0.0),   (== 0.0),   (0.0));
-impl_google_wrapper!(f64,   double, "DoubleValue", by_value, (== 0.0),   (== 0.0),   (0.0));
+impl_google_wrapper!(bool,  bool,   "BoolValue",   by_value, (!= false), (== false), (false));
+impl_google_wrapper!(u32,   uint32, "UInt32Value", by_value, (!= 0),     (== 0),     (0));
+impl_google_wrapper!(u64,   uint64, "UInt64Value", by_value, (!= 0),     (== 0),     (0));
+impl_google_wrapper!(i32,   int32,  "Int32Value",  by_value, (!= 0),     (== 0),     (0));
+impl_google_wrapper!(i64,   int64,  "Int64Value",  by_value, (!= 0),     (== 0),     (0));
+impl_google_wrapper!(f32,   float,  "FloatValue",  by_value, (!= 0.0),   (== 0.0),   (0.0));
+impl_google_wrapper!(f64,   double, "DoubleValue", by_value, (!= 0.0),   (== 0.0),   (0.0));
 
 // by_ref (length-delimited)
-impl_google_wrapper!(String, string, "StringValue", by_ref, (is_empty), (is_empty), (clear));
-impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (is_empty), (is_empty), (clear));
-impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (is_empty), (is_empty), (clear));
+impl_google_wrapper!(String, string, "StringValue", by_ref, (!= ""), (== ""), (clear));
+impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!= b"" as &[u8]) , (== b"" as &[u8]), (clear));
+impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!=  b"" as &[u8]), (==  b"" as &[u8]), (clear));
 
 impl ProtoShadow for () {
     type Sun<'a> = Self;
@@ -215,14 +214,7 @@ impl crate::traits::ProtoWire for () {
     }
 
     #[inline(always)]
-    fn encode_raw(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError> {
-        <Self as ProtoExt>::decode_length_delimited(buf)
-    }
+    fn encode_raw(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
 
     #[inline(always)]
     fn is_default(&self) -> bool {
@@ -234,6 +226,10 @@ impl crate::traits::ProtoWire for () {
 
     #[inline(always)]
     fn clear(&mut self) {}
+
+    fn decode_into(_wire_type: WireType, _value: &mut Self, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+        Ok(())
+    }
 }
 
 /// `google.protobuf.Empty`
@@ -291,16 +287,17 @@ macro_rules! impl_narrow_varint {
             }
 
             #[inline(always)]
-            fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl ::bytes::BufMut) -> Result<(), crate::EncodeError> {
+            fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl ::bytes::BufMut) {
                 let widened: $wide_ty = value as $wide_ty;
                 crate::encoding::encode_varint(widened as u64, buf);
-                Ok(())
             }
 
             #[inline(always)]
-            fn decode_atomic(buf: &mut impl ::bytes::Buf) -> Result<Self, crate::DecodeError> {
+            fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+                check_wire_type(WireType::Varint, wire_type)?;
                 let widened: $wide_ty = crate::encoding::decode_varint(buf)? as $wide_ty;
-                widened.try_into().map_err(|_| crate::DecodeError::new($err))
+                *value = widened.try_into().map_err(|_| crate::DecodeError::new($err))?;
+                Ok(())
             }
 
             #[inline(always)]
@@ -329,15 +326,16 @@ macro_rules! impl_narrow_varint {
             #[inline(always)]
             fn merge_field(
                 value: &mut Self::Shadow<'_>,
-                _tag: u32,
+                tag: u32,
                 wire_type: crate::encoding::WireType,
                 buf: &mut impl ::bytes::Buf,
-                _ctx: crate::encoding::DecodeContext,
+                ctx: crate::encoding::DecodeContext,
             ) -> Result<(), crate::DecodeError> {
-                crate::encoding::check_wire_type(wire_type, crate::encoding::WireType::Varint)?;
-                let decoded = <Self as crate::traits::ProtoWire>::decode_atomic(buf)?;
-                *value = decoded;
-                Ok(())
+                if tag == 1 {
+                    <Self as crate::traits::ProtoWire>::decode_into(wire_type, value, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
             }
         }
     };
