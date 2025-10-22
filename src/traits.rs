@@ -228,14 +228,14 @@ pub trait ProtoExt: Sized {
             <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, buf)
         })
     }
-
+    //TODO probably should add Result here
     #[inline(always)]
-    fn encode_to_vec(value: SunOf<'_, Self>) -> Result<Vec<u8>, EncodeError> {
+    fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
             let len = Self::Shadow::encoded_len_impl(&shadow);
             let mut buf = Vec::with_capacity(len);
-            <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, &mut buf)?;
-            Ok(buf)
+            <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, &mut buf);
+            buf
         })
     }
 
@@ -320,7 +320,7 @@ impl ProtoWire for ID {
     #[inline(always)]
     /// Returns the encoded length of the message without a length delimiter.
     fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
-        if v.is_default() { 0 } else { encoding::key_len(1) + v.id.encoded_len() }
+        if v.is_default() { 0 } else { encoding::key_len(1) + u64::encoded_len(&v.id) }
     }
 
     #[inline(always)]
