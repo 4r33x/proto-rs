@@ -44,8 +44,8 @@ where
     }
 
     #[inline(always)]
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        T::encode_raw(value.as_ref(), buf);
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        T::encode_raw_unchecked(value.as_ref(), buf);
     }
 
     #[inline(always)]
@@ -55,8 +55,8 @@ where
     }
 
     #[inline(always)]
-    fn is_default(&self) -> bool {
-        T::is_default(self.as_ref())
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        T::is_default_impl(&value.as_ref())
     }
 
     #[inline(always)]
@@ -103,8 +103,8 @@ where
     }
 
     #[inline(always)]
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        SHD::encode_raw(value, buf);
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        SHD::encode_raw_unchecked(value, buf);
     }
 
     #[inline(always)]
@@ -113,8 +113,8 @@ where
     }
 
     #[inline(always)]
-    fn is_default(&self) -> bool {
-        SHD::is_default(&self.0)
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        SHD::is_default_impl(&value)
     }
 
     #[inline(always)]

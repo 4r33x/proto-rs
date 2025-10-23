@@ -64,7 +64,12 @@ macro_rules! impl_google_wrapper {
             }
 
             #[inline(always)]
-            fn encode_raw(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
+            fn encode_raw_unchecked(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
+            {
+                impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
+            }
+            #[inline(always)]
+            fn encode_atomic(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
             {
                 if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
                    impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
@@ -80,8 +85,8 @@ macro_rules! impl_google_wrapper {
             fn proto_default() -> Self { Default::default() }
 
             #[inline(always)]
-            fn is_default(&self) -> bool {
-                impl_google_wrapper!(@is_default_len, $mode, $is_default_len, self)
+            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                impl_google_wrapper!(@is_default_len, $mode, $is_default_len, value)
             }
 
             #[inline(always)]
@@ -181,6 +186,14 @@ impl_google_wrapper!(String, string, "StringValue", by_ref, (!= ""), (== ""), (c
 impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!= b"" as &[u8]) , (== b"" as &[u8]), (clear));
 impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!=  b"" as &[u8]), (==  b"" as &[u8]), (clear));
 
+// impl Name for Vec<u8> {
+//     const NAME: &'static str = "BytesValue";
+//     const PACKAGE: &'static str = "google.protobuf";
+//     fn type_url() -> String {
+//         format!("type.googleapis.com/{}.{}", Self::PACKAGE, Self::NAME)
+//     }
+// }
+
 impl ProtoShadow for () {
     type Sun<'a> = Self;
     type OwnedSun = Self;
@@ -214,10 +227,12 @@ impl crate::traits::ProtoWire for () {
     }
 
     #[inline(always)]
-    fn encode_raw(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
+    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
+    #[inline(always)]
+    fn encode_atomic(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
 
     #[inline(always)]
-    fn is_default(&self) -> bool {
+    fn is_default_impl(_value: &Self::EncodeInput<'_>) -> bool {
         true
     }
 
@@ -287,7 +302,7 @@ macro_rules! impl_narrow_varint {
             }
 
             #[inline(always)]
-            fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl ::bytes::BufMut) {
+            fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl ::bytes::BufMut) {
                 let widened: $wide_ty = value as $wide_ty;
                 crate::encoding::encode_varint(widened as u64, buf);
             }
@@ -301,8 +316,8 @@ macro_rules! impl_narrow_varint {
             }
 
             #[inline(always)]
-            fn is_default(&self) -> bool {
-                *self == Self::default()
+            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                *value == Self::default()
             }
 
             #[inline(always)]

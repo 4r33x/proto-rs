@@ -39,6 +39,11 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        value.as_ref().map_or(true, T::is_default_impl)
+    }
+
+    #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
         match value {
             Some(inner) => T::encoded_len_impl(inner),
@@ -47,9 +52,9 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
     }
 
     #[inline(always)]
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         if let Some(inner) = value {
-            T::encode_raw(inner, buf);
+            T::encode_raw_unchecked(inner, buf);
         }
     }
 
@@ -59,11 +64,6 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
         T::decode_into(wire, &mut tmp, buf, ctx)?;
         *value = Some(tmp);
         Ok(())
-    }
-
-    #[inline(always)]
-    fn is_default(&self) -> bool {
-        self.as_ref().map_or(true, T::is_default)
     }
 
     #[inline(always)]

@@ -40,16 +40,16 @@ where
         T::encoded_len_impl(&value.as_ref())
     }
     #[inline(always)]
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        T::encode_raw(value, buf);
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        T::encode_raw_unchecked(value, buf);
     }
     #[inline(always)]
     fn decode_into(w: WireType, v: &mut Self, b: &mut impl Buf, c: DecodeContext) -> Result<(), DecodeError> {
         T::decode_into(w, v.as_mut(), b, c)
     }
     #[inline(always)]
-    fn is_default(&self) -> bool {
-        T::is_default(self.as_ref())
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        T::is_default_impl(&value.as_ref())
     }
     #[inline(always)]
     fn proto_default() -> Self {
@@ -93,8 +93,8 @@ where
     }
 
     #[inline(always)]
-    fn encode_raw(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        <SHD as ProtoWire>::encode_raw(value, buf);
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        <SHD as ProtoWire>::encode_raw_unchecked(value, buf);
     }
 
     #[inline(always)]
@@ -103,8 +103,8 @@ where
     }
 
     #[inline(always)]
-    fn is_default(&self) -> bool {
-        SHD::is_default(&self.0)
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        SHD::is_default_impl(&value)
     }
 
     #[inline(always)]

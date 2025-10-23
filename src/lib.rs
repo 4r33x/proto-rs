@@ -71,7 +71,7 @@ pub use crate::traits::OwnedSunOf;
 pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoShadow;
 pub use crate::traits::ProtoWire;
-pub use crate::traits::RepeatedCollection;
+// pub use crate::traits::RepeatedCollection;
 pub use crate::traits::Shadow;
 pub use crate::traits::SunOf;
 pub use crate::traits::ViewOf;
