@@ -2,6 +2,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 use syn::ItemStruct;
+use syn::spanned::Spanned;
 
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
@@ -10,11 +11,17 @@ use super::unified_field_handler::build_clear_stmts;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::build_is_default_checks;
+use super::unified_field_handler::build_post_decode_hooks;
 use super::unified_field_handler::build_proto_default_expr;
+use super::unified_field_handler::compute_decode_ty;
+use super::unified_field_handler::compute_proto_ty;
+use super::unified_field_handler::decode_conversion_assign;
 use super::unified_field_handler::generate_proto_shadow_impl;
+use super::unified_field_handler::needs_decode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
+use crate::utils::parse_field_type;
 
 pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream2 {
     let name = &input.ident;
@@ -28,24 +35,42 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
             .named
             .iter()
             .enumerate()
-            .map(|(idx, field)| FieldInfo {
-                index: idx,
-                field,
-                access: FieldAccess::Named(field.ident.as_ref().expect("named field missing ident")),
-                config: parse_field_config(field),
-                tag: None,
+            .map(|(idx, field)| {
+                let config = parse_field_config(field);
+                let parsed = parse_field_type(&field.ty);
+                let proto_ty = compute_proto_ty(field, &config, &parsed);
+                let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
+                FieldInfo {
+                    index: idx,
+                    field,
+                    access: FieldAccess::Named(field.ident.as_ref().expect("named field missing ident")),
+                    config,
+                    tag: None,
+                    parsed,
+                    proto_ty,
+                    decode_ty,
+                }
             })
             .collect::<Vec<_>>(),
         syn::Fields::Unnamed(unnamed) => unnamed
             .unnamed
             .iter()
             .enumerate()
-            .map(|(idx, field)| FieldInfo {
-                index: idx,
-                field,
-                access: FieldAccess::Tuple(idx),
-                config: parse_field_config(field),
-                tag: None,
+            .map(|(idx, field)| {
+                let config = parse_field_config(field);
+                let parsed = parse_field_type(&field.ty);
+                let proto_ty = compute_proto_ty(field, &config, &parsed);
+                let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
+                FieldInfo {
+                    index: idx,
+                    field,
+                    access: FieldAccess::Tuple(idx),
+                    config,
+                    tag: None,
+                    parsed,
+                    proto_ty,
+                    decode_ty,
+                }
             })
             .collect::<Vec<_>>(),
         syn::Fields::Unit => Vec::new(),
@@ -107,22 +132,53 @@ fn generate_proto_ext_impl(
         .iter()
         .filter_map(|info| {
             let tag = info.tag?;
-            let field_ty = &info.field.ty;
             let access = info.access.access_tokens(quote! { value });
-            Some(quote! {
-                #tag => {
-                    <#field_ty as ::proto_rs::ProtoWire>::decode_into(
-                        wire_type,
-                        &mut #access,
-                        buf,
-                        ctx,
-                    )
-                }
-            })
+            if needs_decode_conversion(&info.config, &info.parsed) {
+                let tmp_ident = syn::Ident::new(&format!("__proto_rs_field_{}_tmp", info.index), info.field.span());
+                let decode_ty = &info.decode_ty;
+                let assign = decode_conversion_assign(info, &access, &tmp_ident);
+                Some(quote! {
+                    #tag => {
+                        let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
+                        <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
+                            wire_type,
+                            &mut #tmp_ident,
+                            buf,
+                            ctx,
+                        )?;
+                        #assign
+                        Ok(())
+                    }
+                })
+            } else {
+                let field_ty = &info.field.ty;
+                Some(quote! {
+                    #tag => {
+                        <#field_ty as ::proto_rs::ProtoWire>::decode_into(
+                            wire_type,
+                            &mut #access,
+                            buf,
+                            ctx,
+                        )
+                    }
+                })
+            }
         })
         .collect::<Vec<_>>();
 
     let shadow_ty = quote! { #name #ty_generics };
+    let post_decode_hooks = build_post_decode_hooks(fields);
+    let post_decode_impl = if post_decode_hooks.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            #[inline(always)]
+            fn post_decode(mut shadow: Self::Shadow<'_>) -> Result<Self, ::proto_rs::DecodeError> {
+                #(#post_decode_hooks)*
+                ::proto_rs::ProtoShadow::to_sun(shadow)
+            }
+        }
+    };
 
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
@@ -141,6 +197,8 @@ fn generate_proto_ext_impl(
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
             }
+
+            #post_decode_impl
         }
     }
 }
