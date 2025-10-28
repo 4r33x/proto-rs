@@ -245,7 +245,7 @@ pub fn build_proto_default_expr(fields: &[FieldInfo<'_>]) -> TokenStream2 {
     }
 }
 
-fn field_proto_default_expr(info: &FieldInfo<'_>) -> TokenStream2 {
+pub fn field_proto_default_expr(info: &FieldInfo<'_>) -> TokenStream2 {
     if uses_proto_wire_directly(info) {
         let ty = &info.field.ty;
         quote! { <#ty as ::proto_rs::ProtoWire>::proto_default() }
