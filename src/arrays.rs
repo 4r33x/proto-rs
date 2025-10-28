@@ -174,6 +174,9 @@ where
             }
 
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                if value.is_default() {
+                    return Ok(());
+                }
                 for m in value {
                     let len = T::encoded_len_impl(&m);
                     encode_key(tag, WireType::LengthDelimited, buf);
