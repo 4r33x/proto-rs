@@ -16,7 +16,6 @@ pub mod string_helpers;
 pub mod type_info;
 
 pub use string_helpers::*;
-pub use type_info::MapKind;
 pub use type_info::ParsedFieldType;
 pub use type_info::SetKind;
 pub use type_info::is_bytes_array;

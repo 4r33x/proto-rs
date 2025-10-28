@@ -11,6 +11,7 @@ use std::convert::TryInto;
 use bytes::Bytes;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
+use proto_rs::ProtoWire;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/advanced_features.proto")]
@@ -503,6 +504,13 @@ fn assert_union_roundtrip(value: AdvancedComplexUnion) {
     assert_eq!(decoded_from_prost, value);
 }
 
+#[test]
+fn advanced_roundtrip_len_match() {
+    let m = sample_raw_message();
+    let len = m.encoded_len();
+    let e = AdvancedEdgeCase::encode_to_vec(&m);
+    assert_eq!(e.len(), len);
+}
 #[test]
 fn advanced_roundtrip_handles_raw_origin() {
     assert_roundtrip(sample_raw_message());

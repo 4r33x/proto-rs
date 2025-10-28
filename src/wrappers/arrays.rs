@@ -9,7 +9,6 @@ use bytes::BufMut;
 use crate::DecodeError;
 use crate::EncodeError;
 use crate::ProtoWire;
-use crate::encoding;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
