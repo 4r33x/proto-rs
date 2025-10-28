@@ -13,9 +13,9 @@ use tonic::Status;
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub enum ServiceStatus {
-    Pending,
     #[default]
     Active,
+    Pending,
     Inactive,
     Completed,
 }

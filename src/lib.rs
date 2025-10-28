@@ -70,6 +70,7 @@ pub use crate::tonic::ZeroCopyRequest;
 pub use crate::tonic::ZeroCopyResponse;
 pub use crate::traits::OwnedSunOf;
 pub use crate::traits::ProtoExt;
+pub use crate::traits::ProtoKind;
 pub use crate::traits::ProtoShadow;
 pub use crate::traits::ProtoWire;
 // pub use crate::traits::RepeatedCollection;

@@ -35,8 +35,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
             config.register_and_emit_proto(&proto_name, &proto);
 
             let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
-            let rust_code = generate_struct_impl(&input, &item_struct, data, &config);
-            rust_code
+            generate_struct_impl(&input, &item_struct, data, &config)
         }
         Data::Enum(ref data) => {
             let is_simple_enum = data.variants.iter().all(|variant| matches!(variant.fields, Fields::Unit));
@@ -98,7 +97,7 @@ enum FieldAccess<'a> {
     Direct(TokenStream2),
 }
 
-impl<'a> FieldAccess<'a> {
+impl FieldAccess<'_> {
     fn ident(&self) -> Option<&Ident> {
         match self {
             FieldAccess::Named(id) => Some(id),
@@ -198,18 +197,15 @@ fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &s
         Err(err) => return err.to_compile_error(),
     };
 
-    if let Some(idx) = marked_default {
-        if discriminants.get(idx).copied() != Some(0) {
-            let variant = &data.variants[idx];
-            return syn::Error::new(variant.span(), "enum #[default] variant must have discriminant 0").to_compile_error();
-        }
+    if let Some(idx) = marked_default
+        && discriminants.get(idx).copied() != Some(0)
+    {
+        let variant = &data.variants[idx];
+        return syn::Error::new(variant.span(), "enum #[default] variant must have discriminant 0").to_compile_error();
     }
 
-    let zero_index = match discriminants.iter().position(|&value| value == 0) {
-        Some(idx) => idx,
-        None => {
-            return syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0").to_compile_error();
-        }
+    let Some(zero_index) = discriminants.iter().position(|&value| value == 0) else {
+        return syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0").to_compile_error();
     };
 
     let default_index = marked_default.unwrap_or(zero_index);
@@ -395,7 +391,7 @@ fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &
     };
     let shadow_ty = quote! { #name #ty_generics };
 
-    let merge_field_arms = variants.iter().map(|variant| build_variant_merge_arm(name, variant)).collect::<syn::Result<Vec<_>>>()?;
+    let merge_field_arms = variants.iter().map(|variant| build_variant_merge_arm(name, variant)).collect::<Vec<_>>();
 
     let default_expr = build_variant_default_expr(&variants[default_index]);
     let is_default_match_arms = variants.iter().map(build_variant_is_default_arm).collect::<Vec<_>>();
@@ -480,7 +476,7 @@ fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &
     })
 }
 
-fn collect_variant_infos<'a>(data: &'a syn::DataEnum) -> syn::Result<Vec<VariantInfo<'a>>> {
+fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_>>> {
     let mut used_tags = BTreeSet::new();
     let mut variants = Vec::new();
 
@@ -513,10 +509,10 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum) -> syn::Result<Vec<Variant
                 {
                     return Err(syn::Error::new(field.span(), "tuple enum variants do not support advanced #[proto] options"));
                 }
-                if let Some(custom) = config.custom_tag {
-                    if custom != 1 {
-                        return Err(syn::Error::new(field.span(), "tuple enum fields cannot override their protobuf tag"));
-                    }
+                if let Some(custom) = config.custom_tag
+                    && custom != 1
+                {
+                    return Err(syn::Error::new(field.span(), "tuple enum fields cannot override their protobuf tag"));
                 }
 
                 VariantKind::Tuple { field }
@@ -752,10 +748,10 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     }
 }
 
-fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> syn::Result<TokenStream2> {
+fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     let tag = variant.tag;
-    Ok(match &variant.kind {
+    match &variant.kind {
         VariantKind::Unit => {
             quote! {
                 #tag => {
@@ -852,7 +848,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> syn::Resu
                 }
             }
         }
-    })
+    }
 }
 fn sanitize_struct(mut item: ItemStruct) -> ItemStruct {
     item.attrs = strip_proto_attrs(&item.attrs);
@@ -898,13 +894,9 @@ fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
         }
 
         let tag = if let Some(custom) = info.config.custom_tag {
-            if custom == 0 {
-                panic!("proto field tags must be >= 1");
-            }
+            assert!(custom != 0, "proto field tags must be >= 1");
             let custom_u32: u32 = custom.try_into().expect("proto field tag overflowed u32");
-            if !used.insert(custom_u32) {
-                panic!("duplicate proto field tag: {custom}");
-            }
+            assert!(used.insert(custom_u32), "duplicate proto field tag: {custom}");
             custom_u32
         } else {
             while used.contains(&next) {
