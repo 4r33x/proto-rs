@@ -56,14 +56,14 @@ impl FieldAccess<'_> {
 
 fn parse_type_string(field: &Field, value: &str) -> Type {
     syn::parse_str::<Type>(value).unwrap_or_else(|_| {
-        let name = field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string());
+        let name = field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string);
         panic!("invalid type in #[proto] attribute on field {name}")
     })
 }
 
 pub fn parse_path_string(field: &Field, value: &str) -> Path {
     syn::parse_str::<Path>(value).unwrap_or_else(|_| {
-        let name = field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string());
+        let name = field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string);
         panic!("invalid function path in #[proto] attribute on field {name}")
     })
 }

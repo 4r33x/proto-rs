@@ -149,6 +149,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 }
 
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 enum VariantKind<'a> {
     Unit,
     Tuple { field: TupleVariantInfo<'a> },
