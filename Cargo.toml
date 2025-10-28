@@ -90,7 +90,7 @@ stable = ["prosto_derive/stable"]
 
 no-recursion-limit = []
 #TODO!
-default = ["std"]
+default = ["std", "tonic"]
 #derive = ["dep:prost-derive"]
 
 
