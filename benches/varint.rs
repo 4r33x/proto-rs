@@ -74,7 +74,7 @@ fn benchmark_varint_prost(criterion: &mut Criterion, name: &str, mut values: Vec
 }
 
 fn benchmark_varint_proto(criterion: &mut Criterion, name: &str, mut values: Vec<u64>) {
-    use proto_rs::encoding::encode_padded_varint;
+    // use proto_rs::encoding::encode_padded_varint;
     use proto_rs::encoding::varint::decode_varint;
     use proto_rs::encoding::varint::encode_varint;
     use proto_rs::encoding::varint::encoded_len_varint;
@@ -101,22 +101,22 @@ fn benchmark_varint_proto(criterion: &mut Criterion, name: &str, mut values: Vec
             }
         })
         .throughput(Throughput::Bytes(encoded_len));
-    criterion
-        .benchmark_group(&name)
-        .bench_function("encode_padded", {
-            let encode_values = values.clone();
-            move |b| {
-                let mut buf = Vec::<u8>::with_capacity(encode_values.len() * 10);
-                b.iter(|| {
-                    buf.clear();
-                    for &value in &encode_values {
-                        unsafe { encode_padded_varint(value, &mut buf) };
-                    }
-                    black_box(&buf);
-                });
-            }
-        })
-        .throughput(Throughput::Bytes(encoded_len));
+    // criterion
+    //     .benchmark_group(&name)
+    //     .bench_function("encode_padded", {
+    //         let encode_values = values.clone();
+    //         move |b| {
+    //             let mut buf = Vec::<u8>::with_capacity(encode_values.len() * 10);
+    //             b.iter(|| {
+    //                 buf.clear();
+    //                 for &value in &encode_values {
+    //                     unsafe { encode_padded_varint(value, &mut buf) };
+    //                 }
+    //                 black_box(&buf);
+    //             });
+    //         }
+    //     })
+    //     .throughput(Throughput::Bytes(encoded_len));
 
     criterion
         .benchmark_group(&name)
