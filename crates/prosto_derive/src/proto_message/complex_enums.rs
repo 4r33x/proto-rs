@@ -14,10 +14,13 @@ use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::build_is_default_checks;
+use super::unified_field_handler::compute_decode_ty;
+use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
+use crate::utils::parse_field_type;
 
 pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &syn::DataEnum, config: &UnifiedProtoConfig) -> syn::Result<TokenStream2> {
     let enum_item = sanitize_enum(item_enum.clone());
@@ -202,15 +205,24 @@ fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_
                     .named
                     .iter()
                     .enumerate()
-                    .map(|(field_idx, field)| FieldInfo {
-                        index: field_idx,
-                        field,
-                        access: FieldAccess::Direct({
-                            let ident = field.ident.as_ref().expect("named variant field");
-                            quote! { #ident }
-                        }),
-                        config: parse_field_config(field),
-                        tag: None,
+                    .map(|(field_idx, field)| {
+                        let config = parse_field_config(field);
+                        let parsed = parse_field_type(&field.ty);
+                        let proto_ty = compute_proto_ty(field, &config, &parsed);
+                        let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
+                        FieldInfo {
+                            index: field_idx,
+                            field,
+                            access: FieldAccess::Direct({
+                                let ident = field.ident.as_ref().expect("named variant field");
+                                quote! { #ident }
+                            }),
+                            config,
+                            tag: None,
+                            parsed,
+                            proto_ty,
+                            decode_ty,
+                        }
                     })
                     .collect();
                 infos = assign_tags(infos);

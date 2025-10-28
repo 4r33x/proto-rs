@@ -6,10 +6,13 @@ use syn::Attribute;
 use syn::Field;
 use syn::Ident;
 use syn::ItemEnum;
+use syn::Path;
 use syn::Type;
+use syn::parse_quote;
 use syn::spanned::Spanned;
 
 use crate::utils::FieldConfig;
+use crate::utils::ParsedFieldType;
 use crate::utils::is_option_type;
 
 #[derive(Clone)]
@@ -19,6 +22,9 @@ pub struct FieldInfo<'a> {
     pub access: FieldAccess<'a>,
     pub config: FieldConfig,
     pub tag: Option<u32>,
+    pub parsed: ParsedFieldType,
+    pub proto_ty: Type,
+    pub decode_ty: Type,
 }
 
 #[derive(Clone)]
@@ -48,6 +54,58 @@ impl FieldAccess<'_> {
     }
 }
 
+fn parse_type_string(field: &Field, value: &str) -> Type {
+    syn::parse_str::<Type>(value).unwrap_or_else(|_| {
+        let name = field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string());
+        panic!("invalid type in #[proto] attribute on field {name}")
+    })
+}
+
+fn parse_path_string(field: &Field, value: &str) -> Path {
+    syn::parse_str::<Path>(value).unwrap_or_else(|_| {
+        let name = field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string());
+        panic!("invalid function path in #[proto] attribute on field {name}")
+    })
+}
+
+fn is_numeric_enum(config: &FieldConfig, parsed: &ParsedFieldType) -> bool {
+    config.is_rust_enum || config.is_proto_enum || parsed.is_rust_enum
+}
+
+pub fn compute_proto_ty(field: &Field, config: &FieldConfig, parsed: &ParsedFieldType) -> Type {
+    if let Some(into_ty) = &config.into_type {
+        parse_type_string(field, into_ty)
+    } else if is_numeric_enum(config, parsed) {
+        parse_quote! { i32 }
+    } else {
+        field.ty.clone()
+    }
+}
+
+pub fn compute_decode_ty(field: &Field, config: &FieldConfig, parsed: &ParsedFieldType, proto_ty: &Type) -> Type {
+    if let Some(from_ty) = &config.from_type {
+        parse_type_string(field, from_ty)
+    } else if let Some(into_ty) = &config.into_type {
+        parse_type_string(field, into_ty)
+    } else if is_numeric_enum(config, parsed) {
+        parse_quote! { i32 }
+    } else {
+        proto_ty.clone()
+    }
+}
+
+pub fn needs_encode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -> bool {
+    config.into_type.is_some() || config.into_fn.is_some() || is_numeric_enum(config, parsed)
+}
+
+pub fn needs_decode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -> bool {
+    config.from_type.is_some() || config.from_fn.is_some() || config.into_type.is_some() || is_numeric_enum(config, parsed)
+}
+
+fn uses_proto_wire_directly(info: &FieldInfo<'_>) -> bool {
+    !info.config.skip && !needs_encode_conversion(&info.config, &info.parsed) && info.config.from_type.is_none() && info.config.from_fn.is_none()
+}
+
 pub fn strip_proto_attrs(attrs: &[Attribute]) -> Vec<Attribute> {
     attrs.iter().filter(|attr| !attr.path().is_ident("proto_message") && !attr.path().is_ident("proto")).cloned().collect()
 }
@@ -67,18 +125,6 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
     for info in &mut fields {
         if info.config.skip {
             continue;
-        }
-
-        if info.config.into_type.is_some()
-            || info.config.from_type.is_some()
-            || info.config.into_fn.is_some()
-            || info.config.from_fn.is_some()
-            || info.config.skip_deser_fn.is_some()
-            || info.config.is_rust_enum
-            || info.config.is_message
-            || info.config.is_proto_enum
-        {
-            panic!("proto_message rewrite does not yet support advanced field attributes");
         }
 
         let tag = if let Some(custom) = info.config.custom_tag {
@@ -129,23 +175,42 @@ pub struct EncodeBinding {
 }
 
 pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> EncodeBinding {
-    let ty = &field.field.ty;
+    let proto_ty = &field.proto_ty;
     let binding_ident = Ident::new(&format!("__proto_rs_field_{}_input", field.index), field.field.span());
     let access_expr = match &field.access {
         FieldAccess::Direct(tokens) => tokens.clone(),
         _ => field.access.access_tokens(base.clone()),
     };
 
-    let init_expr = if is_option_type(ty) {
-        quote! { (#access_expr).as_ref().map(|inner| inner) }
-    } else if matches!(field.access, FieldAccess::Direct(_)) || is_value_encode_type(ty) {
-        access_expr.clone()
+    let init = if needs_encode_conversion(&field.config, &field.parsed) {
+        let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_converted", field.index), field.field.span());
+        let converted = encode_conversion_expr(field, &access_expr);
+        if is_value_encode_type(proto_ty) {
+            quote! {
+                let #tmp_ident: #proto_ty = #converted;
+                let #binding_ident: <#proto_ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #tmp_ident;
+            }
+        } else {
+            quote! {
+                let #tmp_ident: #proto_ty = #converted;
+                let #binding_ident: <#proto_ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = &#tmp_ident;
+            }
+        }
     } else {
-        quote! { &(#access_expr) }
-    };
-
-    let init = quote! {
-        let #binding_ident: <#ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #init_expr;
+        let init_expr = if is_option_type(&field.field.ty) {
+            if field.parsed.is_numeric_scalar || is_value_encode_type(&field.parsed.elem_type) {
+                quote! { (#access_expr).clone() }
+            } else {
+                quote! { (#access_expr).as_ref().map(|inner| inner) }
+            }
+        } else if matches!(field.access, FieldAccess::Direct(_)) || is_value_encode_type(proto_ty) {
+            access_expr.clone()
+        } else {
+            quote! { &(#access_expr) }
+        };
+        quote! {
+            let #binding_ident: <#proto_ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #init_expr;
+        }
     };
 
     EncodeBinding { init, ident: binding_ident }
@@ -168,19 +233,79 @@ pub fn build_proto_default_expr(fields: &[FieldInfo<'_>]) -> TokenStream2 {
     }
 
     if fields.iter().all(|f| matches!(f.access, FieldAccess::Tuple(_))) {
-        let defaults = fields.iter().map(|info| {
-            let ty = &info.field.ty;
-            quote! { <#ty as ::proto_rs::ProtoWire>::proto_default() }
-        });
+        let defaults = fields.iter().map(|info| field_proto_default_expr(info));
         quote! { Self( #(#defaults),* ) }
     } else {
         let defaults = fields.iter().map(|info| {
             let ident = info.access.ident().expect("expected named field");
-            let ty = &info.field.ty;
-            quote! { #ident: <#ty as ::proto_rs::ProtoWire>::proto_default() }
+            let expr = field_proto_default_expr(info);
+            quote! { #ident: #expr }
         });
         quote! { Self { #(#defaults),* } }
     }
+}
+
+fn field_proto_default_expr(info: &FieldInfo<'_>) -> TokenStream2 {
+    if uses_proto_wire_directly(info) {
+        let ty = &info.field.ty;
+        quote! { <#ty as ::proto_rs::ProtoWire>::proto_default() }
+    } else {
+        quote! { ::core::default::Default::default() }
+    }
+}
+
+fn encode_conversion_expr(field: &FieldInfo<'_>, access: &TokenStream2) -> TokenStream2 {
+    if is_numeric_enum(&field.config, &field.parsed) {
+        quote! { (#access) as i32 }
+    } else if let Some(fun) = &field.config.into_fn {
+        let fun_path = parse_path_string(field.field, fun);
+        quote! { #fun_path(&(#access)) }
+    } else if field.config.into_type.is_some() {
+        let ty = &field.proto_ty;
+        quote! { <#ty as ::core::convert::From<_>>::from((#access).clone()) }
+    } else {
+        access.clone()
+    }
+}
+
+pub fn decode_conversion_assign(info: &FieldInfo<'_>, access: &TokenStream2, tmp_ident: &Ident) -> TokenStream2 {
+    if is_numeric_enum(&info.config, &info.parsed) {
+        let field_ty = &info.field.ty;
+        quote! {
+            #access = <#field_ty as ::core::convert::TryFrom<i32>>::try_from(#tmp_ident)
+                .map_err(::core::convert::Into::into)?;
+        }
+    } else if let Some(fun) = &info.config.from_fn {
+        let fun_path = parse_path_string(info.field, fun);
+        quote! {
+            #access = #fun_path(#tmp_ident);
+        }
+    } else {
+        let field_ty = &info.field.ty;
+        quote! {
+            #access = <#field_ty as ::core::convert::From<_>>::from(#tmp_ident);
+        }
+    }
+}
+
+pub fn build_post_decode_hooks(fields: &[FieldInfo<'_>]) -> Vec<TokenStream2> {
+    fields
+        .iter()
+        .filter_map(|info| {
+            let fun = info.config.skip_deser_fn.as_ref()?;
+            if !info.config.skip {
+                return None;
+            }
+            let fun_path = parse_path_string(info.field, fun);
+            let access = info.access.access_tokens(quote! { shadow });
+            Some(quote! {
+                {
+                    let __proto_rs_tmp = #fun_path(&mut shadow);
+                    #access = __proto_rs_tmp;
+                }
+            })
+        })
+        .collect()
 }
 
 pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -> Vec<TokenStream2> {
@@ -188,8 +313,12 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
         .iter()
         .map(|info| {
             let access = info.access.access_tokens(self_tokens.clone());
-            let ty = &info.field.ty;
-            quote! { <#ty as ::proto_rs::ProtoWire>::clear(&mut #access) }
+            if uses_proto_wire_directly(info) {
+                let ty = &info.field.ty;
+                quote! { <#ty as ::proto_rs::ProtoWire>::clear(&mut #access) }
+            } else {
+                quote! { #access = ::core::default::Default::default() }
+            }
         })
         .collect()
 }
@@ -199,7 +328,7 @@ pub fn build_is_default_checks(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
         .iter()
         .filter_map(|info| {
             info.tag?;
-            let ty = &info.field.ty;
+            let ty = &info.proto_ty;
             let binding = encode_input_binding(info, base);
             let ident = binding.ident;
             let init = binding.init;
@@ -220,7 +349,7 @@ pub fn build_encoded_len_terms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
         .iter()
         .filter_map(|info| {
             let tag = info.tag?;
-            let ty = &info.field.ty;
+            let ty = &info.proto_ty;
             let binding = encode_input_binding(info, base);
             let ident = binding.ident;
             let init = binding.init;
@@ -237,7 +366,7 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
         .iter()
         .filter_map(|info| {
             let tag = info.tag?;
-            let ty = &info.field.ty;
+            let ty = &info.proto_ty;
             let binding = encode_input_binding(info, base);
             let ident = binding.ident;
             let init = binding.init;
