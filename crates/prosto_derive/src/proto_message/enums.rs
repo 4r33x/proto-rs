@@ -28,13 +28,6 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
         Err(err) => return err.to_compile_error(),
     };
 
-    if let Some(idx) = marked_default
-        && discriminants.get(idx).copied() != Some(0)
-    {
-        let variant = &data.variants[idx];
-        return syn::Error::new(variant.span(), "enum #[default] variant must have discriminant 0").to_compile_error();
-    }
-
     let Some(zero_index) = discriminants.iter().position(|&value| value == 0) else {
         return syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0").to_compile_error();
     };

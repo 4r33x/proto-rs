@@ -8,18 +8,19 @@ use syn::ItemEnum;
 use syn::Lit;
 use syn::spanned::Spanned;
 
+use super::unified_field_handler::FieldAccess;
+use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
-use super::unified_field_handler::decode_conversion_assign;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::build_is_default_checks;
-use super::unified_field_handler::field_proto_default_expr;
-use super::unified_field_handler::needs_decode_conversion;
-use super::unified_field_handler::FieldAccess;
-use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
+use super::unified_field_handler::decode_conversion_assign;
+use super::unified_field_handler::field_proto_default_expr;
 use super::unified_field_handler::generate_proto_shadow_impl;
+use super::unified_field_handler::needs_decode_conversion;
+use super::unified_field_handler::parse_path_string;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
@@ -133,7 +134,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
                     ::proto_rs::encoding::WireType::LengthDelimited,
                     wire_type,
                 )?;
-                *value = Self::decode_length_delimited(buf, ctx)?;
+                *value = <Self as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
                 Ok(())
             }
         }
@@ -150,7 +151,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 #[derive(Clone)]
 enum VariantKind<'a> {
     Unit,
-    Tuple { field: &'a syn::Field },
+    Tuple { field: TupleVariantInfo<'a> },
     Struct { fields: Vec<FieldInfo<'a>> },
 }
 
@@ -160,6 +161,12 @@ struct VariantInfo<'a> {
     tag: u32,
     kind: VariantKind<'a>,
     is_default: bool,
+}
+
+#[derive(Clone)]
+struct TupleVariantInfo<'a> {
+    field: FieldInfo<'a>,
+    binding_ident: Ident,
 }
 
 fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_>>> {
@@ -181,27 +188,33 @@ fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_
 
                 let field = &fields.unnamed[0];
                 let config = parse_field_config(field);
-                if config.skip {
-                    return Err(syn::Error::new(field.span(), "tuple enum variants cannot use #[proto(skip)]"));
-                }
-                if config.into_type.is_some()
-                    || config.from_type.is_some()
-                    || config.into_fn.is_some()
-                    || config.from_fn.is_some()
-                    || config.skip_deser_fn.is_some()
-                    || config.is_rust_enum
-                    || config.is_message
-                    || config.is_proto_enum
-                {
-                    return Err(syn::Error::new(field.span(), "tuple enum variants do not support advanced #[proto] options"));
-                }
-                if let Some(custom) = config.custom_tag
-                    && custom != 1
-                {
-                    return Err(syn::Error::new(field.span(), "tuple enum fields cannot override their protobuf tag"));
+                let parsed = parse_field_type(&field.ty);
+                let proto_ty = compute_proto_ty(field, &config, &parsed);
+                let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
+                let binding_ident = Ident::new(&format!("__proto_rs_variant_{}_value", variant.ident.to_string().to_lowercase()), field.span());
+
+                let mut field_info = FieldInfo {
+                    index: 0,
+                    field,
+                    access: FieldAccess::Direct(quote! { #binding_ident }),
+                    config,
+                    tag: None,
+                    parsed,
+                    proto_ty,
+                    decode_ty,
+                };
+
+                if !field_info.config.skip {
+                    let tag = field_info.config.custom_tag.unwrap_or(1);
+                    if tag == 0 {
+                        return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
+                    }
+                    field_info.tag = Some(u32::try_from(tag).map_err(|_| syn::Error::new(field.span(), "proto field tag overflowed u32"))?);
                 }
 
-                VariantKind::Tuple { field }
+                VariantKind::Tuple {
+                    field: TupleVariantInfo { field: field_info, binding_ident },
+                }
             }
             syn::Fields::Named(fields_named) => {
                 let mut infos: Vec<_> = fields_named
@@ -286,9 +299,9 @@ fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
         VariantKind::Unit => quote! { Self::#ident },
-        VariantKind::Tuple { field, .. } => {
-            let ty = &field.ty;
-            quote! { Self::#ident(<#ty as ::proto_rs::ProtoWire>::proto_default()) }
+        VariantKind::Tuple { field } => {
+            let default_expr = field_proto_default_expr(&field.field);
+            quote! { Self::#ident(#default_expr) }
         }
         VariantKind::Struct { fields } => {
             if fields.is_empty() {
@@ -315,14 +328,19 @@ fn build_variant_is_default_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
                 quote! { Self::#ident => false }
             }
         }
-        VariantKind::Tuple { field, .. } => {
+        VariantKind::Tuple { field } => {
             if variant.is_default {
-                let binding_ident = Ident::new(&format!("__proto_rs_variant_{}_value", ident.to_string().to_lowercase()), field.span());
-                let ty = &field.ty;
-                quote! {
-                    Self::#ident(ref #binding_ident) => {
-                        let #binding_ident: <#ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #binding_ident;
-                        <#ty as ::proto_rs::ProtoWire>::is_default_impl(&#binding_ident)
+                let binding_ident = &field.binding_ident;
+                let infos = vec![field.field.clone()];
+                let checks = build_is_default_checks(&infos, &TokenStream2::new());
+                if checks.is_empty() {
+                    quote! { Self::#ident(..) => true }
+                } else {
+                    quote! {
+                        Self::#ident(ref #binding_ident) => {
+                            #(#checks;)*
+                            true
+                        }
                     }
                 }
             } else {
@@ -358,13 +376,21 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     let tag = variant.tag;
     match &variant.kind {
         VariantKind::Unit => quote! { Self::#ident => ::proto_rs::encoding::key_len(#tag) + 1 },
-        VariantKind::Tuple { field, .. } => {
-            let binding_ident = Ident::new(&format!("__proto_rs_variant_{}_value", ident.to_string().to_lowercase()), field.span());
-            let ty = &field.ty;
+        VariantKind::Tuple { field } => {
+            let binding_ident = &field.binding_ident;
+            let infos = vec![field.field.clone()];
+            let terms = build_encoded_len_terms(&infos, &TokenStream2::new());
+            let binding_pattern = if field.field.config.skip {
+                quote! { .. }
+            } else {
+                quote! { ref #binding_ident }
+            };
             quote! {
-                Self::#ident(ref #binding_ident) => {
-                    let #binding_ident: <#ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #binding_ident;
-                    <#ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&#binding_ident, #tag)
+                Self::#ident(#binding_pattern) => {
+                    let msg_len = 0 #(+ #terms)*;
+                    ::proto_rs::encoding::key_len(#tag)
+                        + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
+                        + msg_len
                 }
             }
         }
@@ -406,15 +432,26 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
                 ::proto_rs::encoding::encode_varint(0, buf);
             }
         },
-        VariantKind::Tuple { field, .. } => {
-            let binding_ident = Ident::new(&format!("__proto_rs_variant_{}_value", ident.to_string().to_lowercase()), field.span());
-            let ty = &field.ty;
+        VariantKind::Tuple { field } => {
+            let binding_ident = &field.binding_ident;
+            let infos = vec![field.field.clone()];
+            let terms = build_encoded_len_terms(&infos, &TokenStream2::new());
+            let encode_stmts = build_encode_stmts(&infos, &TokenStream2::new());
+            let binding_pattern = if field.field.config.skip {
+                quote! { .. }
+            } else {
+                quote! { ref #binding_ident }
+            };
             quote! {
-                Self::#ident(ref #binding_ident) => {
-                    let #binding_ident: <#ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #binding_ident;
-                    if let Err(err) = <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #binding_ident, buf) {
-                        panic!("encode_raw_unchecked called without sufficient capacity: {err}");
-                    }
+                Self::#ident(#binding_pattern) => {
+                    let msg_len = 0 #(+ #terms)*;
+                    ::proto_rs::encoding::encode_key(
+                        #tag,
+                        ::proto_rs::encoding::WireType::LengthDelimited,
+                        buf,
+                    );
+                    ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
+                    #(#encode_stmts)*
                 }
             }
         }
@@ -479,18 +516,102 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 }
             }
         }
-        VariantKind::Tuple { field, .. } => {
-            let ty = &field.ty;
+        VariantKind::Tuple { field } => {
+            let binding_ident = &field.binding_ident;
+            let binding_default = field_proto_default_expr(&field.field);
+            let mut decode_match = None;
+            if let Some(field_tag) = field.field.tag {
+                let access = quote! { #binding_ident };
+                if needs_decode_conversion(&field.field.config, &field.field.parsed) {
+                    let tmp_ident = Ident::new(&format!("__proto_rs_variant_field_{}_tmp", field.field.index), field.field.field.span());
+                    let decode_ty = &field.field.decode_ty;
+                    let assign = decode_conversion_assign(&field.field, &access, &tmp_ident);
+                    decode_match = Some(quote! {
+                        #field_tag => {
+                            let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
+                            <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
+                                field_wire_type,
+                                &mut #tmp_ident,
+                                buf,
+                                inner_ctx,
+                            )?;
+                            #assign
+                        }
+                    });
+                } else {
+                    let ty = &field.field.field.ty;
+                    decode_match = Some(quote! {
+                        #field_tag => {
+                            <#ty as ::proto_rs::ProtoWire>::decode_into(
+                                field_wire_type,
+                                &mut #binding_ident,
+                                buf,
+                                inner_ctx,
+                            )?;
+                        }
+                    });
+                }
+            }
+
+            let decode_loop = if let Some(match_arm) = decode_match {
+                quote! {
+                    while buf.remaining() > limit {
+                        let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
+                        match field_tag {
+                            #match_arm
+                            _ => ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, inner_ctx)?,
+                        }
+                    }
+                }
+            } else {
+                quote! {
+                    while buf.remaining() > limit {
+                        let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
+                        ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, inner_ctx)?;
+                    }
+                }
+            };
+
+            let post_hook = if field.field.config.skip {
+                if let Some(fun) = &field.field.config.skip_deser_fn {
+                    let fun_path = parse_path_string(field.field.field, fun);
+                    let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_skip_binding", ident.to_string().to_lowercase()), field.field.field.span());
+                    let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_computed", ident.to_string().to_lowercase()), field.field.field.span());
+                    quote! {
+                        let #computed_ident = #fun_path(&variant_value);
+                        if let #name::#ident(ref mut #skip_binding_ident) = variant_value {
+                            *#skip_binding_ident = #computed_ident;
+                        }
+                    }
+                } else {
+                    quote! {}
+                }
+            } else {
+                quote! {}
+            };
+
             quote! {
                 #tag => {
-                    let mut inner = <#ty as ::proto_rs::ProtoWire>::proto_default();
-                    <#ty as ::proto_rs::ProtoWire>::decode_into(
+                    ::proto_rs::encoding::check_wire_type(
+                        ::proto_rs::encoding::WireType::LengthDelimited,
                         wire_type,
-                        &mut inner,
-                        buf,
-                        ctx,
                     )?;
-                    *value = #name::#ident(inner);
+                    ctx.limit_reached()?;
+                    let inner_ctx = ctx.enter_recursion();
+                    let len = ::proto_rs::encoding::decode_varint(buf)?;
+                    let remaining = buf.remaining();
+                    if len > remaining as u64 {
+                        return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                    }
+                    let limit = remaining - len as usize;
+                    let mut #binding_ident = #binding_default;
+                    #decode_loop
+                    if buf.remaining() != limit {
+                        return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
+                    }
+                    let mut variant_value = #name::#ident(#binding_ident);
+                    #post_hook
+                    *value = variant_value;
                     Ok(())
                 }
             }
@@ -507,10 +628,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let field_tag = info.tag?;
                     let field_ident = info.field.ident.as_ref().expect("named field");
                     if needs_decode_conversion(&info.config, &info.parsed) {
-                        let tmp_ident = Ident::new(
-                            &format!("__proto_rs_variant_field_{}_tmp", info.index),
-                            info.field.span(),
-                        );
+                        let tmp_ident = Ident::new(&format!("__proto_rs_variant_field_{}_tmp", info.index), info.field.span());
                         let decode_ty = &info.decode_ty;
                         let access = quote! { #field_ident };
                         let assign = decode_conversion_assign(info, &access, &tmp_ident);
