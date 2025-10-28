@@ -85,7 +85,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
     };
 
     let proto_ext_impl = generate_proto_ext_impl(name, &impl_generics, &ty_generics, where_clause, &fields, config);
-    let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields);
+    let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields);
 
     quote! {
         #struct_item
@@ -203,8 +203,15 @@ fn generate_proto_ext_impl(
     }
 }
 
-fn generate_proto_wire_impl(name: &syn::Ident, impl_generics: &syn::ImplGenerics, ty_generics: &syn::TypeGenerics, where_clause: Option<&syn::WhereClause>, fields: &[FieldInfo<'_>]) -> TokenStream2 {
-    let proto_default_expr = build_proto_default_expr(fields);
+fn generate_proto_wire_impl(
+    name: &syn::Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: Option<&syn::WhereClause>,
+    fields: &[FieldInfo<'_>],
+    original_fields: &syn::Fields,
+) -> TokenStream2 {
+    let proto_default_expr = build_proto_default_expr(fields, original_fields);
     let self_tokens = quote! { self };
     let clear_stmts = build_clear_stmts(fields, &self_tokens);
     let encode_input_tokens = quote! { value };

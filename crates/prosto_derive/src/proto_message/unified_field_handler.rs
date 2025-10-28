@@ -61,7 +61,7 @@ fn parse_type_string(field: &Field, value: &str) -> Type {
     })
 }
 
-fn parse_path_string(field: &Field, value: &str) -> Path {
+pub fn parse_path_string(field: &Field, value: &str) -> Path {
     syn::parse_str::<Path>(value).unwrap_or_else(|_| {
         let name = field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string());
         panic!("invalid function path in #[proto] attribute on field {name}")
@@ -114,6 +114,19 @@ pub fn sanitize_enum(mut item: ItemEnum) -> ItemEnum {
     item.attrs = strip_proto_attrs(&item.attrs);
     for variant in &mut item.variants {
         variant.attrs = strip_proto_attrs(&variant.attrs);
+        match &mut variant.fields {
+            syn::Fields::Named(fields) => {
+                for field in &mut fields.named {
+                    field.attrs = strip_proto_attrs(&field.attrs);
+                }
+            }
+            syn::Fields::Unnamed(fields) => {
+                for field in &mut fields.unnamed {
+                    field.attrs = strip_proto_attrs(&field.attrs);
+                }
+            }
+            syn::Fields::Unit => {}
+        }
     }
     item
 }
@@ -203,7 +216,13 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
             } else {
                 quote! { (#access_expr).as_ref().map(|inner| inner) }
             }
-        } else if matches!(field.access, FieldAccess::Direct(_)) || is_value_encode_type(proto_ty) {
+        } else if matches!(field.access, FieldAccess::Direct(_)) {
+            if is_value_encode_type(proto_ty) {
+                quote! { *(#access_expr) }
+            } else {
+                access_expr.clone()
+            }
+        } else if is_value_encode_type(proto_ty) {
             access_expr.clone()
         } else {
             quote! { &(#access_expr) }
@@ -227,21 +246,29 @@ fn is_value_encode_type(ty: &Type) -> bool {
         ))
 }
 
-pub fn build_proto_default_expr(fields: &[FieldInfo<'_>]) -> TokenStream2 {
-    if fields.is_empty() {
-        return quote! { Self };
-    }
-
-    if fields.iter().all(|f| matches!(f.access, FieldAccess::Tuple(_))) {
-        let defaults = fields.iter().map(|info| field_proto_default_expr(info));
-        quote! { Self( #(#defaults),* ) }
-    } else {
-        let defaults = fields.iter().map(|info| {
-            let ident = info.access.ident().expect("expected named field");
-            let expr = field_proto_default_expr(info);
-            quote! { #ident: #expr }
-        });
-        quote! { Self { #(#defaults),* } }
+pub fn build_proto_default_expr(fields: &[FieldInfo<'_>], original: &syn::Fields) -> TokenStream2 {
+    match original {
+        syn::Fields::Unit => quote! { Self },
+        syn::Fields::Unnamed(_) => {
+            if fields.is_empty() {
+                quote! { Self }
+            } else {
+                let defaults = fields.iter().map(field_proto_default_expr);
+                quote! { Self( #(#defaults),* ) }
+            }
+        }
+        syn::Fields::Named(_) => {
+            if fields.is_empty() {
+                quote! { Self { } }
+            } else {
+                let defaults = fields.iter().map(|info| {
+                    let ident = info.access.ident().expect("expected named field ident");
+                    let expr = field_proto_default_expr(info);
+                    quote! { #ident: #expr }
+                });
+                quote! { Self { #(#defaults),* } }
+            }
+        }
     }
 }
 
