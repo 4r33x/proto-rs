@@ -7,9 +7,11 @@ use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_clear_stmts;
+use super::unified_field_handler::build_decode_arm;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::build_is_default_checks;
+use super::unified_field_handler::build_post_decode_impl;
 use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::unified_field_handler::strip_proto_attrs;
@@ -107,22 +109,18 @@ fn generate_proto_ext_impl(
         .iter()
         .filter_map(|info| {
             let tag = info.tag?;
-            let field_ty = &info.field.ty;
             let access = info.access.access_tokens(quote! { value });
+            let body = build_decode_arm(info, access);
             Some(quote! {
                 #tag => {
-                    <#field_ty as ::proto_rs::ProtoWire>::decode_into(
-                        wire_type,
-                        &mut #access,
-                        buf,
-                        ctx,
-                    )
+                    #body
                 }
             })
         })
         .collect::<Vec<_>>();
 
     let shadow_ty = quote! { #name #ty_generics };
+    let post_decode_impl = build_post_decode_impl(fields);
 
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
@@ -141,6 +139,8 @@ fn generate_proto_ext_impl(
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
             }
+
+            #post_decode_impl
         }
     }
 }
