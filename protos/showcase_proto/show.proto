@@ -201,6 +201,7 @@ message StructU8 {
 message StructU816 {
   uint32 inner = 1;
   uint64 inner2 = 2;
+  uint32 inner3 = 3;
 }
 
 message Transaction {

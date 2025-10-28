@@ -24,6 +24,7 @@ pub struct StructU8 {
 pub struct StructU816 {
     inner: u8,
     inner2: u64,
+    inner3: u16,
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
