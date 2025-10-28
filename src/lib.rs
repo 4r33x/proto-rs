@@ -21,7 +21,6 @@ pub use prosto_derive::proto_rpc;
 #[cfg(not(feature = "no-recursion-limit"))]
 const RECURSION_LIMIT: u32 = 100;
 
-mod arrays;
 mod custom_types;
 
 #[doc(hidden)]

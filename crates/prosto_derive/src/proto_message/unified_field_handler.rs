@@ -138,9 +138,7 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
 
     let init_expr = if is_option_type(ty) {
         quote! { (#access_expr).as_ref().map(|inner| inner) }
-    } else if matches!(field.access, FieldAccess::Direct(_)) {
-        access_expr.clone()
-    } else if is_value_encode_type(ty) {
+    } else if matches!(field.access, FieldAccess::Direct(_)) || is_value_encode_type(ty) {
         access_expr.clone()
     } else {
         quote! { &(#access_expr) }
