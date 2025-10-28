@@ -58,27 +58,27 @@ macro_rules! merge_repeated_numeric {
 /// Macro which emits a module containing a set of encoding functions for a
 /// variable-width numeric type.
 macro_rules! varint {
-    ($ty:ty, $proto_ty:ident) => (
+    ($ty:ty, $proto_ty:ident) => {
         varint!($ty, $proto_ty,
-            to_uint64(value) { value as u64 },
-            from_uint64(value) { value as $ty });
-    );
+            to_uint64(v) { v as u64 },
+            from_uint64(v) { v as $ty });
+    };
 
     ($ty:ty,
      $proto_ty:ident,
-     to_uint64($to_uint64_value:ident) $to_uint64:expr,
-     from_uint64($from_uint64_value:ident) $from_uint64:expr) => (
+     to_uint64($v:ident) $to_uint64:expr,
+     from_uint64($fv:ident) $from_uint64:expr) => {
         pub mod $proto_ty {
             use crate::encoding::*;
 
             #[inline]
-            pub fn encode_tagged(tag: u32, $to_uint64_value: $ty, buf: &mut impl BufMut) {
+            pub fn encode_tagged(tag: u32, $v: $ty, buf: &mut impl BufMut) {
                 encode_key(tag, WireType::Varint, buf);
                 encode_varint($to_uint64, buf);
             }
 
             #[inline]
-            pub fn encode($to_uint64_value: $ty, buf: &mut impl BufMut) {
+            pub fn encode($v: $ty, buf: &mut impl BufMut) {
                 encode_varint($to_uint64, buf);
             }
 
@@ -94,7 +94,7 @@ macro_rules! varint {
                 _ctx: DecodeContext,
             ) -> Result<(), DecodeError> {
                 check_wire_type(WireType::Varint, wire_type)?;
-                let $from_uint64_value = decode_varint(buf)?;
+                let $fv = decode_varint(buf)?;
                 *value = $from_uint64;
                 Ok(())
             }
@@ -108,25 +108,25 @@ macro_rules! varint {
 
                 encode_key(tag, WireType::LengthDelimited, buf);
                 let len: usize = values.iter()
-                    .map(|v| encoded_len_varint(*v as u64))
+                    .map(|&$v| encoded_len_varint($to_uint64))
                     .sum();
                 encode_varint(len as u64, buf);
 
-                for &v in values {
-                    encode_varint(v as u64, buf);
+                for &$v in values {
+                    encode_varint($to_uint64, buf);
                 }
             }
 
             merge_repeated_numeric!($ty, WireType::Varint, merge, merge_repeated);
 
             #[inline]
-            pub fn encoded_len_tagged(tag: u32, value: $ty) -> usize {
-                key_len(tag) + encoded_len_varint(value as u64)
+            pub fn encoded_len_tagged(tag: u32, $v: $ty) -> usize {
+                key_len(tag) + encoded_len_varint($to_uint64)
             }
 
             #[inline]
-            pub fn encoded_len(value: $ty) -> usize {
-                encoded_len_varint(value as u64)
+            pub fn encoded_len($v: $ty) -> usize {
+                encoded_len_varint($to_uint64)
             }
 
             #[inline]
@@ -136,8 +136,8 @@ macro_rules! varint {
 
             #[inline]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-                key_len(tag) * values.len() +
-                    values.iter().map(|v| encoded_len_varint(*v as u64)).sum::<usize>()
+                key_len(tag) * values.len()
+                    + values.iter().map(|&$v| encoded_len_varint($to_uint64)).sum::<usize>()
             }
 
             #[inline]
@@ -145,12 +145,12 @@ macro_rules! varint {
                 if values.is_empty() {
                     0
                 } else {
-                    let len = values.iter().map(|v| encoded_len_varint(*v as u64)).sum::<usize>();
+                    let len = values.iter().map(|&$v| encoded_len_varint($to_uint64)).sum::<usize>();
                     key_len(tag) + encoded_len_varint(len as u64) + len
                 }
             }
         }
-    );
+    };
 }
 varint!(bool, bool,
         to_uint64(value) u64::from(value),
