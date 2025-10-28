@@ -40,14 +40,14 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.as_ref().map_or(true, T::is_default_impl)
+        value.as_ref().is_none_or(T::is_default_impl)
     }
 
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match value {
             Some(inner) => T::encoded_len_impl(inner),
-            None => 0,
+            None => unreachable!(),
         }
     }
 
@@ -85,7 +85,7 @@ where
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = value.get_or_insert_with(|| T::Shadow::proto_default());
+        let inner = value.get_or_insert_with(T::Shadow::proto_default);
         T::merge_field(inner, tag, wire, buf, ctx)
     }
 }

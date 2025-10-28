@@ -8,6 +8,7 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
+#![allow(clippy::inline_always)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate self as proto_rs;

@@ -39,8 +39,8 @@ where
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        T::encoded_len_impl(&value.as_ref())
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        unsafe { T::encoded_len_impl_raw(&value.as_ref()) }
     }
 
     #[inline(always)]
@@ -67,8 +67,8 @@ where
     #[inline(always)]
     fn clear(&mut self) {
         if let Some(v) = Arc::get_mut(self) {
-            T::clear(v)
-        };
+            T::clear(v);
+        }
     }
 }
 
@@ -98,8 +98,8 @@ where
     const KIND: ProtoKind = SHD::KIND;
 
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        SHD::encoded_len_impl(value)
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        unsafe { SHD::encoded_len_impl_raw(value) }
     }
 
     #[inline(always)]
@@ -114,7 +114,7 @@ where
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        SHD::is_default_impl(&value)
+        SHD::is_default_impl(value)
     }
 
     #[inline(always)]

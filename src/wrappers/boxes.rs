@@ -36,8 +36,8 @@ where
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        T::encoded_len_impl(&value.as_ref())
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        unsafe { T::encoded_len_impl_raw(&value.as_ref()) }
     }
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
@@ -57,7 +57,7 @@ where
     }
     #[inline(always)]
     fn clear(&mut self) {
-        T::clear(self.as_mut())
+        T::clear(self.as_mut());
     }
 }
 
@@ -88,8 +88,8 @@ where
     const KIND: ProtoKind = SHD::KIND;
 
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        <SHD as ProtoWire>::encoded_len_impl(value)
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        unsafe { SHD::encoded_len_impl_raw(value) }
     }
 
     #[inline(always)]
@@ -104,7 +104,7 @@ where
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        SHD::is_default_impl(&value)
+        SHD::is_default_impl(value)
     }
 
     #[inline(always)]

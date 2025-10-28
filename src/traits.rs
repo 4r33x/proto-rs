@@ -1,5 +1,5 @@
 #![allow(clippy::inline_always)]
-
+#![allow(clippy::wrong_self_convention)]
 use bytes::Buf;
 use bytes::BufMut;
 
@@ -117,24 +117,6 @@ pub enum PrimitiveKind {
     SInt64,
 }
 
-pub trait AsEncodeInput<'a, T: ?Sized> {
-    fn as_encode_input(&self) -> &T;
-}
-
-impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &T {
-    #[inline(always)]
-    fn as_encode_input(&self) -> &T {
-        *self
-    }
-}
-
-impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &&T {
-    #[inline(always)]
-    fn as_encode_input(&self) -> &T {
-        **self
-    }
-}
-
 impl ProtoKind {
     #[inline(always)]
     pub const fn for_vec(inner: &'static ProtoKind) -> ProtoKind {
@@ -170,9 +152,36 @@ impl ProtoKind {
     }
 }
 
+// pub trait AsEncodeInput<'a, T: ?Sized> {
+//     fn as_encode_input(&'a self) -> &'a T;
+// }
+
+// impl<'a, T: ?Sized> AsEncodeInput<'a, T> for T {
+//     #[inline(always)]
+//     fn as_encode_input(&self) -> &'a T {
+//         unsafe { &*(self as *const T as *const &'a T) }
+//     }
+// }
+
+// impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &T {
+//     #[inline(always)]
+//     fn as_encode_input(&self) -> &T {
+//         *self
+//     }
+// }
+
+// impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &&T {
+//     #[inline(always)]
+//     fn as_encode_input(&self) -> &T {
+//         **self
+//     }
+// }
+
 /// ---------- atomic, tag-agnostic wire codec ----------
 pub trait ProtoWire: Sized {
     type EncodeInput<'a>;
+    const KIND: ProtoKind;
+    const WIRE_TYPE: WireType = Self::KIND.wire_type();
 
     #[inline(always)]
     fn is_default(&self) -> bool
@@ -183,7 +192,7 @@ pub trait ProtoWire: Sized {
     }
 
     #[inline(always)]
-    fn is_default_value(self) -> bool
+    fn is_default_by_val(self) -> bool
     where
         for<'b> Self: ProtoWire<EncodeInput<'b> = Self>,
     {
@@ -191,64 +200,88 @@ pub trait ProtoWire: Sized {
     }
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool;
 
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize;
-
     #[inline(always)]
-    fn encoded_len<'a, X>(value: X) -> usize
+    fn encoded_len(&self) -> usize
     where
-        X: AsEncodeInput<'a, Self::EncodeInput<'a>>,
+        for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
     {
-        let v = value.as_encode_input();
-        Self::encoded_len_impl(v)
+        Self::encoded_len_impl(&self)
     }
 
-    const KIND: ProtoKind;
-    const WIRE_TYPE: WireType = Self::KIND.wire_type();
-    /// Encode *this value only* (no field tag and no default check).
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut);
     #[inline(always)]
-    fn encode_atomic(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        if Self::is_default_impl(&value) {
-            Self::encode_raw_unchecked(value, buf);
+    fn encoded_len_by_val(self) -> usize
+    where
+        for<'b> Self: ProtoWire<EncodeInput<'b> = Self>,
+    {
+        Self::encoded_len_impl(&self)
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged(&self, tag: u32) -> usize
+    where
+        for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
+    {
+        let len = Self::encoded_len(self);
+        if len != 0 { key_len(tag) + len } else { 0 }
+    }
+    #[inline(always)]
+    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+        let len = Self::encoded_len_impl(value);
+        if len != 0 { key_len(tag) + len } else { 0 }
+    }
+    #[allow(clippy::missing_safety_doc)]
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize;
+
+    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+        if Self::is_default_impl(value) {
+            0
+        } else {
+            match Self::WIRE_TYPE {
+                WireType::LengthDelimited => {
+                    let len = unsafe { Self::encoded_len_impl_raw(value) };
+                    len + encoded_len_varint(len as u64)
+                }
+                _ => unsafe { Self::encoded_len_impl_raw(value) },
+            }
         }
     }
+
+    /// Encode *this value only* (no field tag and no default check).
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut);
+
     #[inline(always)]
     fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        encode_key(tag, Self::WIRE_TYPE, buf);
-        Self::encode_maybe_length_delimited(value, buf)
+        if Self::is_default_impl(&value) {
+            Ok(())
+        } else {
+            encode_key(tag, Self::WIRE_TYPE, buf);
+            Self::encode_entrypoint(value, buf)
+        }
     }
 
     #[inline(always)]
-    fn encode_maybe_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        match Self::WIRE_TYPE {
-            WireType::LengthDelimited => Self::encode_length_delimited(value, buf),
-            _ => Ok(Self::encode_atomic(value, buf)),
+    fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        if Self::WIRE_TYPE == WireType::LengthDelimited {
+            Self::encode_length_delimited(value, buf)
+        } else {
+            Self::encode_raw_unchecked(value, buf);
+            Ok(())
         }
     }
 
     #[inline(always)]
     fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        let len = Self::encoded_len(&value);
+        let len = Self::encoded_len_impl(&value);
         let required = len + encoded_len_varint(len as u64);
         let remaining = buf.remaining_mut();
         if required > remaining {
             return Err(EncodeError::new(required, remaining));
         }
         encode_varint(len as u64, buf);
-        Ok(Self::encode_atomic(value, buf))
+        Self::encode_raw_unchecked(value, buf);
+        Ok(())
     }
 
-    // fn encoded_len_repeated<'a, I, T>(tag: u32, values: I) -> usize
-    // where
-    //     I: Iterator<Item = T> + std::iter::ExactSizeIterator,
-    //     T: AsEncodeInput<'a, Self::EncodeInput<'a>>,
-    //     Self::EncodeInput<'a>: 'a,
-    // {
-    //     2 * key_len(tag) * values.len() + values.map(|x| Self::encoded_len(x)).sum::<usize>()
-    // }
-
-    /// Decode *this value only* (no field tag).
-    //fn decode_atomic(buf: &mut impl Buf) -> Result<Self, DecodeError>;
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     /// default value used for decoding
@@ -306,33 +339,6 @@ pub trait ProtoExt: Sized {
             Self::merge_field(msg, tag, wire_type, buf, ctx)
         })
     }
-    // #[inline(always)]
-    // fn merge_repeated(wire_type: WireType, messages: &mut impl RepeatedCollectionMut<Self>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-    //     check_wire_type(WireType::LengthDelimited, wire_type)?;
-    //     let mut msg = Self::Shadow::proto_default();
-    //     Self::merge_length_delimited(&mut msg, buf, ctx)?;
-    //     messages.push(Self::post_decode(msg)?);
-    //     Ok(())
-    // }
-
-    // fn encode_repeated<'i, C>(tag: u32, values: C, buf: &mut impl BufMut)
-    // where
-    //     C: RepeatedCollection<Self>,
-    //     for<'a> C::Iter<'a>: Iterator<Item = SunOf<'i, Self>>,
-    //     <Self::Shadow<'i> as ProtoShadow>::Sun<'i>: AsEncodeInput<'i, <<Self as ProtoExt>::Shadow<'i> as ProtoShadow>::View<'i>>,
-    // {
-    //     if values.is_empty() {
-    //         return;
-    //     }
-
-    //     for v in values.into_iter() {
-    //         let shadow = Self::Shadow::from_sun(v);
-    //         let len = Self::Shadow::encoded_len(v);
-    //         encode_key(tag, WireType::LengthDelimited, buf);
-    //         encode_varint(len as u64, buf);
-    //         <Self::Shadow<'_> as ProtoWire>::encode_raw(shadow, buf)
-    //     }
-    // }
 
     #[inline(always)]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
@@ -342,7 +348,7 @@ pub trait ProtoExt: Sized {
             if len > remaining {
                 return Err(EncodeError::new(len, remaining));
             }
-            Ok(<Self::Shadow<'_> as ProtoWire>::encode_atomic(shadow, buf))
+            <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, buf)
         })
     }
     //TODO probably should add Result here
@@ -351,7 +357,7 @@ pub trait ProtoExt: Sized {
         Self::with_shadow(value, |shadow| {
             let len = Self::Shadow::encoded_len_impl(&shadow);
             let mut buf = Vec::with_capacity(len);
-            <Self::Shadow<'_> as ProtoWire>::encode_atomic(shadow, &mut buf);
+            <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, &mut buf);
             buf
         })
     }
@@ -409,7 +415,7 @@ impl ProtoWire for ID {
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.id.is_default_value()
+        value.id.is_default_by_val()
     }
     #[inline(always)]
     fn clear(&mut self) {
@@ -418,18 +424,17 @@ impl ProtoWire for ID {
 
     #[inline(always)]
     /// Returns the encoded length of the message without a length delimiter.
-    fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
-        if v.is_default() { 0 } else { encoding::key_len(1) + u64::encoded_len(&v.id) }
+    unsafe fn encoded_len_impl_raw(v: &Self::EncodeInput<'_>) -> usize {
+        encoding::key_len(1) + u64::encoded_len_impl(&v.id)
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         // write internal field(s)
-
         encode_key(1, WireType::Varint, buf);
         encode_varint(value.id, buf);
     }
-
+    #[inline(always)]
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(WireType::Varint, wire_type)?;
         *value = ID::decode_length_delimited(buf, ctx)?;

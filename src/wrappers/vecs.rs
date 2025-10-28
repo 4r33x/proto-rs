@@ -1,28 +1,17 @@
-#[cfg(feature = "std")]
-use core::hash::BuildHasher;
-#[cfg(feature = "std")]
-use std::collections::HashSet;
-#[cfg(feature = "std")]
-use std::hash::Hash;
-
 use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::ProtoExt;
+use crate::EncodeError;
 use crate::ProtoShadow;
 use crate::ProtoWire;
-use crate::ViewOf;
-use crate::alloc::collections::BTreeSet;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
-use crate::encoding::check_wire_type;
 use crate::encoding::decode_varint;
 use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
-use crate::encoding::{self};
 use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow for Vec<T>
@@ -52,35 +41,68 @@ where
     type EncodeInput<'a> = &'a Vec<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
 
-    #[inline]
+    #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+        unsafe { Self::encoded_len_impl_raw(value) }
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged(&self, tag: u32) -> usize
+    where
+        for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
+    {
+        Self::encoded_len_tagged_impl(&self, tag)
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if value.is_empty() {
                     0
                 } else {
-                    let body_len = value.iter().map(|value: &T| T::encoded_len_impl(&value)).sum::<usize>();
-                    key_len(0) + encoded_len_varint(body_len as u64) + body_len
+                    let len = unsafe { Self::encoded_len_impl_raw(value) };
+                    key_len(tag) + encoded_len_varint(len as u64) + len
                 }
             }
 
-            // ---- Repeated string -------------------------------------------
-            ProtoKind::String => value.iter().map(|s| key_len(0) + encoded_len_varint(s.len() as u64) + s.len()).sum(),
+            // ---- Repeated messages -----------------------------------------
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let len = value.len();
+                if len == 0 { 0 } else { key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) } }
+            }
 
-            // ---- Repeated bytes --------------------------------------------
-            ProtoKind::Bytes => value.iter().map(|b| key_len(0) + encoded_len_varint(b.len() as u64) + b.len()).sum(),
+            ProtoKind::Repeated(_) => {
+                const {
+                    // causes a compile error if reached during constant evaluation
+                    panic!("unsupported kind in Vec<T>")
+                }
+            }
+        }
+    }
+
+    #[inline]
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        match T::KIND {
+            // ---- Packed numeric fields -------------------------------------
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>(),
 
             // ---- Repeated messages -----------------------------------------
-            ProtoKind::Message => value
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                 .iter()
                 .map(|m| {
-                    let len = T::encoded_len_impl(m);
-                    key_len(0) + encoded_len_varint(len as u64) + len
+                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    encoded_len_varint(len as u64) + len
                 })
                 .sum(),
 
-            _ => unreachable!("unsupported kind in Vec<T>"),
+            ProtoKind::Repeated(_) => {
+                const {
+                    // causes a compile error if reached during constant evaluation
+                    panic!("unsupported kind in Vec<T>")
+                }
+            }
         }
     }
 
@@ -88,28 +110,39 @@ where
     // encode_raw
     // -------------------------------------------------------------------------
     #[inline]
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
+        panic!("Do not call encode_raw_unchecked on Vec<T>")
+    }
+
+    #[inline]
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         match T::KIND {
             // ---- Packed numeric --------------------------------------------
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if value.is_empty() {
+                    return Ok(());
+                }
+                encode_key(tag, WireType::LengthDelimited, buf);
                 let body_len = value.iter().map(|value: &T| T::encoded_len_impl(&value)).sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
                     T::encode_raw_unchecked(v, buf);
                 }
+                Ok(())
             }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
                 for m in value {
                     let len = T::encoded_len_impl(&m);
-                    encode_key(0, WireType::LengthDelimited, buf);
+                    encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
-                    T::encode_atomic(m, buf);
+                    T::encode_raw_unchecked(m, buf);
                 }
+                Ok(())
             }
 
-            _ => {
+            ProtoKind::Repeated(_) => {
                 const {
                     // causes a compile error if reached during constant evaluation
                     panic!("unsupported kind in Vec<T>")
@@ -127,13 +160,14 @@ where
             // ---- Packed numeric or enum ------------------------------------
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)?;
-                    let mut slice = buf.take(len as usize);
+                    let len = decode_varint(buf)? as usize;
+                    let mut slice = buf.take(len);
                     while slice.has_remaining() {
                         let mut v = T::proto_default();
                         T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
                         values.push(v);
                     }
+                    buf.advance(len);
                 } else {
                     let mut v = T::proto_default();
                     T::decode_into(wire_type, &mut v, buf, ctx)?;
@@ -145,12 +179,17 @@ where
             // ---- Repeated message ------------------------------------------
             ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
                 let mut v = T::proto_default();
-                T::decode_into(wire_type, &mut v, buf, ctx);
+                T::decode_into(wire_type, &mut v, buf, ctx)?;
                 values.push(v);
                 Ok(())
             }
 
-            _ => Err(DecodeError::new("unsupported kind for Vec<T>")),
+            ProtoKind::Repeated(_) => {
+                const {
+                    // causes a compile error if reached during constant evaluation
+                    panic!("unsupported kind in Vec<T>")
+                }
+            }
         }
     }
 
@@ -166,22 +205,6 @@ where
 
     #[inline]
     fn clear(&mut self) {
-        self.clear()
-    }
-}
-
-impl<T> ProtoExt for Vec<T>
-where
-    for<'b> T: ProtoExt + ProtoShadow + ProtoWire<EncodeInput<'b> = &'b T> + 'b,
-{
-    type Shadow<'a> = Vec<T>;
-
-    #[inline(always)]
-    fn merge_field(values: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        match T::Shadow::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => encoding::merge_repeated_packed_field(tag, wire, value, buf, ctx),
-            ProtoKind::Message | ProtoKind::Bytes => {}
-            ProtoKind::String => encoding::string::merge_repeated(wire_type, values, buf, ctx),
-        }
+        Vec::clear(self);
     }
 }

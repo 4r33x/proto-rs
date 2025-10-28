@@ -76,6 +76,7 @@ impl DecodeContext {
         }
     }
 
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
     pub(crate) fn enter_recursion(&self) -> DecodeContext {
@@ -92,7 +93,8 @@ impl DecodeContext {
     pub(crate) fn limit_reached(&self) -> Result<(), DecodeError> {
         if self.recurse_count == 0 { Err(DecodeError::new("recursion limit reached")) } else { Ok(()) }
     }
-
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    #[allow(clippy::unnecessary_wraps)]
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
     pub(crate) fn limit_reached(&self) -> Result<(), DecodeError> {
@@ -149,7 +151,7 @@ where
 
     let limit = remaining - len as usize;
     while buf.remaining() > limit {
-        merge(value, buf, ctx.clone())?;
+        merge(value, buf, ctx)?;
     }
 
     if buf.remaining() != limit {
@@ -350,10 +352,10 @@ mod test {
                     fn $val_proto(values: $map_type<$key_ty, $val_ty>, tag in MIN_TAG..=MAX_TAG) {
                         check_collection_type(values, tag, WireType::LengthDelimited,
                                               |tag, values, buf| {
-                                                  $mod_name::encode($key_proto::_encode_by_ref,
-                                                                    $key_proto::_encoded_len_by_ref,
-                                                                    $val_proto::_encode_by_ref,
-                                                                    $val_proto::_encoded_len_by_ref,
+                                                  $mod_name::encode($key_proto::_encode_by_ref_tagged,
+                                                                    $key_proto::_encoded_len_by_ref_tagged,
+                                                                    $val_proto::_encode_by_ref_tagged,
+                                                                    $val_proto::_encoded_len_by_ref_tagged,
                                                                     tag,
                                                                     values,
                                                                     buf)
@@ -367,8 +369,8 @@ mod test {
                                                                    ctx)
                                               },
                                               |tag, values| {
-                                                  $mod_name::encoded_len($key_proto::_encoded_len_by_ref,
-                                                                         $val_proto::_encoded_len_by_ref,
+                                                  $mod_name::encoded_len($key_proto::_encoded_len_by_ref_tagged,
+                                                                         $val_proto::_encoded_len_by_ref_tagged,
                                                                          tag,
                                                                          values)
                                               })?;

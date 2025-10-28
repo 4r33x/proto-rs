@@ -1,0 +1,343 @@
+use alloc::collections::BTreeSet;
+
+use bytes::Buf;
+use bytes::BufMut;
+
+use crate::DecodeError;
+use crate::EncodeError;
+use crate::ProtoShadow;
+use crate::ProtoWire;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
+use crate::encoding::decode_varint;
+use crate::encoding::encode_key;
+use crate::encoding::encode_varint;
+use crate::encoding::encoded_len_varint;
+use crate::encoding::key_len;
+use crate::traits::ProtoKind;
+
+impl<T> ProtoShadow for BTreeSet<T>
+where
+    for<'a> T: ProtoShadow + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+{
+    type Sun<'a> = &'a BTreeSet<T>;
+    type OwnedSun = BTreeSet<T>;
+    type View<'a> = &'a BTreeSet<T>;
+
+    #[inline]
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        Ok(self)
+    }
+    #[inline]
+    fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
+        v
+    }
+}
+
+impl<T> ProtoWire for BTreeSet<T>
+where
+    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + Ord + 'a,
+{
+    type EncodeInput<'a> = &'a BTreeSet<T>;
+    const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+
+    #[inline(always)]
+    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+        unsafe { Self::encoded_len_impl_raw(value) }
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged(&self, tag: u32) -> usize
+    where
+        for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
+    {
+        Self::encoded_len_tagged_impl(&self, tag)
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if value.is_empty() {
+                    0
+                } else {
+                    let body = unsafe { Self::encoded_len_impl_raw(value) };
+                    key_len(tag) + encoded_len_varint(body as u64) + body
+                }
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let n = value.len();
+                if n == 0 { 0 } else { key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) } }
+            }
+            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+        }
+    }
+
+    #[inline]
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        match T::KIND {
+            // packed: body only
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v: &T| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
+            // messages/bytes/string: per element (len varint + body)
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
+                .iter()
+                .map(|m| {
+                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    encoded_len_varint(len as u64) + len
+                })
+                .sum(),
+            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+        }
+    }
+
+    #[inline]
+    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
+        panic!("Do not call encode_raw_unchecked on BTreeSet<T>");
+    }
+
+    #[inline]
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if value.is_empty() {
+                    return Ok(());
+                }
+                encode_key(tag, WireType::LengthDelimited, buf);
+                let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
+                encode_varint(body_len as u64, buf);
+                for v in value {
+                    T::encode_raw_unchecked(v, buf);
+                }
+                Ok(())
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                for m in value {
+                    let len = T::encoded_len_impl(&m);
+                    encode_key(tag, WireType::LengthDelimited, buf);
+                    encode_varint(len as u64, buf);
+                    T::encode_raw_unchecked(m, buf);
+                }
+                Ok(())
+            }
+            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+        }
+    }
+
+    #[inline]
+    fn decode_into(wire_type: WireType, set: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if wire_type == WireType::LengthDelimited {
+                    let len = decode_varint(buf)? as usize;
+                    let mut slice = buf.take(len);
+                    while slice.has_remaining() {
+                        let mut v = T::proto_default();
+                        T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
+                        set.insert(v);
+                    }
+                    buf.advance(len);
+                } else {
+                    let mut v = T::proto_default();
+                    T::decode_into(wire_type, &mut v, buf, ctx)?;
+                    set.insert(v);
+                }
+                Ok(())
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let mut v = T::proto_default();
+                T::decode_into(wire_type, &mut v, buf, ctx)?;
+                set.insert(v);
+                Ok(())
+            }
+            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+        }
+    }
+
+    #[inline]
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        value.is_empty()
+    }
+    #[inline]
+    fn proto_default() -> Self {
+        BTreeSet::new()
+    }
+    #[inline]
+    fn clear(&mut self) {
+        BTreeSet::clear(self);
+    }
+}
+
+#[cfg(feature = "std")]
+mod hashset_impl {
+    use std::collections::HashSet;
+    use std::hash::BuildHasher;
+    use std::hash::Hash;
+
+    use bytes::Buf;
+    use bytes::BufMut;
+
+    use crate::DecodeError;
+    use crate::EncodeError;
+    use crate::ProtoShadow;
+    use crate::ProtoWire;
+    use crate::encoding::DecodeContext;
+    use crate::encoding::WireType;
+    use crate::encoding::decode_varint;
+    use crate::encoding::encode_key;
+    use crate::encoding::encode_varint;
+    use crate::encoding::encoded_len_varint;
+    use crate::encoding::key_len;
+    use crate::traits::ProtoKind;
+
+    impl<T, S> ProtoShadow for HashSet<T, S>
+    where
+        for<'a> T: ProtoShadow + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+        for<'a> S: BuildHasher + 'a,
+    {
+        type Sun<'a> = &'a HashSet<T, S>;
+        type OwnedSun = HashSet<T, S>;
+        type View<'a> = &'a HashSet<T, S>;
+
+        #[inline]
+        fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+            Ok(self)
+        }
+        #[inline]
+        fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
+            v
+        }
+    }
+
+    impl<T, S> ProtoWire for HashSet<T, S>
+    where
+        for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + Eq + Hash + 'a,
+        for<'a> S: BuildHasher + Default + 'a,
+    {
+        type EncodeInput<'a> = &'a HashSet<T, S>;
+        const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+
+        #[inline(always)]
+        fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+            unsafe { Self::encoded_len_impl_raw(value) }
+        }
+
+        #[inline(always)]
+        fn encoded_len_tagged(&self, tag: u32) -> usize
+        where
+            for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
+        {
+            Self::encoded_len_tagged_impl(&self, tag)
+        }
+
+        #[inline(always)]
+        fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+            match T::KIND {
+                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                    if value.is_empty() {
+                        0
+                    } else {
+                        let body = unsafe { Self::encoded_len_impl_raw(value) };
+                        key_len(tag) + encoded_len_varint(body as u64) + body
+                    }
+                }
+                ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                    let n = value.len();
+                    if n == 0 { 0 } else { key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) } }
+                }
+                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+            }
+        }
+
+        #[inline]
+        unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+            match T::KIND {
+                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v: &T| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
+
+                ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
+                    .iter()
+                    .map(|m| {
+                        let len = unsafe { T::encoded_len_impl_raw(&m) };
+                        encoded_len_varint(len as u64) + len
+                    })
+                    .sum(),
+                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+            }
+        }
+
+        #[inline]
+        fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
+            panic!("Do not call encode_raw_unchecked on HashSet<T,S>");
+        }
+
+        #[inline]
+        fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+            match T::KIND {
+                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                    if value.is_empty() {
+                        return Ok(());
+                    }
+                    encode_key(tag, WireType::LengthDelimited, buf);
+                    let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
+                    encode_varint(body_len as u64, buf);
+                    for v in value {
+                        T::encode_raw_unchecked(v, buf);
+                    }
+                    Ok(())
+                }
+                ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                    for m in value {
+                        let len = T::encoded_len_impl(&m);
+                        encode_key(tag, WireType::LengthDelimited, buf);
+                        encode_varint(len as u64, buf);
+                        T::encode_raw_unchecked(m, buf);
+                    }
+                    Ok(())
+                }
+                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+            }
+        }
+
+        #[inline]
+        fn decode_into(wire_type: WireType, set: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            match T::KIND {
+                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                    if wire_type == WireType::LengthDelimited {
+                        let len = decode_varint(buf)? as usize;
+                        let mut slice = buf.take(len);
+                        while slice.has_remaining() {
+                            let mut v = T::proto_default();
+                            T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
+                            set.insert(v);
+                        }
+                        buf.advance(len);
+                    } else {
+                        let mut v = T::proto_default();
+                        T::decode_into(wire_type, &mut v, buf, ctx)?;
+                        set.insert(v);
+                    }
+                    Ok(())
+                }
+                ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                    let mut v = T::proto_default();
+                    T::decode_into(wire_type, &mut v, buf, ctx)?;
+                    set.insert(v);
+                    Ok(())
+                }
+                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+            }
+        }
+
+        #[inline]
+        fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+            value.is_empty()
+        }
+        #[inline]
+        fn proto_default() -> Self {
+            HashSet::default()
+        }
+        #[inline]
+        fn clear(&mut self) {
+            HashSet::clear(self);
+        }
+    }
+}

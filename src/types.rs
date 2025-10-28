@@ -14,6 +14,7 @@ use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
+use crate::EncodeError;
 use crate::Name;
 use crate::ProtoExt;
 use crate::encoding::DecodeContext;
@@ -21,9 +22,11 @@ use crate::encoding::bool;
 use crate::encoding::bytes;
 use crate::encoding::check_wire_type;
 use crate::encoding::double;
+use crate::encoding::encode_key;
 use crate::encoding::float;
 use crate::encoding::int32;
 use crate::encoding::int64;
+use crate::encoding::key_len;
 use crate::encoding::skip_field;
 use crate::encoding::string;
 use crate::encoding::uint32;
@@ -54,26 +57,49 @@ macro_rules! impl_google_wrapper {
             const KIND: crate::traits::ProtoKind =
                 impl_google_wrapper!(@kind_ty, $ty);
 
+
             #[inline(always)]
             fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
                 if impl_google_wrapper!(@is_default_len, $mode, $is_default_len, v) {
                     0
                 } else {
-                    impl_google_wrapper!(@len_call, $mode, $module, 1, v)
+                    impl_google_wrapper!(@len_call, $mode, $module, v)
                 }
+            }
+
+            #[inline(always)]
+            fn encoded_len_tagged_impl(v: &Self::EncodeInput<'_>, tag: u32) -> usize {
+                if impl_google_wrapper!(@is_default_len, $mode, $is_default_len, v) {
+                    0
+                } else {
+                    key_len(tag) + impl_google_wrapper!(@len_call, $mode, $module, v)
+                }
+            }
+
+            #[inline(always)]
+            unsafe fn encoded_len_impl_raw(v: &Self::EncodeInput<'_>) -> usize {
+               impl_google_wrapper!(@len_call, $mode, $module, v)
             }
 
             #[inline(always)]
             fn encode_raw_unchecked(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
             {
-                impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
+                impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
             }
             #[inline(always)]
-            fn encode_atomic(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)
+            fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>
+            {
+                 impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
+
+                Ok(())
+            }
+            fn encode_with_tag(tag: u32, v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>
             {
                 if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
-                   impl_google_wrapper!(@encode_call, $mode, $module, 1, v, buf);
+                   encode_key(tag, Self::WIRE_TYPE,  buf);
+                   impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
                 }
+                Ok(())
             }
 
             #[inline(always)]
@@ -147,17 +173,17 @@ macro_rules! impl_google_wrapper {
     (@view_ty, by_ref, $ty:ty) => { &'a $ty };
     (@encode_ty, by_ref, $ty:ty) => { &'b $ty };
 
-    (@len_call, by_value, $module:ident, $tag:expr, $v:ident) => {
-        $module::encoded_len($tag, *$v)
+    (@len_call, by_value, $module:ident, $v:ident) => {
+        $module::encoded_len(*$v)
     };
-    (@encode_call, by_value, $module:ident, $tag:expr, $v:ident, $buf:ident) => {
-        $module::encode($tag, $v, $buf)
+    (@encode_call, by_value, $module:ident, $v:ident, $buf:ident) => {
+        $module::encode($v, $buf)
     };
-    (@len_call, by_ref, $module:ident, $tag:expr, $v:ident) => {
-        $module::encoded_len($tag, $v)
+    (@len_call, by_ref, $module:ident, $v:ident) => {
+        $module::encoded_len($v)
     };
-    (@encode_call, by_ref, $module:ident, $tag:expr, $v:ident, $buf:ident) => {
-        $module::encode($tag, $v, $buf)
+    (@encode_call, by_ref, $module:ident, $v:ident, $buf:ident) => {
+        $module::encode($v, $buf)
     };
 
     // ---------- TYPE → KIND EXPANSION ----------
@@ -228,8 +254,6 @@ impl crate::traits::ProtoWire for () {
 
     #[inline(always)]
     fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
-    #[inline(always)]
-    fn encode_atomic(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
 
     #[inline(always)]
     fn is_default_impl(_value: &Self::EncodeInput<'_>) -> bool {
@@ -244,6 +268,63 @@ impl crate::traits::ProtoWire for () {
 
     fn decode_into(_wire_type: WireType, _value: &mut Self, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
         Ok(())
+    }
+
+    fn is_default(&self) -> bool
+    where
+        for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self>,
+    {
+        true
+    }
+
+    fn is_default_by_val(self) -> bool
+    where
+        for<'b> Self: crate::ProtoWire<EncodeInput<'b> = Self>,
+    {
+        true
+    }
+
+    fn encoded_len(&self) -> usize
+    where
+        for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self>,
+    {
+        0
+    }
+
+    fn encoded_len_by_val(self) -> usize
+    where
+        for<'b> Self: crate::ProtoWire<EncodeInput<'b> = Self>,
+    {
+        0
+    }
+
+    fn encoded_len_tagged(&self, _tag: u32) -> usize
+    where
+        for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self>,
+    {
+        0
+    }
+
+    const WIRE_TYPE: WireType = Self::KIND.wire_type();
+
+    fn encode_with_tag(_tag: u32, _value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        Ok(())
+    }
+
+    fn encode_entrypoint(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        Ok(())
+    }
+
+    fn encode_length_delimited(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        Ok(())
+    }
+
+    unsafe fn encoded_len_impl_raw(_value: &Self::EncodeInput<'_>) -> usize {
+        0
+    }
+
+    fn encoded_len_tagged_impl(_value: &Self::EncodeInput<'_>, _tag: u32) -> usize {
+        0
     }
 }
 
@@ -296,7 +377,7 @@ macro_rules! impl_narrow_varint {
             // wire_type() = Varint automatically
 
             #[inline(always)]
-            fn encoded_len_impl(v: &Self::EncodeInput<'_>) -> usize {
+            unsafe fn encoded_len_impl_raw(v: &Self::EncodeInput<'_>) -> usize {
                 let widened: $wide_ty = *v as $wide_ty;
                 crate::encoding::encoded_len_varint(widened as u64)
             }

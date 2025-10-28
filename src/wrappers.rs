@@ -1,7 +1,6 @@
-// ---------- imports (adjust for no_std) ----------
-extern crate alloc;
-
 mod arcs;
 mod boxes;
-mod lists;
+mod maps;
 mod options;
+mod sets;
+mod vecs;
