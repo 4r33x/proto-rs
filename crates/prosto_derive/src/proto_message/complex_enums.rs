@@ -8,16 +8,22 @@ use syn::ItemEnum;
 use syn::Lit;
 use syn::spanned::Spanned;
 
-use super::unified_field_handler::FieldAccess;
-use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
+use super::unified_field_handler::decode_conversion_assign;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::build_is_default_checks;
+use super::unified_field_handler::field_proto_default_expr;
+use super::unified_field_handler::needs_decode_conversion;
+use super::unified_field_handler::FieldAccess;
+use super::unified_field_handler::FieldInfo;
+use super::unified_field_handler::compute_decode_ty;
+use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
+use crate::utils::parse_field_type;
 
 pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &syn::DataEnum, config: &UnifiedProtoConfig) -> syn::Result<TokenStream2> {
     let enum_item = sanitize_enum(item_enum.clone());
@@ -202,15 +208,24 @@ fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_
                     .named
                     .iter()
                     .enumerate()
-                    .map(|(field_idx, field)| FieldInfo {
-                        index: field_idx,
-                        field,
-                        access: FieldAccess::Direct({
-                            let ident = field.ident.as_ref().expect("named variant field");
-                            quote! { #ident }
-                        }),
-                        config: parse_field_config(field),
-                        tag: None,
+                    .map(|(field_idx, field)| {
+                        let config = parse_field_config(field);
+                        let parsed = parse_field_type(&field.ty);
+                        let proto_ty = compute_proto_ty(field, &config, &parsed);
+                        let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
+                        FieldInfo {
+                            index: field_idx,
+                            field,
+                            access: FieldAccess::Direct({
+                                let ident = field.ident.as_ref().expect("named variant field");
+                                quote! { #ident }
+                            }),
+                            config,
+                            tag: None,
+                            parsed,
+                            proto_ty,
+                            decode_ty,
+                        }
                     })
                     .collect();
                 infos = assign_tags(infos);
@@ -281,8 +296,8 @@ fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let inits = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    let ty = &info.field.ty;
-                    quote! { #field_ident: <#ty as ::proto_rs::ProtoWire>::proto_default() }
+                    let expr = field_proto_default_expr(info);
+                    quote! { #field_ident: #expr }
                 });
                 quote! { Self::#ident { #(#inits),* } }
             }
@@ -483,25 +498,47 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
         VariantKind::Struct { fields } => {
             let field_inits = fields.iter().map(|info| {
                 let field_ident = info.field.ident.as_ref().expect("named field");
-                let ty = &info.field.ty;
-                quote! { let mut #field_ident = <#ty as ::proto_rs::ProtoWire>::proto_default(); }
+                let init = field_proto_default_expr(info);
+                quote! { let mut #field_ident = #init; }
             });
             let decode_match = fields
                 .iter()
                 .filter_map(|info| {
                     let field_tag = info.tag?;
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    let ty = &info.field.ty;
-                    Some(quote! {
-                        #field_tag => {
-                            <#ty as ::proto_rs::ProtoWire>::decode_into(
-                                field_wire_type,
-                                &mut #field_ident,
-                                buf,
-                                inner_ctx,
-                            )?;
-                        }
-                    })
+                    if needs_decode_conversion(&info.config, &info.parsed) {
+                        let tmp_ident = Ident::new(
+                            &format!("__proto_rs_variant_field_{}_tmp", info.index),
+                            info.field.span(),
+                        );
+                        let decode_ty = &info.decode_ty;
+                        let access = quote! { #field_ident };
+                        let assign = decode_conversion_assign(info, &access, &tmp_ident);
+                        Some(quote! {
+                            #field_tag => {
+                                let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
+                                <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
+                                    field_wire_type,
+                                    &mut #tmp_ident,
+                                    buf,
+                                    inner_ctx,
+                                )?;
+                                #assign
+                            }
+                        })
+                    } else {
+                        let ty = &info.field.ty;
+                        Some(quote! {
+                            #field_tag => {
+                                <#ty as ::proto_rs::ProtoWire>::decode_into(
+                                    field_wire_type,
+                                    &mut #field_ident,
+                                    buf,
+                                    inner_ctx,
+                                )?;
+                            }
+                        })
+                    }
                 })
                 .collect::<Vec<_>>();
             let construct_expr = if fields.is_empty() {
