@@ -11,8 +11,10 @@ use syn::spanned::Spanned;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
+use super::unified_field_handler::build_decode_arm;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
+use super::unified_field_handler::build_field_default;
 use super::unified_field_handler::build_is_default_checks;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::unified_field_handler::sanitize_enum;
@@ -281,8 +283,8 @@ fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let inits = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    let ty = &info.field.ty;
-                    quote! { #field_ident: <#ty as ::proto_rs::ProtoWire>::proto_default() }
+                    let default_value = build_field_default(info);
+                    quote! { #field_ident: #default_value }
                 });
                 quote! { Self::#ident { #(#inits),* } }
             }
@@ -483,25 +485,18 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
         VariantKind::Struct { fields } => {
             let field_inits = fields.iter().map(|info| {
                 let field_ident = info.field.ident.as_ref().expect("named field");
-                let ty = &info.field.ty;
-                quote! { let mut #field_ident = <#ty as ::proto_rs::ProtoWire>::proto_default(); }
+                let default_value = build_field_default(info);
+                quote! { let mut #field_ident = #default_value; }
             });
             let decode_match = fields
                 .iter()
                 .filter_map(|info| {
-                    let field_tag = info.tag?;
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    let ty = &info.field.ty;
-                    Some(quote! {
-                        #field_tag => {
-                            <#ty as ::proto_rs::ProtoWire>::decode_into(
-                                field_wire_type,
-                                &mut #field_ident,
-                                buf,
-                                inner_ctx,
-                            )?;
-                        }
-                    })
+                    let base = quote! { #field_ident };
+                    let wire_ident = quote! { field_wire_type };
+                    let buf_ident = quote! { buf };
+                    let ctx_ident = quote! { inner_ctx };
+                    build_decode_arm(info, &base, &wire_ident, &buf_ident, &ctx_ident)
                 })
                 .collect::<Vec<_>>();
             let construct_expr = if fields.is_empty() {
@@ -526,8 +521,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
                         match field_tag {
                             #(#decode_match,)*
-                            _ => ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, inner_ctx)?,
-                        }
+                            _ => ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, inner_ctx),
+                        }?;
                     }
                 }
             };

@@ -7,9 +7,11 @@ use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_clear_stmts;
+use super::unified_field_handler::build_decode_arm;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::build_is_default_checks;
+use super::unified_field_handler::build_post_decode_method;
 use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::unified_field_handler::strip_proto_attrs;
@@ -103,26 +105,17 @@ fn generate_proto_ext_impl(
         quote! { #name #ty_generics }
     };
 
+    let decode_base = quote! { value };
+    let decode_wire = quote! { wire_type };
+    let decode_buf = quote! { buf };
+    let decode_ctx = quote! { ctx };
     let decode_arms = fields
         .iter()
-        .filter_map(|info| {
-            let tag = info.tag?;
-            let field_ty = &info.field.ty;
-            let access = info.access.access_tokens(quote! { value });
-            Some(quote! {
-                #tag => {
-                    <#field_ty as ::proto_rs::ProtoWire>::decode_into(
-                        wire_type,
-                        &mut #access,
-                        buf,
-                        ctx,
-                    )
-                }
-            })
-        })
+        .filter_map(|info| build_decode_arm(info, &decode_base, &decode_wire, &decode_buf, &decode_ctx))
         .collect::<Vec<_>>();
 
     let shadow_ty = quote! { #name #ty_generics };
+    let post_decode = build_post_decode_method(fields);
 
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
@@ -141,6 +134,8 @@ fn generate_proto_ext_impl(
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
             }
+
+            #post_decode
         }
     }
 }
