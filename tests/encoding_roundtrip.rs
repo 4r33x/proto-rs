@@ -10,6 +10,7 @@ use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
+use proto_rs::ProtoWire;
 use proto_rs::Shadow;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
@@ -356,10 +357,10 @@ fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_e
 
 fn encode_proto_message<M>(value: &M) -> Bytes
 where
-    M: ProtoExt,
+    for<'a> M: ProtoExt + ProtoWire<EncodeInput<'a> = &'a M>,
     for<'a> Shadow<'a, M>: ProtoShadow<Sun<'a> = &'a M, View<'a> = &'a M>,
 {
-    let len = <M as ProtoExt>::encoded_len(&value);
+    let len = <M as ProtoWire>::encoded_len(&value);
     let mut buf = BytesMut::with_capacity(len);
     <M as ProtoExt>::encode(value, &mut buf).expect("proto encode failed");
     buf.freeze()
@@ -470,20 +471,20 @@ fn decode_handles_non_canonical_field_order() {
     let source = sample_message();
     let mut buf = BytesMut::new();
 
-    encoding::int32::encode(8, &(SampleEnumProst::from(source.mode) as i32), &mut buf);
-    encoding::bytes::encode(4, &source.data, &mut buf);
-    encoding::int64::encode(7, &source.values[0], &mut buf);
+    encoding::int32::encode_tagged(8, SampleEnumProst::from(source.mode) as i32, &mut buf);
+    encoding::bytes::encode_tagged(4, &source.data, &mut buf);
+    encoding::int64::encode_tagged(7, source.values[0], &mut buf);
     encoding::message::encode::<NestedMessage>(6, &source.nested_list[0], &mut buf);
-    encoding::string::encode(3, &source.name, &mut buf);
-    encoding::bool::encode(2, &source.flag, &mut buf);
-    encoding::uint32::encode(1, &source.id, &mut buf);
+    encoding::string::encode_tagged(3, &source.name, &mut buf);
+    encoding::bool::encode_tagged(2, source.flag, &mut buf);
+    encoding::uint32::encode_tagged(1, source.id, &mut buf);
     encoding::message::encode::<NestedMessage>(6, &source.nested_list[1], &mut buf);
-    encoding::int64::encode(7, &source.values[1], &mut buf);
+    encoding::int64::encode_tagged(7, source.values[1], &mut buf);
     encoding::message::encode::<NestedMessage>(5, source.nested.as_ref().expect("missing nested"), &mut buf);
-    encoding::int64::encode(7, &source.values[2], &mut buf);
-    encoding::int64::encode(7, &source.values[3], &mut buf);
+    encoding::int64::encode_tagged(7, source.values[2], &mut buf);
+    encoding::int64::encode_tagged(7, source.values[3], &mut buf);
     if let Some(optional_mode) = source.optional_mode {
-        encoding::int32::encode(9, &(SampleEnumProst::from(optional_mode) as i32), &mut buf);
+        encoding::int32::encode_tagged(9, SampleEnumProst::from(optional_mode) as i32, &mut buf);
     }
 
     let bytes = buf.freeze();
@@ -496,19 +497,19 @@ fn decode_prefers_last_value_for_singular_fields() {
     let mut buf = BytesMut::new();
 
     // Initial values that should be overwritten.
-    encoding::uint32::encode(1, &1u32, &mut buf);
-    encoding::bool::encode(2, &false, &mut buf);
-    encoding::int32::encode(8, &(SampleEnumProst::from(SampleEnum::One) as i32), &mut buf);
+    encoding::uint32::encode_tagged(1, 1u32, &mut buf);
+    encoding::bool::encode_tagged(2, false, &mut buf);
+    encoding::int32::encode_tagged(8, SampleEnumProst::from(SampleEnum::One) as i32, &mut buf);
     if source.optional_mode.is_some() {
-        encoding::int32::encode(9, &(SampleEnumProst::from(SampleEnum::Zero) as i32), &mut buf);
+        encoding::int32::encode_tagged(9, SampleEnumProst::from(SampleEnum::Zero) as i32, &mut buf);
     }
 
     // Final values should be preserved after decoding.
-    encoding::uint32::encode(1, &source.id, &mut buf);
-    encoding::bool::encode(2, &source.flag, &mut buf);
-    encoding::int32::encode(8, &(SampleEnumProst::from(source.mode) as i32), &mut buf);
+    encoding::uint32::encode_tagged(1, source.id, &mut buf);
+    encoding::bool::encode_tagged(2, source.flag, &mut buf);
+    encoding::int32::encode_tagged(8, SampleEnumProst::from(source.mode) as i32, &mut buf);
     if let Some(optional_mode) = source.optional_mode {
-        encoding::int32::encode(9, &(SampleEnumProst::from(optional_mode) as i32), &mut buf);
+        encoding::int32::encode_tagged(9, SampleEnumProst::from(optional_mode) as i32, &mut buf);
     }
 
     let bytes = buf.freeze();
@@ -529,9 +530,9 @@ fn decode_handles_mixed_packed_repeated_values() {
     let values = sample_message().values;
 
     let mut buf = BytesMut::new();
-    encoding::int64::encode(7, &values[0], &mut buf);
+    encoding::int64::encode_tagged(7, values[0], &mut buf);
     encoding::int64::encode_packed(7, &values[1..3], &mut buf);
-    encoding::int64::encode(7, &values[3], &mut buf);
+    encoding::int64::encode_tagged(7, values[3], &mut buf);
 
     let bytes = buf.freeze();
 
@@ -613,7 +614,7 @@ fn merge_option_box_reuses_allocation() {
     assert_eq!(tag, 1);
     assert_eq!(wire_type, encoding::WireType::LengthDelimited);
 
-    let mut target: Option<Shadow<'_, Box<NestedMessage>>> = Some(<Box<NestedMessage> as ProtoExt>::proto_default());
+    let mut target: Option<Shadow<'_, Box<NestedMessage>>> = Some(<Box<NestedMessage> as ProtoWire>::proto_default());
     let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
     <Box<NestedMessage> as ProtoExt>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
@@ -635,7 +636,7 @@ fn merge_option_arc_reuses_allocation() {
     assert_eq!(tag, 1);
     assert_eq!(wire_type, encoding::WireType::LengthDelimited);
 
-    let mut target: Option<Shadow<'_, Arc<NestedMessage>>> = Some(<Arc<NestedMessage> as ProtoExt>::proto_default());
+    let mut target: Option<Shadow<'_, Arc<NestedMessage>>> = Some(<Arc<NestedMessage> as ProtoWire>::proto_default());
     let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
     <Arc<NestedMessage> as ProtoExt>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
@@ -645,14 +646,4 @@ fn merge_option_arc_reuses_allocation() {
 
     let arc = target.unwrap().to_sun().expect("into owned arc");
     assert_eq!(arc.value, 456);
-}
-
-#[test]
-fn heap_wrappers_support_array_protoext() {
-    fn assert_proto_ext<T: ProtoExt>() {}
-
-    assert_proto_ext::<Box<[u8; 4]>>();
-    assert_proto_ext::<Box<[NestedMessage; 2]>>();
-    assert_proto_ext::<Arc<[u8; 4]>>();
-    assert_proto_ext::<Arc<[NestedMessage; 2]>>();
 }

@@ -341,3 +341,278 @@ mod hashset_impl {
         }
     }
 }
+
+/// Implements `ProtoWire` for `BTreeSet<$ty>` for Prost-compatible primitive types.
+/// - Uses packed (LengthDelimited) encoding for numeric fields.
+/// - Mirrors Prost's packed repeated field logic.
+/// - Excludes `f32` and `f64` because they don't implement `Ord`.
+macro_rules! impl_proto_wire_btreeset_for_copy {
+    ($($ty:ty => $kind:expr),* $(,)?) => {
+        $(
+            impl crate::ProtoWire for alloc::collections::BTreeSet<$ty> {
+                type EncodeInput<'a> = &'a alloc::collections::BTreeSet<$ty>;
+                const KIND: crate::traits::ProtoKind = $kind;
+
+                #[inline(always)]
+                fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+                    unsafe { Self::encoded_len_impl_raw(value) }
+                }
+
+                #[inline(always)]
+                fn encoded_len_tagged(&self, tag: u32) -> usize
+                where for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self> {
+                    Self::encoded_len_tagged_impl(&self, tag)
+                }
+
+                #[inline(always)]
+                fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+                    if value.is_empty() { 0 } else {
+                        let len = unsafe { Self::encoded_len_impl_raw(value) };
+                        crate::encoding::key_len(tag)
+                            + crate::encoding::encoded_len_varint(len as u64)
+                            + len
+                    }
+                }
+
+                #[inline(always)]
+                unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+                    value.iter()
+                        .map(|v| <$ty as crate::ProtoWire>::encoded_len_impl(&v))
+                        .sum::<usize>()
+                }
+
+                #[inline(always)]
+                fn encode_raw_unchecked(_: Self::EncodeInput<'_>, _: &mut impl bytes::BufMut) {
+                    panic!("Do not call encode_raw_unchecked on BTreeSet<$ty>");
+                }
+
+                #[inline(always)]
+                fn encode_with_tag(
+                    tag: u32,
+                    value: Self::EncodeInput<'_>,
+                    buf: &mut impl bytes::BufMut,
+                ) -> Result<(), crate::EncodeError> {
+                    use crate::encoding::{encode_key, encode_varint, WireType};
+                    use crate::ProtoWire;
+
+                    if value.is_empty() {
+                        return Ok(());
+                    }
+
+                    encode_key(tag, WireType::LengthDelimited, buf);
+                    let body_len = value.iter()
+                        .map(|v| <$ty as ProtoWire>::encoded_len_impl(&v))
+                        .sum::<usize>();
+                    encode_varint(body_len as u64, buf);
+
+                    for v in value {
+                        <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
+                    }
+                    Ok(())
+                }
+
+                #[inline(always)]
+                fn decode_into(
+                    wire_type: crate::encoding::WireType,
+                    set: &mut Self,
+                    buf: &mut impl bytes::Buf,
+                    ctx: crate::encoding::DecodeContext,
+                ) -> Result<(), crate::DecodeError> {
+                    use crate::encoding::{WireType, decode_varint};
+                    use bytes::Buf;
+
+                    match wire_type {
+                        WireType::LengthDelimited => {
+                            let len = decode_varint(buf)? as usize;
+                            let mut slice = buf.take(len);
+                            while slice.has_remaining() {
+                                let mut v = <$ty>::default();
+                                <$ty as crate::ProtoWire>::decode_into(
+                                    <$ty as crate::ProtoWire>::WIRE_TYPE,
+                                    &mut v,
+                                    &mut slice,
+                                    ctx.clone(),
+                                )?;
+                                set.insert(v);
+                            }
+                            buf.advance(len);
+                            Ok(())
+                        }
+                        other => {
+                            let mut v = <$ty>::default();
+                            <$ty as crate::ProtoWire>::decode_into(other, &mut v, buf, ctx)?;
+                            set.insert(v);
+                            Ok(())
+                        }
+                    }
+                }
+
+                #[inline(always)]
+                fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                    value.is_empty()
+                }
+
+                #[inline(always)]
+                fn proto_default() -> Self {
+                    alloc::collections::BTreeSet::new()
+                }
+
+                #[inline(always)]
+                fn clear(&mut self) {
+                    self.clear();
+                }
+            }
+        )*
+    };
+}
+
+// Instantiate only for Ord-compatible primitive types
+impl_proto_wire_btreeset_for_copy! {
+    bool  => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool),
+    i8    => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I8),
+    u16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U16),
+    i16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I16),
+    u32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32),
+    i32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I32),
+    u64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U64),
+    i64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I64),
+}
+
+/// Implements `ProtoWire` for `HashSet<$ty, S>` where `S: BuildHasher + Default`.
+/// Uses packed encoding for numeric fields, same as Prost.
+/// Excludes `f32`/`f64` (no Eq + Hash).
+#[cfg(feature = "std")]
+macro_rules! impl_proto_wire_hashset_for_copy {
+    ($($ty:ty => $kind:expr),* $(,)?) => {
+        $(
+            impl<S> crate::ProtoWire for std::collections::HashSet<$ty, S>
+            where
+                for <'a> S: core::hash::BuildHasher + Default + 'a,
+            {
+                type EncodeInput<'a> = &'a std::collections::HashSet<$ty, S>;
+                const KIND: crate::traits::ProtoKind = $kind;
+
+                #[inline(always)]
+                fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+                    unsafe { Self::encoded_len_impl_raw(value) }
+                }
+
+                #[inline(always)]
+                fn encoded_len_tagged(&self, tag: u32) -> usize
+                where for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self> {
+                    Self::encoded_len_tagged_impl(&self, tag)
+                }
+
+                #[inline(always)]
+                fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+                    if value.is_empty() { 0 } else {
+                        let len = unsafe { Self::encoded_len_impl_raw(value) };
+                        crate::encoding::key_len(tag)
+                            + crate::encoding::encoded_len_varint(len as u64)
+                            + len
+                    }
+                }
+
+                #[inline(always)]
+                unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+                    value.iter()
+                        .map(|v| <$ty as crate::ProtoWire>::encoded_len_impl(&v))
+                        .sum::<usize>()
+                }
+
+                #[inline(always)]
+                fn encode_raw_unchecked(_: Self::EncodeInput<'_>, _: &mut impl bytes::BufMut) {
+                    panic!("Do not call encode_raw_unchecked on HashSet<$ty, S>");
+                }
+
+                #[inline(always)]
+                fn encode_with_tag(
+                    tag: u32,
+                    value: Self::EncodeInput<'_>,
+                    buf: &mut impl bytes::BufMut,
+                ) -> Result<(), crate::EncodeError> {
+                    use crate::encoding::{encode_key, encode_varint, WireType};
+                    use crate::ProtoWire;
+
+                    if value.is_empty() {
+                        return Ok(());
+                    }
+
+                    encode_key(tag, WireType::LengthDelimited, buf);
+                    let body_len = value.iter()
+                        .map(|v| <$ty as ProtoWire>::encoded_len_impl(&v))
+                        .sum::<usize>();
+                    encode_varint(body_len as u64, buf);
+
+                    for v in value {
+                        <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
+                    }
+                    Ok(())
+                }
+
+                #[inline(always)]
+                fn decode_into(
+                    wire_type: crate::encoding::WireType,
+                    set: &mut Self,
+                    buf: &mut impl bytes::Buf,
+                    ctx: crate::encoding::DecodeContext,
+                ) -> Result<(), crate::DecodeError> {
+                    use crate::encoding::{WireType, decode_varint};
+                    use bytes::Buf;
+
+                    match wire_type {
+                        WireType::LengthDelimited => {
+                            let len = decode_varint(buf)? as usize;
+                            let mut slice = buf.take(len);
+                            while slice.has_remaining() {
+                                let mut v = <$ty>::default();
+                                <$ty as crate::ProtoWire>::decode_into(
+                                    <$ty as crate::ProtoWire>::WIRE_TYPE,
+                                    &mut v,
+                                    &mut slice,
+                                    ctx.clone(),
+                                )?;
+                                set.insert(v);
+                            }
+                            buf.advance(len);
+                            Ok(())
+                        }
+                        other => {
+                            let mut v = <$ty>::default();
+                            <$ty as crate::ProtoWire>::decode_into(other, &mut v, buf, ctx)?;
+                            set.insert(v);
+                            Ok(())
+                        }
+                    }
+                }
+
+                #[inline(always)]
+                fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                    value.is_empty()
+                }
+
+                #[inline(always)]
+                fn proto_default() -> Self {
+                    std::collections::HashSet::with_hasher(S::default())
+                }
+
+                #[inline(always)]
+                fn clear(&mut self) {
+                    self.clear();
+                }
+            }
+        )*
+    };
+}
+
+#[cfg(feature = "std")]
+impl_proto_wire_hashset_for_copy! {
+    bool  => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool),
+    i8    => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I8),
+    u16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U16),
+    i16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I16),
+    u32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32),
+    i32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I32),
+    u64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U64),
+    i64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I64),
+}

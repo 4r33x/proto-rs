@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chrono::DateTime;
 use chrono::Utc;
 use prosto_derive::proto_dump;
@@ -388,6 +390,10 @@ pub struct Order {
     pub id: u64,
     pub amount: u64,
     pub quote: QuoteLamports, // Complex type - needs shadow
+}
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+pub struct OrderBook {
+    pub inner: BTreeMap<u64, Order>,
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
