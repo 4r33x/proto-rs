@@ -97,6 +97,7 @@ pub enum ProtoKind {
     String,
     Repeated(&'static ProtoKind),
 }
+
 pub enum PrimitiveKind {
     Bool,
     I8,
@@ -118,6 +119,16 @@ pub enum PrimitiveKind {
 }
 
 impl ProtoKind {
+    pub const fn dbg_name(&'static self) -> &'static str {
+        match self {
+            ProtoKind::Primitive(_) => "Primitive",
+            ProtoKind::SimpleEnum => "SimpleEnum",
+            ProtoKind::Message => "Message",
+            ProtoKind::Bytes => "Bytes",
+            ProtoKind::String => "String",
+            ProtoKind::Repeated(v) => "Repeated",
+        }
+    }
     #[inline(always)]
     pub const fn for_vec(inner: &'static ProtoKind) -> ProtoKind {
         ProtoKind::Repeated(inner)
@@ -177,11 +188,32 @@ impl ProtoKind {
 //     }
 // }
 
-/// ---------- atomic, tag-agnostic wire codec ----------
+#[track_caller]
+#[allow(clippy::extra_unused_type_parameters)]
+pub const fn const_unreachable<T: ProtoWire>(structure_name: &'static str) -> ! {
+    match T::KIND {
+        crate::ProtoKind::Primitive(_) | crate::ProtoKind::SimpleEnum | crate::ProtoKind::Message | crate::ProtoKind::Bytes | crate::ProtoKind::String => {
+            const_panic::concat_panic!("SHOULD BE SUPPORTED kind: ", T::KIND.dbg_name(), "in", structure_name)
+        }
+        crate::ProtoKind::Repeated(proto_kind) => {
+            const_panic::concat_panic!("unsupported REPEATED kind: ", proto_kind.dbg_name(), "in", structure_name)
+        }
+    }
+}
+
 pub trait ProtoWire: Sized {
     type EncodeInput<'a>;
     const KIND: ProtoKind;
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
+
+    const _REPEATED_SUPPORT: Option<&'static str> = None;
+    const _TEST: () = {
+        if let Some(name) = Self::_REPEATED_SUPPORT
+            && let ProtoKind::Repeated(_) = Self::KIND
+        {
+            const_unreachable::<Self>(name);
+        }
+    };
 
     #[inline(always)]
     fn is_default(&self) -> bool

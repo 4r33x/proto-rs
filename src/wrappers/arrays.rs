@@ -89,6 +89,7 @@ where
 {
     type EncodeInput<'a> = &'a [T; N];
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("Array");
 
     // -------------------------------------------------------------------------
     // encoded_len_impl / encoded_len_tagged
@@ -129,7 +130,9 @@ where
                 }
             }
 
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in [T; N]") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -146,7 +149,9 @@ where
                 })
                 .sum(),
 
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in [T; N]") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -187,7 +192,9 @@ where
                 Ok(())
             }
 
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in [T; N]") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -223,7 +230,9 @@ where
                 Ok(())
             }
 
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in [T; N]") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 

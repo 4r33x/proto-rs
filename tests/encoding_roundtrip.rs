@@ -374,12 +374,12 @@ fn encode_prost_message<M: ProstMessage>(value: &M) -> Bytes {
 
 fn encode_proto_length_delimited<M>(value: &M) -> Bytes
 where
-    M: ProtoExt,
+    for<'a> M: ProtoExt + ProtoWire<EncodeInput<'a> = &'a M>,
     for<'a> Shadow<'a, M>: ProtoShadow<Sun<'a> = &'a M, View<'a> = &'a M>,
 {
-    let len = <M as ProtoExt>::encoded_len(&value);
+    let len = <M as ProtoWire>::encoded_len(&value);
     let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
-    <M as ProtoExt>::encode_length_delimited(value, &mut buf).expect("proto length-delimited encode failed");
+    <M as ProtoExt>::encode(value, &mut buf).expect("proto length-delimited encode failed");
     buf.freeze()
 }
 
@@ -453,10 +453,10 @@ fn length_delimited_round_trips() {
     let proto_bytes = encode_proto_length_delimited(&proto_msg);
     let prost_bytes = encode_prost_length_delimited(&prost_msg);
 
-    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.clone()).expect("proto length-delimited decode failed");
+    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.clone(), encoding::DecodeContext::default()).expect("proto length-delimited decode failed");
     assert_eq!(decoded_proto, proto_msg);
 
-    let decoded_proto_from_prost = SampleMessage::decode_length_delimited(prost_bytes.clone()).expect("proto decode from prost length-delimited failed");
+    let decoded_proto_from_prost = SampleMessage::decode_length_delimited(prost_bytes.clone(), encoding::DecodeContext::default()).expect("proto decode from prost length-delimited failed");
     assert_eq!(decoded_proto_from_prost, proto_msg);
 
     let decoded_prost = SampleMessageProst::decode_length_delimited(prost_bytes.clone()).expect("prost length-delimited decode failed");
@@ -474,13 +474,13 @@ fn decode_handles_non_canonical_field_order() {
     encoding::int32::encode_tagged(8, SampleEnumProst::from(source.mode) as i32, &mut buf);
     encoding::bytes::encode_tagged(4, &source.data, &mut buf);
     encoding::int64::encode_tagged(7, source.values[0], &mut buf);
-    encoding::message::encode::<NestedMessage>(6, &source.nested_list[0], &mut buf);
+    NestedMessage::encode_with_tag(6, &source.nested_list[0], &mut buf);
     encoding::string::encode_tagged(3, &source.name, &mut buf);
     encoding::bool::encode_tagged(2, source.flag, &mut buf);
     encoding::uint32::encode_tagged(1, source.id, &mut buf);
-    encoding::message::encode::<NestedMessage>(6, &source.nested_list[1], &mut buf);
+    NestedMessage::encode_with_tag(6, &source.nested_list[1], &mut buf);
     encoding::int64::encode_tagged(7, source.values[1], &mut buf);
-    encoding::message::encode::<NestedMessage>(5, source.nested.as_ref().expect("missing nested"), &mut buf);
+    NestedMessage::encode_with_tag(5, source.nested.as_ref().expect("missing nested"), &mut buf);
     encoding::int64::encode_tagged(7, source.values[2], &mut buf);
     encoding::int64::encode_tagged(7, source.values[3], &mut buf);
     if let Some(optional_mode) = source.optional_mode {
@@ -607,7 +607,7 @@ fn zero_copy_container_roundtrip() {
 #[test]
 fn merge_option_box_reuses_allocation() {
     let mut buf = BytesMut::new();
-    encoding::message::encode::<NestedMessage>(1, &NestedMessage { value: 123 }, &mut buf);
+    NestedMessage::encode_with_tag(1, &NestedMessage { value: 123 }, &mut buf);
     let mut bytes = buf.freeze();
 
     let (tag, wire_type) = encoding::decode_key(&mut bytes).expect("decode key");
@@ -617,7 +617,7 @@ fn merge_option_box_reuses_allocation() {
     let mut target: Option<Shadow<'_, Box<NestedMessage>>> = Some(<Box<NestedMessage> as ProtoWire>::proto_default());
     let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
-    <Box<NestedMessage> as ProtoExt>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
+    <Box<NestedMessage> as ProtoWire>::decode_into(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
     let ptr_after = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
     assert_eq!(ptr_before, ptr_after, "Box shadow should be reused");
@@ -629,7 +629,7 @@ fn merge_option_box_reuses_allocation() {
 #[test]
 fn merge_option_arc_reuses_allocation() {
     let mut buf = BytesMut::new();
-    encoding::message::encode::<NestedMessage>(1, &NestedMessage { value: 456 }, &mut buf);
+    NestedMessage::encode_with_tag(1, &NestedMessage { value: 456 }, &mut buf);
     let mut bytes = buf.freeze();
 
     let (tag, wire_type) = encoding::decode_key(&mut bytes).expect("decode key");
@@ -639,7 +639,7 @@ fn merge_option_arc_reuses_allocation() {
     let mut target: Option<Shadow<'_, Arc<NestedMessage>>> = Some(<Arc<NestedMessage> as ProtoWire>::proto_default());
     let ptr_before = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
 
-    <Arc<NestedMessage> as ProtoExt>::merge_option_field(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
+    <Arc<NestedMessage> as ProtoWire>::decode_into(wire_type, &mut target, &mut bytes, encoding::DecodeContext::default()).expect("merge succeeded");
 
     let ptr_after = target.as_ref().map(|shadow| &raw const *shadow).unwrap();
     assert_eq!(ptr_before, ptr_after, "Arc shadow should be reused when unique");

@@ -40,6 +40,7 @@ where
 {
     type EncodeInput<'a> = &'a Vec<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("Vec");
 
     #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
@@ -74,10 +75,7 @@ where
             }
 
             ProtoKind::Repeated(_) => {
-                const {
-                    // causes a compile error if reached during constant evaluation
-                    panic!("unsupported kind in Vec<T>")
-                }
+                unreachable!()
             }
         }
     }
@@ -98,10 +96,7 @@ where
                 .sum(),
 
             ProtoKind::Repeated(_) => {
-                const {
-                    // causes a compile error if reached during constant evaluation
-                    panic!("unsupported kind in Vec<T>")
-                }
+                unreachable!()
             }
         }
     }
@@ -143,10 +138,7 @@ where
             }
 
             ProtoKind::Repeated(_) => {
-                const {
-                    // causes a compile error if reached during constant evaluation
-                    panic!("unsupported kind in Vec<T>")
-                }
+                unreachable!()
             }
         }
     }
@@ -185,10 +177,7 @@ where
             }
 
             ProtoKind::Repeated(_) => {
-                const {
-                    // causes a compile error if reached during constant evaluation
-                    panic!("unsupported kind in Vec<T>")
-                }
+                unreachable!()
             }
         }
     }
@@ -222,6 +211,7 @@ macro_rules! impl_proto_wire_vec_for_copy {
             impl crate::ProtoWire for Vec<$ty> {
                 type EncodeInput<'a> = &'a Vec<$ty>;
                 const KIND: crate::traits::ProtoKind = $kind;
+                const _REPEATED_SUPPORT: Option<&'static str> = Some("Vec");
 
                 // -------------------------------------------------------------------------
                 // encoded_len_impl / encoded_len_tagged

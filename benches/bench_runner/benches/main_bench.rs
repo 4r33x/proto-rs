@@ -21,6 +21,7 @@ use criterion::Criterion;
 use criterion::Throughput;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
+use proto_rs::ProtoWire;
 use proto_rs::proto_message;
 
 static BENCH_RECORDER: OnceLock<BenchRecorder> = OnceLock::new();
@@ -192,7 +193,7 @@ fn bench_encode_decode(c: &mut Criterion) {
     let prost_message = &ComplexRootProst::from(&message);
 
     let proto_bytes = Bytes::from(ComplexRoot::encode_to_vec(&message));
-    let proto_bytes_ref = ComplexRoot::encoded_len(&&message);
+    let proto_bytes_ref = ComplexRoot::encoded_len(&message);
     assert_eq!(proto_bytes.len(), proto_bytes_ref);
     let prost_bytes = Bytes::from({
         let mut buf = Vec::with_capacity(prost_message.encoded_len());

@@ -40,6 +40,7 @@ where
 {
     type EncodeInput<'a> = &'a BTreeSet<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeSet");
 
     #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
@@ -69,7 +70,9 @@ where
                 let n = value.len();
                 if n == 0 { 0 } else { key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) } }
             }
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -86,7 +89,9 @@ where
                     encoded_len_varint(len as u64) + len
                 })
                 .sum(),
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -119,7 +124,9 @@ where
                 }
                 Ok(())
             }
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -149,7 +156,9 @@ where
                 set.insert(v);
                 Ok(())
             }
-            ProtoKind::Repeated(_) => const { panic!("unsupported kind in BTreeSet<T>") },
+            ProtoKind::Repeated(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -215,6 +224,7 @@ mod hashset_impl {
     {
         type EncodeInput<'a> = &'a HashSet<T, S>;
         const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+        const _REPEATED_SUPPORT: Option<&'static str> = Some("HashSet");
 
         #[inline(always)]
         fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
@@ -244,7 +254,9 @@ mod hashset_impl {
                     let n = value.len();
                     if n == 0 { 0 } else { key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) } }
                 }
-                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+                ProtoKind::Repeated(_) => {
+                    unreachable!()
+                }
             }
         }
 
@@ -260,7 +272,9 @@ mod hashset_impl {
                         encoded_len_varint(len as u64) + len
                     })
                     .sum(),
-                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+                ProtoKind::Repeated(_) => {
+                    unreachable!()
+                }
             }
         }
 
@@ -293,7 +307,9 @@ mod hashset_impl {
                     }
                     Ok(())
                 }
-                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+                ProtoKind::Repeated(_) => {
+                    unreachable!()
+                }
             }
         }
 
@@ -323,7 +339,9 @@ mod hashset_impl {
                     set.insert(v);
                     Ok(())
                 }
-                ProtoKind::Repeated(_) => const { panic!("unsupported kind in HashSet<T,S>") },
+                ProtoKind::Repeated(_) => {
+                    unreachable!()
+                }
             }
         }
 
@@ -352,6 +370,7 @@ macro_rules! impl_proto_wire_btreeset_for_copy {
             impl crate::ProtoWire for alloc::collections::BTreeSet<$ty> {
                 type EncodeInput<'a> = &'a alloc::collections::BTreeSet<$ty>;
                 const KIND: crate::traits::ProtoKind = $kind;
+                const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeSet");
 
                 #[inline(always)]
                 fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
@@ -491,6 +510,7 @@ macro_rules! impl_proto_wire_hashset_for_copy {
             {
                 type EncodeInput<'a> = &'a std::collections::HashSet<$ty, S>;
                 const KIND: crate::traits::ProtoKind = $kind;
+                 const _REPEATED_SUPPORT: Option<&'static str> = Some("HashSet");
 
                 #[inline(always)]
                 fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {

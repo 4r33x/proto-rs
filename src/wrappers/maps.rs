@@ -14,7 +14,6 @@ use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
-use crate::traits::PrimitiveKind;
 use crate::traits::ProtoKind;
 
 impl<K, V> ProtoShadow for BTreeMap<K, V>
