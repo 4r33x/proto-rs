@@ -188,9 +188,31 @@ fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &s
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let ordered_variants: Vec<&syn::Variant> = (0..data.variants.len()).map(|idx| &data.variants[idx]).collect();
-    let discriminants = crate::utils::collect_discriminants_for_variants(&ordered_variants).unwrap_or_else(|err| panic!("{}", err));
+    let discriminants = match crate::utils::collect_discriminants_for_variants(&ordered_variants) {
+        Ok(values) => values,
+        Err(err) => return err.to_compile_error(),
+    };
 
-    let default_index = crate::utils::find_marked_default_variant(data).unwrap_or(None).unwrap_or(0);
+    let marked_default = match crate::utils::find_marked_default_variant(data) {
+        Ok(value) => value,
+        Err(err) => return err.to_compile_error(),
+    };
+
+    if let Some(idx) = marked_default {
+        if discriminants.get(idx).copied() != Some(0) {
+            let variant = &data.variants[idx];
+            return syn::Error::new(variant.span(), "enum #[default] variant must have discriminant 0").to_compile_error();
+        }
+    }
+
+    let zero_index = match discriminants.iter().position(|&value| value == 0) {
+        Some(idx) => idx,
+        None => {
+            return syn::Error::new(data.variants.span(), "proto enums must contain a variant with discriminant 0").to_compile_error();
+        }
+    };
+
+    let default_index = marked_default.unwrap_or(zero_index);
     let default_ident = &data.variants[default_index].ident;
 
     let raw_from_variant: Vec<_> = ordered_variants
