@@ -669,6 +669,48 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 });
                 quote! { #name::#ident { #(#assigns),* } }
             };
+            let post_hooks = fields
+                .iter()
+                .filter_map(|info| {
+                    if !info.config.skip {
+                        return None;
+                    }
+                    let fun = info.config.skip_deser_fn.as_ref()?;
+                    let field_ident = info.field.ident.as_ref().expect("named field");
+                    let fun_path = parse_path_string(info.field, fun);
+                    let skip_binding_ident = Ident::new(
+                        &format!(
+                            "__proto_rs_variant_{}_{}_skip_binding",
+                            ident.to_string().to_lowercase(),
+                            info.index
+                        ),
+                        info.field.span(),
+                    );
+                    let computed_ident = Ident::new(
+                        &format!(
+                            "__proto_rs_variant_{}_{}_computed",
+                            ident.to_string().to_lowercase(),
+                            info.index
+                        ),
+                        info.field.span(),
+                    );
+                    Some(quote! {
+                        let #computed_ident = #fun_path(&variant_value);
+                        if let #name::#ident { #field_ident: ref mut #skip_binding_ident, .. } = variant_value {
+                            *#skip_binding_ident = #computed_ident;
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            let assign_variant = if post_hooks.is_empty() {
+                quote! { *value = #construct_expr; }
+            } else {
+                quote! {
+                    let mut variant_value = #construct_expr;
+                    #(#post_hooks)*
+                    *value = variant_value;
+                }
+            };
             let decode_loop = if decode_match.is_empty() {
                 quote! {
                     while buf.remaining() > limit {
@@ -706,7 +748,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     if buf.remaining() != limit {
                         return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
                     }
-                    *value = #construct_expr;
+                    #assign_variant
                     Ok(())
                 }
             }
