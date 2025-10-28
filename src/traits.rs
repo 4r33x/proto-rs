@@ -364,6 +364,7 @@ pub trait ProtoExt: Sized {
 }
 
 //Example implementation
+#[expect(dead_code)]
 struct ID {
     id: u64,
 }
