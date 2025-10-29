@@ -1,13 +1,13 @@
 use core::convert::TryInto;
 
+use fastnum::D64;
 use fastnum::D128;
-use fastnum::UD128;
 
 use crate::DecodeError;
 use crate::ProtoShadow;
 use crate::proto_message;
 
-#[proto_message(proto_path = "protos/fastnum.proto", sun = [D128, UD128])]
+#[proto_message(proto_path = "protos/fastnum.proto", sun = [D128, D64])]
 pub struct D128Proto {
     #[proto(tag = 1)]
     /// Lower 64 bits of the digits
@@ -60,20 +60,21 @@ impl ProtoShadow<D128> for D128Proto {
     }
 }
 
-impl ProtoShadow<UD128> for D128Proto {
-    type Sun<'a> = &'a UD128;
-    type OwnedSun = UD128;
+impl ProtoShadow<D64> for D128Proto {
+    type Sun<'a> = &'a D64;
+    type OwnedSun = D64;
     type View<'a> = Self;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let digits = ((self.hi as u128) << 64) | (self.lo as u128);
-
-        let mut result = UD128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
+        let mut result = D64::from_u64(self.lo);
 
         if self.fractional_digits_count > 0 {
-            result /= UD128::TEN.powi(self.fractional_digits_count);
+            result /= D64::TEN.powi(self.fractional_digits_count);
         } else if self.fractional_digits_count < 0 {
-            result *= UD128::TEN.powi(-self.fractional_digits_count);
+            result *= D64::TEN.powi(-self.fractional_digits_count);
+        }
+        if self.is_negative {
+            result = -result;
         }
 
         Ok(result)
@@ -82,13 +83,12 @@ impl ProtoShadow<UD128> for D128Proto {
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
         let lo = digits as u64;
-        let hi = (digits >> 64) as u64;
 
         Self {
             lo,
-            hi,
+            hi: 0,
             fractional_digits_count: i32::from(value.fractional_digits_count()),
-            is_negative: false,
+            is_negative: value.is_sign_negative(),
         }
     }
 }

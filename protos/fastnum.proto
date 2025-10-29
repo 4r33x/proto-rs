@@ -9,7 +9,7 @@ message D128 {
   bool is_negative = 4;
 }
 
-message UD128 {
+message D64 {
   uint64 lo = 1;
   uint64 hi = 2;
   int32 fractional_digits_count = 3;
