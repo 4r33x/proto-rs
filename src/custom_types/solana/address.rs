@@ -1,19 +1,37 @@
-use prosto_derive::proto_dump;
 pub use solana_address::ADDRESS_BYTES as BYTES;
-use solana_address::Address as ByteSeq;
+use solana_address::Address;
 
-use crate::impl_protoext_for_byte_array;
+use super::common::FixedBytes;
+use crate::DecodeError;
+use crate::ProtoShadow;
+use crate::proto_message;
 
 extern crate self as proto_rs;
 
 #[allow(dead_code)]
-#[proto_dump(proto_path = "protos/solana.proto")]
-struct AddressProto {
+#[proto_message(proto_path = "protos/solana.proto", sun = solana_address::Address)]
+pub struct AddressProto {
     #[proto(tag = 1)]
-    inner: [u8; BYTES],
+    inner: FixedBytes<BYTES>,
 }
 
-impl_protoext_for_byte_array!(ByteSeq, BYTES);
+impl ProtoShadow for AddressProto {
+    type Sun<'a> = &'a Address;
+    type OwnedSun = Address;
+    type View<'a> = Self;
+
+    #[inline(always)]
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        Ok(Address::from(self.inner.into_array()))
+    }
+
+    #[inline(always)]
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+        let mut inner = [0u8; BYTES];
+        inner.copy_from_slice(value.as_ref());
+        Self { inner: FixedBytes::from(inner) }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -33,9 +51,9 @@ mod tests {
 
     #[test]
     fn roundtrip_proto_ext() {
-        let original = ByteSeq::from(sample_address_bytes());
-        let encoded = <ByteSeq as ProtoExt>::encode_to_vec(&original);
-        let decoded = <ByteSeq as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        let original = Address::from(sample_address_bytes());
+        let encoded = <Address as ProtoExt>::encode_to_vec(&original);
+        let decoded = <Address as ProtoExt>::decode(encoded.as_slice()).expect("decode");
         assert_eq!(decoded.as_ref(), original.as_ref());
     }
 
@@ -46,7 +64,7 @@ mod tests {
         encode_varint((BYTES - 1) as u64, &mut buf);
         buf.extend(core::iter::repeat_n(0u8, BYTES - 1));
 
-        match <ByteSeq as ProtoExt>::decode(buf.as_slice()) {
+        match <Address as ProtoExt>::decode(buf.as_slice()) {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
                 assert!(err.to_string().contains("invalid length for Solana byte array"));

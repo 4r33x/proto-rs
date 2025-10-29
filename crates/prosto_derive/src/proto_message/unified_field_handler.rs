@@ -336,6 +336,46 @@ pub fn build_post_decode_hooks(fields: &[FieldInfo<'_>]) -> Vec<TokenStream2> {
         .collect()
 }
 
+pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
+    fields
+        .iter()
+        .filter_map(|info| {
+            let tag = info.tag?;
+            let access = info.access.access_tokens(base.clone());
+            if needs_decode_conversion(&info.config, &info.parsed) {
+                let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_tmp", info.index), info.field.span());
+                let decode_ty = &info.decode_ty;
+                let assign = decode_conversion_assign(info, &access, &tmp_ident);
+                Some(quote! {
+                    #tag => {
+                        let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
+                        <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
+                            wire_type,
+                            &mut #tmp_ident,
+                            buf,
+                            ctx,
+                        )?;
+                        #assign
+                        Ok(())
+                    }
+                })
+            } else {
+                let field_ty = &info.field.ty;
+                Some(quote! {
+                    #tag => {
+                        <#field_ty as ::proto_rs::ProtoWire>::decode_into(
+                            wire_type,
+                            &mut #access,
+                            buf,
+                            ctx,
+                        )
+                    }
+                })
+            }
+        })
+        .collect()
+}
+
 pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -> Vec<TokenStream2> {
     fields
         .iter()
