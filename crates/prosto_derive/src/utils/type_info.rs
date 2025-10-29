@@ -38,8 +38,6 @@ pub struct ParsedFieldType {
     pub prost_type: TokenStream,
     /// Whether the field is wrapped in `Option<T>`.
     pub is_option: bool,
-    /// Whether the field behaves like `repeated` (Vec/array of non-bytes).
-    pub is_repeated: bool,
     /// Whether the field should be treated as a protobuf message (length-delimited payload).
     pub is_message_like: bool,
     /// Whether the field encodes as a numeric scalar (eligible for packed encoding).
@@ -52,12 +50,6 @@ pub struct ParsedFieldType {
     pub is_rust_enum: bool,
     /// Whether this type represents a map.
     pub map_kind: Option<MapKind>,
-    /// Whether this type represents a set.
-    pub set_kind: Option<SetKind>,
-    /// Map key type when `map_kind` is set.
-    pub map_key_type: Option<Type>,
-    /// Map value type when `map_kind` is set.
-    pub map_value_type: Option<Type>,
 }
 
 impl ParsedFieldType {
@@ -68,16 +60,12 @@ impl ParsedFieldType {
             proto_type: proto_type.to_string(),
             prost_type,
             is_option: false,
-            is_repeated: false,
             is_message_like,
             is_numeric_scalar,
             proto_rust_type,
             elem_type,
             is_rust_enum,
             map_kind: None,
-            set_kind: None,
-            map_key_type: None,
-            map_value_type: None,
         }
     }
 }
@@ -141,16 +129,13 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
         proto_type,
         prost_type,
         is_option: false,
-        is_repeated: true,
+
         is_message_like,
         is_numeric_scalar,
         proto_rust_type: parse_quote! { ::proto_rs::alloc::vec::Vec<#inner_proto> },
         elem_type: elem,
         is_rust_enum: inner.is_rust_enum,
         map_kind: None,
-        set_kind: None,
-        map_key_type: None,
-        map_value_type: None,
     }
 }
 
@@ -161,8 +146,7 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
             "Vec" => return parse_vec_type(path, ty),
             "HashMap" => return parse_map_type(path, ty, MapKind::HashMap),
             "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
-            "HashSet" => return parse_set_type(path, ty, SetKind::HashSet),
-            "BTreeSet" => return parse_set_type(path, ty, SetKind::BTreeSet),
+            "HashSet" | "BTreeSet" => return parse_set_type(path, ty),
             "Box" | "Arc" => return parse_box_like_type(path, ty),
             _ => {}
         }
@@ -205,16 +189,13 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         proto_type: inner.proto_type.clone(),
         prost_type: inner.prost_type.clone(),
         is_option: false,
-        is_repeated: true,
+
         is_message_like: inner.is_message_like,
         is_numeric_scalar: inner.is_numeric_scalar,
         proto_rust_type: inner.proto_rust_type.clone(),
         elem_type: inner.elem_type.clone(),
         is_rust_enum: inner.is_rust_enum,
         map_kind: None,
-        set_kind: None,
-        map_key_type: None,
-        map_value_type: None,
     }
 }
 
@@ -299,20 +280,17 @@ fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType 
         proto_type,
         prost_type: quote! { map },
         is_option: false,
-        is_repeated: false,
+
         is_message_like: true,
         is_numeric_scalar: false,
         proto_rust_type,
         elem_type: value_ty.clone(),
         is_rust_enum: false,
         map_kind: Some(kind),
-        set_kind: None,
-        map_key_type: Some(key_ty),
-        map_value_type: Some(value_ty),
     }
 }
 
-fn parse_set_type(path: &TypePath, ty: &Type, kind: SetKind) -> ParsedFieldType {
+fn parse_set_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     let syn::PathArguments::AngleBracketed(args) = &path.path.segments.last().unwrap().arguments else {
         panic!("Set types must specify element generics");
     };
@@ -333,16 +311,12 @@ fn parse_set_type(path: &TypePath, ty: &Type, kind: SetKind) -> ParsedFieldType 
         proto_type: inner.proto_type.clone(),
         prost_type: inner.prost_type.clone(),
         is_option: false,
-        is_repeated: false,
         is_message_like: inner.is_message_like,
         is_numeric_scalar: inner.is_numeric_scalar,
         proto_rust_type: inner.proto_rust_type.clone(),
         elem_type: elem_ty,
         is_rust_enum: inner.is_rust_enum,
         map_kind: None,
-        set_kind: Some(kind),
-        map_key_type: None,
-        map_value_type: None,
     }
 }
 

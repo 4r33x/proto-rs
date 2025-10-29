@@ -1,4 +1,32 @@
 
+# Benchmark Run — 2025-10-29 18:46:30
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| bench_zero_copy_vs_clone | prost clone + encode | 115005.41 | 414.36 | 1.00× |
+| bench_zero_copy_vs_clone | proto_rs zero_copy | 161873.47 | 583.23 | 1.41× faster |
+| complex_root_decode | prost decode canonical input | 62198.37 | 224.10 | 1.00× |
+| complex_root_decode | prost decode proto_rs input | 61850.12 | 222.84 | 1.00× |
+| complex_root_decode | proto_rs decode canonical input | 62481.49 | 225.12 | 1.00× |
+| complex_root_decode | proto_rs decode proto_rs input | 62599.61 | 225.55 | 1.01× faster |
+| complex_root_encode | prost encode_to_vec | 226085.64 | 814.58 | 1.00× |
+| complex_root_encode | proto_rs encode_to_vec | 185720.51 | 669.15 | 0.82× slower |
+
+
+# Benchmark Run — 2025-10-29 18:42:14
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| bench_zero_copy_vs_clone | prost clone + encode | 114968.71 | 414.23 | 1.00× |
+| bench_zero_copy_vs_clone | proto_rs zero_copy | 149685.65 | 539.31 | 1.30× faster |
+| complex_root_decode | prost decode canonical input | 60617.36 | 218.40 | 1.00× |
+| complex_root_decode | prost decode proto_rs input | 60624.31 | 218.43 | 1.00× |
+| complex_root_decode | proto_rs decode canonical input | 60961.13 | 219.64 | 1.00× |
+| complex_root_decode | proto_rs decode proto_rs input | 59230.88 | 213.41 | 0.98× slower |
+| complex_root_encode | prost encode_to_vec | 221953.67 | 799.69 | 1.00× |
+| complex_root_encode | proto_rs encode_to_vec | 183480.84 | 661.08 | 0.83× slower |
+
+
 # Benchmark Run — 2025-10-29 18:00:36
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
