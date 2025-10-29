@@ -20,7 +20,7 @@ pub struct UD128Proto {
     pub fractional_digits_count: i32,
 }
 
-impl ProtoShadow for UD128Proto {
+impl ProtoShadow<UD128> for UD128Proto {
     type Sun<'a> = &'a UD128;
     type OwnedSun = UD128;
     type View<'a> = Self;
@@ -60,7 +60,7 @@ mod tests {
     use super::*;
 
     fn encode(value: &UD128) -> UD128Proto {
-        <UD128Proto as ProtoShadow>::from_sun(value)
+        <UD128Proto as ProtoShadow<UD128>>::from_sun(value)
     }
 
     fn decode(proto: UD128Proto) -> UD128 {

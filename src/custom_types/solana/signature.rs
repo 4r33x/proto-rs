@@ -14,7 +14,7 @@ pub struct SignatureProto {
     pub inner: [u8; BYTES],
 }
 
-impl ProtoShadow for SignatureProto {
+impl ProtoShadow<Signature> for SignatureProto {
     type Sun<'a> = &'a Signature;
     type OwnedSun = Signature;
     type View<'a> = Self;

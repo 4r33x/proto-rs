@@ -14,7 +14,7 @@ pub struct AddressProto {
     inner: [u8; BYTES],
 }
 
-impl ProtoShadow for AddressProto {
+impl ProtoShadow<Address> for AddressProto {
     type Sun<'a> = &'a Address;
     type OwnedSun = Address;
     type View<'a> = Self;

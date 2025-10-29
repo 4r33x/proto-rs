@@ -100,11 +100,11 @@ mod tests {
     use super::*;
 
     fn encode(value: &D128) -> D128Proto {
-        <D128Proto as ProtoShadow>::from_sun(value)
+        <D128Proto as ProtoShadow<D128>>::from_sun(value)
     }
 
     fn decode(proto: D128Proto) -> D128 {
-        ProtoShadow::to_sun(proto).unwrap()
+        ProtoShadow::<D128>::to_sun(proto).unwrap()
     }
 
     #[test]
