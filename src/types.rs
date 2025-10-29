@@ -37,7 +37,7 @@ use crate::traits::ProtoShadow;
 macro_rules! impl_google_wrapper {
     // ---------- Main entry ----------
     ($ty:ty, $module:ident, $name:literal, $mode:ident,
-        $is_default_encode:tt, $is_default_len:tt, $clear_spec:tt
+        $is_default_encode:tt, $is_default_len:tt, $clear_spec:tt, $kind:expr
     ) => {
         impl ProtoShadow for $ty {
             type Sun<'a> = impl_google_wrapper!(@sun_ty, $mode, $ty);
@@ -54,8 +54,7 @@ macro_rules! impl_google_wrapper {
         impl crate::traits::ProtoWire for $ty {
             type EncodeInput<'b> = impl_google_wrapper!(@encode_ty, $mode, $ty);
 
-            const KIND: crate::traits::ProtoKind =
-                impl_google_wrapper!(@kind_ty, $ty);
+            const KIND: crate::traits::ProtoKind = $kind;
 
 
             #[inline(always)]
@@ -63,7 +62,7 @@ macro_rules! impl_google_wrapper {
                 if impl_google_wrapper!(@is_default_len, $mode, $is_default_len, v) {
                     0
                 } else {
-                    impl_google_wrapper!(@len_call, $mode, $module, v)
+                    impl_google_wrapper!(@len_total, $mode, $module, v)
                 }
             }
 
@@ -72,13 +71,13 @@ macro_rules! impl_google_wrapper {
                 if impl_google_wrapper!(@is_default_len, $mode, $is_default_len, v) {
                     0
                 } else {
-                    key_len(tag) + impl_google_wrapper!(@len_call, $mode, $module, v)
+                    key_len(tag) + impl_google_wrapper!(@len_total, $mode, $module, v)
                 }
             }
 
             #[inline(always)]
             unsafe fn encoded_len_impl_raw(v: &Self::EncodeInput<'_>) -> usize {
-               impl_google_wrapper!(@len_call, $mode, $module, v)
+                impl_google_wrapper!(@len_raw, $mode, $module, v)
             }
 
             #[inline(always)]
@@ -87,17 +86,22 @@ macro_rules! impl_google_wrapper {
                 impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
             }
             #[inline(always)]
-            fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>
-            {
-                 impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
-
-                Ok(())
+            fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+                if Self::WIRE_TYPE == WireType::LengthDelimited {
+                    Self::encode_length_delimited(v, buf)
+                } else {
+                    impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
+                    Ok(())
+                }
             }
-            fn encode_with_tag(tag: u32, v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>
-            {
+            fn encode_with_tag(
+                tag: u32,
+                v: Self::EncodeInput<'_>,
+                buf: &mut impl BufMut,
+            ) -> Result<(), EncodeError> {
                 if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
-                   encode_key(tag, Self::WIRE_TYPE,  buf);
-                   impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
+                    encode_key(tag, Self::WIRE_TYPE, buf);
+                    Self::encode_entrypoint(v, buf)?;
                 }
                 Ok(())
             }
@@ -173,14 +177,20 @@ macro_rules! impl_google_wrapper {
     (@view_ty, by_ref, $ty:ty) => { &'a $ty };
     (@encode_ty, by_ref, $ty:ty) => { &'b $ty };
 
-    (@len_call, by_value, $module:ident, $v:ident) => {
+    (@len_total, by_value, $module:ident, $v:ident) => {
         $module::encoded_len(*$v)
+    };
+    (@len_total, by_ref, $module:ident, $v:ident) => {
+        $module::encoded_len($v)
+    };
+    (@len_raw, by_value, $module:ident, $v:ident) => {
+        $module::encoded_len(*$v)
+    };
+    (@len_raw, by_ref, $module:ident, $v:ident) => {
+        $v.len()
     };
     (@encode_call, by_value, $module:ident, $v:ident, $buf:ident) => {
         $module::encode($v, $buf)
-    };
-    (@len_call, by_ref, $module:ident, $v:ident) => {
-        $module::encoded_len($v)
     };
     (@encode_call, by_ref, $module:ident, $v:ident, $buf:ident) => {
         $module::encode($v, $buf)
@@ -199,18 +209,108 @@ macro_rules! impl_google_wrapper {
     (@kind_ty, Bytes)   => { crate::traits::ProtoKind::Bytes };
     (@kind_ty, $other:ty) => { crate::traits::ProtoKind::Message };
 }
-impl_google_wrapper!(bool,  bool,   "BoolValue",   by_value, (!= false), (== false), (false));
-impl_google_wrapper!(u32,   uint32, "UInt32Value", by_value, (!= 0),     (== 0),     (0));
-impl_google_wrapper!(u64,   uint64, "UInt64Value", by_value, (!= 0),     (== 0),     (0));
-impl_google_wrapper!(i32,   int32,  "Int32Value",  by_value, (!= 0),     (== 0),     (0));
-impl_google_wrapper!(i64,   int64,  "Int64Value",  by_value, (!= 0),     (== 0),     (0));
-impl_google_wrapper!(f32,   float,  "FloatValue",  by_value, (!= 0.0),   (== 0.0),   (0.0));
-impl_google_wrapper!(f64,   double, "DoubleValue", by_value, (!= 0.0),   (== 0.0),   (0.0));
+impl_google_wrapper!(
+    bool,
+    bool,
+    "BoolValue",
+    by_value,
+    (!= false),
+    (== false),
+    (false),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool)
+);
+impl_google_wrapper!(
+    u32,
+    uint32,
+    "UInt32Value",
+    by_value,
+    (!= 0),
+    (== 0),
+    (0),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32)
+);
+impl_google_wrapper!(
+    u64,
+    uint64,
+    "UInt64Value",
+    by_value,
+    (!= 0),
+    (== 0),
+    (0),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U64)
+);
+impl_google_wrapper!(
+    i32,
+    int32,
+    "Int32Value",
+    by_value,
+    (!= 0),
+    (== 0),
+    (0),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I32)
+);
+impl_google_wrapper!(
+    i64,
+    int64,
+    "Int64Value",
+    by_value,
+    (!= 0),
+    (== 0),
+    (0),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I64)
+);
+impl_google_wrapper!(
+    f32,
+    float,
+    "FloatValue",
+    by_value,
+    (!= 0.0),
+    (== 0.0),
+    (0.0),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F32)
+);
+impl_google_wrapper!(
+    f64,
+    double,
+    "DoubleValue",
+    by_value,
+    (!= 0.0),
+    (== 0.0),
+    (0.0),
+    crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F64)
+);
 
 // by_ref (length-delimited)
-impl_google_wrapper!(String, string, "StringValue", by_ref, (!= ""), (== ""), (clear));
-impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!= b"" as &[u8]) , (== b"" as &[u8]), (clear));
-impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!=  b"" as &[u8]), (==  b"" as &[u8]), (clear));
+impl_google_wrapper!(
+    String,
+    string,
+    "StringValue",
+    by_ref,
+    (!= ""),
+    (== ""),
+    (clear),
+    crate::traits::ProtoKind::String
+);
+impl_google_wrapper!(
+    Vec<u8>,
+    bytes,
+    "BytesValue",
+    by_ref,
+    (!= b"" as &[u8]),
+    (== b"" as &[u8]),
+    (clear),
+    crate::traits::ProtoKind::Bytes
+);
+impl_google_wrapper!(
+    Bytes,
+    bytes,
+    "BytesValue",
+    by_ref,
+    (!= b"" as &[u8]),
+    (== b"" as &[u8]),
+    (clear),
+    crate::traits::ProtoKind::Bytes
+);
 
 // impl Name for Vec<u8> {
 //     const NAME: &'static str = "BytesValue";

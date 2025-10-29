@@ -84,7 +84,10 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
+                .iter()
+                .map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) })
+                .sum::<usize>(),
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
@@ -118,7 +121,10 @@ where
                     return Ok(());
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|value: &T| T::encoded_len_impl(&value)).sum::<usize>();
+                let body_len = value
+                    .iter()
+                    .map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) })
+                    .sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
                     T::encode_raw_unchecked(v, buf);
@@ -129,7 +135,7 @@ where
             // ---- Repeated messages -----------------------------------------
             ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
                 for m in value {
-                    let len = T::encoded_len_impl(&m);
+                    let len = unsafe { T::encoded_len_impl_raw(&m) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
                     T::encode_raw_unchecked(m, buf);
@@ -159,7 +165,7 @@ where
                         T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
                         values.push(v);
                     }
-                    buf.advance(len);
+                    debug_assert!(!slice.has_remaining());
                 } else {
                     let mut v = T::proto_default();
                     T::decode_into(wire_type, &mut v, buf, ctx)?;
@@ -243,8 +249,9 @@ macro_rules! impl_proto_wire_vec_for_copy {
 
                 #[inline(always)]
                 unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                    value.iter()
-                        .map(|v| <$ty as crate::ProtoWire>::encoded_len_impl(&v))
+                    value
+                        .iter()
+                        .map(|v| unsafe { <$ty as crate::ProtoWire>::encoded_len_impl_raw(&v) })
                         .sum::<usize>()
                 }
 
@@ -270,8 +277,9 @@ macro_rules! impl_proto_wire_vec_for_copy {
                     }
 
                     encode_key(tag, WireType::LengthDelimited, buf);
-                    let body_len = value.iter()
-                        .map(|v| <$ty as ProtoWire>::encoded_len_impl(&v))
+                    let body_len = value
+                        .iter()
+                        .map(|v| unsafe { <$ty as ProtoWire>::encoded_len_impl_raw(&v) })
                         .sum::<usize>();
                     encode_varint(body_len as u64, buf);
 
@@ -310,7 +318,7 @@ macro_rules! impl_proto_wire_vec_for_copy {
                                 )?;
                                 values.push(v);
                             }
-                            buf.advance(len);
+                            debug_assert!(!slice.has_remaining());
                             Ok(())
                         }
                         other => {

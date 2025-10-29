@@ -526,6 +526,11 @@ fn advanced_roundtrip_len_match() {
     let len = m.encoded_len();
     let e = AdvancedEdgeCase::encode_to_vec(&m);
     assert_eq!(e.len(), len);
+
+    let missing = sample_missing_origin_message();
+    let missing_len = missing.encoded_len();
+    let missing_bytes = AdvancedEdgeCase::encode_to_vec(&missing);
+    assert_eq!(missing_bytes.len(), missing_len);
 }
 
 #[test]

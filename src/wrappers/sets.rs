@@ -142,7 +142,7 @@ where
                         T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
                         set.insert(v);
                     }
-                    buf.advance(len);
+                    debug_assert!(!slice.has_remaining());
                 } else {
                     let mut v = T::proto_default();
                     T::decode_into(wire_type, &mut v, buf, ctx)?;
@@ -325,7 +325,7 @@ mod hashset_impl {
                             T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
                             set.insert(v);
                         }
-                        buf.advance(len);
+                        debug_assert!(!slice.has_remaining());
                     } else {
                         let mut v = T::proto_default();
                         T::decode_into(wire_type, &mut v, buf, ctx)?;
@@ -443,20 +443,20 @@ macro_rules! impl_proto_wire_btreeset_for_copy {
                     match wire_type {
                         WireType::LengthDelimited => {
                             let len = decode_varint(buf)? as usize;
-                            let mut slice = buf.take(len);
-                            while slice.has_remaining() {
-                                let mut v = <$ty>::default();
-                                <$ty as crate::ProtoWire>::decode_into(
-                                    <$ty as crate::ProtoWire>::WIRE_TYPE,
-                                    &mut v,
-                                    &mut slice,
-                                    ctx.clone(),
-                                )?;
-                                set.insert(v);
-                            }
-                            buf.advance(len);
-                            Ok(())
+                        let mut slice = buf.take(len);
+                        while slice.has_remaining() {
+                            let mut v = <$ty>::default();
+                            <$ty as crate::ProtoWire>::decode_into(
+                                <$ty as crate::ProtoWire>::WIRE_TYPE,
+                                &mut v,
+                                &mut slice,
+                                ctx.clone(),
+                            )?;
+                            set.insert(v);
                         }
+                        debug_assert!(!slice.has_remaining());
+                        Ok(())
+                    }
                         other => {
                             let mut v = <$ty>::default();
                             <$ty as crate::ProtoWire>::decode_into(other, &mut v, buf, ctx)?;
@@ -583,20 +583,20 @@ macro_rules! impl_proto_wire_hashset_for_copy {
                     match wire_type {
                         WireType::LengthDelimited => {
                             let len = decode_varint(buf)? as usize;
-                            let mut slice = buf.take(len);
-                            while slice.has_remaining() {
-                                let mut v = <$ty>::default();
-                                <$ty as crate::ProtoWire>::decode_into(
-                                    <$ty as crate::ProtoWire>::WIRE_TYPE,
-                                    &mut v,
-                                    &mut slice,
-                                    ctx.clone(),
-                                )?;
-                                set.insert(v);
-                            }
-                            buf.advance(len);
-                            Ok(())
+                        let mut slice = buf.take(len);
+                        while slice.has_remaining() {
+                            let mut v = <$ty>::default();
+                            <$ty as crate::ProtoWire>::decode_into(
+                                <$ty as crate::ProtoWire>::WIRE_TYPE,
+                                &mut v,
+                                &mut slice,
+                                ctx.clone(),
+                            )?;
+                            set.insert(v);
                         }
+                        debug_assert!(!slice.has_remaining());
+                        Ok(())
+                    }
                         other => {
                             let mut v = <$ty>::default();
                             <$ty as crate::ProtoWire>::decode_into(other, &mut v, buf, ctx)?;

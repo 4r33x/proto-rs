@@ -13,7 +13,7 @@ use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
-use super::unified_field_handler::build_is_default_checks;
+use super::unified_field_handler::encode_input_binding;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::decode_conversion_assign;
@@ -322,53 +322,9 @@ fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
 fn build_variant_is_default_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
-        VariantKind::Unit => {
-            if variant.is_default {
-                quote! { Self::#ident => true }
-            } else {
-                quote! { Self::#ident => false }
-            }
-        }
-        VariantKind::Tuple { field } => {
-            if variant.is_default {
-                let binding_ident = &field.binding_ident;
-                let infos = vec![field.field.clone()];
-                let checks = build_is_default_checks(&infos, &TokenStream2::new());
-                if checks.is_empty() {
-                    quote! { Self::#ident(..) => true }
-                } else {
-                    quote! {
-                        Self::#ident(ref #binding_ident) => {
-                            #(#checks;)*
-                            true
-                        }
-                    }
-                }
-            } else {
-                quote! { Self::#ident(..) => false }
-            }
-        }
-        VariantKind::Struct { fields } => {
-            if variant.is_default {
-                if fields.is_empty() {
-                    quote! { Self::#ident { .. } => true }
-                } else {
-                    let bindings = fields.iter().map(|info| {
-                        let field_ident = info.field.ident.as_ref().expect("named field");
-                        quote! { #field_ident: ref #field_ident }
-                    });
-                    let checks = build_is_default_checks(fields, &TokenStream2::new());
-                    quote! {
-                        Self::#ident { #(#bindings),* } => {
-                            #(#checks;)*
-                            true
-                        }
-                    }
-                }
-            } else {
-                quote! { Self::#ident { .. } => false }
-            }
-        }
+        VariantKind::Unit => quote! { Self::#ident => false },
+        VariantKind::Tuple { .. } => quote! { Self::#ident(..) => false },
+        VariantKind::Struct { .. } => quote! { Self::#ident { .. } => false },
     }
 }
 
@@ -388,10 +344,7 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             };
             quote! {
                 Self::#ident(#binding_pattern) => {
-                    let msg_len = 0 #(+ #terms)*;
-                    ::proto_rs::encoding::key_len(#tag)
-                        + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
-                        + msg_len
+                    0 #(+ #terms)*
                 }
             }
         }
@@ -435,9 +388,24 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
         },
         VariantKind::Tuple { field } => {
             let binding_ident = &field.binding_ident;
-            let infos = vec![field.field.clone()];
-            let terms = build_encoded_len_terms(&infos, &TokenStream2::new());
-            let encode_stmts = build_encode_stmts(&infos, &TokenStream2::new());
+            let encode_binding = encode_input_binding(&field.field, &TokenStream2::new());
+            let encode_ident = encode_binding.ident;
+            let encode_init = encode_binding.init;
+            let ty = &field.field.proto_ty;
+            let encode_body = if field.field.config.skip {
+                quote! {}
+            } else {
+                quote! {
+                    #encode_init
+                    let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
+                    ::proto_rs::encoding::encode_key(#tag, wire, buf);
+                    if wire == ::proto_rs::encoding::WireType::LengthDelimited {
+                        let len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_ident) };
+                        ::proto_rs::encoding::encode_varint(len as u64, buf);
+                    }
+                    <#ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(#encode_ident, buf);
+                }
+            };
             let binding_pattern = if field.field.config.skip {
                 quote! { .. }
             } else {
@@ -445,14 +413,7 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             };
             quote! {
                 Self::#ident(#binding_pattern) => {
-                    let msg_len = 0 #(+ #terms)*;
-                    ::proto_rs::encoding::encode_key(
-                        #tag,
-                        ::proto_rs::encoding::WireType::LengthDelimited,
-                        buf,
-                    );
-                    ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
-                    #(#encode_stmts)*
+                    #encode_body
                 }
             }
         }
@@ -520,56 +481,36 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
         VariantKind::Tuple { field } => {
             let binding_ident = &field.binding_ident;
             let binding_default = field_proto_default_expr(&field.field);
-            let mut decode_match = None;
-            if let Some(field_tag) = field.field.tag {
-                let access = quote! { #binding_ident };
-                if needs_decode_conversion(&field.field.config, &field.field.parsed) {
-                    let tmp_ident = Ident::new(&format!("__proto_rs_variant_field_{}_tmp", field.field.index), field.field.field.span());
-                    let decode_ty = &field.field.decode_ty;
-                    let assign = decode_conversion_assign(&field.field, &access, &tmp_ident);
-                    decode_match = Some(quote! {
-                        #field_tag => {
-                            let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
-                            <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
-                                field_wire_type,
-                                &mut #tmp_ident,
-                                buf,
-                                inner_ctx,
-                            )?;
-                            #assign
-                        }
-                    });
-                } else {
-                    let ty = &field.field.field.ty;
-                    decode_match = Some(quote! {
-                        #field_tag => {
-                            <#ty as ::proto_rs::ProtoWire>::decode_into(
-                                field_wire_type,
-                                &mut #binding_ident,
-                                buf,
-                                inner_ctx,
-                            )?;
-                        }
-                    });
-                }
-            }
-
-            let decode_loop = if let Some(match_arm) = decode_match {
+            let decode_stmt = if field.field.config.skip {
                 quote! {
-                    while buf.remaining() > limit {
-                        let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
-                        match field_tag {
-                            #match_arm
-                            _ => ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, inner_ctx)?,
-                        }
-                    }
+                    ::proto_rs::encoding::skip_field(wire_type, #tag, buf, ctx)?;
+                }
+            } else if needs_decode_conversion(&field.field.config, &field.field.parsed) {
+                let tmp_ident = Ident::new(
+                    &format!("__proto_rs_variant_field_{}_tmp", field.field.index),
+                    field.field.field.span(),
+                );
+                let decode_ty = &field.field.decode_ty;
+                let assign = decode_conversion_assign(&field.field, &quote! { #binding_ident }, &tmp_ident);
+                quote! {
+                    let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
+                    <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
+                        wire_type,
+                        &mut #tmp_ident,
+                        buf,
+                        ctx,
+                    )?;
+                    #assign
                 }
             } else {
+                let ty = &field.field.field.ty;
                 quote! {
-                    while buf.remaining() > limit {
-                        let (field_tag, field_wire_type) = ::proto_rs::encoding::decode_key(buf)?;
-                        ::proto_rs::encoding::skip_field(field_wire_type, field_tag, buf, inner_ctx)?;
-                    }
+                    <#ty as ::proto_rs::ProtoWire>::decode_into(
+                        wire_type,
+                        &mut #binding_ident,
+                        buf,
+                        ctx,
+                    )?;
                 }
             };
 
@@ -593,23 +534,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
 
             quote! {
                 #tag => {
-                    ::proto_rs::encoding::check_wire_type(
-                        ::proto_rs::encoding::WireType::LengthDelimited,
-                        wire_type,
-                    )?;
-                    ctx.limit_reached()?;
-                    let inner_ctx = ctx.enter_recursion();
-                    let len = ::proto_rs::encoding::decode_varint(buf)?;
-                    let remaining = buf.remaining();
-                    if len > remaining as u64 {
-                        return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                    }
-                    let limit = remaining - len as usize;
                     let mut #binding_ident = #binding_default;
-                    #decode_loop
-                    if buf.remaining() != limit {
-                        return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
-                    }
+                    #decode_stmt
                     let mut variant_value = #name::#ident(#binding_ident);
                     #post_hook
                     *value = variant_value;

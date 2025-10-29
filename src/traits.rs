@@ -254,12 +254,28 @@ pub trait ProtoWire: Sized {
         for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
     {
         let len = Self::encoded_len(self);
-        if len != 0 { key_len(tag) + len } else { 0 }
+        if len != 0 {
+            if Self::WIRE_TYPE == WireType::LengthDelimited {
+                key_len(tag) + encoded_len_varint(len as u64) + len
+            } else {
+                key_len(tag) + len
+            }
+        } else {
+            0
+        }
     }
     #[inline(always)]
     fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
         let len = Self::encoded_len_impl(value);
-        if len != 0 { key_len(tag) + len } else { 0 }
+        if len != 0 {
+            if Self::WIRE_TYPE == WireType::LengthDelimited {
+                key_len(tag) + encoded_len_varint(len as u64) + len
+            } else {
+                key_len(tag) + len
+            }
+        } else {
+            0
+        }
     }
     #[allow(clippy::missing_safety_doc)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize;
@@ -304,13 +320,17 @@ pub trait ProtoWire: Sized {
 
     #[inline(always)]
     fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        let len = Self::encoded_len_impl(&value);
-        let required = len + encoded_len_varint(len as u64);
+        if Self::is_default_impl(&value) {
+            return Ok(());
+        }
+
+        let body_len = unsafe { Self::encoded_len_impl_raw(&value) };
+        let required = body_len + encoded_len_varint(body_len as u64);
         let remaining = buf.remaining_mut();
         if required > remaining {
             return Err(EncodeError::new(required, remaining));
         }
-        encode_varint(len as u64, buf);
+        encode_varint(body_len as u64, buf);
         Self::encode_raw_unchecked(value, buf);
         Ok(())
     }
@@ -376,24 +396,45 @@ pub trait ProtoExt: Sized {
     #[inline(always)]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
-            let remaining = buf.remaining_mut();
-            let len = Self::Shadow::encoded_len_impl(&shadow);
-            if len > remaining {
-                return Err(EncodeError::new(len, remaining));
+            match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
+                WireType::LengthDelimited => {
+                    let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
+                    let remaining = buf.remaining_mut();
+                    if len > remaining {
+                        return Err(EncodeError::new(len, remaining));
+                    }
+                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf);
+                    Ok(())
+                }
+                _ => {
+                    let remaining = buf.remaining_mut();
+                    let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+                    if len > remaining {
+                        return Err(EncodeError::new(len, remaining));
+                    }
+                    <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, buf)
+                }
             }
-            <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, buf)
         })
     }
     //TODO probably should add Result here
     #[inline(always)]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
-            let len = Self::Shadow::encoded_len_impl(&shadow);
-            let mut buf = Vec::with_capacity(len);
-            if len != 0 {
-                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+            match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
+                WireType::LengthDelimited => {
+                    let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
+                    let mut buf = Vec::with_capacity(len);
+                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                    buf
+                }
+                _ => {
+                    let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+                    let mut buf = Vec::with_capacity(len);
+                    let _ = <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, &mut buf);
+                    buf
+                }
             }
-            buf
         })
     }
 }

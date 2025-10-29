@@ -46,7 +46,7 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match value {
-            Some(inner) => T::encoded_len_impl(inner),
+            Some(inner) => unsafe { T::encoded_len_impl_raw(inner) },
             None => unreachable!(),
         }
     }
