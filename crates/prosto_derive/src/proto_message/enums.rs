@@ -66,11 +66,7 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
         })
         .collect();
 
-    let proto_shadow_impl = if config.has_suns() {
-        quote! {}
-    } else {
-        generate_proto_shadow_impl(name, generics)
-    };
+    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
 
     let shadow_ty = quote! { #name #ty_generics };
 

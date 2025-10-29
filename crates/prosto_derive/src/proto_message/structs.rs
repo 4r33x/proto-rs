@@ -76,14 +76,10 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
 
     let fields = assign_tags(fields);
 
-    let proto_shadow_impl = if config.has_suns() {
-        quote! {}
-    } else {
-        generate_proto_shadow_impl(name, generics)
-    };
+    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
 
     let proto_ext_impl = generate_proto_ext_impl(name, &impl_generics, &ty_generics, where_clause, &fields, config);
-    let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields);
+    let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields, config);
 
     quote! {
         #struct_item
@@ -198,6 +194,7 @@ fn generate_proto_wire_impl(
     where_clause: Option<&syn::WhereClause>,
     fields: &[FieldInfo<'_>],
     original_fields: &syn::Fields,
+    config: &UnifiedProtoConfig,
 ) -> TokenStream2 {
     let proto_default_expr = build_proto_default_expr(fields, original_fields);
     let self_tokens = quote! { self };
@@ -208,9 +205,16 @@ fn generate_proto_wire_impl(
     let encode_stmts = build_encode_stmts(fields, &encode_input_tokens);
     let wire_decode_arms = build_decode_match_arms(fields, &quote! { msg });
 
+    let encode_input_ty = if let Some(sun) = config.suns.first() {
+        let target_ty = &sun.ty;
+        quote! { <Self as ::proto_rs::ProtoShadow<#target_ty>>::View<'b> }
+    } else {
+        quote! { <Self as ::proto_rs::ProtoShadow<Self>>::View<'b> }
+    };
+
     quote! {
         impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
-            type EncodeInput<'b> = <#name #ty_generics as ::proto_rs::ProtoShadow>::View<'b>;
+            type EncodeInput<'b> = #encode_input_ty;
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
 
             #[inline(always)]
