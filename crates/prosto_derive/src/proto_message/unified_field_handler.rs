@@ -194,7 +194,7 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         _ => field.access.access_tokens(base.clone()),
     };
 
-    let init = if needs_encode_conversion(&field.config, &field.parsed) {
+    if needs_encode_conversion(&field.config, &field.parsed) {
         let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_converted", field.index), field.field.span());
         let converted = encode_conversion_expr(field, &access_expr);
         if is_value_encode_type(proto_ty) {
@@ -232,13 +232,8 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         } else {
             quote! { &(#access_expr) }
         };
-        EncodeBinding {
-            prelude: None,
-            value: init_expr,
-        }
-    };
-
-    init
+        EncodeBinding { prelude: None, value: init_expr }
+    }
 }
 
 fn is_value_encode_type(ty: &Type) -> bool {

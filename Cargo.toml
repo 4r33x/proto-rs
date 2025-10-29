@@ -56,7 +56,10 @@ fastnum = { version = "0.7.2", optional = true }
 inventory = { workspace = true, optional = true }
 solana-address = { version = "1", optional = true }
 solana-signature = { version = "3.1", optional = true }
-const_panic = { version = "0.2.15", features = ["rust_latest_stable", "derive"] }
+const_panic = { version = "0.2.15", features = [
+  "rust_latest_stable",
+  "derive",
+] }
 
 [dev-dependencies]
 proptest = "1"
@@ -126,10 +129,10 @@ style = { level = "deny", priority = -1 }
 
 [profile.bench]
 #use thin here to improve compile time
-# lto = "fat"
+lto = "fat"
 opt-level = 3
-# codegen-units = 1
-# incremental = false
+codegen-units = 1
+incremental = false
 
 
 [[bench]]
