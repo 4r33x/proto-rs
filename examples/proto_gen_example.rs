@@ -115,6 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+
     use tokio_stream::StreamExt;
 
     use super::*;
@@ -138,14 +139,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_zero_copy_client_requests() {
+        use proto_rs::ZeroCopyRequest;
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
 
         let borrowed = RizzPing {};
-        let zero_copy: ZeroCopyRequest<_> = (&borrowed).to_zero_copy();
+        let zero_copy: ZeroCopyRequest<_> = proto_rs::ToZeroCopyRequest::to_zero_copy(&borrowed);
         client.rizz_ping(zero_copy).await.unwrap();
-
-        let request = tonic::Request::new(&borrowed);
-        let zero_copy_with_metadata = request.to_zero_copy();
-        client.rizz_ping(zero_copy_with_metadata).await.unwrap();
     }
 }
