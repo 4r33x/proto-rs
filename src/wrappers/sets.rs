@@ -117,7 +117,7 @@ where
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for m in value {
-                    let len = T::encoded_len_impl(&m);
+                    let len = unsafe { T::encoded_len_impl_raw(&m) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
                     T::encode_raw_unchecked(m, buf);
@@ -300,7 +300,7 @@ mod hashset_impl {
                 }
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                     for m in value {
-                        let len = T::encoded_len_impl(&m);
+                        let len = unsafe { T::encoded_len_impl_raw(&m) };
                         encode_key(tag, WireType::LengthDelimited, buf);
                         encode_varint(len as u64, buf);
                         T::encode_raw_unchecked(m, buf);

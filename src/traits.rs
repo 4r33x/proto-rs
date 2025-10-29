@@ -395,24 +395,33 @@ pub trait ProtoExt: Sized {
 
     #[inline(always)]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Self::with_shadow(value, |shadow| {
-            match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
-                WireType::LengthDelimited => {
-                    let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
-                    let remaining = buf.remaining_mut();
-                    if len > remaining {
-                        return Err(EncodeError::new(len, remaining));
-                    }
-                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf);
-                    Ok(())
+        Self::with_shadow(value, |shadow| match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
+            WireType::LengthDelimited => {
+                let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
+                let remaining = buf.remaining_mut();
+                if len > remaining {
+                    return Err(EncodeError::new(len, remaining));
                 }
-                _ => {
-                    let remaining = buf.remaining_mut();
-                    let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf);
+                Ok(())
+            }
+            _ => {
+                let remaining = buf.remaining_mut();
+                let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+                if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                    if len == 0 {
+                        return Ok(());
+                    }
+                    let total = key_len(1) + len;
+                    if total > remaining {
+                        return Err(EncodeError::new(total, remaining));
+                    }
+                    <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, buf)
+                } else {
                     if len > remaining {
                         return Err(EncodeError::new(len, remaining));
                     }
-                    <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, buf)
+                    if len == 0 { Ok(()) } else { <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, buf) }
                 }
             }
         })
@@ -420,18 +429,28 @@ pub trait ProtoExt: Sized {
     //TODO probably should add Result here
     #[inline(always)]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
-        Self::with_shadow(value, |shadow| {
-            match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
-                WireType::LengthDelimited => {
-                    let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
-                    let mut buf = Vec::with_capacity(len);
-                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+        Self::with_shadow(value, |shadow| match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
+            WireType::LengthDelimited => {
+                let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
+                let mut buf = Vec::with_capacity(len);
+                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
+            }
+            _ => {
+                let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+                if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                    if len == 0 {
+                        return Vec::new();
+                    }
+                    let total = key_len(1) + len;
+                    let mut buf = Vec::with_capacity(total);
+                    let _ = <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
                     buf
-                }
-                _ => {
-                    let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+                } else {
                     let mut buf = Vec::with_capacity(len);
-                    let _ = <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, &mut buf);
+                    if len != 0 {
+                        let _ = <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, &mut buf);
+                    }
                     buf
                 }
             }

@@ -13,10 +13,10 @@ use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
-use super::unified_field_handler::encode_input_binding;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::decode_conversion_assign;
+use super::unified_field_handler::encode_input_binding;
 use super::unified_field_handler::field_proto_default_expr;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::unified_field_handler::needs_decode_conversion;
@@ -334,17 +334,28 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     match &variant.kind {
         VariantKind::Unit => quote! { Self::#ident => ::proto_rs::encoding::key_len(#tag) + 1 },
         VariantKind::Tuple { field } => {
-            let binding_ident = &field.binding_ident;
-            let infos = vec![field.field.clone()];
-            let terms = build_encoded_len_terms(&infos, &TokenStream2::new());
-            let binding_pattern = if field.field.config.skip {
-                quote! { .. }
+            if field.field.config.skip {
+                quote! { Self::#ident(..) => 0 }
             } else {
-                quote! { ref #binding_ident }
-            };
-            quote! {
-                Self::#ident(#binding_pattern) => {
-                    0 #(+ #terms)*
+                let binding_ident = &field.binding_ident;
+                let binding = encode_input_binding(&field.field, &TokenStream2::new());
+                let encode_ident = binding.ident;
+                let encode_init = binding.init;
+                let ty = &field.field.proto_ty;
+                quote! {
+                    Self::#ident(ref #binding_ident) => {
+                        #encode_init
+                        let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
+                        let body_len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_ident) };
+                        let key_len = ::proto_rs::encoding::key_len(#tag);
+                        let len = match wire {
+                            ::proto_rs::encoding::WireType::LengthDelimited => {
+                                body_len + ::proto_rs::encoding::encoded_len_varint(body_len as u64)
+                            }
+                            _ => body_len,
+                        };
+                        key_len + len
+                    }
                 }
             }
         }
@@ -486,10 +497,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     ::proto_rs::encoding::skip_field(wire_type, #tag, buf, ctx)?;
                 }
             } else if needs_decode_conversion(&field.field.config, &field.field.parsed) {
-                let tmp_ident = Ident::new(
-                    &format!("__proto_rs_variant_field_{}_tmp", field.field.index),
-                    field.field.field.span(),
-                );
+                let tmp_ident = Ident::new(&format!("__proto_rs_variant_field_{}_tmp", field.field.index), field.field.field.span());
                 let decode_ty = &field.field.decode_ty;
                 let assign = decode_conversion_assign(&field.field, &quote! { #binding_ident }, &tmp_ident);
                 quote! {
@@ -604,22 +612,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let fun = info.config.skip_deser_fn.as_ref()?;
                     let field_ident = info.field.ident.as_ref().expect("named field");
                     let fun_path = parse_path_string(info.field, fun);
-                    let skip_binding_ident = Ident::new(
-                        &format!(
-                            "__proto_rs_variant_{}_{}_skip_binding",
-                            ident.to_string().to_lowercase(),
-                            info.index
-                        ),
-                        info.field.span(),
-                    );
-                    let computed_ident = Ident::new(
-                        &format!(
-                            "__proto_rs_variant_{}_{}_computed",
-                            ident.to_string().to_lowercase(),
-                            info.index
-                        ),
-                        info.field.span(),
-                    );
+                    let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_skip_binding", ident.to_string().to_lowercase(), info.index), info.field.span());
+                    let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_computed", ident.to_string().to_lowercase(), info.index), info.field.span());
                     Some(quote! {
                         let #computed_ident = #fun_path(&variant_value);
                         if let #name::#ident { #field_ident: ref mut #skip_binding_ident, .. } = variant_value {
