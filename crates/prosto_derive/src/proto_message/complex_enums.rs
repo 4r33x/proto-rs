@@ -43,11 +43,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     }
     variants[default_index].is_default = true;
 
-    let proto_shadow_impl = if config.has_suns() {
-        quote! {}
-    } else {
-        generate_proto_shadow_impl(name, generics)
-    };
+    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
 
     let shadow_ty = quote! { #name #ty_generics };
 

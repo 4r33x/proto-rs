@@ -164,7 +164,7 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
 pub fn generate_proto_shadow_impl(name: &Ident, generics: &syn::Generics) -> TokenStream2 {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     quote! {
-        impl #impl_generics ::proto_rs::ProtoShadow for #name #ty_generics #where_clause {
+        impl #impl_generics ::proto_rs::ProtoShadow<Self> for #name #ty_generics #where_clause {
             type Sun<'a> = &'a Self;
             type OwnedSun = Self;
             type View<'a> = &'a Self;

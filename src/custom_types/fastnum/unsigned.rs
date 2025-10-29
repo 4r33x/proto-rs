@@ -64,7 +64,7 @@ mod tests {
     }
 
     fn decode(proto: UD128Proto) -> UD128 {
-        ProtoShadow::to_sun(proto).unwrap()
+        ProtoShadow::<UD128>::to_sun(proto).unwrap()
     }
 
     #[test]

@@ -356,7 +356,7 @@ fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_e
 fn encode_proto_message<M>(value: &M) -> Bytes
 where
     for<'a> M: ProtoExt + ProtoWire<EncodeInput<'a> = &'a M>,
-    for<'a> Shadow<'a, M>: ProtoShadow<Sun<'a> = &'a M, View<'a> = &'a M>,
+    for<'a> Shadow<'a, M>: ProtoShadow<M, Sun<'a> = &'a M, View<'a> = &'a M>,
 {
     let len = <M as ProtoWire>::encoded_len(value);
     let mut buf = BytesMut::with_capacity(len);
@@ -373,7 +373,7 @@ fn encode_prost_message<M: ProstMessage>(value: &M) -> Bytes {
 fn encode_proto_length_delimited<M>(value: &M) -> Bytes
 where
     for<'a> M: ProtoExt + ProtoWire<EncodeInput<'a> = &'a M>,
-    for<'a> Shadow<'a, M>: ProtoShadow<Sun<'a> = &'a M, View<'a> = &'a M>,
+    for<'a> Shadow<'a, M>: ProtoShadow<M, Sun<'a> = &'a M, View<'a> = &'a M>,
 {
     let len = <M as ProtoWire>::encoded_len(value);
     let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
@@ -647,9 +647,7 @@ fn map_default_entries_align_with_prost() {
     let proto_bytes = CollectionsMessage::encode_to_vec(&message);
 
     let mut prost_bytes = Vec::new();
-    CollectionsMessageProst::from(&message)
-        .encode(&mut prost_bytes)
-        .expect("prost encode default map entries");
+    CollectionsMessageProst::from(&message).encode(&mut prost_bytes).expect("prost encode default map entries");
 
     assert_eq!(proto_bytes, prost_bytes, "map encoding must match prost when default keys or values are present");
 
