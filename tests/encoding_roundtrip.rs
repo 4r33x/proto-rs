@@ -635,3 +635,24 @@ fn encoded_len_matches_prost_for_complex_collections() {
     let zero_defaults_prost = ZeroCopyContainerProst::decode(Bytes::from(zero_defaults_bytes.clone())).expect("prost decode zero copy container with defaults");
     assert_eq!(zero_defaults_prost, ZeroCopyContainerProst::from(&zero_container));
 }
+
+#[test]
+fn map_default_entries_align_with_prost() {
+    use prost::Message as _;
+
+    let mut message = CollectionsMessage::default();
+    message.hash_scores.insert(0, 0);
+    message.tree_messages.insert(String::new(), NestedMessage::default());
+
+    let proto_bytes = CollectionsMessage::encode_to_vec(&message);
+
+    let mut prost_bytes = Vec::new();
+    CollectionsMessageProst::from(&message)
+        .encode(&mut prost_bytes)
+        .expect("prost encode default map entries");
+
+    assert_eq!(proto_bytes, prost_bytes, "map encoding must match prost when default keys or values are present");
+
+    let roundtrip = CollectionsMessage::decode(Bytes::from(proto_bytes)).expect("decode proto message");
+    assert_eq!(roundtrip, message, "default map entries should survive encode/decode");
+}

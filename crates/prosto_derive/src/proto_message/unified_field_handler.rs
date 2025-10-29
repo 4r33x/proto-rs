@@ -183,13 +183,12 @@ pub fn generate_proto_shadow_impl(name: &Ident, generics: &syn::Generics) -> Tok
 }
 
 pub struct EncodeBinding {
-    pub init: TokenStream2,
-    pub ident: Ident,
+    pub prelude: Option<TokenStream2>,
+    pub value: TokenStream2,
 }
 
 pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> EncodeBinding {
     let proto_ty = &field.proto_ty;
-    let binding_ident = Ident::new(&format!("__proto_rs_field_{}_input", field.index), field.field.span());
     let access_expr = match &field.access {
         FieldAccess::Direct(tokens) => tokens.clone(),
         _ => field.access.access_tokens(base.clone()),
@@ -199,14 +198,20 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_converted", field.index), field.field.span());
         let converted = encode_conversion_expr(field, &access_expr);
         if is_value_encode_type(proto_ty) {
-            quote! {
+            let prelude = quote! {
                 let #tmp_ident: #proto_ty = #converted;
-                let #binding_ident: <#proto_ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #tmp_ident;
+            };
+            EncodeBinding {
+                prelude: Some(prelude),
+                value: quote! { #tmp_ident },
             }
         } else {
-            quote! {
+            let prelude = quote! {
                 let #tmp_ident: #proto_ty = #converted;
-                let #binding_ident: <#proto_ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = &#tmp_ident;
+            };
+            EncodeBinding {
+                prelude: Some(prelude),
+                value: quote! { &#tmp_ident },
             }
         }
     } else {
@@ -227,12 +232,13 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         } else {
             quote! { &(#access_expr) }
         };
-        quote! {
-            let #binding_ident: <#proto_ty as ::proto_rs::ProtoWire>::EncodeInput<'_> = #init_expr;
+        EncodeBinding {
+            prelude: None,
+            value: init_expr,
         }
     };
 
-    EncodeBinding { init, ident: binding_ident }
+    init
 }
 
 fn is_value_encode_type(ty: &Type) -> bool {
@@ -357,12 +363,12 @@ pub fn build_is_default_checks(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
             info.tag?;
             let ty = &info.proto_ty;
             let binding = encode_input_binding(info, base);
-            let ident = binding.ident;
-            let init = binding.init;
+            let prelude = binding.prelude.into_iter();
+            let value = binding.value;
             Some(quote! {
                 {
-                    #init
-                    if !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&#ident) {
+                    #( #prelude )*
+                    if !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&#value) {
                         return false;
                     }
                 }
@@ -378,11 +384,11 @@ pub fn build_encoded_len_terms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
             let tag = info.tag?;
             let ty = &info.proto_ty;
             let binding = encode_input_binding(info, base);
-            let ident = binding.ident;
-            let init = binding.init;
+            let prelude = binding.prelude.into_iter();
+            let value = binding.value;
             Some(quote! {{
-                #init
-                <#ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&#ident, #tag)
+                #( #prelude )*
+                <#ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&#value, #tag)
             }})
         })
         .collect()
@@ -395,12 +401,12 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
             let tag = info.tag?;
             let ty = &info.proto_ty;
             let binding = encode_input_binding(info, base);
-            let ident = binding.ident;
-            let init = binding.init;
+            let prelude = binding.prelude.into_iter();
+            let value = binding.value;
             Some(quote! {
                 {
-                    #init
-                    if let Err(err) = <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #ident, buf) {
+                    #( #prelude )*
+                    if let Err(err) = <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf) {
                         panic!("encode_raw_unchecked called without sufficient capacity: {err}");
                     }
                 }
