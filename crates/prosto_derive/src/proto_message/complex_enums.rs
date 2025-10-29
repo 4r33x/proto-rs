@@ -43,18 +43,12 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     }
     variants[default_index].is_default = true;
 
-    let proto_shadow_impl = if config.sun.is_some() {
+    let proto_shadow_impl = if config.has_suns() {
         quote! {}
     } else {
         generate_proto_shadow_impl(name, generics)
     };
 
-    let target_ty = if let Some(sun) = &config.sun {
-        let ty = &sun.ty;
-        quote! { #ty }
-    } else {
-        quote! { #name #ty_generics }
-    };
     let shadow_ty = quote! { #name #ty_generics };
 
     let merge_field_arms = variants.iter().map(|variant| build_variant_merge_arm(name, variant)).collect::<Vec<_>>();
@@ -64,21 +58,51 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     let encoded_len_arms = variants.iter().map(build_variant_encoded_len_arm).collect::<Vec<_>>();
     let encode_arms = variants.iter().map(build_variant_encode_arm).collect::<Vec<_>>();
 
-    let proto_ext_impl = quote! {
-        impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
-            type Shadow<'b> = #shadow_ty where Self: 'b;
+    let proto_ext_impl = if config.has_suns() {
+        let impls = config
+            .suns
+            .iter()
+            .map(|sun| {
+                let target_ty = &sun.ty;
+                quote! {
+                    impl ::proto_rs::ProtoExt for #target_ty {
+                        type Shadow<'b> = #shadow_ty where Self: 'b;
 
-            #[inline(always)]
-            fn merge_field(
-                value: &mut Self::Shadow<'_>,
-                tag: u32,
-                wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                match tag {
-                    #(#merge_field_arms,)*
-                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                        #[inline(always)]
+                        fn merge_field(
+                            value: &mut Self::Shadow<'_>,
+                            tag: u32,
+                            wire_type: ::proto_rs::encoding::WireType,
+                            buf: &mut impl ::proto_rs::bytes::Buf,
+                            ctx: ::proto_rs::encoding::DecodeContext,
+                        ) -> Result<(), ::proto_rs::DecodeError> {
+                            match tag {
+                                #(#merge_field_arms,)*
+                                _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                            }
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        quote! { #(#impls)* }
+    } else {
+        quote! {
+            impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+                type Shadow<'b> = #shadow_ty where Self: 'b;
+
+                #[inline(always)]
+                fn merge_field(
+                    value: &mut Self::Shadow<'_>,
+                    tag: u32,
+                    wire_type: ::proto_rs::encoding::WireType,
+                    buf: &mut impl ::proto_rs::bytes::Buf,
+                    ctx: ::proto_rs::encoding::DecodeContext,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    match tag {
+                        #(#merge_field_arms,)*
+                        _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                    }
                 }
             }
         }

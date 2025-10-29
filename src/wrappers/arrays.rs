@@ -466,7 +466,7 @@ impl<const N: usize> ProtoWire for [u8; N] {
 
     #[inline(always)]
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
-        // Decode length-delimited bytes, copy up to N, zero the rest.
+        // Decode length-delimited bytes; fixed-size arrays must match the declared length exactly.
         if wire_type != WireType::LengthDelimited {
             return Err(DecodeError::new("bytes field must be length-delimited"));
         }
@@ -474,12 +474,11 @@ impl<const N: usize> ProtoWire for [u8; N] {
         if len > buf.remaining() {
             return Err(DecodeError::new("buffer underflow"));
         }
-        let to_copy = core::cmp::min(N, len);
-        buf.copy_to_slice(&mut value[..to_copy]);
-        if len > to_copy {
-            // Skip the unused tail from the input if any.
-            buf.advance(len - to_copy);
+        if len != N {
+            buf.advance(len);
+            return Err(DecodeError::new(format!("invalid length for fixed byte array: expected {N}, got {len}")));
         }
+        buf.copy_to_slice(value);
         Ok(())
     }
 

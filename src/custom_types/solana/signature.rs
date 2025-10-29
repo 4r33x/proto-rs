@@ -66,7 +66,10 @@ mod tests {
         match <Signature as ProtoExt>::decode(buf.as_slice()) {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
-                assert!(err.to_string().contains("invalid length for Solana byte array"));
+                let message = err.to_string();
+                assert!(message.contains("invalid length for fixed byte array"), "unexpected error message: {message}");
+                assert!(message.contains(&BYTES.to_string()), "missing expected length in error message: {message}");
+                assert!(message.contains(&(BYTES - 2).to_string()), "missing actual length in error message: {message}");
             }
         }
     }
