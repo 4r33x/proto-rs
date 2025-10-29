@@ -16,6 +16,16 @@ use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::traits::ProtoKind;
 
+#[inline(always)]
+pub(crate) fn map_entry_field_len(wire: WireType, tag: u32, body_len: usize) -> usize {
+    let base = key_len(tag);
+    base + match wire {
+        WireType::LengthDelimited => encoded_len_varint(body_len as u64) + body_len,
+        WireType::StartGroup | WireType::EndGroup => body_len + base,
+        _ => body_len,
+    }
+}
+
 impl<K, V> ProtoShadow for BTreeMap<K, V>
 where
     for<'a> K: ProtoShadow + ProtoWire<EncodeInput<'a> = &'a K> + 'a,
@@ -65,7 +75,11 @@ where
             value
                 .iter()
                 .map(|(k, v)| {
-                    let entry_len = key_len(1) + K::encoded_len_impl(&k) + key_len(2) + V::encoded_len_impl(&v);
+                    let key_body = unsafe { K::encoded_len_impl_raw(&k) };
+                    let key_len_total = crate::wrappers::maps::map_entry_field_len(K::WIRE_TYPE, 1, key_body);
+                    let value_body = unsafe { V::encoded_len_impl_raw(&v) };
+                    let value_len_total = crate::wrappers::maps::map_entry_field_len(V::WIRE_TYPE, 2, value_body);
+                    let entry_len = key_len_total + value_len_total;
                     key_len(tag) + encoded_len_varint(entry_len as u64) + entry_len
                 })
                 .sum()
@@ -77,7 +91,11 @@ where
         value
             .iter()
             .map(|(k, v)| {
-                let entry_len = key_len(1) + unsafe { K::encoded_len_impl_raw(&k) } + key_len(2) + unsafe { V::encoded_len_impl_raw(&v) };
+                let key_body = unsafe { K::encoded_len_impl_raw(&k) };
+                let key_len_total = crate::wrappers::maps::map_entry_field_len(K::WIRE_TYPE, 1, key_body);
+                let value_body = unsafe { V::encoded_len_impl_raw(&v) };
+                let value_len_total = crate::wrappers::maps::map_entry_field_len(V::WIRE_TYPE, 2, value_body);
+                let entry_len = key_len_total + value_len_total;
                 encoded_len_varint(entry_len as u64) + entry_len
             })
             .sum()
@@ -91,7 +109,11 @@ where
     #[inline]
     fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         for (k, v) in map {
-            let entry_len = key_len(1) + K::encoded_len_impl(&k) + key_len(2) + V::encoded_len_impl(&v);
+            let key_body = unsafe { K::encoded_len_impl_raw(&k) };
+            let key_len_total = crate::wrappers::maps::map_entry_field_len(K::WIRE_TYPE, 1, key_body);
+            let value_body = unsafe { V::encoded_len_impl_raw(&v) };
+            let value_len_total = crate::wrappers::maps::map_entry_field_len(V::WIRE_TYPE, 2, value_body);
+            let entry_len = key_len_total + value_len_total;
             encode_key(tag, WireType::LengthDelimited, buf);
             encode_varint(entry_len as u64, buf);
 
@@ -214,7 +236,11 @@ mod hashmap_impl {
                 value
                     .iter()
                     .map(|(k, v)| {
-                        let entry_len = key_len(1) + K::encoded_len_impl(&k) + key_len(2) + V::encoded_len_impl(&v);
+                        let key_body = unsafe { K::encoded_len_impl_raw(&k) };
+                        let key_len_total = crate::wrappers::maps::map_entry_field_len(K::WIRE_TYPE, 1, key_body);
+                        let value_body = unsafe { V::encoded_len_impl_raw(&v) };
+                        let value_len_total = crate::wrappers::maps::map_entry_field_len(V::WIRE_TYPE, 2, value_body);
+                        let entry_len = key_len_total + value_len_total;
                         key_len(tag) + encoded_len_varint(entry_len as u64) + entry_len
                     })
                     .sum()
@@ -226,7 +252,11 @@ mod hashmap_impl {
             value
                 .iter()
                 .map(|(k, v)| {
-                    let entry_len = key_len(1) + unsafe { K::encoded_len_impl_raw(&k) } + key_len(2) + unsafe { V::encoded_len_impl_raw(&v) };
+                    let key_body = unsafe { K::encoded_len_impl_raw(&k) };
+                    let key_len_total = crate::wrappers::maps::map_entry_field_len(K::WIRE_TYPE, 1, key_body);
+                    let value_body = unsafe { V::encoded_len_impl_raw(&v) };
+                    let value_len_total = crate::wrappers::maps::map_entry_field_len(V::WIRE_TYPE, 2, value_body);
+                    let entry_len = key_len_total + value_len_total;
                     encoded_len_varint(entry_len as u64) + entry_len
                 })
                 .sum()
@@ -240,7 +270,11 @@ mod hashmap_impl {
         #[inline]
         fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
             for (k, v) in map {
-                let entry_len = key_len(1) + K::encoded_len_impl(&k) + key_len(2) + V::encoded_len_impl(&v);
+                let key_body = unsafe { K::encoded_len_impl_raw(&k) };
+                let key_len_total = crate::wrappers::maps::map_entry_field_len(K::WIRE_TYPE, 1, key_body);
+                let value_body = unsafe { V::encoded_len_impl_raw(&v) };
+                let value_len_total = crate::wrappers::maps::map_entry_field_len(V::WIRE_TYPE, 2, value_body);
+                let entry_len = key_len_total + value_len_total;
                 encode_key(tag, WireType::LengthDelimited, buf);
                 encode_varint(entry_len as u64, buf);
 
@@ -316,8 +350,11 @@ macro_rules! impl_primitive_map_btreemap {
                     value
                         .iter()
                         .map(|(k, v)| {
-                            let entry_len =
-                                $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(&k) + $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                            let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) };
+                            let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                            let value_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                            let value_len_total = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                            let entry_len = key_len_total + value_len_total;
                             $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                         })
                         .sum()
@@ -329,10 +366,11 @@ macro_rules! impl_primitive_map_btreemap {
                 value
                     .iter()
                     .map(|(k, v)| {
-                        let entry_len = $crate::encoding::key_len(1)
-                            + unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                            + $crate::encoding::key_len(2)
-                            + unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) };
+                        let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                        let value_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let value_len_total = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                        let entry_len = key_len_total + value_len_total;
                         $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                     })
                     .sum()
@@ -347,7 +385,11 @@ macro_rules! impl_primitive_map_btreemap {
             #[inline]
             fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
                 for (k, v) in map {
-                    let entry_len = $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(&k) + $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                    let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) };
+                    let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                    let value_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                    let value_len_total = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                    let entry_len = key_len_total + value_len_total;
 
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
@@ -435,8 +477,11 @@ macro_rules! impl_primitive_map_hashmap {
                     value
                         .iter()
                         .map(|(k, v)| {
-                            let entry_len =
-                                $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(&k) + $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                            let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) };
+                            let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                            let value_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                            let value_len_total = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                            let entry_len = key_len_total + value_len_total;
                             $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                         })
                         .sum()
@@ -448,10 +493,11 @@ macro_rules! impl_primitive_map_hashmap {
                 value
                     .iter()
                     .map(|(k, v)| {
-                        let entry_len = $crate::encoding::key_len(1)
-                            + unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                            + $crate::encoding::key_len(2)
-                            + unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) };
+                        let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                        let value_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let value_len_total = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                        let entry_len = key_len_total + value_len_total;
                         $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                     })
                     .sum()
@@ -466,7 +512,11 @@ macro_rules! impl_primitive_map_hashmap {
             #[inline]
             fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
                 for (k, v) in map {
-                    let entry_len = $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(&k) + $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                    let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) };
+                    let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                    let value_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                    let value_len_total = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                    let entry_len = key_len_total + value_len_total;
 
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
@@ -590,7 +640,8 @@ macro_rules! impl_string_map_btreemap {
                         .iter()
                         .map(|(k, v)| {
                             let key_len = $crate::encoding::key_len(1) + $crate::encoding::encoded_len_varint(k.len() as u64) + k.len();
-                            let val_len = $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                            let val_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                            let val_len = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, val_body);
                             let entry_len = key_len + val_len;
                             $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                         })
@@ -604,7 +655,8 @@ macro_rules! impl_string_map_btreemap {
                     .iter()
                     .map(|(k, v)| {
                         let key_len = $crate::encoding::key_len(1) + $crate::encoding::encoded_len_varint(k.len() as u64) + k.len();
-                        let val_len = $crate::encoding::key_len(2) + unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let val_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let val_len = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, val_body);
                         let entry_len = key_len + val_len;
                         $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                     })
@@ -620,7 +672,8 @@ macro_rules! impl_string_map_btreemap {
             fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
                 for (k, v) in map {
                     let key_len = $crate::encoding::key_len(1) + $crate::encoding::encoded_len_varint(k.len() as u64) + k.len();
-                    let val_len = $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                    let val_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                    let val_len = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, val_body);
                     let entry_len = key_len + val_len;
 
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
@@ -714,7 +767,8 @@ macro_rules! impl_string_map_hashmap {
                         .iter()
                         .map(|(k, v)| {
                             let key_len = $crate::encoding::key_len(1) + $crate::encoding::encoded_len_varint(k.len() as u64) + k.len();
-                            let val_len = $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                            let val_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                            let val_len = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, val_body);
                             let entry_len = key_len + val_len;
                             $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                         })
@@ -728,7 +782,8 @@ macro_rules! impl_string_map_hashmap {
                     .iter()
                     .map(|(k, v)| {
                         let key_len = $crate::encoding::key_len(1) + $crate::encoding::encoded_len_varint(k.len() as u64) + k.len();
-                        let val_len = $crate::encoding::key_len(2) + unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let val_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let val_len = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, val_body);
                         let entry_len = key_len + val_len;
                         $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                     })
@@ -744,7 +799,8 @@ macro_rules! impl_string_map_hashmap {
             fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
                 for (k, v) in map {
                     let key_len = $crate::encoding::key_len(1) + $crate::encoding::encoded_len_varint(k.len() as u64) + k.len();
-                    let val_len = $crate::encoding::key_len(2) + <$V as $crate::ProtoWire>::encoded_len_impl(&v);
+                    let val_body = unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                    let val_len = $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, val_body);
                     let entry_len = key_len + val_len;
 
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
@@ -865,8 +921,11 @@ macro_rules! impl_copykey_map_btreemap {
                     value
                         .iter()
                         .map(|(k, v)| {
-                            let entry_len =
-                                $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(k) + $crate::encoding::key_len(2) + <V as $crate::ProtoWire>::encoded_len_impl(&v);
+                            let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) };
+                            let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                            let value_body = unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                            let value_len_total = $crate::wrappers::maps::map_entry_field_len(<V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                            let entry_len = key_len_total + value_len_total;
                             $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                         })
                         .sum()
@@ -878,10 +937,11 @@ macro_rules! impl_copykey_map_btreemap {
                 value
                     .iter()
                     .map(|(k, v)| {
-                        let entry_len = $crate::encoding::key_len(1)
-                            + unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) }
-                            + $crate::encoding::key_len(2)
-                            + unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) };
+                        let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                        let value_body = unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let value_len_total = $crate::wrappers::maps::map_entry_field_len(<V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                        let entry_len = key_len_total + value_len_total;
                         $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                     })
                     .sum()
@@ -895,7 +955,11 @@ macro_rules! impl_copykey_map_btreemap {
             #[inline]
             fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
                 for (k, v) in map {
-                    let entry_len = $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(k) + $crate::encoding::key_len(2) + <V as $crate::ProtoWire>::encoded_len_impl(&v);
+                    let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) };
+                    let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                    let value_body = unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                    let value_len_total = $crate::wrappers::maps::map_entry_field_len(<V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                    let entry_len = key_len_total + value_len_total;
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
@@ -985,8 +1049,11 @@ macro_rules! impl_copykey_map_hashmap {
                     value
                         .iter()
                         .map(|(k, v)| {
-                            let entry_len =
-                                $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(k) + $crate::encoding::key_len(2) + <V as $crate::ProtoWire>::encoded_len_impl(&v);
+                            let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) };
+                            let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                            let value_body = unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                            let value_len_total = $crate::wrappers::maps::map_entry_field_len(<V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                            let entry_len = key_len_total + value_len_total;
                             $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                         })
                         .sum()
@@ -998,10 +1065,11 @@ macro_rules! impl_copykey_map_hashmap {
                 value
                     .iter()
                     .map(|(k, v)| {
-                        let entry_len = $crate::encoding::key_len(1)
-                            + unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) }
-                            + $crate::encoding::key_len(2)
-                            + unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) };
+                        let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                        let value_body = unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                        let value_len_total = $crate::wrappers::maps::map_entry_field_len(<V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                        let entry_len = key_len_total + value_len_total;
                         $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
                     })
                     .sum()
@@ -1015,7 +1083,11 @@ macro_rules! impl_copykey_map_hashmap {
             #[inline]
             fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
                 for (k, v) in map {
-                    let entry_len = $crate::encoding::key_len(1) + <$K as $crate::ProtoWire>::encoded_len_impl(k) + $crate::encoding::key_len(2) + <V as $crate::ProtoWire>::encoded_len_impl(&v);
+                    let key_body = unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) };
+                    let key_len_total = $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body);
+                    let value_body = unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) };
+                    let value_len_total = $crate::wrappers::maps::map_entry_field_len(<V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body);
+                    let entry_len = key_len_total + value_len_total;
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 

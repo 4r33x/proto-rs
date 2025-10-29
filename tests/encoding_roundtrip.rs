@@ -379,6 +379,7 @@ where
 {
     let len = <M as ProtoWire>::encoded_len(value);
     let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
+    encoding::encode_varint(len as u64, &mut buf);
     <M as ProtoExt>::encode(value, &mut buf).expect("proto length-delimited encode failed");
     buf.freeze()
 }

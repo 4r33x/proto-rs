@@ -1,7 +1,9 @@
+use proc_macro2::Span;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 use syn::ItemEnum;
+use syn::parse_quote;
 use syn::spanned::Spanned;
 
 use super::unified_field_handler::generate_proto_shadow_impl;
@@ -11,14 +13,14 @@ use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
 
 pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &syn::DataEnum, config: &UnifiedProtoConfig) -> TokenStream2 {
-    let enum_item = sanitize_enum(item_enum.clone());
+    let mut enum_item = sanitize_enum(item_enum.clone());
 
     let name = &input.ident;
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let ordered_variants: Vec<&syn::Variant> = (0..data.variants.len()).map(|idx| &data.variants[idx]).collect();
-    let discriminants = match collect_discriminants_for_variants(&ordered_variants) {
+    let mut discriminants = match collect_discriminants_for_variants(&ordered_variants) {
         Ok(values) => values,
         Err(err) => return err.to_compile_error(),
     };
@@ -33,7 +35,18 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
     };
 
     let default_index = marked_default.unwrap_or(zero_index);
+    if default_index != zero_index {
+        let default_value = discriminants[default_index];
+        discriminants[default_index] = 0;
+        discriminants[zero_index] = default_value;
+    }
     let default_ident = &data.variants[default_index].ident;
+
+    enum_item.attrs.push(parse_quote!(#[repr(i32)]));
+    for (variant, value) in enum_item.variants.iter_mut().zip(discriminants.iter()) {
+        let expr: syn::Expr = parse_quote!(#value);
+        variant.discriminant = Some((syn::token::Eq { spans: [Span::call_site()] }, expr));
+    }
 
     let raw_from_variant: Vec<_> = ordered_variants
         .iter()

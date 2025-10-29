@@ -84,10 +84,7 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
-                .iter()
-                .map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) })
-                .sum::<usize>(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>(),
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
@@ -121,10 +118,7 @@ where
                     return Ok(());
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value
-                    .iter()
-                    .map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) })
-                    .sum::<usize>();
+                let body_len = value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
                     T::encode_raw_unchecked(v, buf);
