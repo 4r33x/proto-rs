@@ -421,9 +421,30 @@ pub fn build_encoded_len_terms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
             let binding = encode_input_binding(info, base);
             let prelude = binding.prelude.into_iter();
             let value = binding.value;
+            let is_enum = info.parsed.is_rust_enum;
+            let is_option = info.parsed.is_option;
             Some(quote! {{
                 #( #prelude )*
-                <#ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&#value, #tag)
+                let __proto_rs_value = #value;
+                if !#is_enum
+                    && !#is_option
+                    && matches!(<#ty as ::proto_rs::ProtoWire>::KIND, ::proto_rs::ProtoKind::Message)
+                {
+                    let __proto_rs_body_len = unsafe {
+                        <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&__proto_rs_value)
+                    };
+                    if __proto_rs_body_len != 0
+                        || !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&__proto_rs_value)
+                    {
+                        ::proto_rs::encoding::key_len(#tag)
+                            + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
+                            + __proto_rs_body_len
+                    } else {
+                        0
+                    }
+                } else {
+                    <#ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&__proto_rs_value, #tag)
+                }
             }})
         })
         .collect()
@@ -438,10 +459,49 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
             let binding = encode_input_binding(info, base);
             let prelude = binding.prelude.into_iter();
             let value = binding.value;
+            let is_enum = info.parsed.is_rust_enum;
+            let is_option = info.parsed.is_option;
             Some(quote! {
                 {
                     #( #prelude )*
-                    if let Err(err) = <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf) {
+                    let __proto_rs_value = #value;
+                    if !#is_enum
+                        && !#is_option
+                        && matches!(<#ty as ::proto_rs::ProtoWire>::KIND, ::proto_rs::ProtoKind::Message)
+                    {
+                        let __proto_rs_body_len = unsafe {
+                            <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&__proto_rs_value)
+                        };
+                        if __proto_rs_body_len != 0
+                            || !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&__proto_rs_value)
+                        {
+                            let __proto_rs_required = ::proto_rs::encoding::key_len(#tag)
+                                + ::proto_rs::encoding::encoded_len_varint(__proto_rs_body_len as u64)
+                                + __proto_rs_body_len;
+                            let __proto_rs_remaining = buf.remaining_mut();
+                            if __proto_rs_required > __proto_rs_remaining {
+                                panic!(
+                                    "encode_raw_unchecked called without sufficient capacity: required={} remaining={}",
+                                    __proto_rs_required,
+                                    __proto_rs_remaining,
+                                );
+                            }
+                            ::proto_rs::encoding::encode_key(
+                                #tag,
+                                <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
+                                buf,
+                            );
+                            ::proto_rs::encoding::encode_varint(__proto_rs_body_len as u64, buf);
+                            <#ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(
+                                __proto_rs_value,
+                                buf,
+                            );
+                        }
+                    } else if let Err(err) = <#ty as ::proto_rs::ProtoWire>::encode_with_tag(
+                        #tag,
+                        __proto_rs_value,
+                        buf,
+                    ) {
                         panic!("encode_raw_unchecked called without sufficient capacity: {err}");
                     }
                 }

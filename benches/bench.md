@@ -1,4 +1,26 @@
 
+# Benchmark Run — 2025-10-29 20:05:39
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| bench_zero_copy_vs_clone | prost clone + encode | 37216.67 | 134.09 | 1.00× |
+| bench_zero_copy_vs_clone | proto_rs zero_copy | 49400.62 | 177.99 | 1.33× faster |
+| complex_root_decode | prost decode canonical input | 24194.92 | 87.17 | 1.00× |
+| complex_root_decode | prost decode proto_rs input | 23827.19 | 85.85 | 1.00× |
+| complex_root_decode | proto_rs decode canonical input | 23558.47 | 84.88 | 0.97× slower |
+| complex_root_decode | proto_rs decode proto_rs input | 24678.30 | 88.92 | 1.04× faster |
+| complex_root_encode | prost encode_to_vec | 82610.26 | 297.64 | 1.00× |
+| complex_root_encode | proto_rs encode_to_vec | 81079.37 | 292.13 | 0.98× slower |
+| complex_root_encode_components | maps | prost encode_to_vec | 152431.92 | 291.90 | 1.00× |
+| complex_root_encode_components | maps | proto_rs encode_to_vec | 151959.94 | 291.00 | 1.00× |
+| complex_root_encode_components | nested_messages | prost encode_to_vec | 206042.61 | 324.22 | 1.00× |
+| complex_root_encode_components | nested_messages | proto_rs encode_to_vec | 170135.84 | 267.72 | 0.83× slower |
+| complex_root_encode_components | scalars | prost encode_to_vec | 4651244.48 | 159.69 | 1.00× |
+| complex_root_encode_components | scalars | proto_rs encode_to_vec | 6983262.52 | 239.75 | 1.50× faster |
+| complex_root_encode_components | strings_bytes | prost encode_to_vec | 4343465.83 | 397.66 | 1.00× |
+| complex_root_encode_components | strings_bytes | proto_rs encode_to_vec | 5028285.84 | 460.35 | 1.16× faster |
+
+
 # Benchmark Run — 2025-10-29 18:46:30
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |

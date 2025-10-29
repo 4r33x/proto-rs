@@ -70,6 +70,10 @@ impl BenchRecorder {
             ("prost encode_to_vec", "proto_rs encode_to_vec"),
             ("prost decode canonical input", "proto_rs decode canonical input"),
             ("prost decode proto_rs input", "proto_rs decode proto_rs input"),
+            ("strings_bytes | prost encode_to_vec", "strings_bytes | proto_rs encode_to_vec"),
+            ("nested_messages | prost encode_to_vec", "nested_messages | proto_rs encode_to_vec"),
+            ("maps | prost encode_to_vec", "maps | proto_rs encode_to_vec"),
+            ("scalars | prost encode_to_vec", "scalars | proto_rs encode_to_vec"),
         ];
 
         fn baseline_for(bench_name: &str) -> Option<String> {
@@ -299,6 +303,69 @@ fn bench_encode_decode(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_complex_root_components(c: &mut Criterion) {
+    let base = sample_complex_root();
+    let scenarios = [
+        ("strings_bytes", component_strings_bytes(&base)),
+        ("nested_messages", component_nested_messages(&base)),
+        ("maps", component_maps(&base)),
+        ("scalars", component_scalars(&base)),
+    ];
+
+    let mut group = c.benchmark_group("complex_root_encode_components");
+
+    for (name, message) in scenarios.into_iter() {
+        let prost_message: ComplexRootProst = ComplexRootProst::from(&message);
+        let prost_bytes = prost_message.encode_to_vec();
+        let proto_bytes = ComplexRoot::encode_to_vec(&message);
+        let prost_len = prost_bytes.len();
+        let proto_len = proto_bytes.len();
+
+        let prost_label: &'static str = Box::leak(format!("{name} | prost encode_to_vec").into_boxed_str());
+        let proto_label: &'static str = Box::leak(format!("{name} | proto_rs encode_to_vec").into_boxed_str());
+
+        group.throughput(Throughput::Bytes(prost_len as u64));
+        group.bench_function(prost_label, {
+            let prost_message = prost_message.clone();
+            move |b| {
+                let mut buf = Vec::with_capacity(prost_len);
+                b.iter_custom(|iters| {
+                    let mut total = Duration::ZERO;
+                    for _ in 0..iters {
+                        buf.clear();
+                        let start = Instant::now();
+                        prost_message.encode(&mut buf).unwrap();
+                        black_box(&buf);
+                        total += start.elapsed();
+                    }
+                    bench_recorder().record("complex_root_encode_components", prost_label, total, iters, Some(prost_len as u64));
+                    total
+                })
+            }
+        });
+
+        group.throughput(Throughput::Bytes(proto_len as u64));
+        group.bench_function(proto_label, {
+            let message = message.clone();
+            move |b| {
+                b.iter_custom(|iters| {
+                    let mut total = Duration::ZERO;
+                    for _ in 0..iters {
+                        let start = Instant::now();
+                        let buf = ComplexRoot::encode_to_vec(&message);
+                        black_box(&buf);
+                        total += start.elapsed();
+                    }
+                    bench_recorder().record("complex_root_encode_components", proto_label, total, iters, Some(proto_len as u64));
+                    total
+                })
+            }
+        });
+    }
+
+    group.finish();
+}
+
 fn bench_zero_copy_vs_prost(c: &mut Criterion) {
     let message = sample_complex_root();
     let prost_message: ComplexRootProst = ComplexRootProst::from(&message);
@@ -354,6 +421,7 @@ fn main() {
 
     // Run each bench manually
     bench_encode_decode(&mut c);
+    bench_complex_root_components(&mut c);
     bench_zero_copy_vs_prost(&mut c);
 
     // Write summary + markdown report
@@ -661,6 +729,50 @@ fn sample_complex_root() -> ComplexRoot {
         audit_log: HashMap::from([("initial".into(), deep_primary.clone()), ("update".into(), deep_secondary.clone())]),
         primary_focus: Some(Box::new(main_leaf)),
         secondary_focus: Some(Box::new(deep_secondary)),
+    }
+}
+
+fn component_strings_bytes(base: &ComplexRoot) -> ComplexRoot {
+    ComplexRoot {
+        id: base.id.clone(),
+        payload: base.payload.clone(),
+        attachments: base.attachments.clone(),
+        tags: base.tags.clone(),
+        ..ComplexRoot::default()
+    }
+}
+
+fn component_nested_messages(base: &ComplexRoot) -> ComplexRoot {
+    ComplexRoot {
+        leaves: base.leaves.clone(),
+        deep_list: base.deep_list.clone(),
+        status: base.status.clone(),
+        status_history: base.status_history.clone(),
+        primary_focus: base.primary_focus.clone(),
+        secondary_focus: base.secondary_focus.clone(),
+        ..ComplexRoot::default()
+    }
+}
+
+fn component_maps(base: &ComplexRoot) -> ComplexRoot {
+    ComplexRoot {
+        leaf_lookup: base.leaf_lookup.clone(),
+        deep_lookup: base.deep_lookup.clone(),
+        status_lookup: base.status_lookup.clone(),
+        code_lookup: base.code_lookup.clone(),
+        audit_log: base.audit_log.clone(),
+        ..ComplexRoot::default()
+    }
+}
+
+fn component_scalars(base: &ComplexRoot) -> ComplexRoot {
+    ComplexRoot {
+        codes: base.codes.clone(),
+        big_numbers: base.big_numbers.clone(),
+        count: base.count,
+        ratio: base.ratio,
+        active: base.active,
+        ..ComplexRoot::default()
     }
 }
 
