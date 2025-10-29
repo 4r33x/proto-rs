@@ -395,8 +395,8 @@ pub trait ProtoExt: Sized {
 
     #[inline(always)]
     fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Self::with_shadow(value, |shadow| match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
-            WireType::LengthDelimited => {
+        Self::with_shadow(value, |shadow| {
+            if <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
                 let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
                 let remaining = buf.remaining_mut();
                 if len > remaining {
@@ -404,8 +404,7 @@ pub trait ProtoExt: Sized {
                 }
                 <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf);
                 Ok(())
-            }
-            _ => {
+            } else {
                 let remaining = buf.remaining_mut();
                 let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
                 if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
@@ -429,14 +428,13 @@ pub trait ProtoExt: Sized {
     //TODO probably should add Result here
     #[inline(always)]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
-        Self::with_shadow(value, |shadow| match <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE {
-            WireType::LengthDelimited => {
+        Self::with_shadow(value, |shadow| {
+            if <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
                 let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
                 let mut buf = Vec::with_capacity(len);
                 <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
                 buf
-            }
-            _ => {
+            } else {
                 let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
                 if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
                     if len == 0 {
