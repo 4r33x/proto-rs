@@ -1,114 +1,115 @@
-#[macro_export]
-macro_rules! impl_protoext_for_byte_array {
-    ($ty:ty, $bytes:expr) => {
-        impl $crate::traits::ProtoShadow for $ty {
-            type Sun<'a> = &'a Self;
-            type OwnedSun = Self;
-            type View<'a> = &'a Self;
+use bytes::Buf;
+use bytes::BufMut;
 
-            #[inline]
-            fn to_sun(self) -> Result<Self::OwnedSun, $crate::DecodeError> {
-                Ok(self)
-            }
+use crate::DecodeError;
+use crate::EncodeError;
+use crate::ProtoKind;
+use crate::ProtoWire;
+use crate::encoding;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
 
-            #[inline]
-            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-                value
-            }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct FixedBytes<const N: usize> {
+    bytes: [u8; N],
+}
+
+impl<const N: usize> FixedBytes<N> {
+    pub const fn new(bytes: [u8; N]) -> Self {
+        Self { bytes }
+    }
+
+    pub fn into_array(self) -> [u8; N] {
+        self.bytes
+    }
+
+    pub fn as_array(&self) -> &[u8; N] {
+        &self.bytes
+    }
+}
+
+impl<const N: usize> Default for FixedBytes<N> {
+    fn default() -> Self {
+        Self { bytes: [0u8; N] }
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for FixedBytes<N> {
+    fn from(bytes: [u8; N]) -> Self {
+        Self::new(bytes)
+    }
+}
+
+impl<const N: usize> AsRef<[u8; N]> for FixedBytes<N> {
+    fn as_ref(&self) -> &[u8; N] {
+        self.as_array()
+    }
+}
+
+impl<const N: usize> ProtoWire for FixedBytes<N> {
+    type EncodeInput<'a> = &'a Self;
+    const KIND: ProtoKind = ProtoKind::Bytes;
+
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Self::default()
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        self.bytes.fill(0);
+    }
+
+    #[inline(always)]
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        let _ = value;
+        false
+    }
+
+    #[inline(always)]
+    fn encoded_len_impl(_value: &Self::EncodeInput<'_>) -> usize {
+        encoding::encoded_len_varint(N as u64) + N
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged_impl(_value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+        encoding::key_len(tag) + encoding::encoded_len_varint(N as u64) + N
+    }
+
+    #[inline(always)]
+    unsafe fn encoded_len_impl_raw(_value: &Self::EncodeInput<'_>) -> usize {
+        encoding::encoded_len_varint(N as u64) + N
+    }
+
+    #[inline(always)]
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        encoding::encode_varint(N as u64, buf);
+        buf.put_slice(&value.bytes);
+    }
+
+    #[inline(always)]
+    fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        encoding::encode_varint(N as u64, buf);
+        buf.put_slice(&value.bytes);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+        if wire_type != WireType::LengthDelimited {
+            return Err(DecodeError::new("invalid wire type for Solana byte array"));
         }
 
-        impl $crate::ProtoExt for $ty {
-            type Shadow<'a> = Self;
-
-            #[inline]
-            fn proto_default<'a>() -> Self::Shadow<'a> {
-                Self::default()
-            }
-
-            #[inline]
-            fn encoded_len(_value: &$crate::traits::ViewOf<'_, Self>) -> usize {
-                const TAG_LEN: usize = 1;
-                TAG_LEN + $crate::encoding::encoded_len_varint($bytes as u64) + $bytes
-            }
-
-            #[inline]
-            fn encode_raw(value: $crate::traits::ViewOf<'_, Self>, buf: &mut impl ::bytes::BufMut) {
-                $crate::encoding::encode_key(1, $crate::encoding::WireType::LengthDelimited, buf);
-                $crate::encoding::encode_varint($bytes as u64, buf);
-                buf.put_slice(value.as_ref());
-            }
-
-            #[inline]
-            fn merge_field(
-                value: &mut Self::Shadow<'_>,
-                tag: u32,
-                wire_type: $crate::encoding::WireType,
-                buf: &mut impl ::bytes::Buf,
-                ctx: $crate::encoding::DecodeContext,
-            ) -> Result<(), $crate::DecodeError> {
-                if tag == 1 {
-                    if wire_type != $crate::encoding::WireType::LengthDelimited {
-                        return Err($crate::DecodeError::new("invalid wire type for Solana byte array"));
-                    }
-
-                    let len = $crate::encoding::decode_varint(buf)? as usize;
-                    if len != $bytes {
-                        return Err($crate::DecodeError::new("invalid length for Solana byte array"));
-                    }
-
-                    if buf.remaining() < $bytes {
-                        return Err($crate::DecodeError::new("buffer underflow"));
-                    }
-
-                    let mut data = [0u8; $bytes];
-                    buf.copy_to_slice(&mut data);
-                    *value = <$ty as From<[u8; $bytes]>>::from(data);
-                    Ok(())
-                } else {
-                    $crate::encoding::skip_field(wire_type, tag, buf, ctx)
-                }
-            }
-
-            #[inline]
-            fn clear(&mut self) {
-                *self = Self::default();
-            }
-
-            fn encode_singular_field(tag: u32, value: ::proto_rs::ViewOf<'_, Self>, buf: &mut impl ::bytes::BufMut) {
-                ::proto_rs::encoding::encode_key(tag, ::proto_rs::encoding::WireType::LengthDelimited, buf);
-                ::proto_rs::encoding::encode_varint($bytes as u64, buf);
-                buf.put_slice(value.as_ref());
-            }
-
-            fn merge_singular_field(
-                wire_type: ::proto_rs::encoding::WireType,
-                value: &mut Self::Shadow<'_>,
-                buf: &mut impl ::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                let _ = ctx;
-                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
-                    return Err(::proto_rs::DecodeError::new("invalid wire type for Solana byte array"));
-                }
-
-                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
-                if len != $bytes {
-                    return Err(::proto_rs::DecodeError::new("invalid length for Solana byte array"));
-                }
-
-                if buf.remaining() < $bytes {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
-
-                let mut data = [0u8; $bytes];
-                buf.copy_to_slice(&mut data);
-                *value = <$ty as From<[u8; $bytes]>>::from(data);
-                Ok(())
-            }
-
-            fn encoded_len_singular_field(tag: u32, _value: &::proto_rs::ViewOf<'_, Self>) -> usize {
-                ::proto_rs::encoding::key_len(tag) + ::proto_rs::encoding::encoded_len_varint($bytes as u64) + $bytes
-            }
+        let len = encoding::decode_varint(buf)? as usize;
+        if len != N {
+            return Err(DecodeError::new("invalid length for Solana byte array"));
         }
-    };
+
+        if buf.remaining() < N {
+            return Err(DecodeError::new("buffer underflow"));
+        }
+
+        buf.copy_to_slice(&mut value.bytes);
+        Ok(())
+    }
 }

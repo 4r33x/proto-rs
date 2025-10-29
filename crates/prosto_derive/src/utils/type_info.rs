@@ -93,7 +93,11 @@ pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
 
 /// True if the type is `[u8; N]`.
 pub fn is_bytes_array(ty: &Type) -> bool {
-    matches!(ty, Type::Array(array) if matches!(&*array.elem, Type::Path(inner) if last_ident(inner).is_some_and(|id| id == "u8")))
+    match ty {
+        Type::Array(array) => matches!(&*array.elem, Type::Path(inner) if last_ident(inner).is_some_and(|id| id == "u8")),
+        Type::Path(path) => last_ident(path).is_some_and(|id| id == "FixedBytes"),
+        _ => false,
+    }
 }
 
 /// True if the type is `Vec<u8>` or `Bytes`.
