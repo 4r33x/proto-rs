@@ -13,6 +13,7 @@ use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_encode_stmts;
 use super::unified_field_handler::build_encoded_len_terms;
+use super::unified_field_handler::build_is_default_checks;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::decode_conversion_assign;
@@ -342,9 +343,59 @@ fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
 fn build_variant_is_default_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
-        VariantKind::Unit => quote! { Self::#ident => false },
-        VariantKind::Tuple { .. } => quote! { Self::#ident(..) => false },
-        VariantKind::Struct { .. } => quote! { Self::#ident { .. } => false },
+        VariantKind::Unit => {
+            if variant.is_default {
+                quote! { Self::#ident => true }
+            } else {
+                quote! { Self::#ident => false }
+            }
+        }
+        VariantKind::Tuple { field } => {
+            if variant.is_default {
+                if field.field.tag.is_none() {
+                    quote! { Self::#ident(..) => true }
+                } else {
+                    let binding_ident = &field.binding_ident;
+                    let field_info = field.field.clone();
+                    let base = TokenStream2::new();
+                    let checks = build_is_default_checks(&[field_info], &base);
+                    quote! {
+                        Self::#ident(#binding_ident) => {
+                            #(#checks;)*
+                            true
+                        }
+                    }
+                }
+            } else {
+                quote! { Self::#ident(..) => false }
+            }
+        }
+        VariantKind::Struct { fields } => {
+            if variant.is_default {
+                if fields.is_empty() {
+                    quote! { Self::#ident { .. } => true }
+                } else {
+                    let bindings = fields.iter().map(|info| {
+                        let field_ident = info.field.ident.as_ref().expect("named field");
+                        if info.config.skip {
+                            quote! { #field_ident: _ }
+                        } else {
+                            quote! { #field_ident }
+                        }
+                    });
+                    let base = TokenStream2::new();
+                    let checks = build_is_default_checks(fields, &base);
+                    quote! {
+                        Self::#ident { #(#bindings),* } => {
+                            #(#checks;)*
+                            true
+                        }
+                    }
+                }
+            } else {
+                quote! { Self::#ident { .. } => false }
+            }
+        }
     }
 }
 
@@ -390,7 +441,7 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
                     if info.config.skip {
                         quote! { #field_ident: _ }
                     } else {
-                        quote! { #field_ident: #field_ident }
+                        quote! { #field_ident }
                     }
                 });
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
@@ -470,7 +521,7 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
                     if info.config.skip {
                         quote! { #field_ident: _ }
                     } else {
-                        quote! { #field_ident: #field_ident }
+                        quote! { #field_ident }
                     }
                 });
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
