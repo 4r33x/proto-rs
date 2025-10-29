@@ -121,14 +121,14 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 
             #[inline(always)]
             fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                match **value {
+                match *value {
                     #(#is_default_match_arms,)*
                 }
             }
 
             #[inline(always)]
             unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                match **value {
+                match *value {
                     #(#encoded_len_arms,)*
                 }
             }
@@ -138,7 +138,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
                 value: Self::EncodeInput<'_>,
                 buf: &mut impl ::proto_rs::bytes::BufMut,
             ) {
-                match *value {
+                match value {
                     #(#encode_arms,)*
                 }
             }
@@ -363,7 +363,7 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
                 let encode_value = binding.value;
                 let ty = &field.field.proto_ty;
                 quote! {
-                    Self::#ident(ref #binding_ident) => {
+                    Self::#ident(#binding_ident) => {
                         #( #encode_prelude )*
                         let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
                         let body_len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_value) };
@@ -387,7 +387,11 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let bindings = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    quote! { #field_ident: ref #field_ident }
+                    if info.config.skip {
+                        quote! { #field_ident: _ }
+                    } else {
+                        quote! { #field_ident: #field_ident }
+                    }
                 });
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
                 quote! {
@@ -440,7 +444,7 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             let binding_pattern = if field.field.config.skip {
                 quote! { .. }
             } else {
-                quote! { ref #binding_ident }
+                quote! { #binding_ident }
             };
             quote! {
                 Self::#ident(#binding_pattern) => {
@@ -463,7 +467,11 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let bindings = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    quote! { #field_ident: ref #field_ident }
+                    if info.config.skip {
+                        quote! { #field_ident: _ }
+                    } else {
+                        quote! { #field_ident: #field_ident }
+                    }
                 });
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
                 let encode_stmts = build_encode_stmts(fields, &TokenStream2::new());
@@ -543,30 +551,35 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
             };
 
             let post_hook = if field.field.config.skip {
-                if let Some(fun) = &field.field.config.skip_deser_fn {
+                field.field.config.skip_deser_fn.as_ref().map(|fun| {
                     let fun_path = parse_path_string(field.field.field, fun);
                     let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_skip_binding", ident.to_string().to_lowercase()), field.field.field.span());
                     let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_computed", ident.to_string().to_lowercase()), field.field.field.span());
                     quote! {
-                        let #computed_ident = #fun_path(&variant_value);
-                        if let #name::#ident(ref mut #skip_binding_ident) = variant_value {
+                        let #computed_ident = #fun_path(value);
+                        if let #name::#ident(#skip_binding_ident) = value {
                             *#skip_binding_ident = #computed_ident;
                         }
                     }
-                } else {
-                    quote! {}
+                })
+            } else {
+                None
+            };
+
+            let assign_variant = if let Some(post_hook) = post_hook {
+                quote! {
+                    *value = #name::#ident(#binding_ident);
+                    #post_hook
                 }
             } else {
-                quote! {}
+                quote! { *value = #name::#ident(#binding_ident); }
             };
 
             quote! {
                 #tag => {
                     let mut #binding_ident = #binding_default;
                     #decode_stmt
-                    let mut variant_value = #name::#ident(#binding_ident);
-                    #post_hook
-                    *value = variant_value;
+                    #assign_variant
                     Ok(())
                 }
             }
@@ -635,8 +648,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_skip_binding", ident.to_string().to_lowercase(), info.index), info.field.span());
                     let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_computed", ident.to_string().to_lowercase(), info.index), info.field.span());
                     Some(quote! {
-                        let #computed_ident = #fun_path(&variant_value);
-                        if let #name::#ident { #field_ident: ref mut #skip_binding_ident, .. } = variant_value {
+                        let #computed_ident = #fun_path(value);
+                        if let #name::#ident { #field_ident: #skip_binding_ident, .. } = value {
                             *#skip_binding_ident = #computed_ident;
                         }
                     })
@@ -646,9 +659,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 quote! { *value = #construct_expr; }
             } else {
                 quote! {
-                    let mut variant_value = #construct_expr;
+                    *value = #construct_expr;
                     #(#post_hooks)*
-                    *value = variant_value;
                 }
             };
             let decode_loop = if decode_match.is_empty() {
