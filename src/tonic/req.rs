@@ -53,7 +53,7 @@ impl<T> From<ZeroCopyRequest<T>> for Request<Vec<u8>> {
 impl<T> From<Request<T>> for ZeroCopyRequest<T>
 where
     T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
     #[inline]
     fn from(request: Request<T>) -> Self {
@@ -66,7 +66,7 @@ where
 impl<'a, T> From<Request<&'a T>> for ZeroCopyRequest<T>
 where
     T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
+    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
 {
     #[inline]
     fn from(request: Request<&'a T>) -> Self {
@@ -79,7 +79,7 @@ where
 impl<T> ZeroCopyRequest<T>
 where
     T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
     #[inline]
     pub fn from_message(message: T) -> Self {
@@ -96,7 +96,7 @@ pub trait ProtoRequest<T>: Sized {
 impl<T> ProtoRequest<T> for Request<T>
 where
     T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
     type Encode = T;
     type Mode = SunByRef;
@@ -109,7 +109,7 @@ where
 impl<T> ProtoRequest<T> for T
 where
     T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
     type Encode = T;
     type Mode = SunByRef;
@@ -130,7 +130,7 @@ impl<T> ProtoRequest<T> for ZeroCopyRequest<T> {
 impl<T> ToZeroCopyRequest<T> for &T
 where
     T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
+    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {
@@ -142,7 +142,7 @@ where
 impl<T> ToZeroCopyRequest<T> for Request<&T>
 where
     T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<Sun<'b> = &'b T, OwnedSun = T>,
+    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {

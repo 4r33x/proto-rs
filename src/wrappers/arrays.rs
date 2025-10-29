@@ -22,7 +22,7 @@ use crate::traits::ProtoShadow;
 // -----------------------------------------------------------------------------
 // ProtoShadow for arrays — only provides structural wrapping for borrow/own view
 // -----------------------------------------------------------------------------
-impl<T: ProtoShadow, const N: usize> ProtoShadow for [T; N] {
+impl<T: ProtoShadow<T>, const N: usize> ProtoShadow<Self> for [T; N] {
     type Sun<'a> = [T::Sun<'a>; N];
     type OwnedSun = [T::OwnedSun; N];
     type View<'a> = [T::View<'a>; N];

@@ -39,7 +39,7 @@ macro_rules! impl_google_wrapper {
     ($ty:ty, $module:ident, $name:literal, $mode:ident,
         $is_default_encode:tt, $is_default_len:tt, $clear_spec:tt, $kind:expr
     ) => {
-        impl ProtoShadow for $ty {
+        impl ProtoShadow<$ty> for $ty {
             type Sun<'a> = impl_google_wrapper!(@sun_ty, $mode, $ty);
             type OwnedSun = $ty;
             type View<'a> = impl_google_wrapper!(@view_ty, $mode, $ty);
@@ -320,7 +320,7 @@ impl_google_wrapper!(
 //     }
 // }
 
-impl ProtoShadow for () {
+impl ProtoShadow<Self> for () {
     type Sun<'a> = Self;
     type OwnedSun = Self;
     type View<'a> = Self;
@@ -454,7 +454,7 @@ macro_rules! impl_narrow_varint {
     // $err: error message on overflow
     ($ty:ty, $wide_ty:ty, $mod:ident, $prim_kind:ident, $err:literal) => {
         /* ---------- ProtoShadow ---------- */
-        impl crate::traits::ProtoShadow for $ty {
+        impl crate::traits::ProtoShadow<$ty> for $ty {
             type Sun<'a> = Self;
             type OwnedSun = Self;
             type View<'a> = Self;

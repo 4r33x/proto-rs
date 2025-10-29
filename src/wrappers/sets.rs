@@ -16,9 +16,9 @@ use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::traits::ProtoKind;
 
-impl<T> ProtoShadow for BTreeSet<T>
+impl<T> ProtoShadow<Self> for BTreeSet<T>
 where
-    for<'a> T: ProtoShadow + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
 {
     type Sun<'a> = &'a BTreeSet<T>;
     type OwnedSun = BTreeSet<T>;
@@ -198,9 +198,9 @@ mod hashset_impl {
     use crate::encoding::key_len;
     use crate::traits::ProtoKind;
 
-    impl<T, S> ProtoShadow for HashSet<T, S>
+    impl<T, S> ProtoShadow<Self> for HashSet<T, S>
     where
-        for<'a> T: ProtoShadow + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+        for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
         for<'a> S: BuildHasher + 'a,
     {
         type Sun<'a> = &'a HashSet<T, S>;

@@ -12,9 +12,9 @@ use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::traits::ProtoKind;
 
-impl<T> ProtoShadow for Arc<T>
+impl<T> ProtoShadow<Self> for Arc<T>
 where
-    T: ProtoShadow<OwnedSun = T>,
+    T: ProtoShadow<T, OwnedSun = T>,
 {
     type Sun<'a> = T::Sun<'a>;
     type OwnedSun = Arc<T>;
@@ -128,9 +128,9 @@ where
     }
 }
 
-impl<SHD, T> ProtoShadow for ArcedShadow<SHD>
+impl<SHD, T> ProtoShadow<Arc<T>> for ArcedShadow<SHD>
 where
-    SHD: ProtoShadow<OwnedSun = T>,
+    SHD: ProtoShadow<T, OwnedSun = T>,
 {
     type Sun<'a> = SHD::Sun<'a>;
     type View<'a> = SHD::View<'a>;

@@ -14,9 +14,9 @@ use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::traits::ProtoKind;
 
-impl<T> ProtoShadow for Vec<T>
+impl<T> ProtoShadow<Self> for Vec<T>
 where
-    for<'a> T: ProtoShadow + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
+    for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
 {
     type Sun<'a> = &'a Vec<T>;
 

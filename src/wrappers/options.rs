@@ -9,25 +9,22 @@ use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::traits::ProtoKind;
 
-impl<T> ProtoShadow for Option<T>
+impl<T> ProtoShadow<Option<T>> for Option<T::Shadow<'_>>
 where
-    T: ProtoShadow,
+    T: ProtoExt,
 {
-    type Sun<'a> = Option<T::Sun<'a>>;
-    type OwnedSun = Option<T::OwnedSun>;
-    type View<'a> = Option<T::View<'a>>;
+    type Sun<'a> = Option<<T::Shadow<'a> as ProtoShadow<T>>::Sun<'a>>;
+    type OwnedSun = Option<T>;
+    type View<'a> = Option<<T::Shadow<'a> as ProtoShadow<T>>::View<'a>>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        match self {
-            Some(inner) => Ok(Some(inner.to_sun()?)),
-            None => Ok(None),
-        }
+        self.map(ProtoShadow::to_sun).transpose()
     }
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.map(T::from_sun)
+        value.map(|v| <T::Shadow<'_> as ProtoShadow<T>>::from_sun(v))
     }
 }
 

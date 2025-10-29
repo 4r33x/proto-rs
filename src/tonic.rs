@@ -70,7 +70,7 @@ where
 impl<T> EncoderExt<T, SunByVal> for ProtoEncoder<T, SunByVal>
 where
     T: ProtoExt + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         T::encode(item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
@@ -81,7 +81,7 @@ where
 impl<T> EncoderExt<T, SunByRef> for ProtoEncoder<T, SunByRef>
 where
     T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<Sun<'a> = &'a T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         T::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))

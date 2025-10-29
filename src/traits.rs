@@ -17,7 +17,7 @@ use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 
 // ---------- conversion trait users implement ----------
-pub trait ProtoShadow: Sized {
+pub trait ProtoShadow<T>: Sized {
     /// Borrowed or owned form used during encoding.
     type Sun<'a>: 'a;
 
@@ -291,12 +291,12 @@ pub trait ProtoWire: Sized {
 
 // Helper alias to shorten signatures:
 pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
-pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::Sun<'a>;
-pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::OwnedSun;
-pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow>::View<'a>;
+pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::Sun<'a>;
+pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::OwnedSun;
+pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::View<'a>;
 pub trait ProtoExt: Sized {
     /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
-    type Shadow<'b>: ProtoShadow<OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>;
+    type Shadow<'b>: ProtoShadow<Self, OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>;
 
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
@@ -407,7 +407,7 @@ pub trait ProtoExt: Sized {
 struct ID {
     id: u64,
 }
-impl ProtoShadow for ID {
+impl ProtoShadow<Self> for ID {
     type Sun<'a> = &'a Self; // borrowed during encoding
     type OwnedSun = Self; // owned form after decoding
     type View<'a> = &'a Self;

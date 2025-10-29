@@ -1,12 +1,13 @@
 use core::convert::TryInto;
 
 use fastnum::D128;
+use fastnum::UD128;
 
 use crate::DecodeError;
 use crate::ProtoShadow;
 use crate::proto_message;
 
-#[proto_message(proto_path = "protos/fastnum.proto", sun = D128)]
+#[proto_message(proto_path = "protos/fastnum.proto", sun = [D128, UD128])]
 pub struct D128Proto {
     #[proto(tag = 1)]
     /// Lower 64 bits of the digits
@@ -22,7 +23,7 @@ pub struct D128Proto {
     pub is_negative: bool,
 }
 
-impl ProtoShadow for D128Proto {
+impl ProtoShadow<D128> for D128Proto {
     type Sun<'a> = &'a D128;
     type OwnedSun = D128;
     type View<'a> = Self;
@@ -55,6 +56,39 @@ impl ProtoShadow for D128Proto {
             hi,
             fractional_digits_count: i32::from(value.fractional_digits_count()),
             is_negative: value.is_sign_negative(),
+        }
+    }
+}
+
+impl ProtoShadow<UD128> for D128Proto {
+    type Sun<'a> = &'a UD128;
+    type OwnedSun = UD128;
+    type View<'a> = Self;
+
+    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+        let digits = ((self.hi as u128) << 64) | (self.lo as u128);
+
+        let mut result = UD128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
+
+        if self.fractional_digits_count > 0 {
+            result /= UD128::TEN.powi(self.fractional_digits_count);
+        } else if self.fractional_digits_count < 0 {
+            result *= UD128::TEN.powi(-self.fractional_digits_count);
+        }
+
+        Ok(result)
+    }
+
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+        let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
+        let lo = digits as u64;
+        let hi = (digits >> 64) as u64;
+
+        Self {
+            lo,
+            hi,
+            fractional_digits_count: i32::from(value.fractional_digits_count()),
+            is_negative: false,
         }
     }
 }
