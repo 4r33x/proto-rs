@@ -505,12 +505,29 @@ fn assert_union_roundtrip(value: AdvancedComplexUnion) {
 }
 
 #[test]
+fn advanced_roundtrip_len_match_min() {
+    let m = AdvancedNested {
+        value: 1,
+        labels: vec!["str".to_owned()],
+    };
+    let p: tonic_prost_test::advanced::AdvancedNested = (&m).into();
+    let pl = p.encoded_len();
+    let rl = m.encoded_len();
+    let e = AdvancedNested::encode_to_vec(&m);
+    let el = e.len();
+    println!("Prost: {pl} Proto: {rl} Encoded: {el}");
+    assert_eq!(pl, rl);
+    assert_eq!(el, rl);
+}
+
+#[test]
 fn advanced_roundtrip_len_match() {
     let m = sample_raw_message();
     let len = m.encoded_len();
     let e = AdvancedEdgeCase::encode_to_vec(&m);
     assert_eq!(e.len(), len);
 }
+
 #[test]
 fn advanced_roundtrip_handles_raw_origin() {
     assert_roundtrip(sample_raw_message());
