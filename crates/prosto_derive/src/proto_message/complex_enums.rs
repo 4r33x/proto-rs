@@ -387,11 +387,7 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let bindings = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    if info.config.skip {
-                        quote! { #field_ident: _ }
-                    } else {
-                        quote! { #field_ident: ref #field_ident }
-                    }
+                    quote! { #field_ident: ref #field_ident }
                 });
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
                 quote! {
@@ -467,11 +463,7 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let bindings = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
-                    if info.config.skip {
-                        quote! { #field_ident: _ }
-                    } else {
-                        quote! { #field_ident: ref #field_ident }
-                    }
+                    quote! { #field_ident: ref #field_ident }
                 });
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
                 let encode_stmts = build_encode_stmts(fields, &TokenStream2::new());
@@ -556,8 +548,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_skip_binding", ident.to_string().to_lowercase()), field.field.field.span());
                     let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_computed", ident.to_string().to_lowercase()), field.field.field.span());
                     quote! {
-                        let #computed_ident = #fun_path(&*value);
-                        if let #name::#ident(ref mut #skip_binding_ident) = value {
+                        let #computed_ident = #fun_path(&variant_value);
+                        if let #name::#ident(ref mut #skip_binding_ident) = variant_value {
                             *#skip_binding_ident = #computed_ident;
                         }
                     }
@@ -572,8 +564,9 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 #tag => {
                     let mut #binding_ident = #binding_default;
                     #decode_stmt
-                    *value = #name::#ident(#binding_ident);
+                    let mut variant_value = #name::#ident(#binding_ident);
                     #post_hook
+                    *value = variant_value;
                     Ok(())
                 }
             }
@@ -642,16 +635,21 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_skip_binding", ident.to_string().to_lowercase(), info.index), info.field.span());
                     let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_computed", ident.to_string().to_lowercase(), info.index), info.field.span());
                     Some(quote! {
-                        let #computed_ident = #fun_path(&*value);
-                        if let #name::#ident { #field_ident: ref mut #skip_binding_ident, .. } = value {
+                        let #computed_ident = #fun_path(&variant_value);
+                        if let #name::#ident { #field_ident: ref mut #skip_binding_ident, .. } = variant_value {
                             *#skip_binding_ident = #computed_ident;
                         }
                     })
                 })
                 .collect::<Vec<_>>();
-            let assign_variant = quote! {
-                *value = #construct_expr;
-                #(#post_hooks)*
+            let assign_variant = if post_hooks.is_empty() {
+                quote! { *value = #construct_expr; }
+            } else {
+                quote! {
+                    let mut variant_value = #construct_expr;
+                    #(#post_hooks)*
+                    *value = variant_value;
+                }
             };
             let decode_loop = if decode_match.is_empty() {
                 quote! {
