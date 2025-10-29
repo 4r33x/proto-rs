@@ -339,14 +339,14 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
             } else {
                 let binding_ident = &field.binding_ident;
                 let binding = encode_input_binding(&field.field, &TokenStream2::new());
-                let encode_ident = binding.ident;
-                let encode_init = binding.init;
+                let encode_prelude = binding.prelude.into_iter();
+                let encode_value = binding.value;
                 let ty = &field.field.proto_ty;
                 quote! {
                     Self::#ident(ref #binding_ident) => {
-                        #encode_init
+                        #( #encode_prelude )*
                         let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
-                        let body_len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_ident) };
+                        let body_len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_value) };
                         let key_len = ::proto_rs::encoding::key_len(#tag);
                         let len = match wire {
                             ::proto_rs::encoding::WireType::LengthDelimited => {
@@ -400,21 +400,21 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
         VariantKind::Tuple { field } => {
             let binding_ident = &field.binding_ident;
             let encode_binding = encode_input_binding(&field.field, &TokenStream2::new());
-            let encode_ident = encode_binding.ident;
-            let encode_init = encode_binding.init;
+            let encode_prelude = encode_binding.prelude.into_iter();
+            let encode_value = encode_binding.value;
             let ty = &field.field.proto_ty;
             let encode_body = if field.field.config.skip {
                 quote! {}
             } else {
                 quote! {
-                    #encode_init
+                    #( #encode_prelude )*
                     let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
                     ::proto_rs::encoding::encode_key(#tag, wire, buf);
                     if wire == ::proto_rs::encoding::WireType::LengthDelimited {
-                        let len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_ident) };
+                        let len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_value) };
                         ::proto_rs::encoding::encode_varint(len as u64, buf);
                     }
-                    <#ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(#encode_ident, buf);
+                    <#ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(#encode_value, buf);
                 }
             };
             let binding_pattern = if field.field.config.skip {
@@ -665,9 +665,6 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let limit = remaining - len as usize;
                     #(#field_inits)*
                     #decode_loop
-                    if buf.remaining() != limit {
-                        return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
-                    }
                     #assign_variant
                     Ok(())
                 }

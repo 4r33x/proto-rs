@@ -117,7 +117,8 @@ macro_rules! map {
                 + values
                     .iter()
                     .map(|(key, val)| {
-                        let len = (if key == &K::default() { 0 } else { key_encoded_len(1, key) }) + (if val == val_default { 0 } else { val_encoded_len(2, val) });
+                        let len = (if key == &K::default() { 0 } else { key_encoded_len(1, key) })
+                            + (if val == val_default { 0 } else { val_encoded_len(2, val) });
                         encoded_len_varint(len as u64) + len
                     })
                     .sum::<usize>()
