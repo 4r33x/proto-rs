@@ -3,8 +3,6 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_possible_truncation)]
 
-use std::sync::Arc;
-
 use bytes::Bytes;
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
@@ -603,4 +601,37 @@ fn zero_copy_container_roundtrip() {
     let encoded = ZeroCopyContainer::encode_to_vec(&fixture);
     let decoded = ZeroCopyContainer::decode(Bytes::from(encoded)).expect("decode fixture");
     assert_eq!(decoded, fixture);
+}
+
+#[test]
+fn encoded_len_matches_prost_for_complex_collections() {
+    let mut base_collections = shared_sample_collections_messages().pop().expect("sample collections message");
+    base_collections.tree_messages.insert("zulu".to_string(), NestedMessage { value: 44 });
+    base_collections.hash_tags.insert(String::new());
+
+    let mut collections_with_defaults = base_collections.clone();
+    collections_with_defaults.tree_messages.insert(String::new(), NestedMessage::default());
+    collections_with_defaults.hash_scores.insert(0, 0);
+
+    let defaults_proto_len = CollectionsMessage::encoded_len(&collections_with_defaults);
+    let defaults_proto_bytes = CollectionsMessage::encode_to_vec(&collections_with_defaults);
+    assert_eq!(defaults_proto_bytes.len(), defaults_proto_len);
+    let defaults_prost = CollectionsMessageProst::decode(Bytes::from(defaults_proto_bytes.clone())).expect("prost decode with default map entries");
+    assert_eq!(defaults_prost, CollectionsMessageProst::from(&collections_with_defaults));
+
+    let base_proto_len = CollectionsMessage::encoded_len(&base_collections);
+    let base_prost_len = CollectionsMessageProst::from(&base_collections).encoded_len();
+    assert_eq!(base_proto_len, base_prost_len, "collections message encoded_len must match prost");
+
+    let mut zero_container = zero_copy_fixture();
+    let zero_proto_len = ZeroCopyContainer::encoded_len(&zero_container);
+    let zero_prost_len = ZeroCopyContainerProst::from(&zero_container).encoded_len();
+    assert_eq!(zero_proto_len, zero_prost_len, "zero copy container encoded_len must match prost");
+
+    zero_container.enum_lookup.insert(String::new(), SampleEnum::default());
+    let zero_defaults_proto_len = ZeroCopyContainer::encoded_len(&zero_container);
+    let zero_defaults_bytes = ZeroCopyContainer::encode_to_vec(&zero_container);
+    assert_eq!(zero_defaults_bytes.len(), zero_defaults_proto_len);
+    let zero_defaults_prost = ZeroCopyContainerProst::decode(Bytes::from(zero_defaults_bytes.clone())).expect("prost decode zero copy container with defaults");
+    assert_eq!(zero_defaults_prost, ZeroCopyContainerProst::from(&zero_container));
 }

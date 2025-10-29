@@ -17,6 +17,27 @@ use crate::encoding::key_len;
 use crate::traits::ProtoKind;
 
 #[inline(always)]
+pub(crate) fn encode_map_entry_component<T>(field_tag: u32, body_len: usize, value: T::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>
+where
+    T: ProtoWire,
+{
+    let required = map_entry_field_len(T::WIRE_TYPE, field_tag, body_len);
+    let remaining = buf.remaining_mut();
+    if required > remaining {
+        return Err(EncodeError::new(required, remaining));
+    }
+
+    encode_key(field_tag, T::WIRE_TYPE, buf);
+    if T::WIRE_TYPE == WireType::LengthDelimited {
+        encode_varint(body_len as u64, buf);
+        T::encode_raw_unchecked(value, buf);
+        Ok(())
+    } else {
+        T::encode_entrypoint(value, buf)
+    }
+}
+
+#[inline(always)]
 pub(crate) fn map_entry_field_len(wire: WireType, tag: u32, body_len: usize) -> usize {
     let base = key_len(tag);
     base + match wire {
@@ -117,12 +138,8 @@ where
             encode_key(tag, WireType::LengthDelimited, buf);
             encode_varint(entry_len as u64, buf);
 
-            // Key (field 1)
-            encode_key(1, K::WIRE_TYPE, buf);
-            K::encode_entrypoint(k, buf)?;
-            // Value (field 2)
-            encode_key(2, V::WIRE_TYPE, buf);
-            V::encode_entrypoint(v, buf)?;
+            crate::wrappers::maps::encode_map_entry_component::<K>(1, key_body, k, buf)?;
+            crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
         }
         Ok(())
     }
@@ -278,10 +295,8 @@ mod hashmap_impl {
                 encode_key(tag, WireType::LengthDelimited, buf);
                 encode_varint(entry_len as u64, buf);
 
-                encode_key(1, K::WIRE_TYPE, buf);
-                K::encode_entrypoint(k, buf)?;
-                encode_key(2, V::WIRE_TYPE, buf);
-                V::encode_entrypoint(v, buf)?;
+                crate::wrappers::maps::encode_map_entry_component::<K>(1, key_body, k, buf)?;
+                crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
             }
             Ok(())
         }
@@ -394,13 +409,8 @@ macro_rules! impl_primitive_map_btreemap {
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
-                    // key = 1
-                    $crate::encoding::encode_key(1, <$K as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$K as $crate::ProtoWire>::encode_entrypoint(*k, buf)?;
-
-                    // value = 2
-                    $crate::encoding::encode_key(2, <$V as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$V as $crate::ProtoWire>::encode_entrypoint(*v, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf)?;
                 }
                 Ok(())
             }
@@ -521,11 +531,8 @@ macro_rules! impl_primitive_map_hashmap {
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
-                    $crate::encoding::encode_key(1, <$K as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$K as $crate::ProtoWire>::encode_entrypoint(*k, buf)?;
-
-                    $crate::encoding::encode_key(2, <$V as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$V as $crate::ProtoWire>::encode_entrypoint(*v, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf)?;
                 }
                 Ok(())
             }
@@ -684,9 +691,7 @@ macro_rules! impl_string_map_btreemap {
                     $crate::encoding::encode_varint(k.len() as u64, buf);
                     buf.put_slice(k.as_bytes());
 
-                    // Value = 2
-                    $crate::encoding::encode_key(2, <$V as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$V as $crate::ProtoWire>::encode_entrypoint(*v, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$V>(2, val_body, *v, buf)?;
                 }
                 Ok(())
             }
@@ -811,9 +816,7 @@ macro_rules! impl_string_map_hashmap {
                     $crate::encoding::encode_varint(k.len() as u64, buf);
                     buf.put_slice(k.as_bytes());
 
-                    // Value = 2
-                    $crate::encoding::encode_key(2, <$V as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$V as $crate::ProtoWire>::encode_entrypoint(*v, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$V>(2, val_body, *v, buf)?;
                 }
                 Ok(())
             }
@@ -963,13 +966,8 @@ macro_rules! impl_copykey_map_btreemap {
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
-                    // Key (by value)
-                    $crate::encoding::encode_key(1, <$K as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$K as $crate::ProtoWire>::encode_entrypoint(*k, buf)?;
-
-                    // Value (by ref)
-                    $crate::encoding::encode_key(2, <V as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <V as $crate::ProtoWire>::encode_entrypoint(v, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
                 }
                 Ok(())
             }
@@ -1091,13 +1089,8 @@ macro_rules! impl_copykey_map_hashmap {
                     $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
-                    // Key (by value)
-                    $crate::encoding::encode_key(1, <$K as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <$K as $crate::ProtoWire>::encode_entrypoint(*k, buf)?;
-
-                    // Value (by ref)
-                    $crate::encoding::encode_key(2, <V as $crate::ProtoWire>::WIRE_TYPE, buf);
-                    <V as $crate::ProtoWire>::encode_entrypoint(v, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                    $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
                 }
                 Ok(())
             }
@@ -1160,3 +1153,71 @@ impl_copykey_map_hashmap!(i16);
 impl_copykey_map_hashmap!(i32);
 impl_copykey_map_hashmap!(i64);
 impl_copykey_map_hashmap!(bool);
+
+#[cfg(test)]
+mod tests {
+    use bytes::Buf;
+    use bytes::BufMut;
+
+    use super::*;
+
+    #[derive(Clone, Copy, Default)]
+    struct TestBytes;
+
+    impl ProtoWire for TestBytes {
+        type EncodeInput<'a> = &'a [u8];
+        const KIND: ProtoKind = ProtoKind::Bytes;
+
+        #[inline(always)]
+        fn proto_default() -> Self {
+            Self
+        }
+
+        #[inline(always)]
+        fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+            value.is_empty()
+        }
+
+        #[inline(always)]
+        fn clear(&mut self) {}
+
+        #[inline(always)]
+        unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+            value.len()
+        }
+
+        #[inline(always)]
+        fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+            buf.put_slice(value);
+        }
+
+        #[inline(always)]
+        fn decode_into(_wire_type: WireType, _value: &mut Self, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+            Err(DecodeError::new("not implemented"))
+        }
+    }
+
+    #[test]
+    fn length_delimited_component_errors_when_capacity_is_insufficient() {
+        let mut storage = [0u8; 1];
+        let err = {
+            let mut slice: &mut [u8] = &mut storage;
+            encode_map_entry_component::<TestBytes>(1, 0, &[], &mut slice).expect_err("should report insufficient capacity")
+        };
+        assert_eq!(storage, [0u8; 1], "no bytes should be written on error");
+        assert_eq!(err.required_capacity(), map_entry_field_len(WireType::LengthDelimited, 1, 0));
+        assert_eq!(err.remaining(), 1);
+    }
+
+    #[test]
+    fn length_delimited_component_writes_empty_prefix() {
+        let mut storage = [0u8; 2];
+        let remaining = {
+            let mut slice: &mut [u8] = &mut storage;
+            encode_map_entry_component::<TestBytes>(1, 0, &[], &mut slice).expect("should encode successfully");
+            slice.remaining_mut()
+        };
+        assert_eq!(storage, [0x0A, 0x00]);
+        assert_eq!(remaining, 0);
+    }
+}
