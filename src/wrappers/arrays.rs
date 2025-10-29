@@ -213,7 +213,7 @@ where
                         }
                         T::decode_into(T::WIRE_TYPE, v, &mut slice, ctx)?;
                     }
-                    buf.advance(len);
+                    debug_assert!(!slice.has_remaining());
                 } else {
                     for v in values.iter_mut() {
                         T::decode_into(wire_type, v, buf, ctx)?;
@@ -363,7 +363,7 @@ macro_rules! impl_proto_wire_array_for_copy {
                                 if !slice.has_remaining() { break; }
                                 <$ty as ProtoWire>::decode_into(<$ty as ProtoWire>::WIRE_TYPE, v, &mut slice, ctx.clone())?;
                             }
-                            buf.advance(len);
+                            debug_assert!(!slice.has_remaining());
                             Ok(())
                         }
                         other => {
