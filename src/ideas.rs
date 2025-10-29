@@ -51,3 +51,28 @@ pub trait RepeatedCollectionMut<T>: RepeatedCollection<T> + FromIterator<T> {
         }
     }
 }
+
+pub trait AsEncodeInput<'a, T: ?Sized> {
+    fn as_encode_input(&'a self) -> &'a T;
+}
+
+impl<'a, T: ?Sized> AsEncodeInput<'a, T> for T {
+    #[inline(always)]
+    fn as_encode_input(&self) -> &'a T {
+        unsafe { &*(self as *const T as *const &'a T) }
+    }
+}
+
+impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &T {
+    #[inline(always)]
+    fn as_encode_input(&self) -> &T {
+        *self
+    }
+}
+
+impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &&T {
+    #[inline(always)]
+    fn as_encode_input(&self) -> &T {
+        **self
+    }
+}

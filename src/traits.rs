@@ -109,31 +109,6 @@ impl ProtoKind {
     }
 }
 
-// pub trait AsEncodeInput<'a, T: ?Sized> {
-//     fn as_encode_input(&'a self) -> &'a T;
-// }
-
-// impl<'a, T: ?Sized> AsEncodeInput<'a, T> for T {
-//     #[inline(always)]
-//     fn as_encode_input(&self) -> &'a T {
-//         unsafe { &*(self as *const T as *const &'a T) }
-//     }
-// }
-
-// impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &T {
-//     #[inline(always)]
-//     fn as_encode_input(&self) -> &T {
-//         *self
-//     }
-// }
-
-// impl<'a, T: ?Sized> AsEncodeInput<'a, T> for &&T {
-//     #[inline(always)]
-//     fn as_encode_input(&self) -> &T {
-//         **self
-//     }
-// }
-
 #[track_caller]
 #[allow(clippy::extra_unused_type_parameters)]
 pub const fn const_unreachable<T: ProtoWire>(structure_name: &'static str) -> ! {
@@ -227,18 +202,7 @@ pub trait ProtoWire: Sized {
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize;
 
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        if Self::is_default_impl(value) {
-            0
-        } else {
-            unsafe { Self::encoded_len_impl_raw(value) }
-            // match Self::WIRE_TYPE {
-            //     WireType::LengthDelimited => {
-            //         let len = unsafe { Self::encoded_len_impl_raw(value) };
-            //         len + encoded_len_varint(len as u64)
-            //     }
-            //     _ => unsafe { Self::encoded_len_impl_raw(value) },
-            // }
-        }
+        if Self::is_default_impl(value) { 0 } else { unsafe { Self::encoded_len_impl_raw(value) } }
     }
 
     /// Encode *this value only* (no field tag and no default check).
