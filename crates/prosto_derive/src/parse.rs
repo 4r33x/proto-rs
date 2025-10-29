@@ -6,8 +6,10 @@ use std::collections::HashMap;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
+use quote::ToTokens;
 use syn::Attribute;
 use syn::Data;
+use syn::Expr;
 use syn::ItemTrait;
 use syn::Lit;
 use syn::Type;
@@ -60,7 +62,7 @@ pub struct UnifiedProtoConfig {
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
-    pub sun: Option<SunConfig>,
+    pub suns: Vec<SunConfig>,
 }
 
 #[derive(Clone)]
@@ -121,9 +123,8 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 config.proto_path = Some(lit_str.value());
             }
         } else if meta.path.is_ident("sun") {
-            let ty: Type = meta.value()?.parse()?;
-            let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
-            config.sun = Some(SunConfig { ty, message_ident });
+            let expr = meta.value()?.parse::<Expr>()?;
+            parse_sun_list(expr, config)?;
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {
                 config.rpc_server = lit_bool.value;
@@ -147,6 +148,42 @@ fn extract_type_ident(ty: &Type) -> Option<String> {
     match ty {
         Type::Path(path) => path.path.segments.last().map(|segment| segment.ident.to_string()),
         _ => None,
+    }
+}
+
+impl UnifiedProtoConfig {
+    pub fn has_suns(&self) -> bool {
+        !self.suns.is_empty()
+    }
+
+    pub fn proto_message_names(&self, fallback: &str) -> Vec<String> {
+        if self.suns.is_empty() {
+            vec![fallback.to_string()]
+        } else {
+            self.suns.iter().map(|sun| sun.message_ident.clone()).collect()
+        }
+    }
+
+    fn push_sun(&mut self, ty: Type) {
+        let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
+        self.suns.push(SunConfig { ty, message_ident });
+    }
+}
+
+fn parse_sun_list(expr: Expr, config: &mut UnifiedProtoConfig) -> syn::Result<()> {
+    match expr {
+        Expr::Array(array) => {
+            for elem in array.elems {
+                let ty: Type = syn::parse2(elem.into_token_stream())?;
+                config.push_sun(ty);
+            }
+            Ok(())
+        }
+        other => {
+            let ty: Type = syn::parse2(other.into_token_stream())?;
+            config.push_sun(ty);
+            Ok(())
+        }
     }
 }
 

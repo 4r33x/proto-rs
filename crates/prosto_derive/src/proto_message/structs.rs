@@ -76,7 +76,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
 
     let fields = assign_tags(fields);
 
-    let proto_shadow_impl = if config.sun.is_some() {
+    let proto_shadow_impl = if config.has_suns() {
         quote! {}
     } else {
         generate_proto_shadow_impl(name, generics)
@@ -119,13 +119,6 @@ fn generate_proto_ext_impl(
     fields: &[FieldInfo<'_>],
     config: &UnifiedProtoConfig,
 ) -> TokenStream2 {
-    let target_ty = if let Some(sun) = &config.sun {
-        let ty = &sun.ty;
-        quote! { #ty }
-    } else {
-        quote! { #name #ty_generics }
-    };
-
     let decode_arms = build_decode_match_arms(fields, &quote! { value });
 
     let shadow_ty = quote! { #name #ty_generics };
@@ -142,25 +135,58 @@ fn generate_proto_ext_impl(
         }
     };
 
-    quote! {
-        impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
-            type Shadow<'b> = #shadow_ty where Self: 'b;
+    if config.has_suns() {
+        let impls = config
+            .suns
+            .iter()
+            .map(|sun| {
+                let target_ty = &sun.ty;
+                quote! {
+                    impl ::proto_rs::ProtoExt for #target_ty {
+                        type Shadow<'b> = #shadow_ty where Self: 'b;
 
-            #[inline(always)]
-            fn merge_field(
-                value: &mut Self::Shadow<'_>,
-                tag: u32,
-                wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                match tag {
-                    #(#decode_arms,)*
-                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                        #[inline(always)]
+                        fn merge_field(
+                            value: &mut Self::Shadow<'_>,
+                            tag: u32,
+                            wire_type: ::proto_rs::encoding::WireType,
+                            buf: &mut impl ::proto_rs::bytes::Buf,
+                            ctx: ::proto_rs::encoding::DecodeContext,
+                        ) -> Result<(), ::proto_rs::DecodeError> {
+                            match tag {
+                                #(#decode_arms,)*
+                                _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                            }
+                        }
+
+                        #post_decode_impl
+                    }
                 }
-            }
+            })
+            .collect::<Vec<_>>();
 
-            #post_decode_impl
+        quote! { #(#impls)* }
+    } else {
+        quote! {
+            impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+                type Shadow<'b> = #shadow_ty where Self: 'b;
+
+                #[inline(always)]
+                fn merge_field(
+                    value: &mut Self::Shadow<'_>,
+                    tag: u32,
+                    wire_type: ::proto_rs::encoding::WireType,
+                    buf: &mut impl ::proto_rs::bytes::Buf,
+                    ctx: ::proto_rs::encoding::DecodeContext,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    match tag {
+                        #(#decode_arms,)*
+                        _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                    }
+                }
+
+                #post_decode_impl
+            }
         }
     }
 }

@@ -28,24 +28,28 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let type_ident = input.ident.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
-    let proto_name = config.sun.as_ref().map_or(type_ident.clone(), |sun| sun.message_ident.clone());
+    let proto_names = config.proto_message_names(&type_ident);
 
     let tokens = match input.data {
         Data::Struct(ref data) => {
-            let proto = generate_struct_proto(&proto_name, &data.fields);
-            config.register_and_emit_proto(&proto_name, &proto);
+            for proto_name in &proto_names {
+                let proto = generate_struct_proto(proto_name, &data.fields);
+                config.register_and_emit_proto(proto_name, &proto);
+            }
 
             let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
             generate_struct_impl(&input, &item_struct, data, &config)
         }
         Data::Enum(ref data) => {
             let is_simple_enum = data.variants.iter().all(|variant| matches!(variant.fields, Fields::Unit));
-            let proto = if is_simple_enum {
-                generate_simple_enum_proto(&proto_name, data)
-            } else {
-                generate_complex_enum_proto(&proto_name, data)
-            };
-            config.register_and_emit_proto(&proto_name, &proto);
+            for proto_name in &proto_names {
+                let proto = if is_simple_enum {
+                    generate_simple_enum_proto(proto_name, data)
+                } else {
+                    generate_complex_enum_proto(proto_name, data)
+                };
+                config.register_and_emit_proto(proto_name, &proto);
+            }
 
             let item_enum: ItemEnum = syn::parse2(item_ts).expect("failed to parse enum");
             if is_simple_enum {
