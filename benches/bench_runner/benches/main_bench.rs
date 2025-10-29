@@ -203,20 +203,6 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("complex_root_encode_decode");
 
-    group.throughput(Throughput::Bytes(proto_bytes.len() as u64));
-    group.bench_function("proto_rs encode_to_vec", |b| {
-        b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
-            for _ in 0..iters {
-                let start = Instant::now();
-                let buf = ComplexRoot::encode_to_vec(black_box(&message));
-                black_box(&buf);
-                total += start.elapsed();
-            }
-            bench_recorder().record("complex_root_encode", "proto_rs encode_to_vec", total, iters, Some(proto_bytes.len() as u64));
-            total
-        });
-    });
     group.throughput(Throughput::Bytes(prost_bytes.len() as u64));
     group.bench_function("prost encode_to_vec", |b| {
         b.iter_custom(|iters| {
@@ -228,6 +214,20 @@ fn bench_encode_decode(c: &mut Criterion) {
                 total += start.elapsed();
             }
             bench_recorder().record("complex_root_encode", "prost encode_to_vec", total, iters, Some(prost_bytes.len() as u64));
+            total
+        });
+    });
+    group.throughput(Throughput::Bytes(proto_bytes.len() as u64));
+    group.bench_function("proto_rs encode_to_vec", |b| {
+        b.iter_custom(|iters| {
+            let mut total = Duration::ZERO;
+            for _ in 0..iters {
+                let start = Instant::now();
+                let buf = ComplexRoot::encode_to_vec(black_box(&message));
+                black_box(&buf);
+                total += start.elapsed();
+            }
+            bench_recorder().record("complex_root_encode", "proto_rs encode_to_vec", total, iters, Some(proto_bytes.len() as u64));
             total
         });
     });
