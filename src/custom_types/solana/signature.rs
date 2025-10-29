@@ -1,7 +1,6 @@
 pub use solana_signature::SIGNATURE_BYTES as BYTES;
 use solana_signature::Signature;
 
-use super::common::FixedBytes;
 use crate::DecodeError;
 use crate::ProtoShadow;
 use crate::proto_message;
@@ -12,7 +11,7 @@ extern crate self as proto_rs;
 #[proto_message(proto_path = "protos/solana.proto", sun = solana_signature::Signature)]
 pub struct SignatureProto {
     #[proto(tag = 1)]
-    pub inner: FixedBytes<BYTES>,
+    pub inner: [u8; BYTES],
 }
 
 impl ProtoShadow for SignatureProto {
@@ -22,14 +21,14 @@ impl ProtoShadow for SignatureProto {
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(Signature::from(self.inner.into_array()))
+        Ok(Signature::from(self.inner))
     }
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());
-        Self { inner: FixedBytes::from(inner) }
+        Self { inner }
     }
 }
 

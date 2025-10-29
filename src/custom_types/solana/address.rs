@@ -1,7 +1,6 @@
 pub use solana_address::ADDRESS_BYTES as BYTES;
 use solana_address::Address;
 
-use super::common::FixedBytes;
 use crate::DecodeError;
 use crate::ProtoShadow;
 use crate::proto_message;
@@ -12,7 +11,7 @@ extern crate self as proto_rs;
 #[proto_message(proto_path = "protos/solana.proto", sun = solana_address::Address)]
 pub struct AddressProto {
     #[proto(tag = 1)]
-    inner: FixedBytes<BYTES>,
+    inner: [u8; BYTES],
 }
 
 impl ProtoShadow for AddressProto {
@@ -22,14 +21,14 @@ impl ProtoShadow for AddressProto {
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(Address::from(self.inner.into_array()))
+        Ok(Address::from(self.inner))
     }
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());
-        Self { inner: FixedBytes::from(inner) }
+        Self { inner }
     }
 }
 
