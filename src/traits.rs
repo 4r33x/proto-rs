@@ -284,10 +284,14 @@ pub trait ProtoWire: Sized {
         if Self::is_default_impl(value) {
             0
         } else {
-            match Self::WIRE_TYPE {
-                WireType::LengthDelimited => unsafe { Self::encoded_len_impl_raw(value) },
-                _ => unsafe { Self::encoded_len_impl_raw(value) },
-            }
+            unsafe { Self::encoded_len_impl_raw(value) }
+            // match Self::WIRE_TYPE {
+            //     WireType::LengthDelimited => {
+            //         let len = unsafe { Self::encoded_len_impl_raw(value) };
+            //         len + encoded_len_varint(len as u64)
+            //     }
+            //     _ => unsafe { Self::encoded_len_impl_raw(value) },
+            // }
         }
     }
 
