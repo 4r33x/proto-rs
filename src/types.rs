@@ -14,7 +14,6 @@ use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
-use crate::EncodeError;
 use crate::Name;
 use crate::ProtoExt;
 use crate::encoding::DecodeContext;
@@ -23,6 +22,7 @@ use crate::encoding::bytes;
 use crate::encoding::check_wire_type;
 use crate::encoding::double;
 use crate::encoding::encode_key;
+use crate::encoding::encode_varint;
 use crate::encoding::float;
 use crate::encoding::int32;
 use crate::encoding::int64;
@@ -86,24 +86,18 @@ macro_rules! impl_google_wrapper {
                 impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
             }
             #[inline(always)]
-            fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-                if Self::WIRE_TYPE == WireType::LengthDelimited {
-                    Self::encode_length_delimited(v, buf)
-                } else {
-                    impl_google_wrapper!(@encode_call, $mode, $module, v, buf);
-                    Ok(())
-                }
+            fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)  {
+                impl_google_wrapper!(@entrypoint, $mode, $module, v, buf)
             }
             fn encode_with_tag(
                 tag: u32,
                 v: Self::EncodeInput<'_>,
                 buf: &mut impl BufMut,
-            ) -> Result<(), EncodeError> {
+            ) {
                 if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
                     encode_key(tag, Self::WIRE_TYPE, buf);
-                    Self::encode_entrypoint(v, buf)?;
+                    Self::encode_entrypoint(v, buf)
                 }
-                Ok(())
             }
 
             #[inline(always)]
@@ -196,6 +190,19 @@ macro_rules! impl_google_wrapper {
         $module::encode($v, $buf)
     };
 
+
+    // --- Helper for entrypoint encoding ---
+    (@entrypoint, by_value, $module:ident, $v:ident, $buf:ident) => {{
+        // numerics/bool: no length prefix
+        impl_google_wrapper!(@encode_call, by_value, $module, $v, $buf);
+
+    }};
+    (@entrypoint, by_ref, $module:ident, $v:ident, $buf:ident) => {{
+        // string/bytes: length-delimited
+        encode_varint(($v).len() as u64, $buf);
+        impl_google_wrapper!(@encode_call, by_ref, $module, $v, $buf);
+    }};
+
     // ---------- TYPE → KIND EXPANSION ----------
     (@kind_ty, bool)    => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool) };
     (@kind_ty, u32)     => { crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32) };
@@ -207,7 +214,6 @@ macro_rules! impl_google_wrapper {
     (@kind_ty, String)  => { crate::traits::ProtoKind::String };
     (@kind_ty, Vec<u8>) => { crate::traits::ProtoKind::Bytes };
     (@kind_ty, Bytes)   => { crate::traits::ProtoKind::Bytes };
-    (@kind_ty, $other:ty) => { crate::traits::ProtoKind::Message };
 }
 impl_google_wrapper!(
     bool,
@@ -407,17 +413,11 @@ impl crate::traits::ProtoWire for () {
 
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
 
-    fn encode_with_tag(_tag: u32, _value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Ok(())
-    }
+    fn encode_with_tag(_tag: u32, _value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
 
-    fn encode_entrypoint(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Ok(())
-    }
+    fn encode_entrypoint(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
 
-    fn encode_length_delimited(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        Ok(())
-    }
+    fn encode_length_delimited(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {}
 
     unsafe fn encoded_len_impl_raw(_value: &Self::EncodeInput<'_>) -> usize {
         0

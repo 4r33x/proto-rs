@@ -473,13 +473,13 @@ fn decode_handles_non_canonical_field_order() {
     encoding::int32::encode_tagged(8, SampleEnumProst::from(source.mode) as i32, &mut buf);
     encoding::bytes::encode_tagged(4, &source.data, &mut buf);
     encoding::int64::encode_tagged(7, source.values[0], &mut buf);
-    NestedMessage::encode_with_tag(6, &source.nested_list[0], &mut buf).unwrap();
+    NestedMessage::encode_with_tag(6, &source.nested_list[0], &mut buf);
     encoding::string::encode_tagged(3, &source.name, &mut buf);
     encoding::bool::encode_tagged(2, source.flag, &mut buf);
     encoding::uint32::encode_tagged(1, source.id, &mut buf);
-    NestedMessage::encode_with_tag(6, &source.nested_list[1], &mut buf).unwrap();
+    NestedMessage::encode_with_tag(6, &source.nested_list[1], &mut buf);
     encoding::int64::encode_tagged(7, source.values[1], &mut buf);
-    NestedMessage::encode_with_tag(5, source.nested.as_ref().expect("missing nested"), &mut buf).unwrap();
+    NestedMessage::encode_with_tag(5, source.nested.as_ref().expect("missing nested"), &mut buf);
     encoding::int64::encode_tagged(7, source.values[2], &mut buf);
     encoding::int64::encode_tagged(7, source.values[3], &mut buf);
     if let Some(optional_mode) = source.optional_mode {

@@ -209,50 +209,28 @@ pub trait ProtoWire: Sized {
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut);
 
     #[inline(always)]
-    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         if Self::is_default_impl(&value) {
-            Ok(())
-        } else {
-            encode_key(tag, Self::WIRE_TYPE, buf);
-            if Self::WIRE_TYPE == WireType::LengthDelimited {
-                Self::encode_length_delimited_non_default(value, buf)
-            } else {
-                Self::encode_raw_unchecked(value, buf);
-                Ok(())
-            }
+            return;
         }
+        encode_key(tag, Self::WIRE_TYPE, buf);
+        Self::encode_entrypoint(value, buf);
     }
 
     #[inline(always)]
-    fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         if Self::WIRE_TYPE == WireType::LengthDelimited {
-            Self::encode_length_delimited(value, buf)
+            Self::encode_length_delimited(value, buf);
         } else {
             Self::encode_raw_unchecked(value, buf);
-            Ok(())
         }
     }
 
     #[inline(always)]
-    fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        if Self::is_default_impl(&value) {
-            return Ok(());
-        }
-
-        Self::encode_length_delimited_non_default(value, buf)
-    }
-
-    #[inline(always)]
-    fn encode_length_delimited_non_default(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let body_len = unsafe { Self::encoded_len_impl_raw(&value) };
-        let required = body_len + encoded_len_varint(body_len as u64);
-        let remaining = buf.remaining_mut();
-        if required > remaining {
-            return Err(EncodeError::new(required, remaining));
-        }
         encode_varint(body_len as u64, buf);
         Self::encode_raw_unchecked(value, buf);
-        Ok(())
     }
 
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
@@ -314,69 +292,45 @@ pub trait ProtoExt: Sized {
     }
 
     #[inline(always)]
-    fn encode(value: SunOf<'_, Self>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode(value: SunOf<'_, Self>, mut buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
-            if <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
-                let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
-                let remaining = buf.remaining_mut();
+            let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            if len == 0 {
+                return Ok(());
+            }
+            let remaining = buf.remaining_mut();
+            if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                let total = key_len(1) + len;
+                if total > remaining {
+                    return Err(EncodeError::new(total, remaining));
+                }
+                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
+            } else {
                 if len > remaining {
                     return Err(EncodeError::new(len, remaining));
                 }
-                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf);
-                Ok(())
-            } else {
-                let remaining = buf.remaining_mut();
-                let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
-                if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
-                    if len == 0 {
-                        return Ok(());
-                    }
-                    let total = key_len(1) + len;
-                    if total > remaining {
-                        return Err(EncodeError::new(total, remaining));
-                    }
-                    <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, buf)
-                } else {
-                    if len > remaining {
-                        return Err(EncodeError::new(len, remaining));
-                    }
-                    if len == 0 { Ok(()) } else { <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, buf) }
-                }
+                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
             }
+            Ok(())
         })
     }
-    //TODO probably should add Result here
+
     #[inline(always)]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
-            if <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
-                if let ProtoKind::Message = <Self::Shadow<'_> as ProtoWire>::KIND {
-                    let mut buf = Vec::new();
-                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
-                    buf
-                } else {
-                    let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
-                    let mut buf = Vec::with_capacity(len);
-                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
-                    buf
-                }
+            let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            if len == 0 {
+                return Vec::new();
+            }
+            if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                let total = key_len(1) + len;
+                let mut buf = Vec::with_capacity(total);
+                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
+                buf
             } else {
-                let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
-                if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
-                    if len == 0 {
-                        return Vec::new();
-                    }
-                    let total = key_len(1) + len;
-                    let mut buf = Vec::with_capacity(total);
-                    let _ = <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
-                    buf
-                } else {
-                    let mut buf = Vec::with_capacity(len);
-                    if len != 0 {
-                        let _ = <Self::Shadow<'_> as ProtoWire>::encode_entrypoint(shadow, &mut buf);
-                    }
-                    buf
-                }
+                let mut buf = Vec::with_capacity(len);
+                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
             }
         })
     }

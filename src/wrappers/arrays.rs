@@ -7,7 +7,6 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::EncodeError;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
@@ -163,11 +162,11 @@ where
     }
 
     #[inline(always)]
-    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if N == 0 {
-                    return Ok(());
+                    return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
                 let body_len = value.iter().map(|v| T::encoded_len_impl(&v)).sum::<usize>();
@@ -175,12 +174,11 @@ where
                 for v in value {
                     T::encode_raw_unchecked(v, buf);
                 }
-                Ok(())
             }
 
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 if value.is_default() {
-                    return Ok(());
+                    return;
                 }
                 for m in value {
                     let len = T::encoded_len_impl(&m);
@@ -188,7 +186,6 @@ where
                     encode_varint(len as u64, buf);
                     T::encode_raw_unchecked(m, buf);
                 }
-                Ok(())
             }
 
             ProtoKind::Repeated(_) => {
@@ -320,12 +317,12 @@ macro_rules! impl_proto_wire_array_for_copy {
                     tag: u32,
                     value: Self::EncodeInput<'_>,
                     buf: &mut impl bytes::BufMut,
-                ) -> Result<(), crate::EncodeError> {
+                ) {
                     use crate::encoding::{encode_key, encode_varint, WireType};
                     use crate::ProtoWire;
 
                     if N == 0 {
-                        return Ok(());
+                        return;
                     }
 
                     // Packed numeric field (LengthDelimited)
@@ -338,7 +335,7 @@ macro_rules! impl_proto_wire_array_for_copy {
                     for v in value {
                         <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
                     }
-                    Ok(())
+
                 }
 
                 // -------------------------------------------------------------------------
@@ -448,20 +445,18 @@ impl<const N: usize> ProtoWire for [u8; N] {
     }
 
     #[inline(always)]
-    fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         encode_varint(N as u64, buf);
         buf.put_slice(v);
-        Ok(())
     }
 
     #[inline(always)]
-    fn encode_with_tag(tag: u32, v: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_with_tag(tag: u32, v: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         if !is_all_zero(v) {
             encode_key(tag, WireType::LengthDelimited, buf);
             encode_varint(N as u64, buf);
             buf.put_slice(v);
         }
-        Ok(())
     }
 
     #[inline(always)]

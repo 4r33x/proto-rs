@@ -441,9 +441,7 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
             Some(quote! {
                 {
                     #( #prelude )*
-                    if let Err(err) = <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf) {
-                        panic!("encode_raw_unchecked called without sufficient capacity: {err}");
-                    }
+                   <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf)
                 }
             })
         })

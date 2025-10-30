@@ -4,7 +4,6 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::EncodeError;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -101,11 +100,11 @@ where
     }
 
     #[inline]
-    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if value.is_empty() {
-                    return Ok(());
+                    return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
                 let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
@@ -113,7 +112,6 @@ where
                 for v in value {
                     T::encode_raw_unchecked(v, buf);
                 }
-                Ok(())
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for m in value {
@@ -122,7 +120,6 @@ where
                     encode_varint(len as u64, buf);
                     T::encode_raw_unchecked(m, buf);
                 }
-                Ok(())
             }
             ProtoKind::Repeated(_) => {
                 unreachable!()
@@ -186,7 +183,6 @@ mod hashset_impl {
     use bytes::BufMut;
 
     use crate::DecodeError;
-    use crate::EncodeError;
     use crate::ProtoShadow;
     use crate::ProtoWire;
     use crate::encoding::DecodeContext;
@@ -284,11 +280,11 @@ mod hashset_impl {
         }
 
         #[inline]
-        fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
             match T::KIND {
                 ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                     if value.is_empty() {
-                        return Ok(());
+                        return;
                     }
                     encode_key(tag, WireType::LengthDelimited, buf);
                     let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
@@ -296,7 +292,6 @@ mod hashset_impl {
                     for v in value {
                         T::encode_raw_unchecked(v, buf);
                     }
-                    Ok(())
                 }
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                     for m in value {
@@ -305,7 +300,6 @@ mod hashset_impl {
                         encode_varint(len as u64, buf);
                         T::encode_raw_unchecked(m, buf);
                     }
-                    Ok(())
                 }
                 ProtoKind::Repeated(_) => {
                     unreachable!()
@@ -410,12 +404,12 @@ macro_rules! impl_proto_wire_btreeset_for_copy {
                     tag: u32,
                     value: Self::EncodeInput<'_>,
                     buf: &mut impl bytes::BufMut,
-                ) -> Result<(), crate::EncodeError> {
+                ) {
                     use crate::encoding::{encode_key, encode_varint, WireType};
                     use crate::ProtoWire;
 
                     if value.is_empty() {
-                        return Ok(());
+                        return;
                     }
 
                     encode_key(tag, WireType::LengthDelimited, buf);
@@ -427,7 +421,7 @@ macro_rules! impl_proto_wire_btreeset_for_copy {
                     for v in value {
                         <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
                     }
-                    Ok(())
+
                 }
 
                 #[inline(always)]
@@ -550,12 +544,12 @@ macro_rules! impl_proto_wire_hashset_for_copy {
                     tag: u32,
                     value: Self::EncodeInput<'_>,
                     buf: &mut impl bytes::BufMut,
-                ) -> Result<(), crate::EncodeError> {
+                ) {
                     use crate::encoding::{encode_key, encode_varint, WireType};
                     use crate::ProtoWire;
 
                     if value.is_empty() {
-                        return Ok(());
+                        return;
                     }
 
                     encode_key(tag, WireType::LengthDelimited, buf);
@@ -567,7 +561,7 @@ macro_rules! impl_proto_wire_hashset_for_copy {
                     for v in value {
                         <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
                     }
-                    Ok(())
+
                 }
 
                 #[inline(always)]

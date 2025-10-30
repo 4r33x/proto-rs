@@ -4,7 +4,6 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::EncodeError;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -17,23 +16,16 @@ use crate::encoding::key_len;
 use crate::traits::ProtoKind;
 
 #[inline(always)]
-pub(crate) fn encode_map_entry_component<T>(field_tag: u32, body_len: usize, value: T::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError>
+pub(crate) fn encode_map_entry_component<T>(field_tag: u32, body_len: usize, value: T::EncodeInput<'_>, buf: &mut impl BufMut)
 where
     T: ProtoWire,
 {
-    let required = map_entry_field_len(T::WIRE_TYPE, field_tag, body_len);
-    let remaining = buf.remaining_mut();
-    if required > remaining {
-        return Err(EncodeError::new(required, remaining));
-    }
-
     encode_key(field_tag, T::WIRE_TYPE, buf);
     if T::WIRE_TYPE == WireType::LengthDelimited {
         encode_varint(body_len as u64, buf);
         T::encode_raw_unchecked(value, buf);
-        Ok(())
     } else {
-        T::encode_entrypoint(value, buf)
+        T::encode_raw_unchecked(value, buf);
     }
 }
 
@@ -140,7 +132,7 @@ where
     }
 
     #[inline]
-    fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         for (k, v) in map {
             let key_default = K::is_default_impl(&k);
             let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&k) } };
@@ -157,13 +149,12 @@ where
             encode_varint(entry_len as u64, buf);
 
             if !key_default {
-                crate::wrappers::maps::encode_map_entry_component::<K>(1, key_body, k, buf)?;
+                crate::wrappers::maps::encode_map_entry_component::<K>(1, key_body, k, buf);
             }
             if !value_default {
-                crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
+                crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf);
             }
         }
-        Ok(())
     }
 
     #[inline]
@@ -212,7 +203,6 @@ mod hashmap_impl {
     use bytes::BufMut;
 
     use crate::DecodeError;
-    use crate::EncodeError;
     use crate::ProtoShadow;
     use crate::ProtoWire;
     use crate::encoding::DecodeContext;
@@ -319,7 +309,7 @@ mod hashmap_impl {
         }
 
         #[inline]
-        fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
             for (k, v) in map {
                 let key_default = K::is_default_impl(&k);
                 let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&k) } };
@@ -336,13 +326,12 @@ mod hashmap_impl {
                 encode_varint(entry_len as u64, buf);
 
                 if !key_default {
-                    crate::wrappers::maps::encode_map_entry_component::<K>(1, key_body, k, buf)?;
+                    crate::wrappers::maps::encode_map_entry_component::<K>(1, key_body, k, buf);
                 }
                 if !value_default {
-                    crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
+                    crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf);
                 }
             }
-            Ok(())
         }
 
         #[inline]
@@ -462,7 +451,7 @@ macro_rules! impl_primitive_map_btreemap {
             }
 
             #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
+            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
                 for (k, v) in map {
                     let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
                     let key_body = if key_default { 0 } else { unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) } };
@@ -484,13 +473,12 @@ macro_rules! impl_primitive_map_btreemap {
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
                     if !key_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
                     }
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf);
                     }
                 }
-                Ok(())
             }
 
             #[inline]
@@ -618,7 +606,7 @@ macro_rules! impl_primitive_map_hashmap {
             }
 
             #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
+            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
                 for (k, v) in map {
                     let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
                     let key_body = if key_default { 0 } else { unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) } };
@@ -640,13 +628,12 @@ macro_rules! impl_primitive_map_hashmap {
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
                     if !key_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
                     }
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf);
                     }
                 }
-                Ok(())
             }
 
             #[inline]
@@ -808,7 +795,7 @@ macro_rules! impl_string_map_btreemap {
             }
 
             #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
+            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
                 for (k, v) in map {
                     let key_default = k.is_empty();
                     let key_len = if key_default {
@@ -836,10 +823,9 @@ macro_rules! impl_string_map_btreemap {
                     }
 
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, val_body, *v, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, val_body, *v, buf);
                     }
                 }
-                Ok(())
             }
 
             #[inline]
@@ -967,7 +953,7 @@ macro_rules! impl_string_map_hashmap {
             }
 
             #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
+            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
                 for (k, v) in map {
                     let key_default = k.is_empty();
                     let key_len = if key_default {
@@ -995,10 +981,9 @@ macro_rules! impl_string_map_hashmap {
                     }
 
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, val_body, *v, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, val_body, *v, buf);
                     }
                 }
-                Ok(())
             }
 
             #[inline]
@@ -1156,7 +1141,7 @@ macro_rules! impl_copykey_map_btreemap {
             }
 
             #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
+            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
                 for (k, v) in map {
                     let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
                     let key_body = if key_default { 0 } else { unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) } };
@@ -1177,13 +1162,12 @@ macro_rules! impl_copykey_map_btreemap {
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
                     if !key_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
                     }
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf);
                     }
                 }
-                Ok(())
             }
 
             #[inline]
@@ -1313,7 +1297,7 @@ macro_rules! impl_copykey_map_hashmap {
             }
 
             #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) -> Result<(), $crate::EncodeError> {
+            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
                 for (k, v) in map {
                     let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
                     let key_body = if key_default { 0 } else { unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(k) } };
@@ -1334,13 +1318,12 @@ macro_rules! impl_copykey_map_hashmap {
                     $crate::encoding::encode_varint(entry_len as u64, buf);
 
                     if !key_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
                     }
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf)?;
+                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf);
                     }
                 }
-                Ok(())
             }
 
             #[inline]
@@ -1446,23 +1429,11 @@ mod tests {
     }
 
     #[test]
-    fn length_delimited_component_errors_when_capacity_is_insufficient() {
-        let mut storage = [0u8; 1];
-        let err = {
-            let mut slice: &mut [u8] = &mut storage;
-            encode_map_entry_component::<TestBytes>(1, 0, &[], &mut slice).expect_err("should report insufficient capacity")
-        };
-        assert_eq!(storage, [0u8; 1], "no bytes should be written on error");
-        assert_eq!(err.required_capacity(), map_entry_field_len(WireType::LengthDelimited, 1, 0));
-        assert_eq!(err.remaining(), 1);
-    }
-
-    #[test]
     fn length_delimited_component_writes_empty_prefix() {
         let mut storage = [0u8; 2];
         let remaining = {
             let mut slice: &mut [u8] = &mut storage;
-            encode_map_entry_component::<TestBytes>(1, 0, &[], &mut slice).expect("should encode successfully");
+            encode_map_entry_component::<TestBytes>(1, 0, &[], &mut slice);
             slice.remaining_mut()
         };
         assert_eq!(storage, [0x0A, 0x00]);
