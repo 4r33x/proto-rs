@@ -1,4 +1,44 @@
 
+# Benchmark Run — 2025-10-30 17:09:39
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| complex_root_components_decode | audit log | prost decode | 370802.95 | 263.10 | 1.00× |
+| complex_root_components_decode | audit log | proto_rs decode | 334209.58 | 237.13 | 0.90× slower |
+| complex_root_components_encode | audit log | prost encode_to_vec | 1132989.71 | 803.89 | 1.00× |
+| complex_root_components_encode | audit log | proto_rs encode_to_vec | 1351045.61 | 958.61 | 1.19× faster |
+
+
+# Benchmark Run — 2025-10-30 17:07:49
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| complex_root_components_decode | audit log | prost decode | 378036.08 | 268.23 | 1.00× |
+| complex_root_components_decode | audit log | proto_rs decode | 343549.65 | 243.76 | 0.91× slower |
+| complex_root_components_encode | audit log | prost encode_to_vec | 1123465.96 | 797.14 | 1.00× |
+| complex_root_components_encode | audit log | proto_rs encode_to_vec | 1359301.27 | 964.47 | 1.21× faster |
+
+
+# Benchmark Run — 2025-10-30 17:06:26
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| complex_root_components_decode | status lookup | prost decode | 633931.10 | 248.48 | 1.00× |
+| complex_root_components_decode | status lookup | proto_rs decode | 552561.64 | 216.58 | 0.87× slower |
+| complex_root_components_encode | status lookup | prost encode_to_vec | 1764055.59 | 691.44 | 1.00× |
+| complex_root_components_encode | status lookup | proto_rs encode_to_vec | 2039301.34 | 799.32 | 1.16× faster |
+
+
+# Benchmark Run — 2025-10-30 17:03:17
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| complex_root_components_decode | status lookup | prost decode | 620164.04 | 243.08 | 1.00× |
+| complex_root_components_decode | status lookup | proto_rs decode | 489777.45 | 191.97 | 0.79× slower |
+| complex_root_components_encode | status lookup | prost encode_to_vec | 1781144.49 | 698.14 | 1.00× |
+| complex_root_components_encode | status lookup | proto_rs encode_to_vec | 2030765.70 | 795.98 | 1.14× faster |
+
+
 # Benchmark Run — 2025-10-30 16:55:30
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
