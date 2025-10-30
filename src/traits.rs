@@ -201,6 +201,7 @@ pub trait ProtoWire: Sized {
     #[allow(clippy::missing_safety_doc)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize;
 
+    #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
         if Self::is_default_impl(value) { 0 } else { unsafe { Self::encoded_len_impl_raw(value) } }
     }
