@@ -7,6 +7,7 @@ use syn::Field;
 use syn::Ident;
 use syn::ItemEnum;
 use syn::Path;
+use syn::PathArguments;
 use syn::Type;
 use syn::parse_quote;
 use syn::spanned::Spanned;
@@ -104,6 +105,28 @@ pub fn needs_decode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -
 
 fn uses_proto_wire_directly(info: &FieldInfo<'_>) -> bool {
     !info.config.skip && !needs_encode_conversion(&info.config, &info.parsed) && info.config.from_type.is_none() && info.config.from_fn.is_none()
+}
+
+fn is_type_ident(ty: &Type, name: &str) -> bool {
+    matches!(ty, Type::Path(path)
+        if path.qself.is_none()
+            && path.path.segments.len() == 1
+            && path.path.segments[0].ident == name)
+}
+
+fn is_vec_u8_type(ty: &Type) -> bool {
+    if let Type::Path(path) = ty {
+        if let Some(seg) = path.path.segments.last() {
+            if seg.ident == "Vec" {
+                if let PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(syn::GenericArgument::Type(Type::Path(inner))) = args.args.first() {
+                        return inner.path.segments.last().is_some_and(|inner_seg| inner_seg.ident == "u8");
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 pub fn strip_proto_attrs(attrs: &[Attribute]) -> Vec<Attribute> {
@@ -438,12 +461,34 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
             let binding = encode_input_binding(info, base);
             let prelude = binding.prelude.into_iter();
             let value = binding.value;
-            Some(quote! {
-                {
+            if uses_proto_wire_directly(info) && !info.parsed.is_option && info.parsed.proto_type == "string" && is_type_ident(&info.parsed.rust_type, "String") {
+                Some(quote! {{
                     #( #prelude )*
-                   <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf)
-                }
-            })
+                    let value = #value;
+                    if !value.is_empty() {
+                        ::proto_rs::encoding::string::encode_tagged(#tag, value, buf);
+                    }
+                }})
+            } else if uses_proto_wire_directly(info)
+                && !info.parsed.is_option
+                && info.parsed.proto_type == "bytes"
+                && (is_type_ident(&info.parsed.rust_type, "Bytes") || is_vec_u8_type(&info.parsed.rust_type))
+            {
+                Some(quote! {{
+                    #( #prelude )*
+                    let value = #value;
+                    if !value.is_empty() {
+                        ::proto_rs::encoding::bytes::encode_tagged(#tag, value, buf);
+                    }
+                }})
+            } else {
+                Some(quote! {
+                    {
+                        #( #prelude )*
+                        <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf)
+                    }
+                })
+            }
         })
         .collect()
 }

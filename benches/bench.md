@@ -1,4 +1,36 @@
 
+# Benchmark Run — 2025-10-30 17:04:04
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_encode | one_string | prost encode_to_vec | 16286973.56 | 139.79 | 1.00× |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 14776766.86 | 126.83 | 0.99× slower |
+
+
+# Benchmark Run — 2025-10-30 17:03:49
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 17274892.83 | 230.64 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 15366833.38 | 205.17 | 0.91× slower |
+
+
+# Benchmark Run — 2025-10-30 16:59:18
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 17127356.67 | 228.67 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 15303983.42 | 204.33 | 0.89× slower |
+
+
+# Benchmark Run — 2025-10-30 16:54:25
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 17392834.40 | 232.22 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 15478501.26 | 206.66 | 0.89× slower |
+
+
 # Benchmark Run — 2025-10-30 15:23:45
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |

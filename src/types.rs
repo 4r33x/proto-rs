@@ -155,7 +155,9 @@ macro_rules! impl_google_wrapper {
 
     // by_ref: pass (is_empty) and (clear)
     (@is_default_len, by_ref, ($meth:ident), $len:expr) => { ($len).$meth() };
+    (@is_default_len, by_ref, (! $meth:ident), $len:expr) => { !(($len).$meth()) };
     (@is_default_encode, by_ref, ($meth:ident), $v:expr)    => { ($v).$meth() };
+    (@is_default_encode, by_ref, (! $meth:ident), $v:expr)  => { !(($v).$meth()) };
 
     (@is_default_len,    by_ref, ($op:tt $rhs:expr), $len:expr) => { (*$len) $op $rhs };
     (@is_default_encode, by_ref, ($op:tt $rhs:expr), $v:expr)   => { ($v)   $op $rhs };
@@ -287,36 +289,9 @@ impl_google_wrapper!(
 );
 
 // by_ref (length-delimited)
-impl_google_wrapper!(
-    String,
-    string,
-    "StringValue",
-    by_ref,
-    (!= ""),
-    (== ""),
-    (clear),
-    crate::traits::ProtoKind::String
-);
-impl_google_wrapper!(
-    Vec<u8>,
-    bytes,
-    "BytesValue",
-    by_ref,
-    (!= b"" as &[u8]),
-    (== b"" as &[u8]),
-    (clear),
-    crate::traits::ProtoKind::Bytes
-);
-impl_google_wrapper!(
-    Bytes,
-    bytes,
-    "BytesValue",
-    by_ref,
-    (!= b"" as &[u8]),
-    (== b"" as &[u8]),
-    (clear),
-    crate::traits::ProtoKind::Bytes
-);
+impl_google_wrapper!(String, string, "StringValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::String);
+impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
+impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
 
 // impl Name for Vec<u8> {
 //     const NAME: &'static str = "BytesValue";
