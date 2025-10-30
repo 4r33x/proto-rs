@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 #![allow(clippy::missing_errors_doc)]
 
+#[cfg(feature = "stable")]
 use std::pin::Pin;
 
 use proto_rs::ToZeroCopyResponse;
@@ -62,7 +63,10 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl SigmaRpc for S {
+    #[cfg(feature = "stable")]
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
+    #[cfg(not(feature = "stable"))]
+    type RizzUniStream = impl Stream<Item = Result<FooResponse, Status>> + Send;
 
     async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status> {
         Ok(GoonPong {}.to_zero_copy())
@@ -100,9 +104,11 @@ impl SigmaRpc for S {
         });
 
         let stream = ReceiverStream::new(rx);
-        let boxed_stream: Self::RizzUniStream = Box::pin(stream);
 
-        Ok(Response::new(boxed_stream))
+        #[cfg(feature = "stable")]
+        let stream: Self::RizzUniStream = Box::pin(stream);
+
+        Ok(Response::new(stream))
     }
 }
 

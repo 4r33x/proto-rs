@@ -8,7 +8,7 @@ criterion = { version = "0.7" }
 chrono.workspace = true
 prost = { workspace = true, features = ["derive", "std"] }
 bytes = { workspace = true, default-features = false }
-proto_rs = { workspace = true, features = ["std"] }
+proto_rs = { workspace = true, features = ["std", "build-schemas"] }
 inventory = { workspace = true, optional = true }
 
 

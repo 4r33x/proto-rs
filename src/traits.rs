@@ -350,18 +350,15 @@ pub trait ProtoExt: Sized {
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
             if <Self::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
-                match <Self::Shadow<'_> as ProtoWire>::KIND {
-                    ProtoKind::Message => {
-                        let mut buf = Vec::new();
-                        <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
-                        buf
-                    }
-                    _ => {
-                        let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
-                        let mut buf = Vec::with_capacity(len);
-                        <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
-                        buf
-                    }
+                if let ProtoKind::Message = <Self::Shadow<'_> as ProtoWire>::KIND {
+                    let mut buf = Vec::new();
+                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                    buf
+                } else {
+                    let len = unsafe { <Self::Shadow<'_> as ProtoWire>::encoded_len_impl_raw(&shadow) };
+                    let mut buf = Vec::with_capacity(len);
+                    <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                    buf
                 }
             } else {
                 let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);

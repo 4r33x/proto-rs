@@ -19,6 +19,46 @@ enum SimpleEnum {
   DELTA = 3;
 }
 
+message BenchAttachments {
+  repeated bytes items = 1;
+}
+
+message BenchAuditLog {
+  map<string, DeepMessage> entries = 1;
+}
+
+message BenchCodes {
+  repeated SimpleEnum items = 1;
+}
+
+message BenchDeepLookup {
+  map<string, DeepMessage> entries = 1;
+}
+
+message BenchDeepMessageList {
+  repeated DeepMessage items = 1;
+}
+
+message BenchLeafLookup {
+  map<string, NestedLeaf> entries = 1;
+}
+
+message BenchNestedLeafList {
+  repeated NestedLeaf items = 1;
+}
+
+message BenchStatusHistory {
+  repeated ComplexEnum items = 1;
+}
+
+message BenchStatusLookup {
+  map<string, ComplexEnum> entries = 1;
+}
+
+message BenchTags {
+  repeated string items = 1;
+}
+
 message ComplexEnumEmpty {}
 
 message ComplexRoot {
@@ -69,43 +109,27 @@ message NestedLeaf {
   repeated bytes attachments = 6;
 }
 
-message BenchNestedLeafList {
-  repeated NestedLeaf items = 1;
+message OneBytes {
+  bytes v = 1;
 }
 
-message BenchDeepMessageList {
-  repeated DeepMessage items = 1;
+message OneComplexEnum {
+  ComplexEnum v = 1;
 }
 
-message BenchLeafLookup {
-  map<string, NestedLeaf> entries = 1;
+message OneDeepMessage {
+  DeepMessage v = 1;
 }
 
-message BenchDeepLookup {
-  map<string, DeepMessage> entries = 1;
+message OneEnum {
+  SimpleEnum v = 1;
 }
 
-message BenchStatusHistory {
-  repeated ComplexEnum items = 1;
+message OneNestedLeaf {
+  NestedLeaf v = 1;
 }
 
-message BenchStatusLookup {
-  map<string, ComplexEnum> entries = 1;
-}
-
-message BenchAttachments {
-  repeated bytes items = 1;
-}
-
-message BenchAuditLog {
-  map<string, DeepMessage> entries = 1;
-}
-
-message BenchCodes {
-  repeated SimpleEnum items = 1;
-}
-
-message BenchTags {
-  repeated string items = 1;
+message OneString {
+  string v = 1;
 }
 
