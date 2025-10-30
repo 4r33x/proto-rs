@@ -1,4 +1,44 @@
 
+# Benchmark Run — 2025-10-29 21:53:31
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| bench_zero_copy_vs_clone | prost clone + encode | 36821.49 | 132.67 | 1.00× |
+| bench_zero_copy_vs_clone | proto_rs zero_copy | 49915.98 | 179.85 | 1.36× faster |
+| complex_root_components_encode | attachments | prost encode_to_vec | 11639008.33 | 377.39 | 1.00× |
+| complex_root_components_encode | attachments | proto_rs encode_to_vec | 3751153.61 | 121.63 | 1.00× |
+| complex_root_components_encode | audit log | prost encode_to_vec | 396680.22 | 281.46 | 1.00× |
+| complex_root_components_encode | audit log | proto_rs encode_to_vec | 342704.17 | 243.16 | 1.00× |
+| complex_root_components_encode | codes | prost encode_to_vec | 14822183.66 | 70.68 | 1.00× |
+| complex_root_components_encode | codes | proto_rs encode_to_vec | 15547760.05 | 74.14 | 1.00× |
+| complex_root_components_encode | complex_enum | prost encode_to_vec | 7419758.05 | 261.81 | 1.00× |
+| complex_root_components_encode | complex_enum | proto_rs encode_to_vec | 3584592.01 | 126.49 | 1.00× |
+| complex_root_components_encode | deep list | prost encode_to_vec | 454599.24 | 312.58 | 1.00× |
+| complex_root_components_encode | deep list | proto_rs encode_to_vec | 368290.52 | 253.24 | 1.00× |
+| complex_root_components_encode | deep lookup | prost encode_to_vec | 404884.32 | 288.44 | 1.00× |
+| complex_root_components_encode | deep lookup | proto_rs encode_to_vec | 310312.82 | 221.07 | 1.00× |
+| complex_root_components_encode | deep_message | prost encode_to_vec | 1083865.66 | 356.61 | 1.00× |
+| complex_root_components_encode | deep_message | proto_rs encode_to_vec | 723421.21 | 238.02 | 1.00× |
+| complex_root_components_encode | leaf lookup | prost encode_to_vec | 2659417.28 | 202.90 | 1.00× |
+| complex_root_components_encode | leaf lookup | proto_rs encode_to_vec | 1648330.71 | 125.76 | 1.00× |
+| complex_root_components_encode | leaves list | prost encode_to_vec | 3598880.42 | 223.09 | 1.00× |
+| complex_root_components_encode | leaves list | proto_rs encode_to_vec | 1905891.15 | 118.14 | 1.00× |
+| complex_root_components_encode | nested_leaf | prost encode_to_vec | 6645305.24 | 202.80 | 1.00× |
+| complex_root_components_encode | nested_leaf | proto_rs encode_to_vec | 3916852.40 | 119.53 | 1.00× |
+| complex_root_components_encode | status history | prost encode_to_vec | 735009.17 | 291.60 | 1.00× |
+| complex_root_components_encode | status history | proto_rs encode_to_vec | 526159.55 | 208.74 | 1.00× |
+| complex_root_components_encode | status lookup | prost encode_to_vec | 651064.20 | 255.19 | 1.00× |
+| complex_root_components_encode | status lookup | proto_rs encode_to_vec | 545038.79 | 213.63 | 1.00× |
+| complex_root_components_encode | tags | prost encode_to_vec | 13102689.50 | 337.38 | 1.00× |
+| complex_root_components_encode | tags | proto_rs encode_to_vec | 6317832.55 | 162.68 | 1.00× |
+| complex_root_decode | prost decode canonical input | 22701.68 | 81.79 | 1.00× |
+| complex_root_decode | prost decode proto_rs input | 23399.88 | 84.31 | 1.00× |
+| complex_root_decode | proto_rs decode canonical input | 24592.00 | 88.60 | 1.08× faster |
+| complex_root_decode | proto_rs decode proto_rs input | 24667.63 | 88.88 | 1.05× faster |
+| complex_root_encode | prost encode_to_vec | 77549.75 | 279.41 | 1.00× |
+| complex_root_encode | proto_rs encode_to_vec | 83404.39 | 300.50 | 1.08× faster |
+
+
 # Benchmark Run — 2025-10-29 18:46:30
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
