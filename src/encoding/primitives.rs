@@ -71,22 +71,22 @@ macro_rules! varint {
         pub mod $proto_ty {
             use crate::encoding::*;
 
-            #[inline]
+            #[inline(always)]
             pub fn encode_tagged(tag: u32, $v: $ty, buf: &mut impl BufMut) {
                 encode_key(tag, WireType::Varint, buf);
                 encode_varint($to_uint64, buf);
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encode($v: $ty, buf: &mut impl BufMut) {
                 encode_varint($to_uint64, buf);
             }
 
-            #[inline]
+            #[inline(always)]
             pub(crate) fn _encode_by_ref_tagged(tag: u32, value: &$ty, buf: &mut impl BufMut) {
                 encode_tagged(tag, *value, buf);
             }
-
+            #[inline]
             pub fn merge(
                 wire_type: WireType,
                 value: &mut $ty,
@@ -100,7 +100,7 @@ macro_rules! varint {
             }
 
             encode_repeated!($ty, by_value);
-
+            #[inline(always)]
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() {
                     return;
@@ -119,28 +119,28 @@ macro_rules! varint {
 
             merge_repeated_numeric!($ty, WireType::Varint, merge, merge_repeated);
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_tagged(tag: u32, $v: $ty) -> usize {
                 key_len(tag) + encoded_len_varint($to_uint64)
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len($v: $ty) -> usize {
                 encoded_len_varint($to_uint64)
             }
 
-            #[inline]
+            #[inline(always)]
             pub(crate) fn _encoded_len_by_ref_tagged(tag: u32, value: &$ty) -> usize {
                 encoded_len_tagged(tag, *value)
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
                 key_len(tag) * values.len()
                     + values.iter().map(|&$v| encoded_len_varint($to_uint64)).sum::<usize>()
             }
 
-            #[inline]
+           #[inline(always)]
             pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
@@ -187,21 +187,21 @@ macro_rules! fixed_width {
         pub mod $proto_ty {
             use crate::encoding::*;
 
-            #[inline]
+            #[inline(always)]
             pub fn encode_tagged(tag: u32, value: $ty, buf: &mut impl BufMut) {
                 encode_key(tag, $wire_type, buf);
                 buf.$put(value);
             }
-            #[inline]
+            #[inline(always)]
             pub fn encode(value: $ty, buf: &mut impl BufMut) {
                 buf.$put(value);
             }
 
-            #[inline]
+            #[inline(always)]
             pub(crate) fn _encode_by_ref_tagged(tag: u32, value: &$ty, buf: &mut impl BufMut) {
                 encode_tagged(tag, *value, buf);
             }
-
+            #[inline]
             pub fn merge(wire_type: WireType, value: &mut $ty, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
                 check_wire_type($wire_type, wire_type)?;
                 if buf.remaining() < $width {
@@ -212,7 +212,7 @@ macro_rules! fixed_width {
             }
 
             encode_repeated!($ty, by_value);
-
+            #[inline(always)]
             pub fn encode_packed(tag: u32, values: &[$ty], buf: &mut impl BufMut) {
                 if values.is_empty() {
                     return;
@@ -229,26 +229,25 @@ macro_rules! fixed_width {
 
             merge_repeated_numeric!($ty, $wire_type, merge, merge_repeated);
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len(_value: $ty) -> usize {
                 $width
             }
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_tagged(tag: u32, _value: $ty) -> usize {
                 key_len(tag) + $width
             }
-
-            #[inline]
+            #[inline(always)]
             pub(crate) fn _encoded_len_by_ref_tagged(tag: u32, _value: &$ty) -> usize {
                 encoded_len_tagged(tag, *_value)
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
                 (key_len(tag) + $width) * values.len()
             }
 
-            #[inline]
+            #[inline(always)]
             pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
@@ -272,23 +271,23 @@ macro_rules! length_delimited_encode {
     ($ty:ty) => {
         encode_repeated!($ty, by_ref);
         #[allow(clippy::ptr_arg)]
-        #[inline]
+        #[inline(always)]
         pub fn encoded_len_tagged(tag: u32, value: &$ty) -> usize {
             key_len(tag) + encoded_len_varint(value.len() as u64) + value.len()
         }
 
         #[allow(clippy::ptr_arg)]
-        #[inline]
+        #[inline(always)]
         pub fn encoded_len(value: &$ty) -> usize {
             encoded_len_varint(value.len() as u64) + value.len()
         }
 
-        #[inline]
+        #[inline(always)]
         pub(crate) fn _encoded_len_by_ref_tagged(tag: u32, value: &$ty) -> usize {
             encoded_len_tagged(tag, value)
         }
 
-        #[inline]
+        #[inline(always)]
         pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
             key_len(tag) * values.len() + values.iter().map(|v| encoded_len_varint(v.len() as u64) + v.len()).sum::<usize>()
         }
@@ -319,20 +318,20 @@ pub mod string {
     use super::encode_varint;
     use super::encoded_len_varint;
     use super::key_len;
-
+    #[inline(always)]
     pub fn encode_tagged(tag: u32, value: &String, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
         encode_varint(value.len() as u64, buf);
         buf.put_slice(value.as_bytes());
     }
-
+    #[inline(always)]
     pub fn encode(value: &String, buf: &mut impl BufMut) {
         buf.put_slice(value.as_bytes());
     }
     pub fn _encode_by_ref_tagged(tag: u32, value: &String, buf: &mut impl BufMut) {
         encode_tagged(tag, value, buf);
     }
-
+    #[inline]
     pub fn merge(wire_type: WireType, value: &mut String, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         // ## Unsafety
         //
@@ -413,19 +412,22 @@ pub mod bytes {
     use crate::encoding::BytesAdapterDecode;
     use crate::encoding::BytesAdapterEncode;
 
+    #[inline(always)]
     pub fn encode_tagged(tag: u32, value: &impl BytesAdapterEncode, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
         encode_varint(value.len() as u64, buf);
         value.append_to(buf);
     }
 
+    #[inline(always)]
     pub fn encode(value: &impl BytesAdapterEncode, buf: &mut impl BufMut) {
         value.append_to(buf);
     }
+    #[inline(always)]
     pub fn _encode_by_ref_tagged(tag: u32, value: &impl BytesAdapterEncode, buf: &mut impl BufMut) {
         encode_tagged(tag, value, buf);
     }
-
+    #[inline]
     pub fn merge(wire_type: WireType, value: &mut impl BytesAdapterDecode, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let len = decode_varint(buf)?;
@@ -449,7 +451,7 @@ pub mod bytes {
         value.replace_with(buf.copy_to_bytes(len));
         Ok(())
     }
-
+    #[inline]
     pub(super) fn merge_one_copy(wire_type: WireType, value: &mut impl BytesAdapterDecode, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let len = decode_varint(buf)?;

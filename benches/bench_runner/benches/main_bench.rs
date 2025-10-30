@@ -1033,7 +1033,6 @@ fn bench_complex_components_decode(c: &mut Criterion) {
     const GROUP: &str = "complex_root_components_decode";
 
     let root = sample_complex_root();
-    let prost_root = ComplexRootProst::from(&root);
 
     // Pre-encode for consistent decode input
     let nested_leaf_bytes = NestedLeaf::encode_to_vec(&root.leaves[0]);

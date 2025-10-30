@@ -299,6 +299,7 @@ pub trait ProtoExt: Sized {
                 return Ok(());
             }
             let remaining = buf.remaining_mut();
+            // TODO use std::hint::unlikely when stable
             if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
                 let total = key_len(1) + len;
                 if total > remaining {
@@ -322,6 +323,7 @@ pub trait ProtoExt: Sized {
             if len == 0 {
                 return Vec::new();
             }
+            // TODO use std::hint::unlikely when stable
             if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
                 let total = key_len(1) + len;
                 let mut buf = Vec::with_capacity(total);
