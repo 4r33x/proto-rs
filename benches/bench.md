@@ -1,4 +1,18 @@
 
+# Benchmark Run — 2025-10-30 16:55:30
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_bytes | prost decode | 24655108.17 | 329.18 | 1.00× |
+| collection_overhead_decode | one_bytes | proto_rs decode | 26549716.96 | 354.48 | 1.08× faster |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 40279400.43 | 537.79 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36425859.66 | 486.34 | 0.90× slower |
+| micro_fields_decode | one_bytes | prost decode | 24838822.92 | 402.70 | 1.00× |
+| micro_fields_decode | one_bytes | proto_rs decode | 25035427.85 | 405.89 | 1.00× |
+| micro_fields_encode | one_bytes | prost encode_to_vec | 40571827.67 | 657.77 | 1.00× |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36502041.70 | 591.79 | 0.90× slower |
+
+
 # Benchmark Run — 2025-10-30 16:47:20
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |

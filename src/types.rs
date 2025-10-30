@@ -89,6 +89,8 @@ macro_rules! impl_google_wrapper {
             fn encode_entrypoint(v: Self::EncodeInput<'_>, buf: &mut impl BufMut)  {
                 impl_google_wrapper!(@entrypoint, $mode, $module, v, buf)
             }
+
+            #[inline(always)]
             fn encode_with_tag(
                 tag: u32,
                 v: Self::EncodeInput<'_>,
@@ -121,7 +123,7 @@ macro_rules! impl_google_wrapper {
 
         impl ProtoExt for $ty {
             type Shadow<'b> = $ty where $ty: 'b;
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self::Shadow<'_>,
                 tag: u32,
