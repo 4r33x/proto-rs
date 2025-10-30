@@ -20,7 +20,7 @@ impl BytesAdapterEncode for Bytes {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(self.clone());
+        buf.put_slice(self.as_ref());
     }
 }
 
@@ -36,7 +36,7 @@ impl BytesAdapterEncode for Vec<u8> {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(self.as_slice());
+        buf.put_slice(self);
     }
 }
 
@@ -54,7 +54,7 @@ impl BytesAdapterEncode for &Vec<u8> {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(self.as_slice());
+        buf.put_slice(self);
     }
 }
 
@@ -64,7 +64,7 @@ impl BytesAdapterEncode for &Bytes {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put((*self).clone());
+        buf.put_slice(self.as_ref());
     }
 }
 
@@ -74,7 +74,7 @@ impl BytesAdapterEncode for &[u8] {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(*self);
+        buf.put_slice(self);
     }
 }
 
@@ -84,7 +84,7 @@ impl<const N: usize> BytesAdapterEncode for &[u8; N] {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(&self[..]);
+        buf.put_slice(&self[..]);
     }
 }
 
@@ -94,6 +94,6 @@ impl<const N: usize> BytesAdapterEncode for [u8; N] {
     }
 
     fn append_to(&self, buf: &mut impl BufMut) {
-        buf.put(&self[..]);
+        buf.put_slice(&self[..]);
     }
 }

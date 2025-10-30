@@ -1,4 +1,32 @@
 
+# Benchmark Run — 2025-10-30 17:06:33
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_bytes | prost decode | 6157607.14 | 82.21 | 1.00× |
+| collection_overhead_decode | one_bytes | proto_rs decode | 6168563.38 | 82.36 | 1.00× |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 13361081.03 | 178.39 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 12863640.03 | 171.75 | 0.96× slower |
+| micro_fields_decode | one_bytes | prost decode | 6984100.64 | 113.23 | 1.00× |
+| micro_fields_decode | one_bytes | proto_rs decode | 6996990.79 | 113.44 | 1.00× |
+| micro_fields_encode | one_bytes | prost encode_to_vec | 12358234.97 | 200.36 | 1.00× |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 13683687.34 | 221.85 | 1.18× faster |
+
+
+# Benchmark Run — 2025-10-30 17:04:37
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_string | prost decode | 9438772.15 | 81.01 | 1.00× |
+| collection_overhead_decode | one_string | proto_rs decode | 9943091.82 | 85.34 | 1.05× faster |
+| collection_overhead_encode | one_string | prost encode_to_vec | 14332697.93 | 123.02 | 1.00× |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 13308618.70 | 114.23 | 0.91× slower |
+| micro_fields_decode | one_string | prost decode | 9205435.00 | 122.91 | 1.00× |
+| micro_fields_decode | one_string | proto_rs decode | 8934650.99 | 119.29 | 0.97× slower |
+| micro_fields_encode | one_string | prost encode_to_vec | 14361761.73 | 191.75 | 1.00× |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 14146032.65 | 188.87 | 0.95× slower |
+
+
 # Benchmark Run — 2025-10-30 15:23:45
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
@@ -40,7 +68,7 @@
 | collection_overhead_encode | leaves_len1 | prost encode_to_vec | 15698318.51 | 509.02 | 1.00× |
 | collection_overhead_encode | leaves_len1 | proto_rs encode_to_vec | 17753789.01 | 575.67 | 1.13× faster |
 | collection_overhead_encode | one_bytes | prost encode_to_vec | 41162765.01 | 549.58 | 1.00× |
-| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36721964.57 | 490.29 | 0.89× slower |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36721964.57 | 490.29 | 0.96× slower |
 | collection_overhead_encode | one_complex_enum | prost encode_to_vec | 15653551.78 | 582.21 | 1.00× |
 | collection_overhead_encode | one_complex_enum | proto_rs encode_to_vec | 14667729.26 | 545.54 | 0.94× slower |
 | collection_overhead_encode | one_deep_message | prost encode_to_vec | 2657891.89 | 882.10 | 1.00× |
@@ -50,7 +78,7 @@
 | collection_overhead_encode | one_nested_leaf | prost encode_to_vec | 16853232.77 | 546.46 | 1.00× |
 | collection_overhead_encode | one_nested_leaf | proto_rs encode_to_vec | 16976417.27 | 550.46 | 1.00× |
 | collection_overhead_encode | one_string | prost encode_to_vec | 41151445.99 | 353.21 | 1.00× |
-| collection_overhead_encode | one_string | proto_rs encode_to_vec | 36930114.70 | 316.97 | 0.90× slower |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 36930114.70 | 316.97 | 0.91× slower |
 | collection_overhead_encode | status_history_len1 | prost encode_to_vec | 15138745.73 | 563.06 | 1.00× |
 | collection_overhead_encode | status_history_len1 | proto_rs encode_to_vec | 15723215.17 | 584.80 | 1.04× faster |
 | collection_overhead_encode | tags_len1 | prost encode_to_vec | 40507466.81 | 347.68 | 1.00× |
@@ -126,7 +154,7 @@
 | micro_fields_decode | one_string | prost decode | 31454775.95 | 419.97 | 1.00× |
 | micro_fields_decode | one_string | proto_rs decode | 32801476.32 | 437.95 | 1.04× faster |
 | micro_fields_encode | one_bytes | prost encode_to_vec | 40837660.59 | 662.08 | 1.00× |
-| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36699278.45 | 594.99 | 0.90× slower |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36699278.45 | 594.99 | 1.18× faster |
 | micro_fields_encode | one_complex_enum | prost encode_to_vec | 15699323.31 | 583.91 | 1.00× |
 | micro_fields_encode | one_complex_enum | proto_rs encode_to_vec | 15089701.46 | 561.24 | 0.96× slower |
 | micro_fields_encode | one_deep_message | prost encode_to_vec | 2640414.43 | 876.30 | 1.00× |
@@ -136,7 +164,7 @@
 | micro_fields_encode | one_nested_leaf | prost encode_to_vec | 16882429.65 | 547.41 | 1.00× |
 | micro_fields_encode | one_nested_leaf | proto_rs encode_to_vec | 17622537.38 | 571.41 | 1.04× faster |
 | micro_fields_encode | one_string | prost encode_to_vec | 41207777.13 | 550.18 | 1.00× |
-| micro_fields_encode | one_string | proto_rs encode_to_vec | 36986794.03 | 493.83 | 0.90× slower |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 36986794.03 | 493.83 | 0.95× slower |
 | zero_copy_vs_clone | prost clone + encode | 118569.93 | 427.21 | 1.00× |
 | zero_copy_vs_clone | proto_rs zero_copy | 221340.24 | 797.48 | 1.87× faster |
 
@@ -156,7 +184,7 @@
 | collection_overhead_encode | leaves_len1 | prost encode_to_vec | 16801376.73 | 544.78 | 1.00× |
 | collection_overhead_encode | leaves_len1 | proto_rs encode_to_vec | 17699321.70 | 573.90 | 1.05× faster |
 | collection_overhead_encode | one_bytes | prost encode_to_vec | 40840558.60 | 545.28 | 1.00× |
-| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36408340.04 | 486.10 | 0.89× slower |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36408340.04 | 486.10 | 0.96× slower |
 | collection_overhead_encode | one_complex_enum | prost encode_to_vec | 15598266.71 | 580.15 | 1.00× |
 | collection_overhead_encode | one_complex_enum | proto_rs encode_to_vec | 15086036.64 | 561.10 | 0.97× slower |
 | collection_overhead_encode | one_deep_message | prost encode_to_vec | 2529593.73 | 839.52 | 1.00× |
@@ -166,7 +194,7 @@
 | collection_overhead_encode | one_nested_leaf | prost encode_to_vec | 16672595.58 | 540.61 | 1.00× |
 | collection_overhead_encode | one_nested_leaf | proto_rs encode_to_vec | 17382640.23 | 563.63 | 1.04× faster |
 | collection_overhead_encode | one_string | prost encode_to_vec | 40719948.75 | 349.50 | 1.00× |
-| collection_overhead_encode | one_string | proto_rs encode_to_vec | 36474194.36 | 313.06 | 0.90× slower |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 36474194.36 | 313.06 | 0.91× slower |
 | collection_overhead_encode | status_history_len1 | prost encode_to_vec | 15070173.73 | 560.51 | 1.00× |
 | collection_overhead_encode | status_history_len1 | proto_rs encode_to_vec | 15680053.36 | 583.19 | 1.04× faster |
 | collection_overhead_encode | tags_len1 | prost encode_to_vec | 40347479.05 | 346.31 | 1.00× |
@@ -204,7 +232,7 @@
 | complex_root_encode | prost encode_to_vec | 230376.58 | 830.04 | 1.00× |
 | complex_root_encode | proto_rs encode_to_vec | 244659.31 | 881.50 | 1.06× faster |
 | micro_fields_encode | one_bytes | prost encode_to_vec | 41178507.12 | 667.61 | 1.00× |
-| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36719529.19 | 595.31 | 0.89× slower |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36719529.19 | 595.31 | 1.18× faster |
 | micro_fields_encode | one_complex_enum | prost encode_to_vec | 15543762.62 | 578.12 | 1.00× |
 | micro_fields_encode | one_complex_enum | proto_rs encode_to_vec | 15094418.22 | 561.41 | 0.97× slower |
 | micro_fields_encode | one_deep_message | prost encode_to_vec | 2631013.17 | 873.18 | 1.00× |
@@ -214,7 +242,7 @@
 | micro_fields_encode | one_nested_leaf | prost encode_to_vec | 16764358.58 | 543.58 | 1.00× |
 | micro_fields_encode | one_nested_leaf | proto_rs encode_to_vec | 17548469.66 | 569.01 | 1.05× faster |
 | micro_fields_encode | one_string | prost encode_to_vec | 41074037.72 | 548.40 | 1.00× |
-| micro_fields_encode | one_string | proto_rs encode_to_vec | 36981093.09 | 493.75 | 0.90× slower |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 36981093.09 | 493.75 | 0.95× slower |
 | zero_copy_vs_clone | prost clone + encode | 117238.59 | 422.41 | 1.00× |
 | zero_copy_vs_clone | proto_rs zero_copy | 215232.88 | 775.48 | 1.84× faster |
 
@@ -224,9 +252,9 @@
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
 | --- | --- | ---: | ---: | ---: |
 | collection_overhead_encode | one_bytes | prost encode_to_vec | 40984753.37 | 547.21 | 1.00× |
-| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36563284.70 | 488.17 | 0.89× slower |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36563284.70 | 488.17 | 0.96× slower |
 | micro_fields_encode | one_bytes | prost encode_to_vec | 40784476.76 | 661.22 | 1.00× |
-| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36452944.01 | 590.99 | 0.89× slower |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36452944.01 | 590.99 | 1.18× faster |
 
 
 # Benchmark Run — 2025-10-30 13:54:11
@@ -244,7 +272,7 @@
 | collection_overhead_encode | leaves_len1 | prost encode_to_vec | 17178352.04 | 557.01 | 1.00× |
 | collection_overhead_encode | leaves_len1 | proto_rs encode_to_vec | 16498745.14 | 534.97 | 0.96× slower |
 | collection_overhead_encode | one_bytes | prost encode_to_vec | 41199973.27 | 550.08 | 1.00× |
-| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36796445.24 | 491.29 | 0.89× slower |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36796445.24 | 491.29 | 0.96× slower |
 | collection_overhead_encode | one_complex_enum | prost encode_to_vec | 15336536.17 | 570.42 | 1.00× |
 | collection_overhead_encode | one_complex_enum | proto_rs encode_to_vec | 14629352.22 | 544.11 | 0.95× slower |
 | collection_overhead_encode | one_deep_message | prost encode_to_vec | 2666488.76 | 884.95 | 1.00× |
@@ -254,7 +282,7 @@
 | collection_overhead_encode | one_nested_leaf | prost encode_to_vec | 16792017.49 | 544.48 | 1.00× |
 | collection_overhead_encode | one_nested_leaf | proto_rs encode_to_vec | 17578641.11 | 569.99 | 1.05× faster |
 | collection_overhead_encode | one_string | prost encode_to_vec | 41168651.65 | 353.35 | 1.00× |
-| collection_overhead_encode | one_string | proto_rs encode_to_vec | 37045785.52 | 317.97 | 0.90× slower |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 37045785.52 | 317.97 | 0.91× slower |
 | collection_overhead_encode | status_history_len1 | prost encode_to_vec | 15037051.97 | 559.28 | 1.00× |
 | collection_overhead_encode | status_history_len1 | proto_rs encode_to_vec | 14048601.46 | 522.51 | 0.93× slower |
 | collection_overhead_encode | tags_len1 | prost encode_to_vec | 40210536.20 | 345.13 | 1.00× |
@@ -292,7 +320,7 @@
 | complex_root_encode | prost encode_to_vec | 231049.75 | 832.47 | 1.00× |
 | complex_root_encode | proto_rs encode_to_vec | 232501.48 | 837.70 | 1.00× |
 | micro_fields_encode | one_bytes | prost encode_to_vec | 41091089.45 | 666.19 | 1.00× |
-| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36643740.83 | 594.09 | 0.89× slower |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36643740.83 | 594.09 | 1.18× faster |
 | micro_fields_encode | one_complex_enum | prost encode_to_vec | 15785716.27 | 587.12 | 1.00× |
 | micro_fields_encode | one_complex_enum | proto_rs encode_to_vec | 14951232.21 | 556.09 | 0.95× slower |
 | micro_fields_encode | one_deep_message | prost encode_to_vec | 2657382.67 | 881.93 | 1.00× |
@@ -302,7 +330,7 @@
 | micro_fields_encode | one_nested_leaf | prost encode_to_vec | 16876683.78 | 547.23 | 1.00× |
 | micro_fields_encode | one_nested_leaf | proto_rs encode_to_vec | 17579966.55 | 570.03 | 1.04× faster |
 | micro_fields_encode | one_string | prost encode_to_vec | 41073651.89 | 548.39 | 1.00× |
-| micro_fields_encode | one_string | proto_rs encode_to_vec | 36902272.53 | 492.70 | 0.90× slower |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 36902272.53 | 492.70 | 0.95× slower |
 | zero_copy_vs_clone | prost clone + encode | 118928.45 | 428.50 | 1.00× |
 | zero_copy_vs_clone | proto_rs zero_copy | 209306.83 | 754.13 | 1.76× faster |
 
