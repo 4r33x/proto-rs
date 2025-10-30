@@ -96,10 +96,7 @@ macro_rules! impl_google_wrapper {
                 v: Self::EncodeInput<'_>,
                 buf: &mut impl BufMut,
             ) {
-                if impl_google_wrapper!(@is_default_encode, $mode, $is_default_encode, v) {
-                    encode_key(tag, Self::WIRE_TYPE, buf);
-                    Self::encode_entrypoint(v, buf)
-                }
+                impl_google_wrapper!(@encode_with_tag, $mode, $module, $is_default_encode, v, buf, tag)
             }
 
             #[inline(always)]
@@ -153,11 +150,13 @@ macro_rules! impl_google_wrapper {
     // by_value: pass (== rhs)
     (@is_default_len, by_value, ($op:tt $rhs:expr), $len:expr) => { (*$len) $op $rhs };
     (@is_default_encode,  by_value, ($op:tt $rhs:expr), $v:expr)    => { ($v)   $op $rhs };
+    (@is_default_encode,  by_value, (!$meth:ident), $v:expr)       => { !(($v).$meth()) };
     (@clear,           by_value, ($rhs:expr), $this:expr)        => { *$this = $rhs};
 
     // by_ref: pass (is_empty) and (clear)
     (@is_default_len, by_ref, ($meth:ident), $len:expr) => { ($len).$meth() };
     (@is_default_encode, by_ref, ($meth:ident), $v:expr)    => { ($v).$meth() };
+    (@is_default_encode, by_ref, (!$meth:ident), $v:expr)   => { !(($v).$meth()) };
 
     (@is_default_len,    by_ref, ($op:tt $rhs:expr), $len:expr) => { (*$len) $op $rhs };
     (@is_default_encode, by_ref, ($op:tt $rhs:expr), $v:expr)   => { ($v)   $op $rhs };
@@ -191,6 +190,21 @@ macro_rules! impl_google_wrapper {
     (@encode_call, by_ref, $module:ident, $v:ident, $buf:ident) => {
         $module::encode($v, $buf)
     };
+    (@encode_with_tag, by_value, $module:ident, $spec:tt, $v:ident, $buf:ident, $tag:ident) => {{
+        if impl_google_wrapper!(@is_default_encode, by_value, $spec, $v) {
+            encode_key($tag, Self::WIRE_TYPE, $buf);
+            Self::encode_entrypoint($v, $buf);
+        }
+    }};
+    (@encode_with_tag, by_ref, $module:ident, $spec:tt, $v:ident, $buf:ident, $tag:ident) => {{
+        let len = unsafe { Self::encoded_len_impl_raw(&$v) };
+        if len == 0 {
+            return;
+        }
+        encode_key($tag, Self::WIRE_TYPE, $buf);
+        encode_varint(len as u64, $buf);
+        impl_google_wrapper!(@encode_call, by_ref, $module, $v, $buf);
+    }};
 
 
     // --- Helper for entrypoint encoding ---
@@ -289,44 +303,39 @@ impl_google_wrapper!(
 );
 
 // by_ref (length-delimited)
-impl_google_wrapper!(
-    String,
-    string,
-    "StringValue",
-    by_ref,
-    (!= ""),
-    (== ""),
-    (clear),
-    crate::traits::ProtoKind::String
-);
-impl_google_wrapper!(
-    Vec<u8>,
-    bytes,
-    "BytesValue",
-    by_ref,
-    (!= b"" as &[u8]),
-    (== b"" as &[u8]),
-    (clear),
-    crate::traits::ProtoKind::Bytes
-);
-impl_google_wrapper!(
-    Bytes,
-    bytes,
-    "BytesValue",
-    by_ref,
-    (!= b"" as &[u8]),
-    (== b"" as &[u8]),
-    (clear),
-    crate::traits::ProtoKind::Bytes
-);
-
-// impl Name for Vec<u8> {
-//     const NAME: &'static str = "BytesValue";
-//     const PACKAGE: &'static str = "google.protobuf";
-//     fn type_url() -> String {
-//         format!("type.googleapis.com/{}.{}", Self::PACKAGE, Self::NAME)
-//     }
-// }
+// impl_google_wrapper!(
+//     String,
+//     string,
+//     "StringValue",
+//     by_ref,
+//     (!= ""),
+//     (== ""),
+//     (clear),
+//     crate::traits::ProtoKind::String
+// );
+// impl_google_wrapper!(
+//     Vec<u8>,
+//     bytes,
+//     "BytesValue",
+//     by_ref,
+//     (!= b"" as &[u8]),
+//     (== b"" as &[u8]),
+//     (clear),
+//     crate::traits::ProtoKind::Bytes
+// );
+// impl_google_wrapper!(
+//     Bytes,
+//     bytes,
+//     "BytesValue",
+//     by_ref,
+//     (!= b"" as &[u8]),
+//     (== b"" as &[u8]),
+//     (clear),
+//     crate::traits::ProtoKind::Bytes
+// );
+impl_google_wrapper!(String, string, "StringValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::String);
+impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
+impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
 
 impl ProtoShadow<Self> for () {
     type Sun<'a> = Self;
