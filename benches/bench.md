@@ -1,3 +1,29 @@
+# Benchmark Run — 2025-10-30 17:30:44
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_bytes | prost decode | 24953045.13 | 333.16 | 1.00× |
+| collection_overhead_decode | one_bytes | proto_rs decode | 26467310.41 | 353.38 | 1.06× faster |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 40688756.13 | 543.25 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36627995.16 | 489.04 | 0.90× slower |
+| micro_fields_decode | one_bytes | prost decode | 25029110.28 | 405.78 | 1.00× |
+| micro_fields_decode | one_bytes | proto_rs decode | 26047196.02 | 422.29 | 1.04× faster |
+| micro_fields_encode | one_bytes | prost encode_to_vec | 40768685.09 | 660.96 | 1.00× |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36548501.54 | 592.54 | 0.90× slower |
+
+# Benchmark Run — 2025-10-30 17:23:52
+
+| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_bytes | prost decode | 25095500.19 | 335.06 | 1.00× |
+| collection_overhead_decode | one_bytes | proto_rs decode | 26643392.60 | 355.73 | 1.06× faster |
+| collection_overhead_encode | one_bytes | prost encode_to_vec | 40701544.29 | 543.42 | 1.00× |
+| collection_overhead_encode | one_bytes | proto_rs encode_to_vec | 36371767.11 | 485.62 | 0.89× slower |
+| micro_fields_decode | one_bytes | prost decode | 25045844.83 | 406.05 | 1.00× |
+| micro_fields_decode | one_bytes | proto_rs decode | 26509658.55 | 429.79 | 1.06× faster |
+| micro_fields_encode | one_bytes | prost encode_to_vec | 40824842.50 | 661.87 | 1.00× |
+| micro_fields_encode | one_bytes | proto_rs encode_to_vec | 36353784.52 | 589.38 | 0.89× slower |
+
 
 # Benchmark Run — 2025-10-30 17:09:39
 

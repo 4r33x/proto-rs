@@ -273,13 +273,15 @@ macro_rules! length_delimited_encode {
         #[allow(clippy::ptr_arg)]
         #[inline(always)]
         pub fn encoded_len_tagged(tag: u32, value: &$ty) -> usize {
-            key_len(tag) + encoded_len_varint(value.len() as u64) + value.len()
+            let len = value.len();
+            key_len(tag) + encoded_len_varint(len as u64) + len
         }
 
         #[allow(clippy::ptr_arg)]
         #[inline(always)]
         pub fn encoded_len(value: &$ty) -> usize {
-            encoded_len_varint(value.len() as u64) + value.len()
+            let len = value.len();
+            encoded_len_varint(len as u64) + len
         }
 
         #[inline(always)]
@@ -289,7 +291,14 @@ macro_rules! length_delimited_encode {
 
         #[inline(always)]
         pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
-            key_len(tag) * values.len() + values.iter().map(|v| encoded_len_varint(v.len() as u64) + v.len()).sum::<usize>()
+            key_len(tag) * values.len()
+                + values
+                    .iter()
+                    .map(|v| {
+                        let len = v.len();
+                        encoded_len_varint(len as u64) + len
+                    })
+                    .sum::<usize>()
         }
     };
 }
