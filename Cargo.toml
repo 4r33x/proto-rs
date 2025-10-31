@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.6.0"
+version = "0.6.1"
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
@@ -39,12 +39,12 @@ members = [
 resolver = "3"
 
 [workspace.dependencies]
-prosto_derive = { version = "0.6", path = "crates/prosto_derive" }
-proto_rs = { version = "0.6", path = "./" }
-prost = { version = "0.14.1", default-features = false }
+prosto_derive = { version = "0.6.1", path = "crates/prosto_derive" }
+proto_rs = { version = "0.6.1", path = "./" }
+prost = { version = "0.14", default-features = false }
 bytes = { version = "1.10", default-features = false }
-inventory = { version = "0.3.21" }
-chrono = "0.4.42"
+inventory = { version = "0.3" }
+chrono = "0.4"
 criterion = { version = "0.7" }
 tonic = { version = "0.14.2" }
 
@@ -66,14 +66,14 @@ proptest = "1"
 rand = "0.9"
 criterion.workspace = true
 tonic.workspace = true
-tonic-prost = "0.14.1"
+tonic-prost = "0.14.2"
 prost.workspace = true
 
-tokio = { version = "1.47.1", features = ["full"] }
-tokio-stream = "0.1.17"
+tokio = { version = "1.48", features = ["full"] }
+tokio-stream = "0.1"
 
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 chrono.workspace = true
 tonic_prost_test = { path = "tests/tonic_prost_test" }
 
