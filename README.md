@@ -348,9 +348,9 @@ This walks the inventory of registered schemas and writes deduplicated `.proto` 
 
 `proto_rs` will only touch the filesystem when one of the following is set:
 
-- Enable the `emit-proto-files` cargo feature to always write generated files.
-- Set `PROTO_EMIT_FILE=1` (or `true`) to override the default at runtime.
-- Set `PROTO_EMIT_FILE=0` (or `false`) to force emission off even if the feature is enabled.
+- Enable the `emit-proto-files` cargo feature to write generated files.
+- Set `PROTO_EMIT_FILE=1` (or `true`) to turn on emission, overriding emit-proto-files behaviour
+- Set `PROTO_EMIT_FILE=0` (or `false`) to turn off emission, overriding emit-proto-files behaviour
 
 The emission logic is shared by all macros so you can switch behaviours without code changes.
 
