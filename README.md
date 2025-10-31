@@ -1,14 +1,6 @@
-# proto_rs 2.0
+# Rust as first-class citizen for gRPC ecosystem
 
-`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions. Version 2.0 tightens the ergonomics of every macro, removes redundant code paths in the runtime, and makes the crate's `no_std` story first class. The crate ships a set of procedural macros and runtime helpers that derive message encoders/decoders, generate `.proto` files on demand, and wire traits directly into Tonic servers and clients.
-
-## What can you build with `proto_rs`?
-
-* **Pure-Rust schema definitions.** Use `#[proto_message]`, `#[proto_rpc]`, and `#[proto_dump]` to declare every message and service in idiomatic Rust while the derive machinery keeps `.proto` files in sync for external consumers.
-* **Tailored encoding pipelines.** `ProtoShadow` lets you bolt custom serialization logic onto any message, opt into multiple domain "suns", and keep performance-sensitive conversions entirely under your control.
-* **Zero-copy Tonic integration.** Opt-in runtime helpers supply drop-in codecs, borrowed request/response wrappers, and `ToZeroCopy*` traits so RPC handlers can run without cloning payloads.
-* **Workspace-wide schema registries.** The build-time inventory collects every emitted `.proto`, making it easy to materialize or lint schemas from a single crate.
-* **`no_std` compatible runtimes.** Keep message encoding available on embedded targets, then flip features back on when you need filesystem access or gRPC bindings.
+`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
 
 ## Motivation
 
@@ -16,6 +8,13 @@
 1. I love to see Rust only as first-class citizen for all my stuff
 2. I hate bloat, so no protoc (shoutout to PewDiePie debloat trend)
 3. I don't want to touch .proto files at all
+
+## What can you build with `proto_rs`?
+
+* **Pure-Rust schema definitions.** Use `#[proto_message]`, `#[proto_rpc]`, and `#[proto_dump]` to declare every message and service in idiomatic Rust while the derive machinery keeps `.proto` files in sync for external consumers.
+* **Tailored encoding pipelines.** `ProtoShadow` lets you bolt custom serialization logic onto any message, opt into multiple domain "suns", and keep performance-sensitive conversions entirely under your control.
+* **Zero-copy Tonic integration.** Opt-in runtime helpers supply drop-in codecs, borrowed request/response wrappers, and `ToZeroCopy*` traits so RPC handlers can run without cloning payloads.
+* **Workspace-wide schema registries.** The build-time inventory collects every emitted `.proto`, making it easy to materialize or lint schemas from a single crate.
 
 For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this crate implement different approach
 
@@ -28,9 +27,201 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
 - **`no_std` by default runtime** – Runtime helpers lean entirely on `core` and `alloc`; enabling the `std` feature layers on Tonic integration and filesystem tooling without changing the API.
 
+
+Define your messages and services using the derive macros with native rust types:
+
+```rust
+use proto_rs::{proto_message, proto_rpc};
+
+#[proto_message(proto_path = "protos/gen_proto/rpc.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RizzPing;
+
+#[proto_rpc(
+    rpc_package = "sigma_rpc",
+    rpc_server = true,
+    rpc_client = true,
+    proto_path = "protos/gen_proto/sigma_rpc.proto",
+)]
+pub trait SigmaRpc {
+    type Stream: futures_core::Stream<Item = Result<FooResponse, tonic::Status>> + Send;
+
+    async fn rizz_ping(
+        &self,
+        request: tonic::Request<RizzPing>,
+    ) -> Result<tonic::Response<GoonPong>, tonic::Status>;
+
+    async fn rizz_uni(
+        &self,
+        request: tonic::Request<BarSub>,
+    ) -> Result<tonic::Response<Self::Stream>, tonic::Status>;
+}
+```
+
+Yep, all types here are just Rust types. We can then implement the server just like a normal Tonic service, but the `.proto` schema is generated for you whenever emission is enabled.
+
+
+## Advanced Features
+
+Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
+
+### Struct with Advanced Attributes
+
+```rust
+#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
+pub struct Attr {
+    #[proto(skip)]
+    id_skip: Vec<i64>,
+    id_vec: Vec<String>,
+    id_opt: Option<String>,
+    status: Status,
+    status_opt: Option<Status>,
+    status_vec: Vec<Status>,
+    #[proto(skip = "compute_hash_for_struct")]
+    hash: String,
+    #[proto(import_path = "google.protobuf")]
+    timestamp: Timestamp,
+    #[proto(import_path = "google.protobuf")]
+    timestamp_vec: Vec<Timestamp>,
+    #[proto(import_path = "google.protobuf")]
+    timestamp_opt: Option<Timestamp>,
+    #[proto(import_path = "google.protobuf")]
+    test_enum: TestEnum,
+    #[proto(import_path = "google.protobuf")]
+    test_enum_opt: Option<TestEnum>,
+    #[proto(import_path = "google.protobuf")]
+    test_enum_vec: Vec<TestEnum>,
+    #[proto(into = "i64", into_fn = "datetime_to_i64", from_fn = "i64_to_datetime")]
+    pub updated_at: DateTime<Utc>,
+}
+```
+
+Generated proto:
+
+```proto
+message Attr {
+  repeated string id_vec = 1;
+  optional string id_opt = 2;
+  Status status = 3;
+  optional Status status_opt = 4;
+  repeated Status status_vec = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  repeated google.protobuf.Timestamp timestamp_vec = 7;
+  optional google.protobuf.Timestamp timestamp_opt = 8;
+  google.protobuf.TestEnum test_enum = 9;
+  optional google.protobuf.TestEnum test_enum_opt = 10;
+  repeated google.protobuf.TestEnum test_enum_vec = 11;
+  int64 updated_at = 12;
+}
+```
+
+### Complex Enums
+
+```rust
+#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
+pub enum VeryComplex {
+    First,
+    Second(Address),
+    Third {
+        id: u64,
+        address: Address,
+    },
+    Repeated {
+        id: Vec<u64>,
+        address: Vec<Address>,
+    },
+    Option {
+        id: Option<u64>,
+        address: Option<Address>,
+    },
+    Attr {
+        #[proto(skip)]
+        id_skip: Vec<i64>,
+        id_vec: Vec<String>,
+        id_opt: Option<String>,
+        status: Status,
+        status_opt: Option<Status>,
+        status_vec: Vec<Status>,
+        #[proto(skip = "compute_hash_for_enum")]
+        hash: String,
+        #[proto(import_path = "google.protobuf")]
+        timestamp: Timestamp,
+        #[proto(import_path = "google.protobuf")]
+        timestamp_vec: Vec<Timestamp>,
+        #[proto(import_path = "google.protobuf")]
+        timestamp_opt: Option<Timestamp>,
+        #[proto(import_path = "google.protobuf")]
+        test_enum: TestEnum,
+        #[proto(import_path = "google.protobuf")]
+        test_enum_opt: Option<TestEnum>,
+        #[proto(import_path = "google.protobuf")]
+        test_enum_vec: Vec<TestEnum>,
+    },
+}
+```
+
+Generated proto:
+
+```proto
+message VeryComplexProto {
+  oneof value {
+    VeryComplexProtoFirst first = 1;
+    Address second = 2;
+    VeryComplexProtoThird third = 3;
+    VeryComplexProtoRepeated repeated = 4;
+    VeryComplexProtoOption option = 5;
+    VeryComplexProtoAttr attr = 6;
+  }
+}
+
+message VeryComplexProtoFirst {}
+
+message VeryComplexProtoThird {
+  uint64 id = 1;
+  Address address = 2;
+}
+
+message VeryComplexProtoRepeated {
+  repeated uint64 id = 1;
+  repeated Address address = 2;
+}
+
+message VeryComplexProtoOption {
+  optional uint64 id = 1;
+  optional Option address = 2;
+}
+
+message VeryComplexProtoAttr {
+  repeated string id_vec = 1;
+  optional string id_opt = 2;
+  Status status = 3;
+  optional Status status_opt = 4;
+  repeated Status status_vec = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  repeated google.protobuf.Timestamp timestamp_vec = 7;
+  optional google.protobuf.Timestamp timestamp_opt = 8;
+  google.protobuf.TestEnum test_enum = 9;
+  optional google.protobuf.TestEnum test_enum_opt = 10;
+  repeated google.protobuf.TestEnum test_enum_vec = 11;
+}
+```
+
+## Inject Proto Imports
+
+It's not mandatory to use this macro at all, macros above derive and inject imports from attributes automaticly
+
+But in case you need it, to add custom imports to your generated .proto files use the `inject_proto_import!` macro:
+
+```rust
+inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common");
+```
+
+This will inject the specified import statements into the target .proto file
+
+
 ## Custom encode/decode pipelines with `ProtoShadow`
 
-`ProtoExt` types pair with a companion `Shadow` type that implements [`ProtoShadow`](src/traits.rs). This trait defines how a value is lowered into the bytes that will be sent over the wire and how it is rebuilt during decoding. The default derive covers most standard Rust types, but you can substitute a custom representation when you need to interoperate with an existing protocol or avoid lossy conversions.
+`ProtoExt` types pair with a companion `Shadow` type that implements [`ProtoShadow`](src/traits.rs). This trait defines how a value is lowered into the bytes that will be sent over the wire and how it is rebuilt during decoding. The default derive covers most standard Rust types, but you can substitute a custom representation when you need to interoperate with an existing protocol or avoid lossy conversions. Default Shadow of type is &Self for complex types and Self for primitive
 
 The [`fastnum` decimal adapter](src/custom_types/fastnum/signed.rs) shows how to map `fastnum::D128` into a compact integer layout while still exposing ergonomic Rust APIs:
 
@@ -135,60 +326,11 @@ If you already have a configured `tonic::Request<&T>`, call `request.to_zero_cop
 
 ### Performance trade-offs vs. Prost
 
-The runtime exposes both zero-copy and owned-code paths so you can pick the trade-off that matches your workload. Wrapping payloads in `ZeroCopyRequest`/`ZeroCopyResponse` means the encoder works with borrowed data (`SunByRef`) and never materializes owned clones before writing bytes to the socket, which is why the benchmark suite records 30–70% higher throughput than `prost::Message` when measuring identical service implementations (`bench_zero_copy_vs_clone`). When you stick to the convenience helpers that take owned messages (`ProtoRequest`/`ProtoResponse`), the encode path performs an extra conversion into the shadow view before writing. That extra hop shows up in the Criterion tables as the `proto_rs encode_to_vec` scenario, which currently runs about 15–20% slower than Prost's hand-tuned `encode_to_vec` on the same payload shapes. Use zero-copy when latency is king; fall back to the owned APIs when ergonomics matter more than raw throughput.
+The runtime exposes both zero-copy and owned-code paths so you can pick the trade-off that matches your workload. Wrapping payloads in `ZeroCopyRequest`/`ZeroCopyResponse` means the encoder works with borrowed data (`SunByRef`) and never materializes owned clones before writing bytes to the socket, which is why the benchmark suite records 70% higher throughput than `prost::Message` when measuring identical service implementations (`bench_zero_copy_vs_clone`).
 
-## Getting started
+Owned encoding\decoding is somewhat slower or faster in somecases - see bench section
 
-Add `proto_rs` to your `Cargo.toml` and optionally enable features you need (for example to eagerly emit `.proto` files during development):
 
-```toml
-[dependencies]
-proto_rs = { version = "0.6", features = ["emit-proto-files"] }
-tonic = "0.14"
-```
-
-Define your messages and services using the derive macros with native rust types:
-
-```rust
-use proto_rs::{proto_message, proto_rpc};
-
-#[proto_message(proto_path = "protos/gen_proto/rpc.proto")]
-#[derive(Clone, Debug, PartialEq)]
-pub struct RizzPing;
-
-#[proto_rpc(
-    rpc_package = "sigma_rpc",
-    rpc_server = true,
-    rpc_client = true,
-    proto_path = "protos/gen_proto/sigma_rpc.proto",
-)]
-pub trait SigmaRpc {
-    type Stream: futures_core::Stream<Item = Result<FooResponse, tonic::Status>> + Send;
-
-    async fn rizz_ping(
-        &self,
-        request: tonic::Request<RizzPing>,
-    ) -> Result<tonic::Response<GoonPong>, tonic::Status>;
-
-    async fn rizz_uni(
-        &self,
-        request: tonic::Request<BarSub>,
-    ) -> Result<tonic::Response<Self::Stream>, tonic::Status>;
-}
-```
-
-Once compiled, the trait can be implemented just like a normal Tonic service, but the `.proto` schema is generated for you whenever emission is enabled.
-
-### Running without `std`
-
-Disable the default feature set if you only need message encoding/decoding in `no_std` contexts:
-
-```toml
-[dependencies]
-proto_rs = { version = "0.6", default-features = false }
-```
-
-All core traits (`ProtoExt`, wrappers, etc.) remain available. Re-enable the `std` feature (enabled by default) when you want the Tonic codec helpers and RPC generation macros.
 
 ## Collecting schemas across a workspace
 
@@ -232,7 +374,7 @@ The test suite exercises more than 400 codec and integration scenarios to ensure
 
 ## Benchmarks
 
-The repository bundles a standalone Criterion harness under `benches/bench_runner` alongside a helper shell script (`bench.sh`). Run the benches with:
+The repository bundles a standalone Criterion harness under `benches/bench_runner`. Run the benches with:
 
 ```bash
 cargo bench -p bench_runner
@@ -246,8 +388,8 @@ Each run appends a markdown report to `benches/bench.md`, including the `bench_z
 - `tonic` *(default)* – compiles the gRPC integration layer, including the drop-in codecs, zero-copy request/response wrappers, and Tonic service/client generators.
 - `build-schemas` – register generated schemas at compile time so they can be written later.
 - `emit-proto-files` – eagerly write `.proto` files during compilation.
-- `fastnum`, `solana` – enable extra type support.
 - `stable` – compile everything on the stable toolchain by boxing async state. See below for trade-offs.
+- `fastnum`, `solana` – enable extra type support.
 
 ### Stable vs. nightly builds
 
