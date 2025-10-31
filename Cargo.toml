@@ -52,7 +52,6 @@ tonic = { version = "0.14.2" }
 prosto_derive.workspace = true
 bytes.workspace = true
 tonic = { workspace = true, optional = true }
-futures-core = { version = "0.3", optional = true }
 fastnum = { version = "0.7.2", optional = true }
 inventory = { workspace = true, optional = true }
 solana-address = { version = "1", optional = true }
@@ -81,7 +80,7 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 [features]
 std = ["bytes/std"]
-tonic = ["dep:tonic", "dep:futures-core", "bytes/std", "std"]
+tonic = ["dep:tonic", "bytes/std", "std"]
 fastnum = ["dep:fastnum"]
 solana = ["dep:solana-address", "dep:solana-signature"]
 

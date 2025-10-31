@@ -54,8 +54,6 @@ pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
 pub use crate::name::Name;
 #[cfg(feature = "tonic")]
-pub use crate::tonic::BoxEncodeStream;
-#[cfg(feature = "tonic")]
 pub use crate::tonic::EncoderExt;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoRequest;
@@ -69,8 +67,6 @@ pub use crate::tonic::ToZeroCopyResponse;
 pub use crate::tonic::ZeroCopyRequest;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ZeroCopyResponse;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::box_map_proto_stream;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_response;
 #[cfg(feature = "tonic")]

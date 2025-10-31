@@ -219,12 +219,9 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
 fn generate_stream_associated_type(method: &MethodInfo) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let item_type = method.stream_item_type.as_ref().unwrap();
-    let inner_type = method.inner_response_type.as_ref().unwrap();
-    let response_proto = generate_response_proto_type(inner_type);
-    let encode_item = quote! { <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode };
 
     quote! {
-        type #stream_name: tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#encode_item, tonic::Status>> + ::core::marker::Send + 'static;
+        type #stream_name: tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#item_type, tonic::Status>> + ::core::marker::Send + 'static;
     }
 }
 
@@ -246,17 +243,10 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
     (blanket_types, blanket_methods)
 }
 
-fn generate_blanket_stream_type(method: &MethodInfo, _trait_name: &syn::Ident) -> TokenStream {
+fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
-    let item_type = method.stream_item_type.as_ref().unwrap();
-    let inner_type = method.inner_response_type.as_ref().unwrap();
-    let response_proto = generate_response_proto_type(inner_type);
 
-    quote! {
-        type #stream_name = ::proto_rs::BoxEncodeStream<
-            <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
-        >;
-    }
+    quote! { type #stream_name = <Self as super::#trait_name>::#stream_name; }
 }
 
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
@@ -324,9 +314,6 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let method_name = &method.name;
     let request_type = &method.request_type;
     let stream_name = method.stream_type_name.as_ref().unwrap();
-    let item_type = method.stream_item_type.as_ref().unwrap();
-    let inner_type = method.inner_response_type.as_ref().unwrap();
-    let response_proto = generate_response_proto_type(inner_type);
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
@@ -343,11 +330,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     native_request
                 ).await?;
 
-                let encoded_response = native_response.map(|stream| {
-                    ::proto_rs::box_map_proto_stream::<_, #item_type, #response_proto>(stream)
-                });
-
-                Ok(encoded_response)
+                Ok(native_response)
             }
         },
         false,
@@ -454,7 +437,20 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let call_future = wrap_async_block(
         quote! {
             async move {
-                <T as #trait_name>::#method_name(&inner, request).await
+                let response = <T as #trait_name>::#method_name(&inner, request).await?;
+                let mapped = response.map(|stream| {
+                    ::tonic::codegen::tokio_stream::StreamExt::map(
+                        stream,
+                        ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
+                            as fn(
+                                ::core::result::Result<#item_type, tonic::Status>,
+                            ) -> ::core::result::Result<
+                                <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                                tonic::Status
+                            >,
+                    )
+                });
+                Ok(mapped)
             }
         },
         true,
@@ -467,7 +463,15 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
 
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
-                type ResponseStream = T::#stream_name;
+                type ResponseStream = ::tonic::codegen::tokio_stream::adapters::Map<
+                    T::#stream_name,
+                    fn(
+                        ::core::result::Result<#item_type, tonic::Status>
+                    ) -> ::core::result::Result<
+                        <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                        tonic::Status
+                    >
+                >;
                 type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
