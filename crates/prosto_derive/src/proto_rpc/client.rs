@@ -6,7 +6,6 @@ use quote::quote;
 use crate::proto_rpc::rpc_common::client_module_name;
 use crate::proto_rpc::rpc_common::client_struct_name;
 use crate::proto_rpc::rpc_common::generate_client_with_interceptor;
-use crate::proto_rpc::rpc_common::generate_codec_init;
 use crate::proto_rpc::rpc_common::generate_native_to_proto_request_streaming;
 use crate::proto_rpc::rpc_common::generate_native_to_proto_request_unary;
 use crate::proto_rpc::rpc_common::generate_proto_to_native_response;
@@ -61,8 +60,8 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             where
                 T: tonic::client::GrpcService<tonic::body::Body>,
                 T::Error: Into<StdError>,
-                T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
-                <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+                T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + ::core::marker::Send + 'static,
+                <T::ResponseBody as Body>::Error: Into<StdError> + ::core::marker::Send,
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
@@ -103,26 +102,28 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
     let route_path = generate_route_path(package_name, trait_name, method_name);
 
     let ready_check = generate_ready_check();
-    let codec_init = generate_codec_init();
-    let request_conversion = generate_native_to_proto_request_unary();
+    let request_conversion = generate_native_to_proto_request_unary(request_type);
     let response_conversion = generate_proto_to_native_response(response_type);
 
     quote! {
-        pub async fn #method_name(
+        pub async fn #method_name<R>(
             &mut self,
-            request: impl tonic::IntoRequest<#request_type>,
-        ) -> std::result::Result<tonic::Response<#response_type>, tonic::Status> {
-            #ready_check
-            #codec_init
-            let path = http::uri::PathAndQuery::from_static(#route_path);
-
+            request: R,
+        ) -> ::core::result::Result<tonic::Response<#response_type>, tonic::Status>
+        where
+            R: ::proto_rs::ProtoRequest<#request_type>,
+            ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
+        {
             #request_conversion
-
-            proto_req.extensions_mut().insert(
+            #ready_check
+            let mut request = request.into_request();
+            request.extensions_mut().insert(
                 tonic::codegen::GrpcMethod::new(#package_name, stringify!(#method_name))
             );
 
-            let response = self.inner.unary(proto_req, path, codec).await?;
+            let codec = ::proto_rs::ProtoCodec::<R::Encode, #response_type, R::Mode>::default();
+            let path = http::uri::PathAndQuery::from_static(#route_path);
+            let response = self.inner.unary(request, path, codec).await?;
 
             #response_conversion
         }
@@ -136,22 +137,24 @@ fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, tra
     let route_path = generate_route_path(package_name, trait_name, method_name);
 
     let ready_check = generate_ready_check();
-    let codec_init = generate_codec_init();
-    let request_conversion = generate_native_to_proto_request_streaming();
+    let request_conversion = generate_native_to_proto_request_streaming(request_type);
     let stream_conversion = generate_stream_conversion(inner_response_type);
 
     quote! {
-        pub async fn #method_name(
+        pub async fn #method_name<R>(
             &mut self,
-            request: impl tonic::IntoRequest<#request_type>,
-        ) -> std::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = Result<#inner_response_type, tonic::Status>>>, tonic::Status> {
-            #ready_check
-            #codec_init
-            let path = http::uri::PathAndQuery::from_static(#route_path);
-
+            request: R,
+        ) -> ::core::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#inner_response_type, tonic::Status>>>, tonic::Status>
+        where
+            R: ::proto_rs::ProtoRequest<#request_type>,
+            ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
+        {
             #request_conversion
-
-            let response = self.inner.server_streaming(proto_req, path, codec).await?;
+            #ready_check
+            let request = request.into_request();
+            let codec = ::proto_rs::ProtoCodec::<R::Encode, #inner_response_type, R::Mode>::default();
+            let path = http::uri::PathAndQuery::from_static(#route_path);
+            let response = self.inner.server_streaming(request, path, codec).await?;
 
             #stream_conversion
         }

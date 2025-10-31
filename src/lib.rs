@@ -1,22 +1,89 @@
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type, maybe_uninit_array_assume_init))]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::inline_always)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate self as proto_rs;
+
 pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
 pub use prosto_derive::proto_rpc;
+pub mod utils;
+#[cfg(not(feature = "no-recursion-limit"))]
+const RECURSION_LIMIT: u32 = 100;
 
+mod custom_types;
+
+#[doc(hidden)]
+pub extern crate alloc;
+
+// Re-export the bytes crate for use within derived code.
+pub use bytes;
+
+mod coders;
+mod error;
+mod name;
+#[cfg(feature = "tonic")]
+mod tonic;
+mod traits;
 mod types;
-pub use types::*;
+mod wrappers;
 
-pub trait HasProto {
-    type Proto: prost::Message;
-    fn to_proto(&self) -> Self::Proto;
-    fn from_proto(proto: Self::Proto) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        Self: Sized;
-}
+#[doc(hidden)]
+pub mod encoding;
+
+pub use crate::coders::BytesMode;
+pub use crate::coders::ProtoCodec;
+pub use crate::coders::ProtoEncoder;
+pub use crate::coders::SunByRef;
+pub use crate::coders::SunByVal;
+pub use crate::encoding::length_delimiter::decode_length_delimiter;
+pub use crate::encoding::length_delimiter::encode_length_delimiter;
+pub use crate::encoding::length_delimiter::length_delimiter_len;
+pub use crate::error::DecodeError;
+pub use crate::error::EncodeError;
+pub use crate::error::UnknownEnumValue;
+pub use crate::name::Name;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::EncoderExt;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::ProtoRequest;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::ProtoResponse;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::ToZeroCopyRequest;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::ToZeroCopyResponse;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::ZeroCopyRequest;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::ZeroCopyResponse;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::map_proto_response;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::map_proto_stream_result;
+pub use crate::traits::OwnedSunOf;
+pub use crate::traits::ProtoExt;
+pub use crate::traits::ProtoKind;
+pub use crate::traits::ProtoShadow;
+pub use crate::traits::ProtoWire;
+// pub use crate::traits::RepeatedCollection;
+pub use crate::traits::Shadow;
+pub use crate::traits::SunOf;
+pub use crate::traits::ViewOf;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled
-#[cfg(feature = "build-schemas")]
+#[cfg(all(feature = "build-schemas", feature = "std"))]
 pub mod schemas {
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
@@ -67,7 +134,7 @@ pub mod schemas {
     /// # Example
     /// ```no_run
     /// // In main.rs or build.rs (all protos should be declared in other_crates)
-    /// fn main() {
+    /// fn your_main() {
     ///     if std::env::var("GENERATE_PROTOS").is_ok() {
     ///         let count = proto_rs::schemas::write_all("protos")
     ///             .expect("Failed to write proto files");
@@ -76,13 +143,17 @@ pub mod schemas {
     /// }
     /// ```
     /// Write all registered proto schemas to a directory
+    /// # Errors
+    ///
+    /// Will return `Err` if fs throws error
     pub fn write_all(output_dir: &str) -> io::Result<usize> {
+        use std::fmt::Write;
         fs::remove_dir_all(output_dir)?;
         fs::create_dir_all(output_dir)?;
         let mut count = 0;
 
         for (file_name, items) in REGISTRY.iter() {
-            let output_path = format!("{}/{}", output_dir, file_name);
+            let output_path = format!("{output_dir}/{file_name}");
 
             if let Some(parent) = std::path::Path::new(&output_path).parent() {
                 fs::create_dir_all(parent)?;
@@ -108,11 +179,12 @@ pub mod schemas {
 
             output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
             output.push_str("syntax = \"proto3\";\n");
-            output.push_str(&format!("package {};\n", package_name));
+            writeln!(&mut output, "package {package_name};").unwrap();
+
             output.push('\n');
 
             // Add imports first
-            for import in imports.iter() {
+            for import in &imports {
                 output.push_str(import);
             }
 
@@ -145,7 +217,7 @@ pub mod schemas {
 }
 
 // Example build.rs that users can copy:
-#[cfg(all(feature = "build-schemas", doc))]
+#[cfg(all(feature = "build-schemas", feature = "std", doc))]
 /// Example build.rs for consuming projects
 ///
 /// ```no_run

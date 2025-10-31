@@ -7,53 +7,66 @@ use syn::ItemTrait;
 use syn::PatType;
 use syn::ReturnType;
 use syn::TraitItem;
+use syn::TraitItemType;
 use syn::Type;
 use syn::TypePath;
 
 use crate::utils::MethodInfo;
 
+struct ParsedMethodSignature {
+    request_type: Type,
+    response_type: Type,
+    response_return_type: Type,
+    response_is_result: bool,
+    is_streaming: bool,
+    stream_type_name: Option<syn::Ident>,
+    inner_response_type: Option<Type>,
+    stream_item_type: Option<Type>,
+}
+
+impl ParsedMethodSignature {
+    fn new(sig: &syn::Signature, trait_items: &[TraitItem]) -> Self {
+        let request_type = extract_request_type(sig);
+        let (response_return_type, response_is_result) = extract_response_return(sig);
+        let response_type = extract_proto_type(&response_return_type);
+        let (is_streaming, stream_type_name, inner_response_type, stream_item_type) = extract_stream_metadata(&response_type, trait_items);
+
+        Self {
+            request_type,
+            response_type,
+            response_return_type,
+            response_is_result,
+            is_streaming,
+            stream_type_name,
+            inner_response_type,
+            stream_item_type,
+        }
+    }
+}
+
 /// Extract methods and associated types from the trait definition
 pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<TokenStream>) {
-    let mut methods = Vec::new();
+    let mut methods = Vec::with_capacity(input.items.len());
     let mut user_associated_types = Vec::new();
 
     for item in &input.items {
         match item {
             TraitItem::Fn(method) => {
                 let method_name = method.sig.ident.clone();
-                let method_attrs = method.attrs.clone();
-                let (request_type, response_type) = extract_types(&method.sig);
-                let is_streaming = is_stream_response(&method.sig);
+                let signature = ParsedMethodSignature::new(&method.sig, &input.items);
 
-                let (stream_type_name, inner_response_type) = if is_streaming {
-                    let stream_name = extract_stream_type_name(&response_type);
-                    let inner_type = input
-                        .items
-                        .iter()
-                        .find_map(|item| {
-                            if let TraitItem::Type(type_item) = item
-                                && type_item.ident == stream_name
-                            {
-                                return Some(extract_inner_type_from_bounds(&type_item.bounds));
-                            }
-                            None
-                        })
-                        .unwrap_or_else(|| panic!("Could not find associated type definition for {}", stream_name));
-                    (Some(stream_name), Some(inner_type))
-                } else {
-                    (None, None)
-                };
-
-                let user_method_signature = generate_user_method_signature(&method_attrs, &method_name, &request_type, &response_type, is_streaming, stream_type_name.as_ref());
+                let user_method_signature = generate_user_method_signature(&method.attrs, &method_name, &signature);
 
                 methods.push(MethodInfo {
                     name: method_name,
-                    _attrs: method_attrs,
-                    request_type,
-                    response_type,
-                    is_streaming,
-                    stream_type_name,
-                    inner_response_type,
+                    request_type: signature.request_type,
+                    response_type: signature.response_type,
+                    response_return_type: signature.response_return_type,
+                    response_is_result: signature.response_is_result,
+                    is_streaming: signature.is_streaming,
+                    stream_type_name: signature.stream_type_name,
+                    inner_response_type: signature.inner_response_type,
+                    stream_item_type: signature.stream_item_type,
                     user_method_signature,
                 });
             }
@@ -75,106 +88,144 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
 }
 
 /// Generate user-facing method signature for the trait
-fn generate_user_method_signature(
-    attrs: &[syn::Attribute],
-    method_name: &syn::Ident,
-    request_type: &Type,
-    response_type: &Type,
-    is_streaming: bool,
-    stream_type_name: Option<&syn::Ident>,
-) -> TokenStream {
-    if is_streaming {
-        let stream_name = stream_type_name.unwrap();
+fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::Ident, signature: &ParsedMethodSignature) -> TokenStream {
+    let future_output = if signature.is_streaming {
+        let stream_name = signature.stream_type_name.as_ref().expect("streaming method must define stream name");
+        quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
+    } else if signature.response_is_result {
+        let response_return_type = &signature.response_return_type;
+        quote! { ::core::result::Result<#response_return_type, tonic::Status> }
+    } else {
+        let response_return_type = &signature.response_return_type;
+        quote! { #response_return_type }
+    };
+
+    let request_type = &signature.request_type;
+
+    let future_type = method_future_return_type(future_output);
+
+    quote! {
+        #(#attrs)*
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_type>,
+        ) -> #future_type
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
+    }
+}
+
+pub(crate) fn method_future_return_type(future_output: TokenStream) -> TokenStream {
+    quote! {
+        impl ::core::future::Future<Output = #future_output> + ::core::marker::Send + '_
+    }
+}
+
+pub(crate) fn associated_future_type(future_output: TokenStream, requires_static: bool) -> TokenStream {
+    let static_bound = if requires_static {
+        quote! { + 'static }
+    } else {
+        quote! {}
+    };
+
+    if cfg!(feature = "stable") {
         quote! {
-            #(#attrs)*
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
-                request: tonic::Request<#request_type>,
-            ) -> ::core::pin::Pin<Box<
-                dyn ::core::future::Future<
-                    Output = Result<tonic::Response<Self::#stream_name>, tonic::Status>
-                > + ::core::marker::Send + 'async_trait
-            >>
-            where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+            ::core::pin::Pin<
+                ::proto_rs::alloc::boxed::Box<
+                    dyn ::core::future::Future<Output = #future_output>
+                        + ::core::marker::Send
+                        #static_bound
+                >
+            >
         }
     } else {
         quote! {
-            #(#attrs)*
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
-                request: tonic::Request<#request_type>,
-            ) -> ::core::pin::Pin<Box<
-                dyn ::core::future::Future<
-                    Output = Result<tonic::Response<#response_type>, tonic::Status>
-                > + ::core::marker::Send + 'async_trait
-            >>
-            where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+            impl ::core::future::Future<Output = #future_output> + ::core::marker::Send #static_bound
         }
     }
 }
 
-/// Extract request and response types from method signature
-pub fn extract_types(sig: &syn::Signature) -> (Box<Type>, Box<Type>) {
-    let mut request_type = None;
-    let mut response_type = None;
-
-    // Extract request type from arguments
-    for arg in &sig.inputs {
-        if let FnArg::Typed(PatType { ty, .. }) = arg
-            && let Type::Path(TypePath { path, .. }) = &**ty
-            && let Some(segment) = path.segments.last()
-            && segment.ident == "Request"
-            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-            && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-        {
-            request_type = Some(Box::new(inner_ty.clone()));
-        }
+pub(crate) fn wrap_async_block(block: TokenStream, boxed: bool) -> TokenStream {
+    if boxed && cfg!(feature = "stable") {
+        quote! { ::proto_rs::alloc::boxed::Box::pin(#block) }
+    } else {
+        block
     }
-
-    // Extract response type from return type
-    if let ReturnType::Type(_, ty) = &sig.output
-        && let Type::Path(TypePath { path, .. }) = &**ty
-        && let Some(segment) = path.segments.last()
-        && segment.ident == "Result"
-        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-        && let Some(syn::GenericArgument::Type(Type::Path(TypePath { path, .. }))) = args.args.first()
-        && let Some(response_segment) = path.segments.last()
-        && response_segment.ident == "Response"
-        && let syn::PathArguments::AngleBracketed(response_args) = &response_segment.arguments
-        && let Some(syn::GenericArgument::Type(inner_ty)) = response_args.args.first()
-    {
-        response_type = Some(Box::new(inner_ty.clone()));
-    }
-
-    (request_type.expect("Could not extract request type"), response_type.expect("Could not extract response type"))
 }
 
-/// Check if the response type is a stream
-pub fn is_stream_response(sig: &syn::Signature) -> bool {
+fn extract_request_type(sig: &syn::Signature) -> Type {
+    sig.inputs
+        .iter()
+        .find_map(|arg| {
+            if let FnArg::Typed(PatType { ty, .. }) = arg
+                && let Type::Path(TypePath { path, .. }) = &**ty
+                && let Some(segment) = path.segments.last()
+                && segment.ident == "Request"
+                && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+            {
+                Some(inner_ty.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| panic!("Could not extract request type"))
+}
+
+fn extract_response_return(sig: &syn::Signature) -> (Type, bool) {
     if let ReturnType::Type(_, ty) = &sig.output {
-        let type_string = quote!(#ty).to_string();
-        type_string.contains("Self ::") && type_string.contains("Stream")
+        if let Type::Path(TypePath { path, .. }) = &**ty
+            && let Some(segment) = path.segments.last()
+            && segment.ident == "Result"
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(syn::GenericArgument::Type(success_ty)) = args.args.first()
+        {
+            return (success_ty.clone(), true);
+        }
+
+        return ((**ty).clone(), false);
+    }
+
+    panic!("RPC trait methods must return a type");
+}
+
+fn extract_proto_type(success_ty: &Type) -> Type {
+    if let Type::Path(TypePath { path, .. }) = success_ty
+        && let Some(segment) = path.segments.last()
+        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && (segment.ident == "Response" || segment.ident == "ZeroCopyResponse")
+        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+    {
+        inner_ty.clone()
     } else {
-        false
+        success_ty.clone()
     }
 }
 
-/// Extract the stream type name from response type
-pub fn extract_stream_type_name(response_type: &Type) -> syn::Ident {
-    if let Type::Path(TypePath { path, .. }) = response_type
-        && let Some(segment) = path.segments.last()
-    {
-        return segment.ident.clone();
+fn extract_stream_metadata(response_type: &Type, trait_items: &[TraitItem]) -> (bool, Option<syn::Ident>, Option<Type>, Option<Type>) {
+    if let Type::Path(TypePath { qself: None, path }) = response_type {
+        let mut segments = path.segments.iter();
+        if let (Some(self_segment), Some(stream_segment)) = (segments.next(), segments.next())
+            && self_segment.ident == "Self"
+        {
+            let stream_name = stream_segment.ident.clone();
+            let (item_ty, proto_ty) = find_stream_item_types(&stream_name, trait_items).unwrap_or_else(|| panic!("Could not find associated type definition for {stream_name}"));
+            return (true, Some(stream_name), Some(proto_ty), Some(item_ty));
+        }
     }
-    panic!("Could not extract stream type name from response type");
+
+    (false, None, None, None)
+}
+
+fn find_stream_item_types(stream_name: &syn::Ident, trait_items: &[TraitItem]) -> Option<(Type, Type)> {
+    trait_items.iter().find_map(|item| match item {
+        TraitItem::Type(TraitItemType { ident, bounds, .. }) if ident == stream_name => Some(extract_stream_item_from_bounds(bounds)),
+        _ => None,
+    })
 }
 
 /// Extract inner type from Stream trait bounds
-pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Plus>) -> Type {
+pub fn extract_stream_item_from_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Plus>) -> (Type, Type) {
     for bound in bounds {
         if let syn::TypeParamBound::Trait(trait_bound) = bound {
             for segment in &trait_bound.path.segments {
@@ -190,7 +241,9 @@ pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::
                             && let syn::PathArguments::AngleBracketed(result_args) = &result_seg.arguments
                             && let Some(syn::GenericArgument::Type(inner_ty)) = result_args.args.first()
                         {
-                            return inner_ty.clone();
+                            let item_ty = inner_ty.clone();
+                            let proto_ty = extract_proto_type(inner_ty);
+                            return (item_ty, proto_ty);
                         }
                     }
                 }
@@ -202,49 +255,86 @@ pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::
 
 #[cfg(test)]
 mod tests {
+    use syn::ItemTrait;
     use syn::parse_quote;
 
     use super::*;
 
     #[test]
-    fn test_extract_types() {
-        let sig: syn::Signature = parse_quote! {
-            async fn test_method(
-                &self,
-                request: tonic::Request<MyRequest>
-            ) -> Result<tonic::Response<MyResponse>, tonic::Status>
+    fn test_parsed_method_signature_variants() {
+        let trait_input: ItemTrait = parse_quote! {
+            trait TestService {
+                type MyStream: tonic::codegen::tokio_stream::Stream<Item = Result<MyResponse, tonic::Status>> + Send + 'static;
+                type ZeroCopyStream: tonic::codegen::tokio_stream::Stream<Item = Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>> + Send + 'static;
+
+                async fn unary(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<MyResponse>, tonic::Status>;
+
+                async fn zero_copy(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>;
+
+                async fn streaming(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<Self::MyStream>, tonic::Status>;
+
+                async fn streaming_zero_copy(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<Self::ZeroCopyStream>, tonic::Status>;
+
+                async fn plain(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> MyResponse;
+            }
         };
 
-        let (req_type, resp_type) = extract_types(&sig);
-        assert_eq!(quote!(#req_type).to_string(), "MyRequest");
-        assert_eq!(quote!(#resp_type).to_string(), "MyResponse");
-    }
+        let signatures: Vec<_> = trait_input
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                TraitItem::Fn(fun) => Some(ParsedMethodSignature::new(&fun.sig, &trait_input.items)),
+                _ => None,
+            })
+            .collect();
 
-    #[test]
-    fn test_is_stream_response() {
-        let streaming_sig: syn::Signature = parse_quote! {
-            async fn stream_method(
-                &self,
-                request: tonic::Request<MyRequest>
-            ) -> Result<tonic::Response<Self::MyStream>, tonic::Status>
-        };
+        let unary = &signatures[0];
+        let request_ty = &unary.request_type;
+        let response_ty = &unary.response_type;
+        assert_eq!(quote!(#request_ty).to_string(), "MyRequest");
+        assert_eq!(quote!(#response_ty).to_string(), "MyResponse");
+        assert!(unary.response_is_result);
+        assert!(!unary.is_streaming);
 
-        assert!(is_stream_response(&streaming_sig));
+        let zero_copy = &signatures[1];
+        let zero_copy_return = &zero_copy.response_return_type;
+        assert_eq!(quote!(#zero_copy_return).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
+        assert!(zero_copy.response_is_result);
 
-        let unary_sig: syn::Signature = parse_quote! {
-            async fn unary_method(
-                &self,
-                request: tonic::Request<MyRequest>
-            ) -> Result<tonic::Response<MyResponse>, tonic::Status>
-        };
+        let streaming = &signatures[2];
+        assert!(streaming.is_streaming);
+        assert_eq!(streaming.stream_type_name.as_ref().unwrap().to_string(), "MyStream");
+        let stream_proto = streaming.inner_response_type.as_ref().unwrap();
+        assert_eq!(quote!(#stream_proto).to_string(), "MyResponse");
+        let stream_item = streaming.stream_item_type.as_ref().unwrap();
+        assert_eq!(quote!(#stream_item).to_string(), "MyResponse");
 
-        assert!(!is_stream_response(&unary_sig));
-    }
+        let zero_copy_stream = &signatures[3];
+        assert!(zero_copy_stream.is_streaming);
+        assert_eq!(zero_copy_stream.stream_type_name.as_ref().unwrap().to_string(), "ZeroCopyStream");
+        let zero_proto = zero_copy_stream.inner_response_type.as_ref().unwrap();
+        assert_eq!(quote!(#zero_proto).to_string(), "MyResponse");
+        let zero_item = zero_copy_stream.stream_item_type.as_ref().unwrap();
+        assert_eq!(quote!(#zero_item).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
 
-    #[test]
-    fn test_extract_stream_type_name() {
-        let ty: Type = parse_quote! { Self::MyStream };
-        let name = extract_stream_type_name(&ty);
-        assert_eq!(name.to_string(), "MyStream");
+        let plain = &signatures[4];
+        assert!(!plain.response_is_result);
+        let plain_return = &plain.response_return_type;
+        assert_eq!(quote!(#plain_return).to_string(), "MyResponse");
     }
 }

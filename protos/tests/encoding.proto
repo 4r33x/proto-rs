@@ -1,0 +1,49 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package encoding;
+
+enum SampleEnum {
+  ZERO = 0;
+  ONE = 1;
+  TWO = 2;
+}
+
+enum StatusWithDefaultAttribute {
+  ACTIVE = 0;
+  PENDING = 1;
+  INACTIVE = 2;
+  COMPLETED = 3;
+}
+
+message CollectionsMessage {
+  map<uint32, int64> hash_scores = 1;
+  map<string, NestedMessage> tree_messages = 2;
+  repeated string hash_tags = 3;
+  repeated int32 tree_ids = 4;
+}
+
+message NestedMessage {
+  int64 value = 1;
+}
+
+message SampleMessage {
+  uint32 id = 1;
+  bool flag = 2;
+  string name = 3;
+  repeated uint32 data = 4;
+  optional NestedMessage nested = 5;
+  repeated NestedMessage nested_list = 6;
+  repeated int64 values = 7;
+  SampleEnum mode = 8;
+  optional SampleEnum optional_mode = 9;
+}
+
+message ZeroCopyContainer {
+  bytes bytes32 = 1;
+  repeated uint32 smalls = 2;
+  repeated NestedMessage nested_items = 3;
+  optional NestedMessage boxed = 4;
+  optional NestedMessage shared = 5;
+  map<string, SampleEnum> enum_lookup = 6;
+}
+

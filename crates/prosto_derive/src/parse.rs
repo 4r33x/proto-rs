@@ -6,19 +6,18 @@ use std::collections::HashMap;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
+use quote::ToTokens;
 use syn::Attribute;
 use syn::Data;
+use syn::Expr;
 use syn::ItemTrait;
 use syn::Lit;
+use syn::Type;
 
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
 use crate::write_file::register_and_emit_proto_inner;
 use crate::write_file::register_imports;
-
-// ============================================================================
-// FIELD ATTRIBUTE PARSING TRAIT
-// ============================================================================
 
 pub trait ParseFieldAttr {
     fn extract_field_imports(&self, map: &mut BTreeMap<String, BTreeSet<String>>);
@@ -54,11 +53,7 @@ impl ParseFieldAttr for () {
     }
 }
 
-// ============================================================================
-// UNIFIED PROTO CONFIG
-// ============================================================================
-
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct UnifiedProtoConfig {
     pub proto_path: Option<String>,
     pub rpc_server: bool,
@@ -67,6 +62,13 @@ pub struct UnifiedProtoConfig {
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
+    pub suns: Vec<SunConfig>,
+}
+
+#[derive(Clone)]
+pub struct SunConfig {
+    pub ty: Type,
+    pub message_ident: String,
 }
 
 impl UnifiedProtoConfig {
@@ -114,16 +116,15 @@ impl UnifiedProtoConfig {
     }
 }
 
-// ============================================================================
-// ATTRIBUTE PARSING HELPERS
-// ============================================================================
-
 fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     let parser = syn::meta::parser(|meta| {
         if meta.path.is_ident("proto_path") {
             if let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>() {
                 config.proto_path = Some(lit_str.value());
             }
+        } else if meta.path.is_ident("sun") {
+            let expr = meta.value()?.parse::<Expr>()?;
+            parse_sun_list(expr, config)?;
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {
                 config.rpc_server = lit_bool.value;
@@ -143,7 +144,50 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     let _ = syn::parse::Parser::parse(parser, attr);
 }
 
-/// Extract proto_imports from item attributes
+fn extract_type_ident(ty: &Type) -> Option<String> {
+    match ty {
+        Type::Path(path) => path.path.segments.last().map(|segment| segment.ident.to_string()),
+        _ => None,
+    }
+}
+
+impl UnifiedProtoConfig {
+    pub fn has_suns(&self) -> bool {
+        !self.suns.is_empty()
+    }
+
+    pub fn proto_message_names(&self, fallback: &str) -> Vec<String> {
+        if self.suns.is_empty() {
+            vec![fallback.to_string()]
+        } else {
+            self.suns.iter().map(|sun| sun.message_ident.clone()).collect()
+        }
+    }
+
+    fn push_sun(&mut self, ty: Type) {
+        let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
+        self.suns.push(SunConfig { ty, message_ident });
+    }
+}
+
+fn parse_sun_list(expr: Expr, config: &mut UnifiedProtoConfig) -> syn::Result<()> {
+    match expr {
+        Expr::Array(array) => {
+            for elem in array.elems {
+                let ty: Type = syn::parse2(elem.into_token_stream())?;
+                config.push_sun(ty);
+            }
+            Ok(())
+        }
+        other => {
+            let ty: Type = syn::parse2(other.into_token_stream())?;
+            config.push_sun(ty);
+            Ok(())
+        }
+    }
+}
+
+/// Extract `proto_imports` from item attributes
 pub fn extract_item_imports(item_attrs: &[Attribute]) -> BTreeMap<String, BTreeSet<String>> {
     let mut imports = BTreeMap::new();
 
@@ -153,7 +197,7 @@ pub fn extract_item_imports(item_attrs: &[Attribute]) -> BTreeMap<String, BTreeS
         }
 
         let _ = attr.parse_nested_meta(|meta| {
-            let package = meta.path.get_ident().map(|i| i.to_string()).unwrap_or_default();
+            let package = meta.path.get_ident().map(ToString::to_string).unwrap_or_default();
 
             // Parse array value
             if let Ok(syn::Expr::Array(array)) = meta.value()?.parse::<syn::Expr>() {
@@ -184,11 +228,11 @@ fn extract_string_array(array: &syn::ExprArray) -> BTreeSet<String> {
         .collect()
 }
 
-/// Extract import_path from field-level attributes
+/// Extract `import_path` from field-level attributes
 pub fn extract_field_imports(fields: &syn::Fields) -> HashMap<String, Vec<String>> {
     let mut imports = HashMap::new();
 
-    for field in fields.iter() {
+    for field in fields {
         let config = parse_field_config(field);
 
         if let Some(import_path) = config.import_path {
@@ -214,6 +258,25 @@ fn extract_field_type_name(ty: &syn::Type) -> String {
             return rust_type_path_ident(inner_ty).to_string();
         }
 
+        if matches!(ident.to_string().as_str(), "HashMap" | "BTreeMap")
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        {
+            let mut generics = args.args.iter().filter_map(|arg| match arg {
+                syn::GenericArgument::Type(inner_ty) => Some(inner_ty.clone()),
+                _ => None,
+            });
+
+            let value_ty = generics.nth(1).unwrap_or_else(|| ty.clone());
+            return rust_type_path_ident(&value_ty).to_string();
+        }
+
+        if matches!(ident.to_string().as_str(), "HashSet" | "BTreeSet")
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+        {
+            return rust_type_path_ident(inner_ty).to_string();
+        }
+
         return ident.to_string();
     }
 
@@ -225,10 +288,6 @@ fn merge_field_imports(dest: &mut BTreeMap<String, BTreeSet<String>>, src: HashM
         dest.entry(package).or_default().extend(types);
     }
 }
-
-// ============================================================================
-// TESTS
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

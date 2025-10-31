@@ -1,6 +1,6 @@
 [package]
 name = "prosto_derive"
-version = "0.5.0"
+version = "0.6.0"
 description = "Procedural macros for proto_rs, Rust as a first-class citizen in the protobuf ecosystem"
 documentation = "https://docs.rs/prosto_derive"
 readme = "../../README.md"
@@ -23,7 +23,7 @@ syn = { version = "2", features = ["full"] }
 [features]
 # Emission control - checked in utils.rs during macro expansion
 emit-proto-files = []
-
+stable = []
 
 [lints]
 workspace = true

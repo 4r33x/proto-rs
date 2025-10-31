@@ -12,56 +12,25 @@ use crate::utils::to_pascal_case;
 // ============================================================================
 
 /// Generate proto-to-native request conversion (used in server)
-pub fn generate_proto_to_native_request(request_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, extensions, proto_msg) = request.into_parts();
-        let native_msg = #request_type::from_proto(proto_msg)
-            .map_err(|e| tonic::Status::invalid_argument(
-                format!("Failed to convert request: {}", e)
-            ))?;
-        let native_request = tonic::Request::from_parts(metadata, extensions, native_msg);
-    }
+pub fn generate_proto_to_native_request(_request_type: &Type) -> TokenStream {
+    quote! { let native_request = request; }
 }
 
 /// Generate native-to-proto request conversion (used in client - unary)
-pub fn generate_native_to_proto_request_unary() -> TokenStream {
-    quote! {
-        let req = request.into_request();
-        let (metadata, extensions, native_msg) = req.into_parts();
-        let proto_msg = native_msg.to_proto();
-        let mut proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
-    }
+pub fn generate_native_to_proto_request_unary(request_type: &Type) -> TokenStream {
+    let _ = request_type;
+    quote! {}
 }
 
 /// Generate native-to-proto request conversion (used in client - streaming)
-pub fn generate_native_to_proto_request_streaming() -> TokenStream {
-    quote! {
-        let req = request.into_request();
-        let (metadata, extensions, native_msg) = req.into_parts();
-        let proto_msg = native_msg.to_proto();
-        let proto_req = tonic::Request::from_parts(metadata, extensions, proto_msg);
-    }
+pub fn generate_native_to_proto_request_streaming(request_type: &Type) -> TokenStream {
+    let _ = request_type;
+    quote! {}
 }
 
 /// Generate proto-to-native response conversion (used in client)
-pub fn generate_proto_to_native_response(response_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, proto_response, extensions) = response.into_parts();
-        let native_response = #response_type::from_proto(proto_response)
-            .map_err(|e| tonic::Status::internal(
-                format!("Failed to convert response: {}", e)
-            ))?;
-        Ok(tonic::Response::from_parts(metadata, native_response, extensions))
-    }
-}
-
-/// Generate native-to-proto response conversion (used in server)
-pub fn generate_native_to_proto_response() -> TokenStream {
-    quote! {
-        let (metadata, native_body, extensions) = native_response.into_parts();
-        let proto_msg = native_body.to_proto();
-        Ok(tonic::Response::from_parts(metadata, proto_msg, extensions))
-    }
+pub fn generate_proto_to_native_response(_response_type: &Type) -> TokenStream {
+    quote! { Ok(response) }
 }
 
 // ============================================================================
@@ -70,12 +39,12 @@ pub fn generate_native_to_proto_response() -> TokenStream {
 
 /// Generate proto type reference for request
 pub fn generate_request_proto_type(request_type: &Type) -> TokenStream {
-    quote! { <#request_type as super::HasProto>::Proto }
+    quote! { #request_type }
 }
 
 /// Generate proto type reference for response
 pub fn generate_response_proto_type(response_type: &Type) -> TokenStream {
-    quote! { <#response_type as super::HasProto>::Proto }
+    quote! { #response_type }
 }
 
 // ============================================================================
@@ -88,9 +57,11 @@ pub fn generate_route_path(package_name: &str, trait_name: &syn::Ident, method_n
 }
 
 /// Generate codec initialization
-pub fn generate_codec_init() -> TokenStream {
-    quote! {
-        let codec = tonic_prost::ProstCodec::default();
+pub fn generate_codec_init(encode: TokenStream, decode: TokenStream, mode: Option<TokenStream>) -> TokenStream {
+    if let Some(mode) = mode {
+        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode, #mode>::default(); }
+    } else {
+        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode>::default(); }
     }
 }
 
@@ -99,20 +70,8 @@ pub fn generate_codec_init() -> TokenStream {
 // ============================================================================
 
 /// Generate stream conversion for streaming responses (client side)
-pub fn generate_stream_conversion(inner_response_type: &Type) -> TokenStream {
-    quote! {
-        let (metadata, proto_stream, extensions) = response.into_parts();
-
-        use tonic::codegen::tokio_stream::StreamExt;
-        let native_stream = proto_stream.map(|result| {
-            result.and_then(|proto_item| {
-                #inner_response_type::from_proto(proto_item)
-                    .map_err(|e| tonic::Status::internal(format!("Failed to convert response: {}", e)))
-            })
-        });
-
-        Ok(tonic::Response::from_parts(metadata, native_stream, extensions))
-    }
+pub fn generate_stream_conversion(_inner_response_type: &Type) -> TokenStream {
+    quote! { Ok(response) }
 }
 
 /// Check if method is streaming
@@ -152,12 +111,12 @@ pub fn server_module_name(trait_name: &syn::Ident) -> syn::Ident {
 
 /// Generate client struct name from trait
 pub fn client_struct_name(trait_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(&format!("{}Client", trait_name), trait_name.span())
+    syn::Ident::new(&format!("{trait_name}Client"), trait_name.span())
 }
 
 /// Generate server struct name from trait
 pub fn server_struct_name(trait_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(&format!("{}Server", trait_name), trait_name.span())
+    syn::Ident::new(&format!("{trait_name}Server"), trait_name.span())
 }
 
 // ============================================================================
@@ -167,7 +126,7 @@ pub fn server_struct_name(trait_name: &syn::Ident) -> syn::Ident {
 /// Generate common service struct fields (used by server)
 pub fn generate_service_struct_fields() -> TokenStream {
     quote! {
-        inner: Arc<T>,
+        inner: ::proto_rs::alloc::sync::Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
@@ -179,10 +138,10 @@ pub fn generate_service_struct_fields() -> TokenStream {
 pub fn generate_service_constructors() -> TokenStream {
     quote! {
         pub fn new(inner: T) -> Self {
-            Self::from_arc(Arc::new(inner))
+            Self::from_arc(::proto_rs::alloc::sync::Arc::new(inner))
         }
 
-        pub fn from_arc(inner: Arc<T>) -> Self {
+        pub fn from_arc(inner: ::proto_rs::alloc::sync::Arc<T>) -> Self {
             Self {
                 inner,
                 accept_compression_encodings: Default::default(),
@@ -205,7 +164,7 @@ pub fn generate_client_with_interceptor(client_struct: &syn::Ident) -> TokenStre
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<http::Request<tonic::body::Body>, Response = http::Response<<T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody>>,
-            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + ::core::marker::Send + ::core::marker::Sync,
         {
             #client_struct::new(InterceptedService::new(inner, interceptor))
         }
@@ -247,7 +206,7 @@ mod tests {
         let ty: Type = parse_quote! { MyRequest };
         let proto_type = generate_request_proto_type(&ty);
 
-        let expected = quote! { <MyRequest as super::HasProto>::Proto };
+        let expected = quote! { MyRequest };
         assert_eq!(proto_type.to_string(), expected.to_string());
     }
 }

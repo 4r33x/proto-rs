@@ -4,7 +4,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
-use crate::proto_rpc::rpc_common::generate_native_to_proto_response;
 use crate::proto_rpc::rpc_common::generate_proto_to_native_request;
 use crate::proto_rpc::rpc_common::generate_request_proto_type;
 use crate::proto_rpc::rpc_common::generate_response_proto_type;
@@ -14,6 +13,9 @@ use crate::proto_rpc::rpc_common::generate_service_struct_fields;
 use crate::proto_rpc::rpc_common::is_streaming_method;
 use crate::proto_rpc::rpc_common::server_module_name;
 use crate::proto_rpc::rpc_common::server_struct_name;
+use crate::proto_rpc::utils::associated_future_type;
+use crate::proto_rpc::utils::method_future_return_type;
+use crate::proto_rpc::utils::wrap_async_block;
 use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 
@@ -29,10 +31,34 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     let (blanket_types, blanket_methods) = generate_blanket_impl_components(methods, trait_name);
     let route_handlers = methods.iter().map(|m| generate_route_handler(m, package_name, trait_name)).collect::<Vec<_>>();
 
-    let service_name_value = format!("{}.{}", package_name, trait_name);
+    let service_name_value = format!("{package_name}.{trait_name}");
     let compression_methods = generate_server_compression_methods();
     let service_fields = generate_service_struct_fields();
     let service_constructors = generate_service_constructors();
+    let service_future_type = associated_future_type(quote! { ::core::result::Result<Self::Response, Self::Error> }, false);
+    let call_future_body = wrap_async_block(
+        quote! {
+            async move {
+                match req.uri().path() {
+                    #(#route_handlers)*
+                    _ =>  {
+                        let mut response = http::Response::new(tonic::body::Body::default());
+                        let headers = response.headers_mut();
+                        headers.insert(
+                            tonic::Status::GRPC_STATUS,
+                            (tonic::Code::Unimplemented as i32).into(),
+                        );
+                        headers.insert(
+                            http::header::CONTENT_TYPE,
+                            tonic::metadata::GRPC_CONTENT_TYPE,
+                        );
+                        Ok(response)
+                    },
+                }
+            }
+        },
+        true,
+    );
 
     quote! {
         #vis mod #server_module {
@@ -46,14 +72,14 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             use tonic::codegen::*;
             use super::*;
 
-            pub trait #trait_name: std::marker::Send + std::marker::Sync + 'static {
+            pub trait #trait_name: ::core::marker::Send + ::core::marker::Sync + 'static {
                 #(#associated_types)*
                 #(#trait_methods)*
             }
 
             impl<T> #trait_name for T
             where
-                T: super::#trait_name + std::marker::Send + std::marker::Sync + 'static,
+                T: super::#trait_name + ::core::marker::Send + ::core::marker::Sync + 'static,
             {
                 #(#blanket_types)*
                 #(#blanket_methods)*
@@ -83,37 +109,27 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             impl<T, B> tonic::codegen::Service<http::Request<B>> for #server_struct<T>
             where
                 T: #trait_name,
-                B: Body + std::marker::Send + 'static,
-                B::Error: Into<StdError> + std::marker::Send + 'static,
+                B: Body + ::core::marker::Send + 'static,
+                B::Error: Into<StdError> + ::core::marker::Send + 'static,
             {
                 type Response = http::Response<tonic::body::Body>;
-                type Error = std::convert::Infallible;
-                type Future = BoxFuture<Self::Response, Self::Error>;
+                type Error = ::core::convert::Infallible;
+                type Future = #service_future_type;
 
                 fn poll_ready(
                     &mut self,
                     _cx: &mut Context<'_>
-                ) -> Poll<std::result::Result<(), Self::Error>> {
+                ) -> Poll<::core::result::Result<(), Self::Error>> {
                     Poll::Ready(Ok(()))
                 }
 
                 fn call(&mut self, req: http::Request<B>) -> Self::Future {
-                    match req.uri().path() {
-                        #(#route_handlers)*
-                        _ => Box::pin(async move {
-                            let mut response = http::Response::new(tonic::body::Body::default());
-                            let headers = response.headers_mut();
-                            headers.insert(
-                                tonic::Status::GRPC_STATUS,
-                                (tonic::Code::Unimplemented as i32).into(),
-                            );
-                            headers.insert(
-                                http::header::CONTENT_TYPE,
-                                tonic::metadata::GRPC_CONTENT_TYPE,
-                            );
-                            Ok(response)
-                        }),
-                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    #call_future_body
                 }
             }
 
@@ -164,41 +180,48 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
 
     if is_streaming_method(method) {
         let stream_name = method.stream_type_name.as_ref().unwrap();
+        let future_type = method_future_return_type(quote! {
+            ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+        });
         quote! {
             #[must_use]
-            #[allow(elided_named_lifetimes, clippy::type_complexity, clippy::type_repetition_in_bounds)]
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
+            fn #method_name(
+                &self,
                 request: tonic::Request<#request_proto>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> #future_type
             where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: ::core::marker::Send + ::core::marker::Sync;
         }
     } else {
         let response_type = &method.response_type;
+        let response_return_type = &method.response_return_type;
         let response_proto = generate_response_proto_type(response_type);
+        let future_type = method_future_return_type(quote! {
+            ::core::result::Result<
+                tonic::Response<
+                    <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+                >,
+                tonic::Status
+            >
+        });
         quote! {
             #[must_use]
-            #[allow(elided_named_lifetimes, clippy::type_complexity, clippy::type_repetition_in_bounds)]
-            fn #method_name<'life0, 'async_trait>(
-                &'life0 self,
+            fn #method_name(
+                &self,
                 request: tonic::Request<#request_proto>,
-            ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
+            ) -> #future_type
             where
-                'life0: 'async_trait,
-                Self: 'async_trait;
+                Self: ::core::marker::Send + ::core::marker::Sync;
         }
     }
 }
 
 fn generate_stream_associated_type(method: &MethodInfo) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
-    let inner_type = method.inner_response_type.as_ref().unwrap();
-    let response_proto = generate_response_proto_type(inner_type);
+    let item_type = method.stream_item_type.as_ref().unwrap();
 
     quote! {
-        type #stream_name: tonic::codegen::tokio_stream::Stream<Item = std::result::Result<#response_proto, tonic::Status>> + std::marker::Send + 'static;
+        type #stream_name: tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#item_type, tonic::Status>> + ::core::marker::Send + 'static;
     }
 }
 
@@ -212,7 +235,7 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
 
     for method in methods {
         if is_streaming_method(method) {
-            blanket_types.push(generate_blanket_stream_type(method));
+            blanket_types.push(generate_blanket_stream_type(method, trait_name));
         }
         blanket_methods.push(generate_blanket_method(method, trait_name));
     }
@@ -220,14 +243,10 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
     (blanket_types, blanket_methods)
 }
 
-fn generate_blanket_stream_type(method: &MethodInfo) -> TokenStream {
+fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
-    let inner_type = method.inner_response_type.as_ref().unwrap();
-    let response_proto = generate_response_proto_type(inner_type);
 
-    quote! {
-        type #stream_name = std::pin::Pin<Box<dyn tonic::codegen::tokio_stream::Stream<Item = std::result::Result<#response_proto, tonic::Status>> + std::marker::Send>>;
-    }
+    quote! { type #stream_name = <Self as super::#trait_name>::#stream_name; }
 }
 
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
@@ -242,31 +261,51 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let method_name = &method.name;
     let request_type = &method.request_type;
     let response_type = &method.response_type;
+    let response_return_type = &method.response_return_type;
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
-    let response_conversion = generate_native_to_proto_response();
+    let await_suffix = if method.response_is_result {
+        quote! { .await? }
+    } else {
+        quote! { .await }
+    };
 
-    quote! {
-        fn #method_name<'life0, 'async_trait>(
-            &'life0 self,
-            request: tonic::Request<#request_proto>,
-        ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<#response_proto>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
-        where
-            'life0: 'async_trait,
-            Self: 'async_trait
-        {
-            Box::pin(async move {
+    let future_type = method_future_return_type(quote! {
+        ::core::result::Result<
+            tonic::Response<
+                <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+            >,
+            tonic::Status
+        >
+    });
+    let future_body = wrap_async_block(
+        quote! {
+            async move {
                 #request_conversion
 
                 let native_response = <Self as super::#trait_name>::#method_name(
                     self,
                     native_request
-                ).await?;
+                )#await_suffix;
 
-                #response_conversion
-            })
+                let response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::into_response(
+                    native_response
+                );
+
+                Ok(response)
+            }
+        },
+        false,
+    );
+
+    quote! {
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_proto>,
+        ) -> #future_type {
+            #future_body
         }
     }
 }
@@ -278,19 +317,12 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
-
-    quote! {
-        fn #method_name<'life0, 'async_trait>(
-            &'life0 self,
-            request: tonic::Request<#request_proto>,
-        ) -> ::core::pin::Pin<Box<dyn ::core::future::Future<Output = std::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>> + ::core::marker::Send + 'async_trait>>
-        where
-            'life0: 'async_trait,
-            Self: 'async_trait
-        {
-            Box::pin(async move {
-                use tonic::codegen::tokio_stream::StreamExt;
-
+    let future_type = method_future_return_type(quote! {
+        ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+    });
+    let future_body = wrap_async_block(
+        quote! {
+            async move {
                 #request_conversion
 
                 let native_response = <Self as super::#trait_name>::#method_name(
@@ -298,17 +330,18 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     native_request
                 ).await?;
 
-                let (metadata, native_stream, extensions) = native_response.into_parts();
-                let proto_stream = native_stream.map(|result| {
-                    result.map(|native_item| native_item.to_proto())
-                });
+                Ok(native_response)
+            }
+        },
+        false,
+    );
 
-                Ok(tonic::Response::from_parts(
-                    metadata,
-                    Box::pin(proto_stream) as Self::#stream_name,
-                    extensions
-                ))
-            })
+    quote! {
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_proto>,
+        ) -> #future_type {
+            #future_body
         }
     }
 }
@@ -333,10 +366,27 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let method_name = &method.name;
     let request_type = &method.request_type;
     let response_type = &method.response_type;
+    let response_return_type = &method.response_return_type;
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
-    let codec_init = generate_codec_init();
+    let encode_type = quote! {
+        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+    };
+    let mode_type = quote! {
+        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Mode
+    };
+    let decode_type = quote! { #request_proto };
+    let codec_init = generate_codec_init(encode_type.clone(), decode_type, Some(mode_type));
+    let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::Response>, tonic::Status> }, true);
+    let call_future = wrap_async_block(
+        quote! {
+            async move {
+                <T as #trait_name>::#method_name(&inner, request).await
+            }
+        },
+        true,
+    );
 
     quote! {
         #route_path => {
@@ -344,40 +394,28 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
             struct #svc_name<T: #trait_name>(pub Arc<T>);
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
-                type Response = #response_proto;
-                type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                type Response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
+                type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    let fut = async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    };
-                    Box::pin(fut)
+                    #call_future
                 }
             }
 
-            let accept_compression_encodings = self.accept_compression_encodings;
-            let send_compression_encodings = self.send_compression_encodings;
-            let max_decoding_message_size = self.max_decoding_message_size;
-            let max_encoding_message_size = self.max_encoding_message_size;
-            let inner = self.inner.clone();
-
-            let fut = async move {
-                let method = #svc_name(inner);
-                #codec_init
-                let mut grpc = tonic::server::Grpc::new(codec)
-                    .apply_compression_config(
-                        accept_compression_encodings,
-                        send_compression_encodings,
-                    )
-                    .apply_max_message_size_config(
-                        max_decoding_message_size,
-                        max_encoding_message_size,
-                    );
-                let res = grpc.unary(method, req).await;
-                Ok(res)
-            };
-            Box::pin(fut)
+            let method = #svc_name(inner);
+            #codec_init
+            let mut grpc = tonic::server::Grpc::new(codec)
+                .apply_compression_config(
+                    accept_compression_encodings,
+                    send_compression_encodings,
+                )
+                .apply_max_message_size_config(
+                    max_decoding_message_size,
+                    max_encoding_message_size,
+                );
+            let res = grpc.unary(method, req).await;
+            Ok(res)
         }
     }
 }
@@ -386,11 +424,37 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let method_name = &method.name;
     let request_type = &method.request_type;
     let inner_type = method.inner_response_type.as_ref().unwrap();
+    let item_type = method.stream_item_type.as_ref().unwrap();
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(inner_type);
 
-    let codec_init = generate_codec_init();
+    let encode_type = quote! { <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode };
+    let decode_type = quote! { #request_proto };
+    let mode_type = quote! { <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Mode };
+    let codec_init = generate_codec_init(encode_type, decode_type, Some(mode_type));
+    let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
+    let call_future = wrap_async_block(
+        quote! {
+            async move {
+                let response = <T as #trait_name>::#method_name(&inner, request).await?;
+                let mapped = response.map(|stream| {
+                    ::tonic::codegen::tokio_stream::StreamExt::map(
+                        stream,
+                        ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
+                            as fn(
+                                ::core::result::Result<#item_type, tonic::Status>,
+                            ) -> ::core::result::Result<
+                                <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                                tonic::Status
+                            >,
+                    )
+                });
+                Ok(mapped)
+            }
+        },
+        true,
+    );
 
     quote! {
         #route_path => {
@@ -398,41 +462,40 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
             struct #svc_name<T: #trait_name>(pub Arc<T>);
 
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
-                type Response = #response_proto;
-                type ResponseStream = T::#stream_name;
-                type Future = BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                type Response = <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
+                type ResponseStream = ::tonic::codegen::tokio_stream::adapters::Map<
+                    T::#stream_name,
+                    fn(
+                        ::core::result::Result<#item_type, tonic::Status>
+                    ) -> ::core::result::Result<
+                        <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                        tonic::Status
+                    >
+                >;
+                type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
                     let inner = Arc::clone(&self.0);
-                    let fut = async move {
-                        <T as #trait_name>::#method_name(&inner, request).await
-                    };
-                    Box::pin(fut)
+                    #call_future
                 }
             }
 
-            let accept_compression_encodings = self.accept_compression_encodings;
-            let send_compression_encodings = self.send_compression_encodings;
-            let max_decoding_message_size = self.max_decoding_message_size;
-            let max_encoding_message_size = self.max_encoding_message_size;
-            let inner = self.inner.clone();
 
-            let fut = async move {
-                let method = #svc_name(inner);
-                #codec_init
-                let mut grpc = tonic::server::Grpc::new(codec)
-                    .apply_compression_config(
-                        accept_compression_encodings,
-                        send_compression_encodings,
-                    )
-                    .apply_max_message_size_config(
-                        max_decoding_message_size,
-                        max_encoding_message_size,
-                    );
-                let res = grpc.server_streaming(method, req).await;
-                Ok(res)
-            };
-            Box::pin(fut)
+
+
+            let method = #svc_name(inner);
+            #codec_init
+            let mut grpc = tonic::server::Grpc::new(codec)
+                .apply_compression_config(
+                    accept_compression_encodings,
+                    send_compression_encodings,
+                )
+                .apply_max_message_size_config(
+                    max_decoding_message_size,
+                    max_encoding_message_size,
+                );
+            let res = grpc.server_streaming(method, req).await;
+            Ok(res)
         }
     }
 }

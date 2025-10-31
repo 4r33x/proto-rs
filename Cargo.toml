@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.5.0"
+version = "0.6.0"
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
@@ -34,42 +34,68 @@ members = [
   "tests/tonic_prost_test",
   "tests/proto_rs_test",
   "tests/proto_build_test",
+  "benches/bench_runner",
 ]
 resolver = "3"
 
 [workspace.dependencies]
-prosto_derive = { version = "0.5", path = "crates/prosto_derive" }
-proto_rs = { version = "0.5", path = "./" }
-prost = "0.14.1"
-
+prosto_derive = { version = "0.6", path = "crates/prosto_derive" }
+proto_rs = { version = "0.6", path = "./" }
+prost = { version = "0.14.1", default-features = false }
+bytes = { version = "1.10", default-features = false }
+inventory = { version = "0.3.21" }
+chrono = "0.4.42"
+criterion = { version = "0.7" }
+tonic = { version = "0.14.2" }
 
 [dependencies]
 prosto_derive.workspace = true
-prost.workspace = true
+bytes.workspace = true
+tonic = { workspace = true, optional = true }
 fastnum = { version = "0.7.2", optional = true }
-inventory = { version = "0.3.21", optional = true }
+inventory = { workspace = true, optional = true }
 solana-address = { version = "1", optional = true }
 solana-signature = { version = "3.1", optional = true }
-
-
-[features]
-fastnum = ["dep:fastnum"]
-solana = ["dep:solana-address", "dep:solana-signature"]
-# Schema collection for build scripts
-build-schemas = ["inventory"]
-# Enable live proto dumping
-emit-proto-files = ["prosto_derive/emit-proto-files"]
+const_panic = { version = "0.2.15", features = [
+  "rust_latest_stable",
+  "derive",
+] }
 
 [dev-dependencies]
-tonic = "0.14.2"
+proptest = "1"
+rand = "0.9"
+criterion.workspace = true
+tonic.workspace = true
 tonic-prost = "0.14.1"
+prost.workspace = true
 
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-stream = "0.1.17"
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-chrono = "0.4.42"
+chrono.workspace = true
+tonic_prost_test = { path = "tests/tonic_prost_test" }
+
+
+[features]
+std = ["bytes/std"]
+tonic = ["dep:tonic", "bytes/std", "std"]
+fastnum = ["dep:fastnum"]
+solana = ["dep:solana-address", "dep:solana-signature"]
+
+# Schema collection for build scripts
+build-schemas = ["inventory"]
+# Enable live proto dumping
+emit-proto-files = ["prosto_derive/emit-proto-files"]
+
+# Compile on the stable toolchain
+stable = ["prosto_derive/stable"]
+
+no-recursion-limit = []
+#TODO!
+default = ["std", "tonic"]
+#derive = ["dep:prost-derive"]
 
 
 [package.metadata.docs.rs]
@@ -79,11 +105,36 @@ all-features = true
 [workspace.lints.rust]
 unsafe_code = { level = "forbid", priority = 0 }
 
+
+# [lints.rust]
+# unsafe_code = { level = "forbid", priority = 0 }
+
 [workspace.lints.clippy]
-# cargo = { level = "deny", priority = -1 }
-# complexity = { level = "deny", priority = -1 }
-# correctness = { level = "deny", priority = -1 }
-# pedantic = { level = "deny", priority = -1 }
+#cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
-# restriction = { level = "warn", priority = -1 }
-# style = { level = "deny", priority = -1 }
+#restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }
+
+[lints.clippy]
+#cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+#restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }
+
+[profile.bench]
+#use thin here to improve compile time
+lto = "fat"
+opt-level = 3
+codegen-units = 1
+incremental = false
+
+
+[[bench]]
+name = "varint"
+harness = false

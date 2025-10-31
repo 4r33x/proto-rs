@@ -1,326 +1,376 @@
-//! Unified type analysis and conversion
+//! `type_info.rs`
+//! Lightweight type analysis used by the codegen. 100% `syn` v2 compatible.
 
+use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::GenericArgument;
 use syn::PathArguments;
 use syn::Type;
+use syn::TypeArray;
 use syn::TypePath;
+use syn::parse_quote;
 
-// ============================================================================
-// TYPE PREDICATES
-// ============================================================================
+use super::rust_type_path_ident;
+use super::string_helpers::strip_proto_suffix;
 
-/// Check if type is bytes array ([u8; N])
+/// Parsed metadata about a field's Rust type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapKind {
+    HashMap,
+    BTreeMap,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetKind {
+    HashSet,
+    BTreeSet,
+}
+
+#[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct ParsedFieldType {
+    /// The concrete Rust type seen in the AST (e.g. `Vec<u8>` or `MyType`).
+    pub rust_type: Type,
+    /// Protobuf scalar kind used for prost attributes ("uint32", "bytes", ...).
+    pub proto_type: String,
+    /// Prost attribute fragment (e.g. `quote! { uint32 }`).
+    pub prost_type: TokenStream,
+    /// Whether the field is wrapped in `Option<T>`.
+    pub is_option: bool,
+    /// Whether the field should be treated as a protobuf message (length-delimited payload).
+    pub is_message_like: bool,
+    /// Whether the field encodes as a numeric scalar (eligible for packed encoding).
+    pub is_numeric_scalar: bool,
+    /// The protobuf-compatible Rust type used on the wire (after widening conversions).
+    pub proto_rust_type: Type,
+    /// The logical element type (inner `T` for `Option<T>`/`Vec<T>`/`[T;N]`).
+    pub elem_type: Type,
+    /// Whether this type should be encoded as a Rust enum (i32 on the wire).
+    pub is_rust_enum: bool,
+    /// Whether this type represents a map.
+    pub map_kind: Option<MapKind>,
+}
+
+impl ParsedFieldType {
+    #[allow(clippy::too_many_arguments)]
+    fn new(rust_type: Type, proto_type: &str, prost_type: TokenStream, is_message_like: bool, is_numeric_scalar: bool, proto_rust_type: Type, elem_type: Type, is_rust_enum: bool) -> Self {
+        Self {
+            rust_type,
+            proto_type: proto_type.to_string(),
+            prost_type,
+            is_option: false,
+            is_message_like,
+            is_numeric_scalar,
+            proto_rust_type,
+            elem_type,
+            is_rust_enum,
+            map_kind: None,
+        }
+    }
+}
+
+/// Entry point used throughout the codegen to analyse a Rust `Type`.
+pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
+    match ty {
+        Type::Array(array) => parse_array_type(array),
+        Type::Path(path) => parse_path_type(path, ty),
+        _ => parse_custom_type(ty),
+    }
+}
+
+/// True if the type is `[u8; N]`.
 pub fn is_bytes_array(ty: &Type) -> bool {
-    matches!(ty, Type::Array(arr) if is_u8_element(&arr.elem))
+    match ty {
+        Type::Array(array) => matches!(&*array.elem, Type::Path(inner) if last_ident(inner).is_some_and(|id| id == "u8")),
+        Type::Path(path) => last_ident(path).is_some_and(|id| id == "FixedBytes"),
+        _ => false,
+    }
 }
 
-/// Check if type is Vec<u8>
+/// True if the type is `Vec<u8>` or `Bytes`.
 pub fn is_bytes_vec(ty: &Type) -> bool {
-    vec_inner_type(ty).map(|inner| is_u8_element(&inner)).unwrap_or(false)
-}
-
-pub fn is_u8_element(ty: &Type) -> bool {
-    if let Type::Path(path) = ty
-        && let Some(seg) = path.path.segments.last()
-    {
-        return seg.ident == "u8";
-    }
-    false
-}
-
-/// Check if type is Option<T>
-pub fn is_option_type(ty: &Type) -> bool {
-    is_wrapper_type(ty, "Option")
-}
-
-fn is_wrapper_type(ty: &Type, wrapper_name: &str) -> bool {
-    if let Type::Path(TypePath { path, .. }) = ty {
-        path.segments.last().map(|s| s.ident == wrapper_name).unwrap_or(false)
-    } else {
-        false
-    }
-}
-
-/// Check if type is a complex (non-primitive) type
-pub fn is_complex_type(ty: &Type) -> bool {
     match ty {
-        Type::Path(TypePath { path, .. }) => {
-            let segment = match path.segments.last() {
-                Some(s) => s,
-                None => return true,
-            };
-
-            let type_name = segment.ident.to_string();
-
-            // Handle wrappers recursively
-            if matches!(type_name.as_str(), "Option" | "Vec" | "Box") {
-                return extract_inner_from_generic(segment).map(is_complex_type).unwrap_or(false);
+        Type::Path(path) => {
+            if let Some(id) = last_ident(path) {
+                if id == "Bytes" {
+                    return true;
+                }
+                if id == "Vec"
+                    && let Some(inner) = single_generic(path)
+                {
+                    return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).is_some_and(|i| i == "u8"));
+                }
             }
-
-            // Primitives are NOT complex
-            !is_primitive_name(&type_name)
+            false
         }
-        _ => true,
+        _ => false,
     }
 }
 
-fn is_primitive_name(type_name: &str) -> bool {
-    matches!(
-        type_name,
-        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" | "bool" | "String"
-    )
-}
+fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
+    let elem_ty = (*array.elem).clone();
+    let rust_ty = Type::Array(array.clone());
 
-// ============================================================================
-// TYPE EXTRACTION
-// ============================================================================
-
-/// Extract inner type from Option<T>
-pub fn extract_option_inner_type(ty: &Type) -> &Type {
-    extract_wrapper_inner_type(ty, "Option").unwrap_or(ty)
-}
-
-fn extract_wrapper_inner_type<'a>(ty: &'a Type, wrapper: &str) -> Option<&'a Type> {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-        && segment.ident == wrapper
-    {
-        return extract_inner_from_generic(segment);
+    if is_bytes_array(&rust_ty) {
+        return ParsedFieldType::new(rust_ty.clone(), "bytes", quote! { bytes }, false, false, rust_ty, elem_ty, false);
     }
-    None
-}
 
-fn extract_inner_from_generic(segment: &syn::PathSegment) -> Option<&Type> {
-    if let PathArguments::AngleBracketed(args) = &segment.arguments
-        && let Some(GenericArgument::Type(inner)) = args.args.first()
-    {
-        return Some(inner);
-    }
-    None
-}
+    let inner = parse_field_type(&elem_ty);
+    let proto_type = inner.proto_type.clone();
+    let prost_type = inner.prost_type.clone();
+    let is_message_like = inner.is_message_like;
+    let is_numeric_scalar = inner.is_numeric_scalar;
+    let inner_proto = inner.proto_rust_type.clone();
+    let elem = inner.elem_type.clone();
 
-/// Extract inner type from Vec<T> (returns Option<Type>)
-pub fn vec_inner_type(ty: &Type) -> Option<Type> {
-    extract_wrapper_inner_type(ty, "Vec").cloned()
-}
+    ParsedFieldType {
+        rust_type: rust_ty,
+        proto_type,
+        prost_type,
+        is_option: false,
 
-/// Get array element type
-pub fn array_elem_type(ty: &Type) -> Option<Type> {
-    if let Type::Array(type_array) = ty { Some((*type_array.elem).clone()) } else { None }
-}
-
-/// Get the last identifier from a type path (handles nested generics)
-pub fn rust_type_path_ident(ty: &Type) -> &syn::Ident {
-    match ty {
-        Type::Path(type_path) => {
-            let segment = type_path.path.segments.last().expect("Empty type path");
-            let ident = &segment.ident;
-
-            // Recursively unwrap wrappers
-            if matches!(ident.to_string().as_str(), "Vec" | "Option" | "Box")
-                && let Some(inner) = extract_inner_from_generic(segment)
-            {
-                return rust_type_path_ident(inner);
-            }
-
-            ident
-        }
-        Type::Array(arr) => rust_type_path_ident(&arr.elem),
-        Type::Reference(r) => rust_type_path_ident(&r.elem),
-        Type::Group(g) => rust_type_path_ident(&g.elem),
-        _ => panic!("Unsupported type structure: {:?}", quote!(#ty)),
+        is_message_like,
+        is_numeric_scalar,
+        proto_rust_type: parse_quote! { ::proto_rs::alloc::vec::Vec<#inner_proto> },
+        elem_type: elem,
+        is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
     }
 }
 
-// ============================================================================
-// TYPE CONVERSION
-// ============================================================================
-
-/// Get the proto-equivalent Rust type (handles size conversions)
-pub fn get_proto_rust_type(ty: &Type) -> TokenStream {
-    // Handle arrays
-    if let Type::Array(type_array) = ty {
-        let elem_ty = &*type_array.elem;
-        if is_bytes_array(ty) {
-            return quote! { ::std::vec::Vec<u8> };
-        }
-        let elem_proto = get_proto_rust_type(elem_ty);
-        return quote! { ::std::vec::Vec<#elem_proto> };
-    }
-
-    // Handle type paths
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        let converted = convert_primitive_type(&segment.ident.to_string());
-        if let Some(proto_type) = converted {
-            return proto_type;
+fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    if let Some(id) = last_ident(path) {
+        match id.to_string().as_str() {
+            "Option" => return parse_option_type(path, ty),
+            "Vec" => return parse_vec_type(path, ty),
+            "HashMap" => return parse_map_type(path, ty, MapKind::HashMap),
+            "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
+            "HashSet" | "BTreeSet" => return parse_set_type(path, ty),
+            "Box" | "Arc" => return parse_box_like_type(path, ty),
+            _ => {}
         }
     }
-
-    // Default: pass through
-    quote! { #ty }
+    parse_primitive_or_custom(ty)
 }
 
-fn convert_primitive_type(type_name: &str) -> Option<TokenStream> {
-    match type_name {
-        "u8" | "u16" => Some(quote! { u32 }),
-        "i8" | "i16" => Some(quote! { i32 }),
-        "usize" => Some(quote! { u64 }),
-        "isize" => Some(quote! { i64 }),
-        "u128" | "i128" => Some(quote! { ::std::vec::Vec<u8> }),
-        _ => None,
-    }
+fn parse_option_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("Option must have a single generic argument");
+    };
+    let mut inner = parse_field_type(inner_ty);
+    inner.is_option = true;
+    inner.rust_type = ty.clone();
+    inner.elem_type = (*inner_ty).clone();
+    inner
 }
 
-/// Check if type needs .into() conversion for to_proto
-pub fn needs_into_conversion(ty: &Type) -> bool {
-    type_needs_conversion(ty, &["u8", "u16", "i8", "i16", "usize", "isize"])
-}
-
-/// Check if type needs .try_into() conversion for from_proto
-pub fn needs_try_into_conversion(ty: &Type) -> bool {
-    type_needs_conversion(ty, &["u8", "u16", "i8", "i16"])
-}
-
-fn type_needs_conversion(ty: &Type, type_names: &[&str]) -> bool {
-    if let Type::Path(type_path) = ty {
-        type_path.path.segments.last().map(|s| type_names.contains(&s.ident.to_string().as_str())).unwrap_or(false)
-    } else {
-        false
-    }
-}
-
-/// Generate to_proto conversion for primitives
-pub fn generate_primitive_to_proto(ident: &syn::Ident, ty: &Type) -> TokenStream {
-    // Handle arrays
-    if let Type::Array(_) = ty {
-        if is_bytes_array(ty) {
-            return quote! { #ident: self.#ident.to_vec() };
-        }
-
-        if let Some(elem_ty) = array_elem_type(ty)
-            && needs_into_conversion(&elem_ty)
-        {
-            return quote! { #ident: self.#ident.iter().map(|v| (*v).into()).collect() };
-        }
-
-        return quote! { #ident: self.#ident.to_vec() };
-    }
-
-    // Handle primitives
-    if needs_into_conversion(ty) {
-        quote! { #ident: self.#ident.into() }
-    } else {
-        quote! { #ident: self.#ident.clone() }
-    }
-}
-
-/// Generate from_proto conversion for primitives
-pub fn generate_primitive_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Ident) -> TokenStream {
-    use crate::utils::generate_field_error;
-
-    // Handle arrays
-    if let Type::Array(_) = ty {
-        return generate_array_from_proto(ident, ty, error_name);
-    }
-
-    // Handle primitives
-    if needs_try_into_conversion(ty) {
-        let error_handler = generate_field_error(ident, error_name);
-        quote! {
-            #ident: proto.#ident.try_into()
-                #error_handler
-        }
-    } else {
-        quote! { #ident: proto.#ident }
-    }
-}
-
-fn generate_array_from_proto(ident: &syn::Ident, ty: &Type, error_name: &syn::Ident) -> TokenStream {
-    use crate::utils::generate_field_error;
-
-    let array_error = quote! {
-        .map_err(|_| #error_name::FieldConversion {
-            field: stringify!(#ident).to_string(),
-            source: Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Invalid array length"
-            )),
-        })?
+fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("Vec must have a single generic argument");
     };
 
-    if is_bytes_array(ty) {
-        return quote! {
-            #ident: proto.#ident.as_slice().try_into() #array_error
-        };
+    if matches!(inner_ty, Type::Path(p) if last_ident(p).is_some_and(|id| id == "u8")) {
+        return ParsedFieldType::new(
+            ty.clone(),
+            "bytes",
+            quote! { bytes },
+            false,
+            false,
+            parse_quote! { ::proto_rs::alloc::vec::Vec<u8> },
+            (*inner_ty).clone(),
+            false,
+        );
     }
 
-    if let Some(elem_ty) = array_elem_type(ty)
-        && needs_try_into_conversion(&elem_ty)
-    {
-        let error_handler = generate_field_error(ident, error_name);
-        return quote! {
-            #ident: {
-                let vec: Vec<_> = proto.#ident.iter()
-                    .map(|v| (*v).try_into())
-                    .collect::<Result<_, _>>()
-                    #error_handler;
-                vec.as_slice().try_into() #array_error
-            }
-        };
-    }
+    let inner = parse_field_type(inner_ty);
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type: inner.proto_type.clone(),
+        prost_type: inner.prost_type.clone(),
+        is_option: false,
 
-    quote! {
-        #ident: proto.#ident.as_slice().try_into() #array_error
+        is_message_like: inner.is_message_like,
+        is_numeric_scalar: inner.is_numeric_scalar,
+        proto_rust_type: inner.proto_rust_type.clone(),
+        elem_type: inner.elem_type.clone(),
+        is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use syn::parse_quote;
+fn parse_box_like_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("Box-like wrappers must have a single generic argument");
+    };
 
-    use super::*;
+    let mut inner = parse_field_type(inner_ty);
+    inner.rust_type = ty.clone();
+    inner.elem_type = (*inner_ty).clone();
+    inner
+}
 
-    #[test]
-    fn test_is_bytes_array() {
-        let ty: Type = parse_quote! { [u8; 32] };
-        assert!(is_bytes_array(&ty));
-
-        let ty: Type = parse_quote! { [u16; 32] };
-        assert!(!is_bytes_array(&ty));
+fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
+    match ty {
+        Type::Path(path) => {
+            if let Some(id) = last_ident(path) {
+                return match id.to_string().as_str() {
+                    "u8" | "u16" | "u32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
+                    "u64" | "usize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
+                    "i8" | "i16" | "i32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
+                    "i64" | "isize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
+                    "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone(), false),
+                    "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone(), false),
+                    "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
+                    "String" => ParsedFieldType::new(
+                        ty.clone(),
+                        "string",
+                        quote! { string },
+                        false,
+                        false,
+                        parse_quote! { ::proto_rs::alloc::string::String },
+                        ty.clone(),
+                        false,
+                    ),
+                    "Bytes" => ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::proto_rs::bytes::Bytes }, ty.clone(), false),
+                    _ => parse_custom_type(ty),
+                };
+            }
+            parse_custom_type(ty)
+        }
+        _ => parse_custom_type(ty),
     }
+}
 
-    #[test]
-    fn test_is_bytes_vec() {
-        let ty: Type = parse_quote! { Vec<u8> };
-        assert!(is_bytes_vec(&ty));
+fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType {
+    let syn::PathArguments::AngleBracketed(args) = &path.path.segments.last().unwrap().arguments else {
+        panic!("Map types must specify key and value generics");
+    };
 
-        let ty: Type = parse_quote! { Vec<u32> };
-        assert!(!is_bytes_vec(&ty));
+    let mut generics = args.args.iter().filter_map(|arg| match arg {
+        GenericArgument::Type(ty) => Some(ty.clone()),
+        _ => None,
+    });
+
+    let key_ty = generics.next().expect("map key type missing");
+    let value_ty = generics.next().expect("map value type missing");
+
+    let key_info = parse_field_type(&key_ty);
+    let value_info = parse_field_type(&value_ty);
+
+    let key_proto = key_info.proto_type.clone();
+    let value_proto = if value_info.is_message_like {
+        let rust_name = rust_type_path_ident(&value_info.proto_rust_type).to_string();
+        strip_proto_suffix(&rust_name)
+    } else {
+        value_info.proto_type.clone()
+    };
+
+    let proto_type = format!("map<{key_proto}, {value_proto}>");
+
+    let key_proto_ty = key_info.proto_rust_type.clone();
+    let value_proto_ty = value_info.proto_rust_type.clone();
+    let proto_rust_type = match kind {
+        MapKind::HashMap => parse_quote! { ::std::collections::HashMap<#key_proto_ty, #value_proto_ty> },
+        MapKind::BTreeMap => parse_quote! { ::proto_rs::alloc::collections::BTreeMap<#key_proto_ty, #value_proto_ty> },
+    };
+
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type,
+        prost_type: quote! { map },
+        is_option: false,
+
+        is_message_like: true,
+        is_numeric_scalar: false,
+        proto_rust_type,
+        elem_type: value_ty.clone(),
+        is_rust_enum: false,
+        map_kind: Some(kind),
     }
+}
 
-    #[test]
-    fn test_wrapper_detection() {
-        let ty: Type = parse_quote! { Option<u32> };
-        assert!(is_option_type(&ty));
+fn parse_set_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let syn::PathArguments::AngleBracketed(args) = &path.path.segments.last().unwrap().arguments else {
+        panic!("Set types must specify element generics");
+    };
+
+    let elem_ty = args
+        .args
+        .iter()
+        .find_map(|arg| match arg {
+            GenericArgument::Type(ty) => Some(ty.clone()),
+            _ => None,
+        })
+        .expect("set element type missing");
+
+    let inner = parse_field_type(&elem_ty);
+
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type: inner.proto_type.clone(),
+        prost_type: inner.prost_type.clone(),
+        is_option: false,
+        is_message_like: inner.is_message_like,
+        is_numeric_scalar: inner.is_numeric_scalar,
+        proto_rust_type: inner.proto_rust_type.clone(),
+        elem_type: elem_ty,
+        is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
     }
+}
 
-    #[test]
-    fn test_type_conversion() {
-        assert!(needs_into_conversion(&parse_quote! { u8 }));
-        assert!(needs_try_into_conversion(&parse_quote! { u16 }));
-        assert!(!needs_into_conversion(&parse_quote! { u32 }));
+fn numeric_scalar(rust: Type, proto: Type, name: &str) -> ParsedFieldType {
+    let ident = syn::Ident::new(name, Span::call_site());
+    ParsedFieldType::new(rust.clone(), name, quote! { #ident }, false, true, proto, rust, false)
+}
+
+fn parse_array_proto_suffix(ty: &Type) -> Type {
+    match ty {
+        Type::Array(array) => {
+            let inner = parse_array_proto_suffix(&array.elem);
+            parse_quote! { [#inner] }
+        }
+        _ => with_proto_suffix(ty),
     }
+}
 
-    #[test]
-    fn test_is_complex_type() {
-        assert!(!is_complex_type(&parse_quote! { u32 }));
-        assert!(!is_complex_type(&parse_quote! { String }));
-        assert!(is_complex_type(&parse_quote! { MyCustomType }));
-        assert!(!is_complex_type(&parse_quote! { Vec<u32> }));
-        assert!(is_complex_type(&parse_quote! { Vec<MyCustomType> }));
+fn parse_custom_type(ty: &Type) -> ParsedFieldType {
+    let proto_ty = parse_array_proto_suffix(ty);
+    ParsedFieldType::new(ty.clone(), "message", quote! { message }, true, false, proto_ty, ty.clone(), false)
+}
+
+fn last_ident(path: &TypePath) -> Option<&syn::Ident> {
+    path.path.segments.last().map(|s| &s.ident)
+}
+
+fn single_generic(path: &TypePath) -> Option<&Type> {
+    path.path
+        .segments
+        .last()
+        .and_then(|seg| match &seg.arguments {
+            PathArguments::AngleBracketed(args) => args.args.first(),
+            _ => None,
+        })
+        .and_then(|arg| match arg {
+            GenericArgument::Type(t) => Some(t),
+            _ => None,
+        })
+}
+
+fn with_proto_suffix(ty: &Type) -> Type {
+    match ty {
+        Type::Path(path) => {
+            let mut cloned = path.clone();
+            if let Some(seg) = cloned.path.segments.last_mut() {
+                let ident = seg.ident.to_string();
+                if !ident.ends_with("Proto") {
+                    let new_ident = syn::Ident::new(&(ident + "Proto"), Span::call_site());
+                    seg.ident = new_ident;
+                }
+            }
+            Type::Path(cloned)
+        }
+        _ => ty.clone(),
     }
 }
