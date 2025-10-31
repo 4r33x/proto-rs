@@ -56,6 +56,8 @@ pub use crate::name::Name;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::EncoderExt;
 #[cfg(feature = "tonic")]
+pub use crate::tonic::MapResponseStream;
+#[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoRequest;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoResponse;
