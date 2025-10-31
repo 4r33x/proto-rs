@@ -13,7 +13,7 @@
 
 * **Pure-Rust schema definitions.** Use `#[proto_message]`, `#[proto_rpc]`, and `#[proto_dump]` to declare every message and service in idiomatic Rust while the derive machinery keeps `.proto` files in sync for external consumers.
 * **Tailored encoding pipelines.** `ProtoShadow` lets you bolt custom serialization logic onto any message, opt into multiple domain "suns", and keep performance-sensitive conversions entirely under your control.
-* **Zero-copy Tonic integration.** Opt-in runtime helpers supply drop-in codecs, borrowed request/response wrappers, and `ToZeroCopy*` traits so RPC handlers can run without cloning payloads.
+* **Zero-copy Tonic integration.** Codegen support borrowed request/response wrappers, and `ToZeroCopy*` traits so RPC handlers can run without cloning payloads.
 * **Workspace-wide schema registries.** The build-time inventory collects every emitted `.proto`, making it easy to materialize or lint schemas from a single crate.
 
 For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this crate implement different approach
@@ -25,40 +25,34 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 - **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
 - **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs). The helper deduplicates inputs and writes canonical packages derived from the file path.
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
-- **`no_std` by default runtime** – Runtime helpers lean entirely on `core` and `alloc`; enabling the `std` feature layers on Tonic integration and filesystem tooling without changing the API.
 
 
 Define your messages and services using the derive macros with native rust types:
 
 ```rust
-use proto_rs::{proto_message, proto_rpc};
+#[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct FooResponse;
 
-#[proto_message(proto_path = "protos/gen_proto/rpc.proto")]
-#[derive(Clone, Debug, PartialEq)]
-pub struct RizzPing;
+#[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct BarSub;
 
-#[proto_rpc(
-    rpc_package = "sigma_rpc",
-    rpc_server = true,
-    rpc_client = true,
-    proto_path = "protos/gen_proto/sigma_rpc.proto",
-)]
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
+#[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
-    type Stream: futures_core::Stream<Item = Result<FooResponse, tonic::Status>> + Send;
-
-    async fn rizz_ping(
-        &self,
-        request: tonic::Request<RizzPing>,
-    ) -> Result<tonic::Response<GoonPong>, tonic::Status>;
-
-    async fn rizz_uni(
-        &self,
-        request: tonic::Request<BarSub>,
-    ) -> Result<tonic::Response<Self::Stream>, tonic::Status>;
+    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
+    async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong, Status>;
+    async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
+    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
+    async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
+    async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
+    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 ```
 
-Yep, all types here are just Rust types. We can then implement the server just like a normal Tonic service, but the `.proto` schema is generated for you whenever emission is enabled.
+Yep, all types here are Rust types. We can then implement the server just like a normal Tonic service, and the `.proto` schema is generated for you whenever emission is enabled.
 
 
 ## Advanced Features
