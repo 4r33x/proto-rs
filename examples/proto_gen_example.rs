@@ -40,7 +40,7 @@ pub trait SigmaRpc {
     async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
     async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
+    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 
@@ -64,9 +64,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
 impl SigmaRpc for S {
     #[cfg(feature = "stable")]
-    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
+    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send>>;
     #[cfg(not(feature = "stable"))]
-    type RizzUniStream = impl Stream<Item = Result<FooResponse, Status>> + Send;
+    type RizzUniStream = impl Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
 
     async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status> {
         Ok(GoonPong {}.to_zero_copy())
@@ -96,7 +96,8 @@ impl SigmaRpc for S {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
-                if tx.send(Ok(FooResponse {})).await.is_err() {
+                let response = ZeroCopyResponse::from_message(FooResponse {});
+                if tx.send(Ok(response)).await.is_err() {
                     break;
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

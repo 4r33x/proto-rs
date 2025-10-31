@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
+use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -48,7 +49,7 @@ pub struct BarSub;
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc_simple.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"] )]
 pub trait SigmaRpc {
-    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
+    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
 
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;

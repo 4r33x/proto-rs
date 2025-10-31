@@ -21,6 +21,7 @@ struct ParsedMethodSignature {
     is_streaming: bool,
     stream_type_name: Option<syn::Ident>,
     inner_response_type: Option<Type>,
+    stream_item_type: Option<Type>,
 }
 
 impl ParsedMethodSignature {
@@ -28,7 +29,7 @@ impl ParsedMethodSignature {
         let request_type = extract_request_type(sig);
         let (response_return_type, response_is_result) = extract_response_return(sig);
         let response_type = extract_proto_type(&response_return_type);
-        let (is_streaming, stream_type_name, inner_response_type) = extract_stream_metadata(&response_type, trait_items);
+        let (is_streaming, stream_type_name, inner_response_type, stream_item_type) = extract_stream_metadata(&response_type, trait_items);
 
         Self {
             request_type,
@@ -38,6 +39,7 @@ impl ParsedMethodSignature {
             is_streaming,
             stream_type_name,
             inner_response_type,
+            stream_item_type,
         }
     }
 }
@@ -64,6 +66,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                     is_streaming: signature.is_streaming,
                     stream_type_name: signature.stream_type_name,
                     inner_response_type: signature.inner_response_type,
+                    stream_item_type: signature.stream_item_type,
                     user_method_signature,
                 });
             }
@@ -199,30 +202,30 @@ fn extract_proto_type(success_ty: &Type) -> Type {
     }
 }
 
-fn extract_stream_metadata(response_type: &Type, trait_items: &[TraitItem]) -> (bool, Option<syn::Ident>, Option<Type>) {
+fn extract_stream_metadata(response_type: &Type, trait_items: &[TraitItem]) -> (bool, Option<syn::Ident>, Option<Type>, Option<Type>) {
     if let Type::Path(TypePath { qself: None, path }) = response_type {
         let mut segments = path.segments.iter();
         if let (Some(self_segment), Some(stream_segment)) = (segments.next(), segments.next())
             && self_segment.ident == "Self"
         {
             let stream_name = stream_segment.ident.clone();
-            let inner = find_stream_item_type(&stream_name, trait_items).unwrap_or_else(|| panic!("Could not find associated type definition for {stream_name}"));
-            return (true, Some(stream_name), Some(inner));
+            let (item_ty, proto_ty) = find_stream_item_types(&stream_name, trait_items).unwrap_or_else(|| panic!("Could not find associated type definition for {stream_name}"));
+            return (true, Some(stream_name), Some(proto_ty), Some(item_ty));
         }
     }
 
-    (false, None, None)
+    (false, None, None, None)
 }
 
-fn find_stream_item_type(stream_name: &syn::Ident, trait_items: &[TraitItem]) -> Option<Type> {
+fn find_stream_item_types(stream_name: &syn::Ident, trait_items: &[TraitItem]) -> Option<(Type, Type)> {
     trait_items.iter().find_map(|item| match item {
-        TraitItem::Type(TraitItemType { ident, bounds, .. }) if ident == stream_name => Some(extract_inner_type_from_bounds(bounds)),
+        TraitItem::Type(TraitItemType { ident, bounds, .. }) if ident == stream_name => Some(extract_stream_item_from_bounds(bounds)),
         _ => None,
     })
 }
 
 /// Extract inner type from Stream trait bounds
-pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Plus>) -> Type {
+pub fn extract_stream_item_from_bounds(bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::token::Plus>) -> (Type, Type) {
     for bound in bounds {
         if let syn::TypeParamBound::Trait(trait_bound) = bound {
             for segment in &trait_bound.path.segments {
@@ -238,7 +241,9 @@ pub fn extract_inner_type_from_bounds(bounds: &syn::punctuated::Punctuated<syn::
                             && let syn::PathArguments::AngleBracketed(result_args) = &result_seg.arguments
                             && let Some(syn::GenericArgument::Type(inner_ty)) = result_args.args.first()
                         {
-                            return inner_ty.clone();
+                            let item_ty = inner_ty.clone();
+                            let proto_ty = extract_proto_type(inner_ty);
+                            return (item_ty, proto_ty);
                         }
                     }
                 }
@@ -260,6 +265,7 @@ mod tests {
         let trait_input: ItemTrait = parse_quote! {
             trait TestService {
                 type MyStream: tonic::codegen::tokio_stream::Stream<Item = Result<MyResponse, tonic::Status>> + Send + 'static;
+                type ZeroCopyStream: tonic::codegen::tokio_stream::Stream<Item = Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>> + Send + 'static;
 
                 async fn unary(
                     &self,
@@ -275,6 +281,11 @@ mod tests {
                     &self,
                     request: tonic::Request<MyRequest>
                 ) -> Result<tonic::Response<Self::MyStream>, tonic::Status>;
+
+                async fn streaming_zero_copy(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<Self::ZeroCopyStream>, tonic::Status>;
 
                 async fn plain(
                     &self,
@@ -308,10 +319,20 @@ mod tests {
         let streaming = &signatures[2];
         assert!(streaming.is_streaming);
         assert_eq!(streaming.stream_type_name.as_ref().unwrap().to_string(), "MyStream");
-        let stream_inner = streaming.inner_response_type.as_ref().unwrap();
-        assert_eq!(quote!(#stream_inner).to_string(), "MyResponse");
+        let stream_proto = streaming.inner_response_type.as_ref().unwrap();
+        assert_eq!(quote!(#stream_proto).to_string(), "MyResponse");
+        let stream_item = streaming.stream_item_type.as_ref().unwrap();
+        assert_eq!(quote!(#stream_item).to_string(), "MyResponse");
 
-        let plain = &signatures[3];
+        let zero_copy_stream = &signatures[3];
+        assert!(zero_copy_stream.is_streaming);
+        assert_eq!(zero_copy_stream.stream_type_name.as_ref().unwrap().to_string(), "ZeroCopyStream");
+        let zero_proto = zero_copy_stream.inner_response_type.as_ref().unwrap();
+        assert_eq!(quote!(#zero_proto).to_string(), "MyResponse");
+        let zero_item = zero_copy_stream.stream_item_type.as_ref().unwrap();
+        assert_eq!(quote!(#zero_item).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
+
+        let plain = &signatures[4];
         assert!(!plain.response_is_result);
         let plain_return = &plain.response_return_type;
         assert_eq!(quote!(#plain_return).to_string(), "MyResponse");

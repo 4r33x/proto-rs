@@ -67,6 +67,10 @@ pub use crate::tonic::ToZeroCopyResponse;
 pub use crate::tonic::ZeroCopyRequest;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ZeroCopyResponse;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::map_proto_response;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::map_proto_stream_result;
 pub use crate::traits::OwnedSunOf;
 pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoKind;
