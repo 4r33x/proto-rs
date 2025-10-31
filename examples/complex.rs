@@ -1,7 +1,11 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 #![allow(clippy::missing_errors_doc)]
+
+#[cfg(feature = "stable")]
 use std::pin::Pin;
 
+use proto_rs::ToZeroCopyResponse;
+use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -52,7 +56,7 @@ pub struct BarSub;
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc_complex.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"] )]
 pub trait SigmaRpc {
-    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
+    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
@@ -76,7 +80,11 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 impl SigmaRpc for S {
-    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
+    #[cfg(feature = "stable")]
+    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send>>;
+    #[cfg(not(feature = "stable"))]
+    type RizzUniStream = impl Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
             id: Id { id: 10 },
@@ -88,7 +96,7 @@ impl SigmaRpc for S {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
-                if tx.send(Ok(FooResponse {})).await.is_err() {
+                if tx.send(Ok(FooResponse {}.to_zero_copy())).await.is_err() {
                     break;
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -96,9 +104,10 @@ impl SigmaRpc for S {
         });
 
         let stream = ReceiverStream::new(rx);
-        let boxed_stream: Self::RizzUniStream = Box::pin(stream);
+        #[cfg(feature = "stable")]
+        let stream: Self::RizzUniStream = Box::pin(stream);
 
-        Ok(Response::new(boxed_stream))
+        Ok(Response::new(stream))
     }
 }
 
