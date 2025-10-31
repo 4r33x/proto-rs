@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 
 use tonic::Response;
+use tonic::Status;
 
 use crate::BytesMode;
 use crate::ProtoExt;
@@ -127,6 +128,24 @@ impl<T> ProtoResponse<T> for ZeroCopyResponse<T> {
     fn into_response(self) -> Response<Self::Encode> {
         self.inner
     }
+}
+
+#[inline]
+pub fn map_proto_response<R, P>(value: R) -> <R as ProtoResponse<P>>::Encode
+where
+    R: ProtoResponse<P>,
+    P: ProtoExt,
+{
+    <R as ProtoResponse<P>>::into_response(value).into_inner()
+}
+
+#[inline]
+pub fn map_proto_stream_result<R, P>(result: Result<R, Status>) -> Result<<R as ProtoResponse<P>>::Encode, Status>
+where
+    R: ProtoResponse<P>,
+    P: ProtoExt,
+{
+    result.map(map_proto_response::<R, P>)
 }
 
 impl<T> ToZeroCopyResponse<T> for &T

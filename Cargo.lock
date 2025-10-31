@@ -1082,6 +1082,7 @@ dependencies = [
  "const_panic",
  "criterion",
  "fastnum",
+ "futures-core",
  "inventory",
  "proptest",
  "prost",

@@ -12,8 +12,10 @@ pub use req::ProtoRequest;
 pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
 pub use resp::ZeroCopyResponse;
-#[allow(unused_imports)]
-pub use stream::MapResponseStream;
+pub use resp::map_proto_response;
+pub use resp::map_proto_stream_result;
+pub use stream::BoxEncodeStream;
+pub use stream::box_map_proto_stream;
 
 use crate::ProtoExt;
 use crate::ProtoShadow;

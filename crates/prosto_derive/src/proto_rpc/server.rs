@@ -246,17 +246,15 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
     (blanket_types, blanket_methods)
 }
 
-fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
+fn generate_blanket_stream_type(method: &MethodInfo, _trait_name: &syn::Ident) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let item_type = method.stream_item_type.as_ref().unwrap();
     let inner_type = method.inner_response_type.as_ref().unwrap();
     let response_proto = generate_response_proto_type(inner_type);
 
     quote! {
-        type #stream_name = ::proto_rs::MapResponseStream<
-            <Self as super::#trait_name>::#stream_name,
-            #item_type,
-            #response_proto,
+        type #stream_name = ::proto_rs::BoxEncodeStream<
+            <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
         >;
     }
 }
@@ -326,6 +324,9 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let method_name = &method.name;
     let request_type = &method.request_type;
     let stream_name = method.stream_type_name.as_ref().unwrap();
+    let item_type = method.stream_item_type.as_ref().unwrap();
+    let inner_type = method.inner_response_type.as_ref().unwrap();
+    let response_proto = generate_response_proto_type(inner_type);
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
@@ -343,7 +344,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                 ).await?;
 
                 let encoded_response = native_response.map(|stream| {
-                    ::proto_rs::MapResponseStream::<_, _, _>::new(stream)
+                    ::proto_rs::box_map_proto_stream::<_, #item_type, #response_proto>(stream)
                 });
 
                 Ok(encoded_response)
