@@ -108,6 +108,7 @@ pub struct ZeroCopyEnumContainer {
     pub repeated_direct: Vec<ComplexEnum>,
     pub raw_list: ZeroCopy<ComplexEnumList>,
     pub nested: ZeroCopy<ZeroCopyEnumMessage>,
+    pub nested_message: ZeroCopy<SampleMessage>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -389,5 +390,6 @@ pub fn zero_copy_enum_fixture() -> ZeroCopyEnumContainer {
         repeated_direct: vec![ComplexEnum::One, ComplexEnum::Three, ComplexEnum::Two],
         raw_list: ZeroCopy::from(&outer_list),
         nested: ZeroCopy::from(&nested_message),
+        nested_message: ZeroCopy::from(&sample_message()),
     }
 }
