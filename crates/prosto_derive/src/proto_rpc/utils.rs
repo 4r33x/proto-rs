@@ -193,7 +193,7 @@ fn extract_proto_type(success_ty: &Type) -> Type {
     if let Type::Path(TypePath { path, .. }) = success_ty
         && let Some(segment) = path.segments.last()
         && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-        && (segment.ident == "Response" || segment.ident == "ZeroCopyResponse")
+        && (segment.ident == "Response" || segment.ident == "ZeroCopy")
         && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
     {
         inner_ty.clone()
@@ -265,7 +265,7 @@ mod tests {
         let trait_input: ItemTrait = parse_quote! {
             trait TestService {
                 type MyStream: tonic::codegen::tokio_stream::Stream<Item = Result<MyResponse, tonic::Status>> + Send + 'static;
-                type ZeroCopyStream: tonic::codegen::tokio_stream::Stream<Item = Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>> + Send + 'static;
+                type ZeroCopyStream: tonic::codegen::tokio_stream::Stream<Item = Result<proto_rs::ZeroCopy<MyResponse>, tonic::Status>> + Send + 'static;
 
                 async fn unary(
                     &self,
@@ -275,7 +275,7 @@ mod tests {
                 async fn zero_copy(
                     &self,
                     request: tonic::Request<MyRequest>
-                ) -> Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>;
+                ) -> Result<proto_rs::ZeroCopy<MyResponse>, tonic::Status>;
 
                 async fn streaming(
                     &self,
@@ -313,7 +313,7 @@ mod tests {
 
         let zero_copy = &signatures[1];
         let zero_copy_return = &zero_copy.response_return_type;
-        assert_eq!(quote!(#zero_copy_return).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
+        assert_eq!(quote!(#zero_copy_return).to_string(), "proto_rs :: ZeroCopy < MyResponse >");
         assert!(zero_copy.response_is_result);
 
         let streaming = &signatures[2];
@@ -330,7 +330,7 @@ mod tests {
         let zero_proto = zero_copy_stream.inner_response_type.as_ref().unwrap();
         assert_eq!(quote!(#zero_proto).to_string(), "MyResponse");
         let zero_item = zero_copy_stream.stream_item_type.as_ref().unwrap();
-        assert_eq!(quote!(#zero_item).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
+        assert_eq!(quote!(#zero_item).to_string(), "proto_rs :: ZeroCopy < MyResponse >");
 
         let plain = &signatures[4];
         assert!(!plain.response_is_result);

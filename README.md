@@ -13,7 +13,7 @@
 
 * **Pure-Rust schema definitions.** Use `#[proto_message]`, `#[proto_rpc]`, and `#[proto_dump]` to declare every message and service in idiomatic Rust while the derive machinery keeps `.proto` files in sync for external consumers.
 * **Tailored encoding pipelines.** `ProtoShadow` lets you bolt custom serialization logic onto any message, opt into multiple domain "suns", and keep performance-sensitive conversions entirely under your control.
-* **Zero-copy Tonic integration.** Codegen support borrowed request/response wrappers, and `ToZeroCopy*` traits so RPC handlers can run without cloning payloads.
+* **Zero-copy Tonic integration.** Codegen supports borrowed request/response wrappers, and the `ToZeroCopyRequest`/`ToZeroCopyResponse` traits so RPC handlers can run without cloning payloads.
 * **Workspace-wide schema registries.** The build-time inventory collects every emitted `.proto`, making it easy to materialize or lint schemas from a single crate.
 
 For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this crate implement different approach
@@ -41,13 +41,13 @@ pub struct BarSub;
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
-    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
+    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopy<GoonPong>, Status>;
     async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong, Status>;
     async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
-    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
+    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopy<GoonPong>;
     async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    type RizzUniStream: Stream<Item = Result<ZeroCopy<FooResponse>, Status>> + Send;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 ```
@@ -288,27 +288,27 @@ Each `sun` entry generates a full `ProtoExt` implementation so the same shadow t
 
 ## Zero-copy server responses
 
-Service handlers produced by `#[proto_rpc]` work with [`ZeroCopyResponse`](src/tonic/resp.rs) to avoid cloning payloads. Any borrowed message (`&T`) can be turned into an owned response buffer via [`ToZeroCopyResponse::to_zero_copy`](src/tonic.rs), and the macro also supports infallible method signatures that return a response directly. The server example in [`examples/proto_gen_example.rs`](examples/proto_gen_example.rs) demonstrates both patterns:
+Service handlers produced by `#[proto_rpc]` work with [`ZeroCopy`](src/tonic/resp.rs) to avoid cloning payloads. Any borrowed message (`&T`) can be turned into an owned response buffer via [`ToZeroCopyResponse::to_zero_copy`](src/tonic.rs), and the macro also supports infallible method signatures that return a response directly. The server example in [`examples/proto_gen_example.rs`](examples/proto_gen_example.rs) demonstrates both patterns:
 
 ```rust
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, ...)]
 pub trait SigmaRpc {
-    async fn zero_copy_ping(&self, Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
-    async fn infallible_zero_copy_ping(&self, Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
+    async fn zero_copy_ping(&self, Request<RizzPing>) -> Result<ZeroCopy<GoonPong>, Status>;
+    async fn infallible_zero_copy_ping(&self, Request<RizzPing>) -> ZeroCopy<GoonPong>;
 }
 
 impl SigmaRpc for ServerImpl {
-    async fn zero_copy_ping(&self, _: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status> {
+    async fn zero_copy_ping(&self, _: Request<RizzPing>) -> Result<ZeroCopy<GoonPong>, Status> {
         Ok(GoonPong {}.to_zero_copy())
     }
 }
 ```
 
-This approach keeps the encoded bytes around without materializing a fresh `GoonPong` for each call. Compared to Prost-based services—where `&T` data must first be cloned into an owned `T` before encoding—`ZeroCopyResponse` removes at least one allocation and copy per RPC, which shows up as lower tail latencies for large payloads. The Criterion harness ships a dedicated `bench_zero_copy_vs_clone` group that regularly clocks the zero-copy flow at 1.3×–1.7× the throughput of the Prost clone-and-encode baseline, confirming the wins for read-heavy endpoints.
+This approach keeps the encoded bytes around without materializing a fresh `GoonPong` for each call. Compared to Prost-based services—where `&T` data must first be cloned into an owned `T` before encoding—`ZeroCopy` removes at least one allocation and copy per RPC, which shows up as lower tail latencies for large payloads. The Criterion harness ships a dedicated `bench_zero_copy_vs_clone` group that regularly clocks the zero-copy flow at 1.3×–1.7× the throughput of the Prost clone-and-encode baseline, confirming the wins for read-heavy endpoints.
 
 ## Zero-copy client requests
 
-Clients get the same treatment through [`ZeroCopyRequest`](src/tonic/req.rs). The generated stubs accept any type that implements `ProtoRequest`, so you can hand them an owned message, a `tonic::Request<T>`, or a zero-copy wrapper created from an existing borrow:
+Clients get the same treatment through [`ZeroCopy`](src/tonic/req.rs). The generated stubs accept any type that implements `ProtoRequest`, so you can hand them an owned message, a `tonic::Request<T>`, or a zero-copy wrapper created from an existing borrow:
 
 ```rust
 let payload = RizzPing {};
@@ -320,7 +320,7 @@ If you already have a configured `tonic::Request<&T>`, call `request.to_zero_cop
 
 ### Performance trade-offs vs. Prost
 
-The runtime exposes both zero-copy and owned-code paths so you can pick the trade-off that matches your workload. Wrapping payloads in `ZeroCopyRequest`/`ZeroCopyResponse` means the encoder works with borrowed data (`SunByRef`) and never materializes owned clones before writing bytes to the socket, which is why the benchmark suite records 70% higher throughput than `prost::Message` when measuring identical service implementations (`bench_zero_copy_vs_clone`).
+The runtime exposes both zero-copy and owned-code paths so you can pick the trade-off that matches your workload. Wrapping payloads in `ZeroCopy` means the encoder works with borrowed data (`SunByRef`) and never materializes owned clones before writing bytes to the socket, which is why the benchmark suite records 70% higher throughput than `prost::Message` when measuring identical service implementations (`bench_zero_copy_vs_clone`).
 
 Owned encoding\decoding is somewhat slower or faster in somecases - see bench section
 

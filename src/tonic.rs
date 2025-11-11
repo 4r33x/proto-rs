@@ -6,13 +6,13 @@ use tonic::codec::EncodeBuf;
 use tonic::codec::Encoder;
 mod req;
 mod resp;
+mod zero;
 use bytes::BufMut;
 pub use req::ProtoRequest;
-pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
-pub use resp::ZeroCopyResponse;
 pub use resp::map_proto_response;
 pub use resp::map_proto_stream_result;
+pub use zero::ZeroCopy;
 
 use crate::ProtoExt;
 use crate::ProtoShadow;
@@ -25,10 +25,10 @@ use crate::coders::SunByRef;
 use crate::coders::SunByVal;
 
 pub trait ToZeroCopyResponse<T> {
-    fn to_zero_copy(self) -> ZeroCopyResponse<T>;
+    fn to_zero_copy(self) -> ZeroCopy<T>;
 }
 pub trait ToZeroCopyRequest<T> {
-    fn to_zero_copy(self) -> ZeroCopyRequest<T>;
+    fn to_zero_copy(self) -> ZeroCopy<T>;
 }
 
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>

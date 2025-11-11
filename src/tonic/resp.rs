@@ -1,92 +1,12 @@
-use core::marker::PhantomData;
-
 use tonic::Response;
 use tonic::Status;
 
-use crate::BytesMode;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::SunByRef;
-use crate::tonic::ToZeroCopyResponse;
-
-/// A wrapper around [`tonic::Response<Vec<u8>>`] that remembers the protobuf
-/// message type that produced the encoded bytes.
-#[derive(Debug)]
-pub struct ZeroCopyResponse<T> {
-    inner: Response<Vec<u8>>,
-    _marker: PhantomData<T>,
-}
-
-impl<T> ZeroCopyResponse<T> {
-    #[inline]
-    pub fn from_response(request: Response<Vec<u8>>) -> Self {
-        Self { inner: request, _marker: PhantomData }
-    }
-
-    #[inline]
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self::from_response(Response::new(bytes))
-    }
-
-    #[inline]
-    pub fn into_response(self) -> Response<Vec<u8>> {
-        self.inner
-    }
-
-    #[inline]
-    pub fn as_response(&self) -> &Response<Vec<u8>> {
-        &self.inner
-    }
-
-    #[inline]
-    pub fn as_response_mut(&mut self) -> &mut Response<Vec<u8>> {
-        &mut self.inner
-    }
-}
-
-impl<T> From<ZeroCopyResponse<T>> for Response<Vec<u8>> {
-    #[inline]
-    fn from(request: ZeroCopyResponse<T>) -> Self {
-        request.into_response()
-    }
-}
-
-impl<T> From<Response<T>> for ZeroCopyResponse<T>
-where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
-{
-    #[inline]
-    fn from(request: Response<T>) -> Self {
-        let (metadata, message, extensions) = request.into_parts();
-        let encoded = T::encode_to_vec(&message);
-        ZeroCopyResponse::from_response(Response::from_parts(metadata, encoded, extensions))
-    }
-}
-
-impl<'a, T> From<Response<&'a T>> for ZeroCopyResponse<T>
-where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
-{
-    #[inline]
-    fn from(request: Response<&'a T>) -> Self {
-        let (metadata, message, extensions) = request.into_parts();
-        let encoded = T::encode_to_vec(message);
-        ZeroCopyResponse::from_response(Response::from_parts(metadata, encoded, extensions))
-    }
-}
-
-impl<T> ZeroCopyResponse<T>
-where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
-{
-    #[inline]
-    pub fn from_message(message: T) -> Self {
-        Response::new(message).into()
-    }
-}
+use crate::ToZeroCopyResponse;
+use crate::ZeroCopy;
+use crate::coders::SunByVal;
 
 pub trait ProtoResponse<T>: Sized {
     type Encode: Send + Sync + 'static;
@@ -102,6 +22,7 @@ where
 {
     type Encode = T;
     type Mode = SunByRef;
+
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         self
@@ -115,18 +36,87 @@ where
 {
     type Encode = T;
     type Mode = SunByRef;
+
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         Response::new(self)
     }
 }
 
-impl<T> ProtoResponse<T> for ZeroCopyResponse<T> {
-    type Encode = Vec<u8>;
-    type Mode = BytesMode;
+impl<T> ProtoResponse<T> for ZeroCopy<T>
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = ZeroCopy<T>;
+    type Mode = SunByVal;
+
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {
-        self.inner
+        self.into_tonic_response()
+    }
+}
+
+impl<T> ZeroCopy<T> {
+    #[inline]
+    pub fn from_tonic_response(response: Response<Vec<u8>>) -> Self {
+        let (metadata, bytes, extensions) = response.into_parts();
+        Self::from_parts(metadata, extensions, bytes)
+    }
+
+    #[inline]
+    pub fn into_tonic_response(self) -> Response<ZeroCopy<T>> {
+        let (metadata, extensions, inner) = self.into_parts();
+        let body = ZeroCopy::from_parts(Default::default(), Default::default(), inner);
+        Response::from_parts(metadata, body, extensions)
+    }
+
+    #[inline]
+    pub fn into_bytes_response(self) -> Response<Vec<u8>> {
+        let (metadata, extensions, inner) = self.into_parts();
+        Response::from_parts(metadata, inner, extensions)
+    }
+}
+
+impl<T> From<ZeroCopy<T>> for Response<Vec<u8>> {
+    #[inline]
+    fn from(value: ZeroCopy<T>) -> Self {
+        value.into_bytes_response()
+    }
+}
+
+impl<T> From<Response<T>> for ZeroCopy<T>
+where
+    T: ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+{
+    #[inline]
+    fn from(response: Response<T>) -> Self {
+        let (metadata, message, extensions) = response.into_parts();
+        let encoded = T::encode_to_vec(&message);
+        ZeroCopy::from_parts(metadata, extensions, encoded)
+    }
+}
+
+impl<'a, T> From<Response<&'a T>> for ZeroCopy<T>
+where
+    T: ProtoExt,
+    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+{
+    #[inline]
+    fn from(response: Response<&'a T>) -> Self {
+        let (metadata, message, extensions) = response.into_parts();
+        let encoded = T::encode_to_vec(message);
+        ZeroCopy::from_parts(metadata, extensions, encoded)
+    }
+}
+
+impl<T> From<Response<ZeroCopy<T>>> for ZeroCopy<T> {
+    #[inline]
+    fn from(response: Response<ZeroCopy<T>>) -> Self {
+        let (metadata, body, extensions) = response.into_parts();
+        let (_, _, bytes) = body.into_parts();
+        ZeroCopy::from_parts(metadata, extensions, bytes)
     }
 }
 
@@ -154,9 +144,8 @@ where
     for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
 {
     #[inline]
-    fn to_zero_copy(self) -> ZeroCopyResponse<T> {
-        let encoded = T::encode_to_vec(self);
-        ZeroCopyResponse::from_bytes(encoded)
+    fn to_zero_copy(self) -> ZeroCopy<T> {
+        ZeroCopy::from_borrowed(self)
     }
 }
 
@@ -166,9 +155,9 @@ where
     for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
 {
     #[inline]
-    fn to_zero_copy(self) -> ZeroCopyResponse<T> {
-        let (meta, t, ext) = self.into_parts();
-        let encoded = T::encode_to_vec(t);
-        ZeroCopyResponse::from_response(Response::from_parts(meta, encoded, ext))
+    fn to_zero_copy(self) -> ZeroCopy<T> {
+        let (metadata, value, extensions) = self.into_parts();
+        let encoded = T::encode_to_vec(value);
+        ZeroCopy::from_parts(metadata, extensions, encoded)
     }
 }

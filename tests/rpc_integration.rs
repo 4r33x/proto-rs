@@ -383,7 +383,7 @@ async fn proto_client_accepts_borrowed_requests() {
     let response = client.echo_sample(request_message()).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
-    let zero_copy: proto_rs::ZeroCopyRequest<_> = tonic::Request::new(&request).into();
+    let zero_copy: proto_rs::ZeroCopy<_> = tonic::Request::new(&request).into();
     let response = client.echo_sample(zero_copy).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 

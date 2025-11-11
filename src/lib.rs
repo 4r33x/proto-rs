@@ -64,9 +64,7 @@ pub use crate::tonic::ToZeroCopyRequest;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ToZeroCopyResponse;
 #[cfg(feature = "tonic")]
-pub use crate::tonic::ZeroCopyRequest;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::ZeroCopyResponse;
+pub use crate::tonic::ZeroCopy;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_response;
 #[cfg(feature = "tonic")]
