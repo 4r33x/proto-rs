@@ -5,6 +5,7 @@
 use std::pin::Pin;
 
 use proto_rs::ToZeroCopyResponse;
+use proto_rs::ZeroCopy;
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
@@ -41,7 +42,7 @@ pub struct RizzPing {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
     id: Id,
-    status: ServiceStatus,
+    status: ZeroCopy<ServiceStatus>,
 }
 
 #[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
@@ -88,7 +89,7 @@ impl SigmaRpc for S {
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
             id: Id { id: 10 },
-            status: ServiceStatus::Completed,
+            status: ZeroCopy::from(&ServiceStatus::Completed),
         }))
     }
 

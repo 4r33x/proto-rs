@@ -92,37 +92,6 @@ impl<T> ZeroCopy<T> {
     }
 }
 
-impl<T> ZeroCopy<T>
-where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
-{
-    pub fn from_ref(value: &T) -> Self {
-        Self::from(value)
-    }
-
-    pub fn from_owned(value: T) -> Self {
-        Self::from(&value)
-    }
-}
-
-impl<T> ZeroCopy<T>
-where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
-{
-    pub fn from_value(value: T) -> Self {
-        Self::from(value)
-    }
-
-    pub fn from_copy(value: &T) -> Self
-    where
-        T: Copy,
-    {
-        Self::from(*value)
-    }
-}
-
 impl<T> From<ZeroCopy<T>> for Vec<u8> {
     fn from(value: ZeroCopy<T>) -> Self {
         value.into_bytes()
@@ -175,18 +144,6 @@ where
     }
 }
 
-impl<T> ToZeroCopy<T> for ZeroCopy<T> {
-    fn to_zero_copy(self) -> ZeroCopy<T> {
-        self
-    }
-}
-
-impl<T> ToZeroCopy<T> for &ZeroCopy<T> {
-    fn to_zero_copy(self) -> ZeroCopy<T> {
-        (*self).clone()
-    }
-}
-
 impl<T: 'static> ProtoShadow<ZeroCopy<T>> for ZeroCopy<T> {
     type Sun<'a> = &'a ZeroCopy<T>;
     type OwnedSun = ZeroCopy<T>;
@@ -207,6 +164,7 @@ where
 {
     type EncodeInput<'a> = &'a ZeroCopy<T>;
     const KIND: ProtoKind = T::KIND;
+    const WIRE_TYPE: WireType = T::WIRE_TYPE; // ← ADD THIS!
 
     fn proto_default() -> Self {
         Self::new()
@@ -234,65 +192,184 @@ where
 
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(Self::WIRE_TYPE, wire_type)?;
-        let bytes = copy_value(wire_type, buf, ctx)?;
-        value.inner = bytes;
-        Ok(())
+        copy_value_payload(wire_type, buf, &mut value.inner, ctx)
     }
 }
 
-impl<T: 'static> ProtoExt for ZeroCopy<T>
+impl<T> ProtoExt for ZeroCopy<T>
 where
-    T: ProtoWire,
+    T: ProtoWire + 'static,
 {
     type Shadow<'b> = ZeroCopy<T>;
 
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let data = copy_value(wire_type, buf, ctx)?;
-        let mut field = Vec::with_capacity(
-            key_len(tag)
-                + data.len()
-                + match wire_type {
-                    WireType::LengthDelimited => encoded_len_varint(data.len() as u64),
-                    _ => 0,
-                },
-        );
-        encode_key(tag, wire_type, &mut field);
-        if matches!(wire_type, WireType::LengthDelimited) {
-            encode_varint(data.len() as u64, &mut field);
-        }
-        field.extend_from_slice(&data);
-        value.inner.extend_from_slice(&field);
-        Ok(())
+        append_field(tag, wire_type, buf, &mut value.inner, ctx)
     }
 }
 
-fn copy_value(wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<Vec<u8>, DecodeError> {
+/// Decodes varint from a contiguous slice. Returns (value, bytes_consumed).
+#[inline]
+fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
+    let mut value: u64 = 0;
+    let mut shift = 0;
+
+    for (i, &b) in bytes.iter().enumerate().take(10) {
+        value |= ((b & 0x7F) as u64) << shift;
+        if b < 0x80 {
+            return Ok((value, i + 1));
+        }
+        shift += 7;
+    }
+
+    Err(DecodeError::new("invalid or unterminated varint"))
+}
+
+/// Peek varint for length prefix ONLY. Since Buf is contiguous, this is safe.
+#[inline]
+fn peek_varint_prefix(buf: &impl Buf) -> Result<(u64, usize), DecodeError> {
+    let bytes = buf.chunk();
+
+    // Empty buffer
+    if bytes.is_empty() {
+        return Err(DecodeError::new("buffer exhausted"));
+    }
+
+    // decode_varint_slice handles all cases correctly
+    decode_varint_slice(bytes)
+}
+
+/// Copy payload bytes directly without double-scanning
+#[inline]
+fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut Vec<u8>, ctx: DecodeContext) -> Result<(), DecodeError> {
     ctx.limit_reached()?;
+    into.clear();
+
     match wire_type {
         WireType::Varint => {
-            let value = decode_varint(buf)?;
-            let mut raw = Vec::with_capacity(encoded_len_varint(value));
-            encode_varint(value, &mut raw);
-            Ok(raw)
+            // Direct slice access - single scan, no loops
+            let bytes = buf.chunk();
+            let (_, len) = decode_varint_slice(bytes)?;
+
+            if buf.remaining() < len {
+                return Err(DecodeError::new("buffer underflow"));
+            }
+
+            into.resize(len, 0);
+            buf.copy_to_slice(&mut into[..]);
+            Ok(())
         }
         WireType::ThirtyTwoBit => {
-            if buf.remaining() < 4 {
+            const SIZE: usize = 4;
+            if buf.remaining() < SIZE {
                 return Err(DecodeError::new("buffer underflow"));
             }
-            Ok(buf.copy_to_bytes(4).to_vec())
+            into.resize(SIZE, 0);
+            buf.copy_to_slice(&mut into[..]);
+            Ok(())
         }
         WireType::SixtyFourBit => {
-            if buf.remaining() < 8 {
+            const SIZE: usize = 8;
+            if buf.remaining() < SIZE {
                 return Err(DecodeError::new("buffer underflow"));
             }
-            Ok(buf.copy_to_bytes(8).to_vec())
+            into.resize(SIZE, 0);
+            buf.copy_to_slice(&mut into[..]);
+            Ok(())
         }
         WireType::LengthDelimited => {
-            let len = decode_varint(buf)?;
-            if len > buf.remaining() as u64 {
+            // Peek length prefix
+            let (len_value, len_len) = peek_varint_prefix(buf)?;
+            let payload_len = len_value as usize;
+
+            if buf.remaining() < len_len + payload_len {
                 return Err(DecodeError::new("buffer underflow"));
             }
-            Ok(buf.copy_to_bytes(len as usize).to_vec())
+
+            // Copy length prefix + payload in one go
+            into.reserve(len_len + payload_len);
+            into.resize(len_len + payload_len, 0);
+            buf.copy_to_slice(&mut into[..]);
+            Ok(())
+        }
+        WireType::StartGroup | WireType::EndGroup => Err(DecodeError::new("groups are not supported for ZeroCopy")),
+    }
+}
+
+/// Append full field (key + payload) with minimized scanning
+#[inline]
+fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut Vec<u8>, ctx: DecodeContext) -> Result<(), DecodeError> {
+    ctx.limit_reached()?;
+
+    match wire_type {
+        WireType::Varint => {
+            // Reserve space for key + max varint size
+            let key_len = key_len(tag);
+            out.reserve(key_len + 10);
+            encode_key(tag, wire_type, out);
+
+            // Direct slice access - no byte-by-byte loop
+            let bytes = buf.chunk();
+            let (_, varint_len) = decode_varint_slice(bytes)?;
+
+            if buf.remaining() < varint_len {
+                return Err(DecodeError::new("buffer underflow"));
+            }
+
+            let start = out.len();
+            out.resize(start + varint_len, 0);
+            buf.copy_to_slice(&mut out[start..]);
+            Ok(())
+        }
+        WireType::ThirtyTwoBit => {
+            const SIZE: usize = 4;
+            if buf.remaining() < SIZE {
+                return Err(DecodeError::new("buffer underflow"));
+            }
+
+            let key_len = key_len(tag);
+            out.reserve(key_len + SIZE);
+            encode_key(tag, wire_type, out);
+
+            let start = out.len();
+            out.resize(start + SIZE, 0);
+            buf.copy_to_slice(&mut out[start..start + SIZE]);
+            Ok(())
+        }
+        WireType::SixtyFourBit => {
+            const SIZE: usize = 8;
+            if buf.remaining() < SIZE {
+                return Err(DecodeError::new("buffer underflow"));
+            }
+
+            let key_len = key_len(tag);
+            out.reserve(key_len + SIZE);
+            encode_key(tag, wire_type, out);
+
+            let start = out.len();
+            out.resize(start + SIZE, 0);
+            buf.copy_to_slice(&mut out[start..start + SIZE]);
+            Ok(())
+        }
+        WireType::LengthDelimited => {
+            // Peek length prefix
+            let (len_value, len_len) = peek_varint_prefix(buf)?;
+            let payload_len = len_value as usize;
+
+            if buf.remaining() < len_len + payload_len {
+                return Err(DecodeError::new("buffer underflow"));
+            }
+
+            // Reserve and copy key + length + payload
+            let key_len = key_len(tag);
+            out.reserve(key_len + len_len + payload_len);
+            encode_key(tag, wire_type, out);
+
+            // Copy length prefix and payload
+            let total_len = len_len + payload_len;
+            let start = out.len();
+            out.resize(start + total_len, 0);
+            buf.copy_to_slice(&mut out[start..start + total_len]);
+            Ok(())
         }
         WireType::StartGroup | WireType::EndGroup => Err(DecodeError::new("groups are not supported for ZeroCopy")),
     }
