@@ -51,3 +51,28 @@ message ZeroCopyMessage {
   NestedMessage payload = 1;
 }
 
+enum ComplexEnum {
+  COMPLEX_UNSPECIFIED = 0;
+  COMPLEX_ONE = 1;
+  COMPLEX_TWO = 2;
+  COMPLEX_THREE = 3;
+}
+
+message ComplexEnumList {
+  repeated ComplexEnum values = 1;
+}
+
+message ZeroCopyEnumMessage {
+  ComplexEnumList bag = 1;
+  ComplexEnum status = 2;
+  repeated ComplexEnum timeline = 3;
+}
+
+message ZeroCopyEnumContainer {
+  ComplexEnum direct = 1;
+  ComplexEnum raw_direct = 2;
+  repeated ComplexEnum repeated_direct = 3;
+  ComplexEnumList raw_list = 4;
+  ZeroCopyEnumMessage nested = 5;
+}
+

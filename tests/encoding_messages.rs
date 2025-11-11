@@ -1,5 +1,6 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::cast_possible_truncation)]
+#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -27,6 +28,16 @@ pub enum StatusWithDefaultAttribute {
     Active,
     Inactive,
     Completed,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum ComplexEnum {
+    #[default]
+    Unspecified,
+    One,
+    Two,
+    Three,
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -73,6 +84,30 @@ pub struct ZeroCopyContainer {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ZeroCopyMessage {
     pub payload: ZeroCopy<NestedMessage>,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ComplexEnumList {
+    pub values: Vec<ComplexEnum>,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ZeroCopyEnumMessage {
+    pub bag: ZeroCopy<ComplexEnumList>,
+    pub status: ComplexEnum,
+    pub timeline: Vec<ComplexEnum>,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ZeroCopyEnumContainer {
+    pub direct: ComplexEnum,
+    pub raw_direct: ZeroCopy<ComplexEnum>,
+    pub repeated_direct: Vec<ComplexEnum>,
+    pub raw_list: ZeroCopy<ComplexEnumList>,
+    pub nested: ZeroCopy<ZeroCopyEnumMessage>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -324,4 +359,35 @@ pub fn zero_copy_fixture() -> ZeroCopyContainer {
     container.enum_lookup.insert("alpha".into(), SampleEnum::One);
     container.enum_lookup.insert("omega".into(), SampleEnum::Two);
     container
+}
+
+pub fn complex_enum_list_fixture() -> ComplexEnumList {
+    ComplexEnumList {
+        values: vec![ComplexEnum::One, ComplexEnum::Two, ComplexEnum::Three],
+    }
+}
+
+pub fn nested_complex_enum_list_fixture() -> ComplexEnumList {
+    ComplexEnumList {
+        values: vec![ComplexEnum::Unspecified, ComplexEnum::Two, ComplexEnum::Three],
+    }
+}
+
+pub fn zero_copy_enum_fixture() -> ZeroCopyEnumContainer {
+    let outer_list = complex_enum_list_fixture();
+    let nested_list = nested_complex_enum_list_fixture();
+
+    let nested_message = ZeroCopyEnumMessage {
+        bag: ZeroCopy::from(&nested_list),
+        status: ComplexEnum::Three,
+        timeline: nested_list.values.clone(),
+    };
+
+    ZeroCopyEnumContainer {
+        direct: ComplexEnum::Two,
+        raw_direct: ZeroCopy::from(&ComplexEnum::Three),
+        repeated_direct: vec![ComplexEnum::One, ComplexEnum::Three, ComplexEnum::Two],
+        raw_list: ZeroCopy::from(&outer_list),
+        nested: ZeroCopy::from(&nested_message),
+    }
 }

@@ -11,6 +11,7 @@ use proto_rs::ProtoShadow;
 use proto_rs::ProtoWire;
 use proto_rs::Shadow;
 use proto_rs::ToZeroCopy;
+use proto_rs::ZeroCopy;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
@@ -19,6 +20,8 @@ mod encoding_messages;
 
 pub use encoding_messages::CollectionsMessage;
 pub use encoding_messages::CollectionsMessageProst;
+pub use encoding_messages::ComplexEnum;
+pub use encoding_messages::ComplexEnumList;
 pub use encoding_messages::NestedMessage;
 pub use encoding_messages::NestedMessageProst;
 pub use encoding_messages::SampleEnum;
@@ -28,9 +31,14 @@ pub use encoding_messages::SampleMessageProst;
 pub use encoding_messages::StatusWithDefaultAttribute;
 pub use encoding_messages::ZeroCopyContainer;
 pub use encoding_messages::ZeroCopyContainerProst;
+pub use encoding_messages::ZeroCopyEnumContainer;
+pub use encoding_messages::ZeroCopyEnumMessage;
 pub use encoding_messages::ZeroCopyMessage;
+pub use encoding_messages::complex_enum_list_fixture;
+pub use encoding_messages::nested_complex_enum_list_fixture;
 pub use encoding_messages::sample_collections_messages as shared_sample_collections_messages;
 pub use encoding_messages::sample_message as shared_sample_message;
+pub use encoding_messages::zero_copy_enum_fixture;
 pub use encoding_messages::zero_copy_fixture;
 
 #[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
@@ -619,6 +627,30 @@ fn zero_copy_field_roundtrip() {
     assert_eq!(decoded.payload.as_bytes(), from_ref.as_bytes());
     let decoded_nested = decoded.payload.decode().expect("decode nested message");
     assert_eq!(decoded_nested, nested);
+}
+
+#[test]
+fn zero_copy_enum_variants_roundtrip() {
+    let container = zero_copy_enum_fixture();
+    let encoded = ZeroCopyEnumContainer::encode_to_vec(&container);
+    let decoded = ZeroCopyEnumContainer::decode(Bytes::from(encoded)).expect("decode zero copy enum container");
+    assert_eq!(decoded, container);
+
+    let simple_enum = container.raw_direct.clone().decode().expect("decode simple enum");
+    assert_eq!(simple_enum, ComplexEnum::Three);
+
+    let roundtrip_simple = ZeroCopy::from(&ComplexEnum::Two);
+    assert_eq!(roundtrip_simple.decode().expect("decode roundtrip enum"), ComplexEnum::Two);
+
+    let list = container.raw_list.clone().decode().expect("decode enum list");
+    assert_eq!(list, complex_enum_list_fixture());
+
+    let nested = container.nested.clone().decode().expect("decode nested enum message");
+    assert_eq!(nested.status, ComplexEnum::Three);
+    assert_eq!(nested.timeline, nested_complex_enum_list_fixture().values);
+
+    let nested_list = nested.bag.decode().expect("decode nested bag");
+    assert_eq!(nested_list, nested_complex_enum_list_fixture());
 }
 
 #[test]
