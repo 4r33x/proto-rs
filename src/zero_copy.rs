@@ -14,7 +14,6 @@ use crate::bytes::Bytes;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
-use crate::encoding::decode_varint;
 use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
@@ -80,16 +79,24 @@ impl<T> ZeroCopy<T> {
         T: ProtoExt,
         for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
     {
-        T::decode(Bytes::from(self.inner.clone()))
+        decode_zero_copy_bytes::<T>(Bytes::from(self.inner.clone()))
+    }
+}
+
+fn decode_zero_copy_bytes<T>(mut buf: Bytes) -> Result<T, DecodeError>
+where
+    T: ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
+{
+    let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
+
+    if !buf.has_remaining() {
+        return <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow);
     }
 
-    pub fn into_message(self) -> Result<T, DecodeError>
-    where
-        T: ProtoExt,
-        for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
-    {
-        T::decode(Bytes::from(self.inner))
-    }
+    <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
+
+    <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
 }
 
 impl<T> From<ZeroCopy<T>> for Vec<u8> {
@@ -104,7 +111,22 @@ where
     for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
     fn from(value: &T) -> Self {
-        let bytes = T::encode_to_vec(value);
+        let bytes = T::with_shadow(value, |shadow| {
+            let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            if len == 0 {
+                Vec::new()
+            } else if <T::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
+                let prefix_len = encoded_len_varint(len as u64);
+                let mut buf = Vec::with_capacity(prefix_len + len);
+                encode_varint(len as u64, &mut buf);
+                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
+            } else {
+                let mut buf = Vec::with_capacity(len);
+                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
+            }
+        });
         Self::from_bytes(bytes)
     }
 }
@@ -115,7 +137,22 @@ where
     for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
 {
     fn from(value: T) -> Self {
-        let bytes = T::encode_to_vec(value);
+        let bytes = T::with_shadow(value, |shadow| {
+            let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            if len == 0 {
+                Vec::new()
+            } else if <T::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
+                let prefix_len = encoded_len_varint(len as u64);
+                let mut buf = Vec::with_capacity(prefix_len + len);
+                encode_varint(len as u64, &mut buf);
+                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
+            } else {
+                let mut buf = Vec::with_capacity(len);
+                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
+            }
+        });
         Self::from_bytes(bytes)
     }
 }
@@ -186,7 +223,15 @@ where
         value.inner.len()
     }
 
+    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+        if Self::is_default_impl(value) { 0 } else { key_len(tag) + value.inner.len() }
+    }
+
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        buf.put_slice(&value.inner);
+    }
+
+    fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         buf.put_slice(&value.inner);
     }
 
@@ -277,7 +322,6 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut Vec<u8
             Ok(())
         }
         WireType::LengthDelimited => {
-            // Peek length prefix
             let (len_value, len_len) = peek_varint_prefix(buf)?;
             let payload_len = len_value as usize;
 
@@ -285,8 +329,6 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut Vec<u8
                 return Err(DecodeError::new("buffer underflow"));
             }
 
-            // Copy length prefix + payload in one go
-            into.reserve(len_len + payload_len);
             into.resize(len_len + payload_len, 0);
             buf.copy_to_slice(&mut into[..]);
             Ok(())

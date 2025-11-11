@@ -2,6 +2,13 @@
 syntax = "proto3";
 package encoding;
 
+enum ComplexEnum {
+  UNSPECIFIED = 0;
+  ONE = 1;
+  TWO = 2;
+  THREE = 3;
+}
+
 enum SampleEnum {
   ZERO = 0;
   ONE = 1;
@@ -20,6 +27,10 @@ message CollectionsMessage {
   map<string, NestedMessage> tree_messages = 2;
   repeated string hash_tags = 3;
   repeated int32 tree_ids = 4;
+}
+
+message ComplexEnumList {
+  repeated ComplexEnum values = 1;
 }
 
 message NestedMessage {
@@ -45,6 +56,21 @@ message ZeroCopyContainer {
   optional NestedMessage boxed = 4;
   optional NestedMessage shared = 5;
   map<string, SampleEnum> enum_lookup = 6;
+}
+
+message ZeroCopyEnumContainer {
+  ComplexEnum direct = 1;
+  ComplexEnum raw_direct = 2;
+  repeated ComplexEnum repeated_direct = 3;
+  ComplexEnumList raw_list = 4;
+  ZeroCopyEnumMessage nested = 5;
+  SampleMessage nested_message = 6;
+}
+
+message ZeroCopyEnumMessage {
+  ComplexEnumList bag = 1;
+  ComplexEnum status = 2;
+  repeated ComplexEnum timeline = 3;
 }
 
 message ZeroCopyMessage {
