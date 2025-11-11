@@ -148,6 +148,7 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
             "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
             "HashSet" | "BTreeSet" => return parse_set_type(path, ty),
             "Box" | "Arc" => return parse_box_like_type(path, ty),
+            "ZeroCopy" => return parse_zero_copy_type(path, ty),
             _ => {}
         }
     }
@@ -190,6 +191,27 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         prost_type: inner.prost_type.clone(),
         is_option: false,
 
+        is_message_like: inner.is_message_like,
+        is_numeric_scalar: inner.is_numeric_scalar,
+        proto_rust_type: inner.proto_rust_type.clone(),
+        elem_type: inner.elem_type.clone(),
+        is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
+    }
+}
+
+fn parse_zero_copy_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("ZeroCopy must have a single generic argument");
+    };
+
+    let inner = parse_field_type(inner_ty);
+
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type: inner.proto_type.clone(),
+        prost_type: inner.prost_type.clone(),
+        is_option: false,
         is_message_like: inner.is_message_like,
         is_numeric_scalar: inner.is_numeric_scalar,
         proto_rust_type: inner.proto_rust_type.clone(),

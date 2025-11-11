@@ -10,6 +10,7 @@ use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
 use proto_rs::ProtoWire;
 use proto_rs::Shadow;
+use proto_rs::ToZeroCopy;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
@@ -27,6 +28,7 @@ pub use encoding_messages::SampleMessageProst;
 pub use encoding_messages::StatusWithDefaultAttribute;
 pub use encoding_messages::ZeroCopyContainer;
 pub use encoding_messages::ZeroCopyContainerProst;
+pub use encoding_messages::ZeroCopyMessage;
 pub use encoding_messages::sample_collections_messages as shared_sample_collections_messages;
 pub use encoding_messages::sample_message as shared_sample_message;
 pub use encoding_messages::zero_copy_fixture;
@@ -601,6 +603,22 @@ fn zero_copy_container_roundtrip() {
     let encoded = ZeroCopyContainer::encode_to_vec(&fixture);
     let decoded = ZeroCopyContainer::decode(Bytes::from(encoded)).expect("decode fixture");
     assert_eq!(decoded, fixture);
+}
+
+#[test]
+fn zero_copy_field_roundtrip() {
+    let nested = NestedMessage { value: 42 };
+    let from_ref = (&nested).to_zero_copy();
+    let from_owned = nested.clone().to_zero_copy();
+    assert_eq!(from_ref.as_bytes(), from_owned.as_bytes());
+
+    let message = ZeroCopyMessage { payload: from_ref.clone() };
+    let encoded = ZeroCopyMessage::encode_to_vec(&message);
+    let decoded = ZeroCopyMessage::decode(Bytes::from(encoded)).expect("decode zero copy message");
+
+    assert_eq!(decoded.payload.as_bytes(), from_ref.as_bytes());
+    let decoded_nested = decoded.payload.decode().expect("decode nested message");
+    assert_eq!(decoded_nested, nested);
 }
 
 #[test]

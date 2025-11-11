@@ -47,3 +47,7 @@ message ZeroCopyContainer {
   map<string, SampleEnum> enum_lookup = 6;
 }
 
+message ZeroCopyMessage {
+  NestedMessage payload = 1;
+}
+

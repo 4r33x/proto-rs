@@ -37,6 +37,7 @@ mod tonic;
 mod traits;
 mod types;
 mod wrappers;
+mod zero_copy;
 
 #[doc(hidden)]
 pub mod encoding;
@@ -80,6 +81,8 @@ pub use crate::traits::ProtoWire;
 pub use crate::traits::Shadow;
 pub use crate::traits::SunOf;
 pub use crate::traits::ViewOf;
+pub use crate::zero_copy::ToZeroCopy;
+pub use crate::zero_copy::ZeroCopy;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled

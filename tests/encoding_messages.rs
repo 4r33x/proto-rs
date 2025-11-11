@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use proto_rs::ZeroCopy;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -66,6 +67,12 @@ pub struct ZeroCopyContainer {
     pub boxed: Option<Box<NestedMessage>>,
     pub shared: Option<Arc<NestedMessage>>,
     pub enum_lookup: HashMap<String, SampleEnum>,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ZeroCopyMessage {
+    pub payload: ZeroCopy<NestedMessage>,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
