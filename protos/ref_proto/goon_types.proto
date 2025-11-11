@@ -1,0 +1,6 @@
+syntax = "proto3";
+package goon_types;
+
+message RizzPing {}
+
+message GoonPong {}
