@@ -5,3 +5,6 @@ mod maps;
 mod options;
 mod sets;
 mod vecs;
+
+#[cfg(feature = "cache_padded")]
+mod cache_padded;

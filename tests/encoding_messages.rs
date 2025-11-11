@@ -18,6 +18,7 @@ pub enum SampleEnum {
     Zero,
     One,
     Two,
+    Unspecified,
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -28,16 +29,6 @@ pub enum StatusWithDefaultAttribute {
     Active,
     Inactive,
     Completed,
-}
-
-#[proto_message(proto_path = "protos/tests/encoding.proto")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub enum ComplexEnum {
-    #[default]
-    Unspecified,
-    One,
-    Two,
-    Three,
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -88,25 +79,25 @@ pub struct ZeroCopyMessage {
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
-pub struct ComplexEnumList {
-    pub values: Vec<ComplexEnum>,
+pub struct SampleEnumList {
+    pub values: Vec<SampleEnum>,
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ZeroCopyEnumMessage {
-    pub bag: ZeroCopy<ComplexEnumList>,
-    pub status: ComplexEnum,
-    pub timeline: Vec<ComplexEnum>,
+    pub bag: ZeroCopy<SampleEnumList>,
+    pub status: SampleEnum,
+    pub timeline: Vec<SampleEnum>,
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ZeroCopyEnumContainer {
-    pub direct: ComplexEnum,
-    pub raw_direct: ZeroCopy<ComplexEnum>,
-    pub repeated_direct: Vec<ComplexEnum>,
-    pub raw_list: ZeroCopy<ComplexEnumList>,
+    pub direct: SampleEnum,
+    pub raw_direct: ZeroCopy<SampleEnum>,
+    pub repeated_direct: Vec<SampleEnum>,
+    pub raw_list: ZeroCopy<SampleEnumList>,
     pub nested: ZeroCopy<ZeroCopyEnumMessage>,
     pub nested_message: ZeroCopy<SampleMessage>,
 }
@@ -178,6 +169,7 @@ pub enum SampleEnumProst {
     Zero = 0,
     One = 1,
     Two = 2,
+    Unspecified = 3,
 }
 
 impl From<&NestedMessage> for NestedMessageProst {
@@ -198,6 +190,7 @@ impl From<SampleEnum> for SampleEnumProst {
             SampleEnum::Zero => SampleEnumProst::Zero,
             SampleEnum::One => SampleEnumProst::One,
             SampleEnum::Two => SampleEnumProst::Two,
+            SampleEnum::Unspecified => SampleEnumProst::Unspecified,
         }
     }
 }
@@ -208,6 +201,7 @@ impl From<SampleEnumProst> for SampleEnum {
             SampleEnumProst::Zero => SampleEnum::Zero,
             SampleEnumProst::One => SampleEnum::One,
             SampleEnumProst::Two => SampleEnum::Two,
+            SampleEnumProst::Unspecified => SampleEnum::Unspecified,
         }
     }
 }
@@ -362,15 +356,15 @@ pub fn zero_copy_fixture() -> ZeroCopyContainer {
     container
 }
 
-pub fn complex_enum_list_fixture() -> ComplexEnumList {
-    ComplexEnumList {
-        values: vec![ComplexEnum::One, ComplexEnum::Two, ComplexEnum::Three],
+pub fn complex_enum_list_fixture() -> SampleEnumList {
+    SampleEnumList {
+        values: vec![SampleEnum::One, SampleEnum::Two],
     }
 }
 
-pub fn nested_complex_enum_list_fixture() -> ComplexEnumList {
-    ComplexEnumList {
-        values: vec![ComplexEnum::Unspecified, ComplexEnum::Two, ComplexEnum::Three],
+pub fn nested_complex_enum_list_fixture() -> SampleEnumList {
+    SampleEnumList {
+        values: vec![SampleEnum::Unspecified, SampleEnum::Two],
     }
 }
 
@@ -380,14 +374,14 @@ pub fn zero_copy_enum_fixture() -> ZeroCopyEnumContainer {
 
     let nested_message = ZeroCopyEnumMessage {
         bag: ZeroCopy::from(&nested_list),
-        status: ComplexEnum::Three,
+        status: SampleEnum::Two,
         timeline: nested_list.values.clone(),
     };
 
     ZeroCopyEnumContainer {
-        direct: ComplexEnum::Two,
-        raw_direct: ZeroCopy::from(&ComplexEnum::Three),
-        repeated_direct: vec![ComplexEnum::One, ComplexEnum::Three, ComplexEnum::Two],
+        direct: SampleEnum::Two,
+        raw_direct: ZeroCopy::from(&SampleEnum::Two),
+        repeated_direct: vec![SampleEnum::One, SampleEnum::Two],
         raw_list: ZeroCopy::from(&outer_list),
         nested: ZeroCopy::from(&nested_message),
         nested_message: ZeroCopy::from(&sample_message()),

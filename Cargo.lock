@@ -1009,6 +1009,7 @@ dependencies = [
  "chrono",
  "const_panic",
  "criterion",
+ "crossbeam-utils",
  "fastnum",
  "inventory",
  "proptest",

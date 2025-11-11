@@ -2,17 +2,11 @@
 syntax = "proto3";
 package encoding;
 
-enum ComplexEnum {
-  UNSPECIFIED = 0;
-  ONE = 1;
-  TWO = 2;
-  THREE = 3;
-}
-
 enum SampleEnum {
   ZERO = 0;
   ONE = 1;
   TWO = 2;
+  UNSPECIFIED = 3;
 }
 
 enum StatusWithDefaultAttribute {
@@ -29,12 +23,12 @@ message CollectionsMessage {
   repeated int32 tree_ids = 4;
 }
 
-message ComplexEnumList {
-  repeated ComplexEnum values = 1;
-}
-
 message NestedMessage {
   int64 value = 1;
+}
+
+message SampleEnumList {
+  repeated SampleEnum values = 1;
 }
 
 message SampleMessage {
@@ -59,18 +53,18 @@ message ZeroCopyContainer {
 }
 
 message ZeroCopyEnumContainer {
-  ComplexEnum direct = 1;
-  ComplexEnum raw_direct = 2;
-  repeated ComplexEnum repeated_direct = 3;
-  ComplexEnumList raw_list = 4;
+  SampleEnum direct = 1;
+  SampleEnum raw_direct = 2;
+  repeated SampleEnum repeated_direct = 3;
+  SampleEnumList raw_list = 4;
   ZeroCopyEnumMessage nested = 5;
   SampleMessage nested_message = 6;
 }
 
 message ZeroCopyEnumMessage {
-  ComplexEnumList bag = 1;
-  ComplexEnum status = 2;
-  repeated ComplexEnum timeline = 3;
+  SampleEnumList bag = 1;
+  SampleEnum status = 2;
+  repeated SampleEnum timeline = 3;
 }
 
 message ZeroCopyMessage {

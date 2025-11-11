@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use chrono::DateTime;
 use chrono::Utc;
 use prosto_derive::proto_dump;
+use proto_rs::DecodeError;
 use proto_rs::inject_proto_import;
 use proto_rs::proto_message;
 use serde::Deserialize;
@@ -418,6 +419,9 @@ fn datetime_to_i64(dt: &DateTime<Utc>) -> i64 {
 
 fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(ts, 0).unwrap()
+}
+fn try_i64_to_datetime(ts: i64) -> Result<DateTime<Utc>, DecodeError> {
+    DateTime::from_timestamp(ts, 0).ok_or(DecodeError::new("Bad timestamp"))
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]

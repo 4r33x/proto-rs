@@ -20,11 +20,10 @@ mod encoding_messages;
 
 pub use encoding_messages::CollectionsMessage;
 pub use encoding_messages::CollectionsMessageProst;
-pub use encoding_messages::ComplexEnum;
-pub use encoding_messages::ComplexEnumList;
 pub use encoding_messages::NestedMessage;
 pub use encoding_messages::NestedMessageProst;
 pub use encoding_messages::SampleEnum;
+pub use encoding_messages::SampleEnumList;
 pub use encoding_messages::SampleEnumProst;
 pub use encoding_messages::SampleMessage;
 pub use encoding_messages::SampleMessageProst;
@@ -637,16 +636,16 @@ fn zero_copy_enum_variants_roundtrip() {
     assert_eq!(decoded, container);
 
     let simple_enum = container.raw_direct.clone().decode().expect("decode simple enum");
-    assert_eq!(simple_enum, ComplexEnum::Three);
+    assert_eq!(simple_enum, SampleEnum::Two);
 
-    let roundtrip_simple = ZeroCopy::from(&ComplexEnum::Two);
-    assert_eq!(roundtrip_simple.decode().expect("decode roundtrip enum"), ComplexEnum::Two);
+    let roundtrip_simple = ZeroCopy::from(&SampleEnum::Two);
+    assert_eq!(roundtrip_simple.decode().expect("decode roundtrip enum"), SampleEnum::Two);
 
     let list = container.raw_list.clone().decode().expect("decode enum list");
     assert_eq!(list, complex_enum_list_fixture());
 
     let nested = container.nested.clone().decode().expect("decode nested enum message");
-    assert_eq!(nested.status, ComplexEnum::Three);
+    assert_eq!(nested.status, SampleEnum::Two);
     assert_eq!(nested.timeline, nested_complex_enum_list_fixture().values);
 
     let nested_list = nested.bag.decode().expect("decode nested bag");
