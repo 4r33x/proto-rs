@@ -81,14 +81,6 @@ impl<T> ZeroCopy<T> {
     {
         decode_zero_copy_bytes::<T>(Bytes::from(self.inner.clone()))
     }
-
-    pub fn into_message(self) -> Result<T, DecodeError>
-    where
-        T: ProtoExt,
-        for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
-    {
-        decode_zero_copy_bytes::<T>(Bytes::from(self.inner))
-    }
 }
 
 fn decode_zero_copy_bytes<T>(mut buf: Bytes) -> Result<T, DecodeError>
@@ -96,10 +88,15 @@ where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
 {
-    let mut shadow = <crate::Shadow<'static, T> as ProtoWire>::proto_default();
-    <crate::Shadow<'static, T> as ProtoWire>::decode_into(<crate::Shadow<'static, T> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
+    let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
 
-    <crate::Shadow<'static, T> as ProtoShadow<T>>::to_sun(shadow)
+    if !buf.has_remaining() {
+        return <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow);
+    }
+
+    <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
+
+    <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
 }
 
 impl<T> From<ZeroCopy<T>> for Vec<u8> {
