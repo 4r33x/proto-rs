@@ -31,7 +31,7 @@ pub struct FooResponse;
 pub struct BarSub;
 
 // Define trait with the proto_rpc macro
-#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_proto/sigma_rpc.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
     async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
