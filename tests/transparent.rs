@@ -6,12 +6,12 @@ use proto_rs::proto_message;
 
 #[proto_message]
 #[derive(Debug, PartialEq, Eq)]
-pub struct UserIdTuple(#[proto(trasparent)] u64);
+pub struct UserIdTuple(#[proto(transparent)] u64);
 
 #[proto_message]
 #[derive(Debug, PartialEq, Eq)]
 pub struct UserIdNamed {
-    #[proto(trasparent)]
+    #[proto(transparent)]
     pub id: u64,
 }
 
@@ -33,7 +33,7 @@ pub struct InnerMessage {
 
 #[proto_message]
 #[derive(Debug, PartialEq, Eq)]
-pub struct MessageWrapper(#[proto(trasparent)] InnerMessage);
+pub struct MessageWrapper(#[proto(transparent)] InnerMessage);
 
 #[test]
 fn transparent_tuple_roundtrip() {
