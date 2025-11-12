@@ -11,6 +11,7 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
 use crate::utils::MethodInfo;
+use crate::utils::cache_padded_inner_type;
 use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
 use crate::utils::is_bytes_array;
@@ -233,6 +234,8 @@ fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
         (false, true, inner)
     } else if let Some((inner, _)) = set_inner_type(ty) {
         (false, true, inner)
+    } else if let Some(inner) = cache_padded_inner_type(ty) {
+        (false, false, inner)
     } else if let Type::Array(_) = ty {
         if is_bytes_array(ty) {
             // Preserve array type for bytes
