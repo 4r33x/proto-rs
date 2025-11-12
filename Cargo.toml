@@ -52,6 +52,7 @@ tonic = { version = "0.14.2" }
 prosto_derive.workspace = true
 bytes.workspace = true
 tonic = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
 fastnum = { version = "0.7.3", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
 inventory = { workspace = true, optional = true }
@@ -85,7 +86,7 @@ tonic = ["dep:tonic", "bytes/std", "std"]
 fastnum = ["dep:fastnum"]
 cache_padded = ["dep:crossbeam-utils"]
 solana = ["dep:solana-address", "dep:solana-signature"]
-
+chrono = ["dep:chrono"]
 # Schema collection for build scripts
 build-schemas = ["inventory"]
 # Enable live proto dumping

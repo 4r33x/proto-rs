@@ -1,0 +1,9 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package chrono;
+
+message DateTimeProto {
+  int64 secs = 1;
+  uint32 ns = 2;
+}
+
