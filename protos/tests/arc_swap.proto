@@ -1,0 +1,17 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package arc_swap;
+
+message OptionalSwapHolder {
+  ArcSwapOption maybe = 1;
+}
+
+message SwapHolder {
+  ArcSwap primary = 1;
+}
+
+message SwapInner {
+  string label = 1;
+  uint32 count = 2;
+}
+

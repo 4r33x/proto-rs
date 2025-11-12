@@ -7,7 +7,7 @@ use arc_swap::ArcSwapOption;
 use proto_rs::ProtoExt;
 use proto_rs::proto_message;
 
-#[proto_message]
+#[proto_message(proto_path = "protos/tests/arc_swap.proto")]
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct SwapInner {
     #[proto(tag = 1)]
@@ -16,7 +16,7 @@ pub struct SwapInner {
     pub count: u32,
 }
 
-#[proto_message]
+#[proto_message(proto_path = "protos/tests/arc_swap.proto")]
 #[derive(Debug)]
 pub struct SwapHolder {
     #[proto(tag = 1)]
@@ -31,7 +31,7 @@ impl Default for SwapHolder {
     }
 }
 
-#[proto_message]
+#[proto_message(proto_path = "protos/tests/arc_swap.proto")]
 #[derive(Debug)]
 pub struct OptionalSwapHolder {
     #[proto(tag = 1)]
