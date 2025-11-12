@@ -6,6 +6,10 @@ message Address {
   bytes inner = 1;
 }
 
+message Keypair {
+  bytes inner = 1;
+}
+
 message Signature {
   bytes inner = 1;
 }
