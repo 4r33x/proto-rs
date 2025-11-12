@@ -57,6 +57,7 @@ pub struct FieldConfig {
     pub is_proto_enum: bool,           // prost-like enum (i32 backing)
     pub import_path: Option<String>,
     pub custom_tag: Option<usize>,
+    pub is_transparent: bool,
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -90,6 +91,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("try_from_fn") => cfg.try_from_fn = parse_string_value(&meta),
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
+                Some("trasparent") | Some("transparent") => cfg.is_transparent = true,
                 _ => {}
             }
             Ok(())
