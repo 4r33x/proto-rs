@@ -143,11 +143,12 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     if let Some(id) = last_ident(path) {
         match id.to_string().as_str() {
             "Option" => return parse_option_type(path, ty),
+            "ArcSwapOption" => return parse_arc_swap_option_type(path, ty),
             "Vec" => return parse_vec_type(path, ty),
             "HashMap" => return parse_map_type(path, ty, MapKind::HashMap),
             "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
             "HashSet" | "BTreeSet" => return parse_set_type(path, ty),
-            "Box" | "Arc" | "CachePadded" => return parse_box_like_type(path, ty),
+            "ArcSwap" | "Box" | "Arc" | "CachePadded" => return parse_box_like_type(path, ty),
             "ZeroCopy" => return parse_zero_copy_type(path, ty),
             _ => {}
         }
@@ -158,6 +159,17 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
 fn parse_option_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     let Some(inner_ty) = single_generic(path) else {
         panic!("Option must have a single generic argument");
+    };
+    let mut inner = parse_field_type(inner_ty);
+    inner.is_option = true;
+    inner.rust_type = ty.clone();
+    inner.elem_type = (*inner_ty).clone();
+    inner
+}
+
+fn parse_arc_swap_option_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("ArcSwapOption must have a single generic argument");
     };
     let mut inner = parse_field_type(inner_ty);
     inner.is_option = true;
