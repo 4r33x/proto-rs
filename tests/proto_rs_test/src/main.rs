@@ -39,6 +39,25 @@ impl SigmaRpc for S {
 
         Ok(Response::new(boxed_stream))
     }
+    async fn zero_copy_ping(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        self.rizz_ping(req).await
+    }
+
+    async fn just_ping(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        self.rizz_ping(req).await
+    }
+
+    async fn infallible_just_ping(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        self.rizz_ping(req).await
+    }
+
+    async fn infallible_zero_copy_ping(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        self.rizz_ping(req).await
+    }
+
+    async fn infallible_ping(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        self.rizz_ping(req).await
+    }
 }
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     use tonic::transport::Server;
