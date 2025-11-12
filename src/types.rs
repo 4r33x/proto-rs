@@ -8,6 +8,18 @@
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicI8;
+use core::sync::atomic::AtomicI16;
+use core::sync::atomic::AtomicI32;
+use core::sync::atomic::AtomicI64;
+use core::sync::atomic::AtomicIsize;
+use core::sync::atomic::AtomicU8;
+use core::sync::atomic::AtomicU16;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 
 use ::bytes::Buf;
 use ::bytes::BufMut;
@@ -337,6 +349,360 @@ impl_google_wrapper!(String, string, "StringValue", by_ref, (!is_empty), (is_emp
 impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
 impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
 
+macro_rules! impl_atomic_primitive {
+    ($ty:ty, $prim:expr, $default:expr, $base:ty, $module:ident,
+        load = $load:expr,
+        store = $store:expr
+    ) => {
+        impl ProtoShadow<$ty> for $ty {
+            type Sun<'a> = &'a $ty;
+            type OwnedSun = $ty;
+            type View<'a> = &'a $ty;
+
+            #[inline(always)]
+            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+                Ok(self)
+            }
+
+            #[inline(always)]
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
+        impl crate::traits::ProtoWire for $ty {
+            type EncodeInput<'b> = &'b $ty;
+            const KIND: crate::traits::ProtoKind = crate::traits::ProtoKind::Primitive($prim);
+
+            #[inline(always)]
+            fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+                let inner: &$ty = *value;
+                let raw: $base = ($load)(inner);
+                if raw == $default { 0 } else { crate::encoding::$module::encoded_len(raw) }
+            }
+
+            #[inline(always)]
+            fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+                let inner: &$ty = *value;
+                let raw: $base = ($load)(inner);
+                if raw == $default { 0 } else { crate::encoding::$module::encoded_len_tagged(tag, raw) }
+            }
+
+            #[inline(always)]
+            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+                let inner: &$ty = *value;
+                let raw: $base = ($load)(inner);
+                crate::encoding::$module::encoded_len(raw)
+            }
+
+            #[inline(always)]
+            fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+                let raw: $base = ($load)(value);
+                crate::encoding::$module::encode(raw, buf);
+            }
+
+            #[inline(always)]
+            fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+                Self::encode_raw_unchecked(value, buf);
+            }
+
+            #[inline(always)]
+            fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+                let raw: $base = ($load)(value);
+                if raw == $default {
+                    return;
+                }
+                crate::encoding::$module::encode_tagged(tag, raw, buf);
+            }
+
+            #[inline(always)]
+            fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                let mut raw: $base = ($load)(&*value);
+                crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
+                ($store)(value, raw);
+                Ok(())
+            }
+
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self::new($default)
+            }
+
+            #[inline(always)]
+            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                let inner: &$ty = *value;
+                ($load)(inner) == $default
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                ($store)(self, $default);
+            }
+        }
+
+        impl ProtoExt for $ty {
+            type Shadow<'b>
+                = $ty
+            where
+                $ty: 'b;
+
+            #[inline(always)]
+            fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    <Self as crate::traits::ProtoWire>::decode_into(wire_type, value, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_atomic_narrow_primitive {
+    (
+        $ty:ty,
+        $prim_kind:ident,
+        $default:expr,
+        narrow = $narrow:ty,
+        wide = $wide:ty,
+        module = $module:ident,
+        load = $load:expr,
+        store = $store:expr
+    ) => {
+        impl ProtoShadow<$ty> for $ty {
+            type Sun<'a> = &'a $ty;
+            type OwnedSun = $ty;
+            type View<'a> = &'a $ty;
+
+            #[inline(always)]
+            fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+                Ok(self)
+            }
+
+            #[inline(always)]
+            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+        }
+
+        impl crate::traits::ProtoWire for $ty {
+            type EncodeInput<'b> = &'b $ty;
+            const KIND: crate::traits::ProtoKind = crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::$prim_kind);
+
+            #[inline(always)]
+            fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+                let inner: &$ty = *value;
+                let raw: $narrow = ($load)(inner);
+                if raw == $default {
+                    0
+                } else {
+                    let widened: $wide = raw as $wide;
+                    crate::encoding::$module::encoded_len(widened)
+                }
+            }
+
+            #[inline(always)]
+            fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+                let inner: &$ty = *value;
+                let raw: $narrow = ($load)(inner);
+                if raw == $default {
+                    0
+                } else {
+                    let widened: $wide = raw as $wide;
+                    crate::encoding::$module::encoded_len_tagged(tag, widened)
+                }
+            }
+
+            #[inline(always)]
+            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+                let inner: &$ty = *value;
+                let raw: $narrow = ($load)(inner);
+                let widened: $wide = raw as $wide;
+                crate::encoding::$module::encoded_len(widened)
+            }
+
+            #[inline(always)]
+            fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+                let raw: $narrow = ($load)(value);
+                let widened: $wide = raw as $wide;
+                crate::encoding::$module::encode(widened, buf);
+            }
+
+            #[inline(always)]
+            fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+                Self::encode_raw_unchecked(value, buf);
+            }
+
+            #[inline(always)]
+            fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+                let raw: $narrow = ($load)(value);
+                if raw == $default {
+                    return;
+                }
+                let widened: $wide = raw as $wide;
+                crate::encoding::$module::encode_tagged(tag, widened, buf);
+            }
+
+            #[inline(always)]
+            fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                let mut raw: $wide = ($load)(&*value) as $wide;
+                crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
+                let narrowed: $narrow = <$narrow>::try_from(raw).map_err(|_| DecodeError::new(concat!(stringify!($narrow), " overflow")))?;
+                ($store)(value, narrowed);
+                Ok(())
+            }
+
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self::new($default)
+            }
+
+            #[inline(always)]
+            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                let inner: &$ty = *value;
+                ($load)(inner) == $default
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                ($store)(self, $default);
+            }
+        }
+
+        impl ProtoExt for $ty {
+            type Shadow<'b>
+                = $ty
+            where
+                $ty: 'b;
+
+            #[inline(always)]
+            fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    <Self as crate::traits::ProtoWire>::decode_into(wire_type, value, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+        }
+    };
+}
+
+impl_atomic_primitive!(
+    AtomicBool,
+    crate::traits::PrimitiveKind::Bool,
+    false,
+    bool,
+    bool,
+    load = |value: &AtomicBool| value.load(Ordering::Relaxed),
+    store = |value: &AtomicBool, raw: bool| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_primitive!(
+    AtomicI32,
+    crate::traits::PrimitiveKind::I32,
+    0i32,
+    i32,
+    int32,
+    load = |value: &AtomicI32| value.load(Ordering::Relaxed),
+    store = |value: &AtomicI32, raw: i32| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_primitive!(
+    AtomicI64,
+    crate::traits::PrimitiveKind::I64,
+    0i64,
+    i64,
+    int64,
+    load = |value: &AtomicI64| value.load(Ordering::Relaxed),
+    store = |value: &AtomicI64, raw: i64| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_primitive!(
+    AtomicU32,
+    crate::traits::PrimitiveKind::U32,
+    0u32,
+    u32,
+    uint32,
+    load = |value: &AtomicU32| value.load(Ordering::Relaxed),
+    store = |value: &AtomicU32, raw: u32| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_primitive!(
+    AtomicU64,
+    crate::traits::PrimitiveKind::U64,
+    0u64,
+    u64,
+    uint64,
+    load = |value: &AtomicU64| value.load(Ordering::Relaxed),
+    store = |value: &AtomicU64, raw: u64| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_narrow_primitive!(
+    AtomicI8,
+    I8,
+    0i8,
+    narrow = i8,
+    wide = i32,
+    module = int32,
+    load = |value: &AtomicI8| value.load(Ordering::Relaxed),
+    store = |value: &AtomicI8, raw: i8| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_narrow_primitive!(
+    AtomicI16,
+    I16,
+    0i16,
+    narrow = i16,
+    wide = i32,
+    module = int32,
+    load = |value: &AtomicI16| value.load(Ordering::Relaxed),
+    store = |value: &AtomicI16, raw: i16| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_narrow_primitive!(
+    AtomicU8,
+    U8,
+    0u8,
+    narrow = u8,
+    wide = u32,
+    module = uint32,
+    load = |value: &AtomicU8| value.load(Ordering::Relaxed),
+    store = |value: &AtomicU8, raw: u8| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_narrow_primitive!(
+    AtomicU16,
+    U16,
+    0u16,
+    narrow = u16,
+    wide = u32,
+    module = uint32,
+    load = |value: &AtomicU16| value.load(Ordering::Relaxed),
+    store = |value: &AtomicU16, raw: u16| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_narrow_primitive!(
+    AtomicIsize,
+    I64,
+    0isize,
+    narrow = isize,
+    wide = i64,
+    module = int64,
+    load = |value: &AtomicIsize| value.load(Ordering::Relaxed),
+    store = |value: &AtomicIsize, raw: isize| value.store(raw, Ordering::Relaxed)
+);
+
+impl_atomic_narrow_primitive!(
+    AtomicUsize,
+    U64,
+    0usize,
+    narrow = usize,
+    wide = u64,
+    module = uint64,
+    load = |value: &AtomicUsize| value.load(Ordering::Relaxed),
+    store = |value: &AtomicUsize, raw: usize| value.store(raw, Ordering::Relaxed)
+);
+
 impl ProtoShadow<Self> for () {
     type Sun<'a> = Self;
     type OwnedSun = Self;
@@ -614,5 +980,55 @@ mod tests {
         assert_eq!("google.protobuf", <()>::PACKAGE);
         assert_eq!("google.protobuf.Empty", <()>::full_name());
         assert_eq!("type.googleapis.com/google.protobuf.Empty", <()>::type_url());
+    }
+
+    #[test]
+    fn atomic_primitives_proto_wire() {
+        use core::sync::atomic::AtomicBool;
+        use core::sync::atomic::AtomicI8;
+        use core::sync::atomic::AtomicI16;
+        use core::sync::atomic::AtomicI32;
+        use core::sync::atomic::AtomicI64;
+        use core::sync::atomic::AtomicIsize;
+        use core::sync::atomic::AtomicU8;
+        use core::sync::atomic::AtomicU16;
+        use core::sync::atomic::AtomicU32;
+        use core::sync::atomic::AtomicU64;
+        use core::sync::atomic::AtomicUsize;
+        use core::sync::atomic::Ordering;
+
+        use ::bytes::BytesMut;
+
+        use crate::traits::ProtoWire;
+
+        macro_rules! assert_atomic_roundtrip {
+            ($ty:ty, $value:expr) => {{
+                let atomic = <$ty as ProtoWire>::proto_default();
+                assert!(ProtoWire::is_default(&atomic));
+                atomic.store($value, Ordering::Relaxed);
+                assert!(!ProtoWire::is_default(&atomic));
+
+                let mut buf = BytesMut::new();
+                <$ty as ProtoWire>::encode_raw_unchecked(&atomic, &mut buf);
+                let mut bytes = buf.freeze();
+                let mut decoded = <$ty as ProtoWire>::proto_default();
+                <$ty as ProtoWire>::decode_into(WireType::Varint, &mut decoded, &mut bytes, DecodeContext::default()).unwrap();
+                assert_eq!(decoded.load(Ordering::Relaxed), $value);
+                <$ty as ProtoWire>::clear(&mut decoded);
+                assert!(ProtoWire::is_default(&decoded));
+            }};
+        }
+
+        assert_atomic_roundtrip!(AtomicBool, true);
+        assert_atomic_roundtrip!(AtomicI8, -7);
+        assert_atomic_roundtrip!(AtomicI16, -12345);
+        assert_atomic_roundtrip!(AtomicI32, -1_234_567);
+        assert_atomic_roundtrip!(AtomicI64, -9_876_543_210);
+        assert_atomic_roundtrip!(AtomicIsize, -321);
+        assert_atomic_roundtrip!(AtomicU8, 200);
+        assert_atomic_roundtrip!(AtomicU16, 60_000);
+        assert_atomic_roundtrip!(AtomicU32, 3_123_456_789);
+        assert_atomic_roundtrip!(AtomicU64, 1_234_567_890_123_456_789);
+        assert_atomic_roundtrip!(AtomicUsize, 12_345);
     }
 }
