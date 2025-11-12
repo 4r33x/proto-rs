@@ -15,6 +15,7 @@ use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
+use crate::zero_copy::ZeroCopyBuffer;
 
 // ---------- conversion trait users implement ----------
 pub trait ProtoShadow<T>: Sized {
@@ -332,6 +333,26 @@ pub trait ProtoExt: Sized {
                 buf
             } else {
                 let mut buf = Vec::with_capacity(len);
+                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                buf
+            }
+        })
+    }
+    #[inline(always)]
+    fn encode_to_zerocopy(value: SunOf<'_, Self>) -> ZeroCopyBuffer {
+        Self::with_shadow(value, |shadow| {
+            let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            if len == 0 {
+                return ZeroCopyBuffer::new();
+            }
+            // TODO use std::hint::unlikely when stable
+            if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                let total = key_len(1) + len;
+                let mut buf = ZeroCopyBuffer::with_capacity(total);
+                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
+                buf
+            } else {
+                let mut buf = ZeroCopyBuffer::with_capacity(len);
                 <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
                 buf
             }

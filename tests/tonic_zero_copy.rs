@@ -23,8 +23,7 @@ fn zero_copy_request_preserves_metadata() {
     assert_eq!(inner.metadata().get("x-trace").unwrap(), "abc123");
     assert_eq!(*inner.extensions().get::<usize>().unwrap(), 99);
 
-    let back_to_request: tonic::Request<Vec<u8>> = zero_copy.into();
-    assert_eq!(back_to_request.get_ref(), &expected_bytes);
+    assert_eq!(zero_copy.as_request().get_ref().as_slice(), &expected_bytes);
 }
 
 #[test]
@@ -43,8 +42,7 @@ fn zero_copy_response_preserves_metadata() {
     assert_eq!(inner.metadata().get("x-resp").unwrap(), "value");
     assert_eq!(inner.extensions().get::<String>().unwrap(), "ext");
 
-    let back_to_response: tonic::Response<Vec<u8>> = zero_copy.into();
-    assert_eq!(back_to_response.get_ref(), &expected_bytes);
+    assert_eq!(zero_copy.as_response().get_ref().as_slice(), &expected_bytes);
 }
 
 #[test]

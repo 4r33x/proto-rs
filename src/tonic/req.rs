@@ -19,28 +19,13 @@ pub struct ZeroCopyRequest<T> {
 
 impl<T> ZeroCopyRequest<T> {
     #[inline]
-    pub fn from_request(request: Request<Vec<u8>>) -> Self {
-        let (metadata, extensions, payload) = request.into_parts();
-        let payload: ZeroCopyBuffer = payload.into();
-        Self {
-            inner: Request::from_parts(metadata, extensions, payload),
-            _marker: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn from_smallvec_request(request: Request<ZeroCopyBuffer>) -> Self {
+    pub fn from_zerocopy_request(request: Request<ZeroCopyBuffer>) -> Self {
         Self { inner: request, _marker: PhantomData }
     }
 
     #[inline]
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self::from_smallvec_request(Request::new(bytes.into()))
-    }
-
-    #[inline]
-    pub fn from_smallvec(bytes: ZeroCopyBuffer) -> Self {
-        Self::from_smallvec_request(Request::new(bytes))
+    pub fn from_zerocopy(bytes: ZeroCopyBuffer) -> Self {
+        Self::from_zerocopy_request(Request::new(bytes))
     }
 
     #[inline]
@@ -59,14 +44,6 @@ impl<T> ZeroCopyRequest<T> {
     }
 }
 
-impl<T> From<ZeroCopyRequest<T>> for Request<Vec<u8>> {
-    #[inline]
-    fn from(request: ZeroCopyRequest<T>) -> Self {
-        let (metadata, extensions, payload) = request.into_request().into_parts();
-        Request::from_parts(metadata, extensions, payload.into_vec())
-    }
-}
-
 impl<T> From<ZeroCopyRequest<T>> for Request<ZeroCopyBuffer> {
     #[inline]
     fn from(request: ZeroCopyRequest<T>) -> Self {
@@ -82,8 +59,8 @@ where
     #[inline]
     fn from(request: Request<T>) -> Self {
         let (metadata, extensions, message) = request.into_parts();
-        let encoded = T::encode_to_vec(&message);
-        ZeroCopyRequest::from_request(Request::from_parts(metadata, extensions, encoded))
+        let encoded = T::encode_to_zerocopy(&message);
+        ZeroCopyRequest::from_zerocopy_request(Request::from_parts(metadata, extensions, encoded))
     }
 }
 
@@ -95,8 +72,8 @@ where
     #[inline]
     fn from(request: Request<&'a T>) -> Self {
         let (metadata, extensions, message) = request.into_parts();
-        let encoded = T::encode_to_vec(message);
-        ZeroCopyRequest::from_request(Request::from_parts(metadata, extensions, encoded))
+        let encoded = T::encode_to_zerocopy(message);
+        ZeroCopyRequest::from_zerocopy_request(Request::from_parts(metadata, extensions, encoded))
     }
 }
 
@@ -158,8 +135,8 @@ where
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {
-        let encoded = T::encode_to_vec(self);
-        ZeroCopyRequest::from_bytes(encoded)
+        let encoded = T::encode_to_zerocopy(self);
+        ZeroCopyRequest::from_zerocopy(encoded)
     }
 }
 
@@ -171,7 +148,7 @@ where
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {
         let (meta, ext, t) = self.into_parts();
-        let encoded = T::encode_to_vec(t);
-        ZeroCopyRequest::from_request(Request::from_parts(meta, ext, encoded))
+        let encoded = T::encode_to_zerocopy(t);
+        ZeroCopyRequest::from_zerocopy_request(Request::from_parts(meta, ext, encoded))
     }
 }
