@@ -38,25 +38,25 @@ where
     for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
 {
     type EncodeInput<'a> = &'a ArcSwap<T>;
-    const KIND: ProtoKind = <Arc<T> as ProtoWire>::KIND;
+    const KIND: ProtoKind = <T as ProtoWire>::KIND;
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         let guard = value.load();
-        let inner: &Arc<T> = &guard;
-        unsafe { <Arc<T> as ProtoWire>::encoded_len_impl_raw(&inner) }
+        let inner: &T = &guard;
+        unsafe { <T as ProtoWire>::encoded_len_impl_raw(&inner) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = value.load();
-        let inner: &Arc<T> = &guard;
-        <Arc<T> as ProtoWire>::encode_raw_unchecked(inner, buf);
+        let inner: &T = &guard;
+        <T as ProtoWire>::encode_raw_unchecked(inner, buf);
     }
 
     #[inline(always)]
     fn decode_into(wire: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = value.load_full();
+        let mut inner = <Arc<T> as ProtoWire>::proto_default();
         <Arc<T> as ProtoWire>::decode_into(wire, &mut inner, buf, ctx)?;
         value.store(inner);
         Ok(())
@@ -65,8 +65,8 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let guard = value.load();
-        let inner: &Arc<T> = &guard;
-        <Arc<T> as ProtoWire>::is_default_impl(&inner)
+        let inner: &T = &guard;
+        <T as ProtoWire>::is_default_impl(&inner)
     }
 
     #[inline(always)]
@@ -76,7 +76,7 @@ where
 
     #[inline(always)]
     fn clear(&mut self) {
-        self.store(Arc::new(T::proto_default()));
+        self.store(<Arc<T> as ProtoWire>::proto_default());
     }
 }
 
@@ -155,13 +155,13 @@ where
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = value.load();
         if let Some(inner) = guard.as_ref() {
-            <Arc<T> as ProtoWire>::encode_raw_unchecked(inner, buf);
+            <T as ProtoWire>::encode_raw_unchecked(inner, buf);
         }
     }
 
     #[inline(always)]
     fn decode_into(wire: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = value.load_full();
+        let mut inner = None;
         Option::<Arc<T>>::decode_into(wire, &mut inner, buf, ctx)?;
         value.store(inner);
         Ok(())
@@ -170,7 +170,7 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let guard = value.load();
-        guard.as_ref().is_none_or(|inner| <Arc<T> as ProtoWire>::is_default_impl(&inner))
+        guard.as_ref().is_none_or(|inner| <T as ProtoWire>::is_default_impl(&&**inner))
     }
 
     #[inline(always)]
@@ -196,7 +196,7 @@ where
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = value.get_or_insert_with(|| ArcedShadow::proto_default());
+        let inner = value.get_or_insert_with(ArcedShadow::proto_default);
         T::merge_field(inner.0.as_mut(), tag, wire, buf, ctx)
     }
 }
@@ -211,7 +211,7 @@ where
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let value = self.map(|shadow| <ArcedShadow<SHD> as ProtoShadow<Arc<T>>>::to_sun(shadow)).transpose()?;
+        let value = self.map(<ArcedShadow<SHD> as ProtoShadow<Arc<T>>>::to_sun).transpose()?;
         Ok(ArcSwapOption::new(value))
     }
 
