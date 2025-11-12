@@ -236,7 +236,7 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
     }
 }
 
-fn is_value_encode_type(ty: &Type) -> bool {
+pub fn is_value_encode_type(ty: &Type) -> bool {
     matches!(ty, Type::Path(type_path)
     if type_path.qself.is_none()
         && type_path.path.segments.len() == 1

@@ -28,7 +28,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
 
     let struct_item = sanitize_struct(item_struct.clone());
 
-    let fields = match &data.fields {
+    let mut fields = match &data.fields {
         syn::Fields::Named(named) => named
             .named
             .iter()
@@ -74,6 +74,22 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         syn::Fields::Unit => Vec::new(),
     };
 
+    if let Some(idx) = fields.iter().position(|info| info.config.is_transparent) {
+        if fields.len() != 1 {
+            panic!("#[proto(trasparent)] requires a single-field struct");
+        }
+
+        let field = fields.remove(idx);
+        let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+        let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
+
+        return quote! {
+            #struct_item
+            #proto_shadow_impl
+            #transparent_impl
+        };
+    }
+
     let fields = assign_tags(fields);
 
     let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
@@ -86,6 +102,149 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         #proto_shadow_impl
         #proto_ext_impl
         #proto_wire_impl
+    }
+}
+
+fn generate_transparent_struct_impl(
+    name: &syn::Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: Option<&syn::WhereClause>,
+    field: &FieldInfo<'_>,
+    original_fields: &syn::Fields,
+) -> TokenStream2 {
+    let inner_ty = &field.field.ty;
+    let value_access = field.access.access_tokens(quote! { value });
+    let mut_value_access = field.access.access_tokens(quote! { value });
+    let mut_self_access = field.access.access_tokens(quote! { self });
+
+    let wrap_expr = match original_fields {
+        syn::Fields::Unnamed(_) => quote! { Self(inner) },
+        syn::Fields::Named(_) => {
+            let ident = field.access.ident().expect("expected named field ident for transparent struct");
+            quote! { Self { #ident: inner } }
+        }
+        syn::Fields::Unit => quote! { Self },
+    };
+
+    let default_expr = match original_fields {
+        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoWire>::proto_default()) },
+        syn::Fields::Named(_) => {
+            let ident = field.access.ident().expect("expected named field ident for transparent struct");
+            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoWire>::proto_default() } }
+        }
+        syn::Fields::Unit => quote! { Self },
+    };
+
+    let is_value_encode = super::unified_field_handler::is_value_encode_type(&field.proto_ty);
+    let encode_value_ref = quote! { &(#value_access) };
+    let encode_value = if is_value_encode {
+        quote! { *(#encode_value_ref) }
+    } else {
+        quote! { #encode_value_ref }
+    };
+
+    quote! {
+        impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+            type Shadow<'b> = #name #ty_generics where Self: 'b;
+
+            #[inline(always)]
+            fn merge_field(
+                _value: &mut Self::Shadow<'_>,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
+            }
+
+            #[inline(always)]
+            fn decode(mut buf: impl ::proto_rs::bytes::Buf) -> Result<Self, ::proto_rs::DecodeError> {
+                let mut inner = <#inner_ty as ::proto_rs::ProtoWire>::proto_default();
+                <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
+                    <#inner_ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
+                    &mut inner,
+                    &mut buf,
+                    ::proto_rs::encoding::DecodeContext::default(),
+                )?;
+                Ok(#wrap_expr)
+            }
+
+            #[inline(always)]
+            fn decode_length_delimited(
+                mut buf: impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<Self, ::proto_rs::DecodeError> {
+                let mut inner = <#inner_ty as ::proto_rs::ProtoWire>::proto_default();
+                <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
+                    <#inner_ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
+                    &mut inner,
+                    &mut buf,
+                    ctx,
+                )?;
+                Ok(#wrap_expr)
+            }
+
+            #[inline(always)]
+            fn merge_length_delimited<B: ::proto_rs::bytes::Buf>(
+                value: &mut Self::Shadow<'_>,
+                buf: &mut B,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
+                    <#inner_ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
+                    &mut #mut_value_access,
+                    buf,
+                    ctx,
+                )
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
+            type EncodeInput<'b> = &'b Self;
+            const KIND: ::proto_rs::ProtoKind = <#inner_ty as ::proto_rs::ProtoWire>::KIND;
+
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #default_expr
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                <#inner_ty as ::proto_rs::ProtoWire>::clear(&mut #mut_self_access);
+            }
+
+            #[inline(always)]
+            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                <#inner_ty as ::proto_rs::ProtoWire>::is_default_impl(#encode_value_ref)
+            }
+
+            #[inline(always)]
+            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+                <#inner_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(#encode_value_ref)
+            }
+
+            #[inline(always)]
+            fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                <#inner_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(#encode_value, buf);
+            }
+
+            #[inline(always)]
+            fn decode_into(
+                wire_type: ::proto_rs::encoding::WireType,
+                value: &mut Self,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
+                    wire_type,
+                    &mut #mut_value_access,
+                    buf,
+                    ctx,
+                )
+            }
+        }
     }
 }
 
