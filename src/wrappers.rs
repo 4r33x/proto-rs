@@ -8,3 +8,6 @@ mod vecs;
 
 #[cfg(feature = "cache_padded")]
 mod cache_padded;
+
+#[cfg(feature = "arc_swap")]
+mod arc_swap;
