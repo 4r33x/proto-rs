@@ -441,7 +441,7 @@ pub struct Transaction {
     pub id: u64,
     #[proto(into = "i64", into_fn = "datetime_to_i64", from_fn = "i64_to_datetime")]
     pub created_at: DateTime<Utc>,
-    #[proto(into = "i64", into_fn = "datetime_to_i64", from_fn = "i64_to_datetime")]
+    #[proto(into = "i64", into_fn = "datetime_to_i64", try_from_fn = "try_i64_to_datetime")]
     pub updated_at: DateTime<Utc>,
 }
 

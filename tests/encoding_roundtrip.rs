@@ -6,6 +6,7 @@
 use bytes::Bytes;
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
+use proto_rs::DecodeError;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
 use proto_rs::ProtoWire;
@@ -70,7 +71,7 @@ pub struct MixedProto {
     pub optional_payload: Option<Vec<u8>>,
     #[proto(tag = 7)]
     pub attachments: Vec<Bytes>,
-    #[proto(tag = 12, into = "i64", into_fn = "fake_time_to_i64", from_fn = "i64_to_fake_time")]
+    #[proto(tag = 12, into = "i64", into_fn = "fake_time_to_i64", try_from_fn = "try_i64_to_fake_time")]
     pub timestamp: FakeTime,
     #[proto(tag = 4)]
     pub bools: Vec<bool>,
@@ -207,6 +208,14 @@ fn fake_time_to_i64(value: &FakeTime) -> i64 {
 
 fn i64_to_fake_time(value: i64) -> FakeTime {
     FakeTime { seconds: value }
+}
+
+fn try_i64_to_fake_time(value: i64) -> Result<FakeTime, DecodeError> {
+    if value < 0 {
+        Err(DecodeError::new("timestamp must be non-negative"))
+    } else {
+        Ok(i64_to_fake_time(value))
+    }
 }
 
 fn compute_checksum(value: &MixedProto) -> u32 {
@@ -451,6 +460,29 @@ fn cross_decode_round_trips() {
 
     let decoded_proto_from_proto = SampleMessage::decode(proto_bytes.clone()).expect("proto decode failed");
     assert_eq!(decoded_proto_from_proto, proto_msg);
+}
+
+#[test]
+fn try_from_fn_decode_error() {
+    let prost_msg = MixedProtoProst {
+        name: String::new(),
+        raw: Vec::new(),
+        bytes_field: Vec::new(),
+        optional_data: None,
+        optional_payload: None,
+        attachments: Vec::new(),
+        timestamp: -1,
+        bools: Vec::new(),
+        byte_array: Vec::new(),
+        optional_inner: None,
+        inner_list: Vec::new(),
+        fixed_inner: Vec::new(),
+        values: Vec::new(),
+    };
+
+    let prost_bytes = encode_prost_message(&prost_msg);
+    let err = MixedProto::decode(prost_bytes).expect_err("decoding should fail due to conversion error");
+    assert!(err.to_string().contains("timestamp must be non-negative"));
 }
 
 #[test]

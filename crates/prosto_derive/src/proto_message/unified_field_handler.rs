@@ -99,11 +99,11 @@ pub fn needs_encode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -
 }
 
 pub fn needs_decode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -> bool {
-    config.from_type.is_some() || config.from_fn.is_some() || config.into_type.is_some() || is_numeric_enum(config, parsed)
+    config.from_type.is_some() || config.from_fn.is_some() || config.try_from_fn.is_some() || config.into_type.is_some() || is_numeric_enum(config, parsed)
 }
 
 fn uses_proto_wire_directly(info: &FieldInfo<'_>) -> bool {
-    !info.config.skip && !needs_encode_conversion(&info.config, &info.parsed) && info.config.from_type.is_none() && info.config.from_fn.is_none()
+    !info.config.skip && !needs_encode_conversion(&info.config, &info.parsed) && info.config.from_type.is_none() && info.config.from_fn.is_none() && info.config.try_from_fn.is_none()
 }
 
 pub fn strip_proto_attrs(attrs: &[Attribute]) -> Vec<Attribute> {
@@ -307,6 +307,11 @@ pub fn decode_conversion_assign(info: &FieldInfo<'_>, access: &TokenStream2, tmp
         let fun_path = parse_path_string(info.field, fun);
         quote! {
             #access = #fun_path(#tmp_ident);
+        }
+    } else if let Some(fun) = &info.config.try_from_fn {
+        let fun_path = parse_path_string(info.field, fun);
+        quote! {
+            #access = #fun_path(#tmp_ident).map_err(::core::convert::Into::into)?;
         }
     } else {
         let field_ty = &info.field.ty;
