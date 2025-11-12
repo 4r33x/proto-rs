@@ -1,4 +1,3 @@
-
 # Benchmark Run — 2025-11-11 20:19:57
 
 | Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |

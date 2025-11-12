@@ -2,20 +2,42 @@
 
 use core::marker::PhantomData;
 
+use smallvec::Array;
+use smallvec::SmallVec;
+
 use crate::alloc::vec::Vec;
+use crate::zero_copy::ZeroCopyBuffer;
 
 pub trait AsBytes {
     fn as_bytes(&self) -> &[u8];
 }
 
 impl AsBytes for Vec<u8> {
+    #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         self
     }
 }
+impl AsBytes for ZeroCopyBuffer {
+    #[inline(always)]
+    fn as_bytes(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
 impl<const N: usize> AsBytes for [u8; N] {
+    #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         self
+    }
+}
+
+impl<A> AsBytes for SmallVec<A>
+where
+    A: Array<Item = u8>,
+{
+    #[inline(always)]
+    fn as_bytes(&self) -> &[u8] {
+        self.as_slice()
     }
 }
 #[derive(Clone, Copy, Default)]
