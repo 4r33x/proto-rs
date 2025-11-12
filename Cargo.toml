@@ -62,6 +62,7 @@ const_panic = { version = "0.2.15", features = [
   "rust_latest_stable",
   "derive",
 ] }
+arc-swap = { version = "1.7", optional = true }
 
 [dev-dependencies]
 proptest = "1.9"
@@ -87,6 +88,8 @@ fastnum = ["dep:fastnum"]
 cache_padded = ["dep:crossbeam-utils"]
 solana = ["dep:solana-address", "dep:solana-signature"]
 chrono = ["dep:chrono"]
+# Lock-free atomic Arc wrappers
+arc_swap = ["dep:arc-swap"]
 # Schema collection for build scripts
 build-schemas = ["inventory"]
 # Enable live proto dumping
