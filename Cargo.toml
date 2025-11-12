@@ -57,8 +57,10 @@ fastnum = { version = "0.7.3", optional = true }
 crossbeam-utils = { version = "0.8", optional = true }
 inventory = { workspace = true, optional = true }
 solana-address = { version = "2", optional = true }
+solana-instruction-error = { version = "2.1", optional = true }
 solana-keypair = { version = "3.1", optional = true }
 solana-signature = { version = "3.1", optional = true }
+solana-transaction-error = { version = "3.0", optional = true }
 const_panic = { version = "0.2.15", features = [
   "rust_latest_stable",
   "derive",
@@ -87,7 +89,13 @@ std = ["bytes/std"]
 tonic = ["dep:tonic", "bytes/std", "std"]
 fastnum = ["dep:fastnum"]
 cache_padded = ["dep:crossbeam-utils"]
-solana = ["dep:solana-address", "dep:solana-signature", "dep:solana-keypair"]
+solana = [
+  "dep:solana-address",
+  "dep:solana-instruction-error",
+  "dep:solana-keypair",
+  "dep:solana-signature",
+  "dep:solana-transaction-error",
+]
 chrono = ["dep:chrono"]
 # Lock-free atomic Arc wrappers
 arc_swap = ["dep:arc-swap"]
