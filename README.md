@@ -85,7 +85,7 @@ pub struct Attr {
     test_enum_opt: Option<TestEnum>,
     #[proto(import_path = "google.protobuf")]
     test_enum_vec: Vec<TestEnum>,
-    #[proto(into = "i64", into_fn = "datetime_to_i64", from_fn = "i64_to_datetime")]
+    #[proto(into = "i64", into_fn = "datetime_to_i64", try_from_fn = "try_i64_to_datetime")]
     pub updated_at: DateTime<Utc>,
 }
 ```
@@ -108,6 +108,8 @@ message Attr {
   int64 updated_at = 12;
 }
 ```
+
+Use `from_fn` when your conversion is infallible and `try_from_fn` when it needs to return a `Result<T, E>` where `E: Into<DecodeError>`.
 
 ### Complex Enums
 

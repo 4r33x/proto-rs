@@ -49,6 +49,7 @@ pub struct FieldConfig {
     pub from_type: Option<String>,
     pub into_fn: Option<String>,
     pub from_fn: Option<String>,
+    pub try_from_fn: Option<String>,
     pub skip: bool,
     pub skip_deser_fn: Option<String>, // run after full decode
     pub is_rust_enum: bool,            // treat T as Rust enum -> i32 on wire
@@ -86,6 +87,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("from") => cfg.from_type = parse_string_value(&meta),
                 Some("into_fn") => cfg.into_fn = parse_string_value(&meta),
                 Some("from_fn") => cfg.from_fn = parse_string_value(&meta),
+                Some("try_from_fn") => cfg.try_from_fn = parse_string_value(&meta),
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
                 _ => {}
