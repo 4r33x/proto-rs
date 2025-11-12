@@ -19,7 +19,7 @@ fn zero_copy_request_preserves_metadata() {
     let zero_copy: proto_rs::ZeroCopyRequest<_> = request.into();
     let inner = zero_copy.as_request();
 
-    assert_eq!(inner.get_ref(), &expected_bytes);
+    assert_eq!(inner.get_ref().as_slice(), expected_bytes.as_slice());
     assert_eq!(inner.metadata().get("x-trace").unwrap(), "abc123");
     assert_eq!(*inner.extensions().get::<usize>().unwrap(), 99);
 
@@ -39,7 +39,7 @@ fn zero_copy_response_preserves_metadata() {
     let zero_copy: proto_rs::ZeroCopyResponse<_> = response.into();
     let inner = zero_copy.as_response();
 
-    assert_eq!(inner.get_ref(), &expected_bytes);
+    assert_eq!(inner.get_ref().as_slice(), expected_bytes.as_slice());
     assert_eq!(inner.metadata().get("x-resp").unwrap(), "value");
     assert_eq!(inner.extensions().get::<String>().unwrap(), "ext");
 
@@ -53,7 +53,7 @@ fn borrowed_request_zero_copy_matches_manual_encoding() {
     let zero_copy = tonic::Request::new(&message).to_zero_copy();
     let expected = SampleMessage::encode_to_vec(&message);
 
-    assert_eq!(zero_copy.as_request().get_ref(), &expected);
+    assert_eq!(zero_copy.as_request().get_ref().as_slice(), expected.as_slice());
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn borrowed_response_zero_copy_matches_manual_encoding() {
     let zero_copy = tonic::Response::new(&message).to_zero_copy();
     let expected = SampleMessage::encode_to_vec(&message);
 
-    assert_eq!(zero_copy.as_response().get_ref(), &expected);
+    assert_eq!(zero_copy.as_response().get_ref().as_slice(), expected.as_slice());
 }
 
 #[test]

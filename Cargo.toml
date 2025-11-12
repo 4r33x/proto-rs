@@ -47,6 +47,7 @@ inventory = { version = "0.3" }
 chrono = "0.4"
 criterion = { version = "0.7" }
 tonic = { version = "0.14.2" }
+smallvec = "1.13"
 
 [dependencies]
 prosto_derive.workspace = true
@@ -64,6 +65,7 @@ const_panic = { version = "0.2.15", features = [
   "derive",
 ] }
 arc-swap = { version = "1.7", optional = true }
+smallvec.workspace = true
 
 [dev-dependencies]
 proptest = "1.9"

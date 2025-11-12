@@ -2,6 +2,9 @@
 
 use core::marker::PhantomData;
 
+use smallvec::Array;
+use smallvec::SmallVec;
+
 use crate::alloc::vec::Vec;
 
 pub trait AsBytes {
@@ -16,6 +19,15 @@ impl AsBytes for Vec<u8> {
 impl<const N: usize> AsBytes for [u8; N] {
     fn as_bytes(&self) -> &[u8] {
         self
+    }
+}
+
+impl<A> AsBytes for SmallVec<A>
+where
+    A: Array<Item = u8>,
+{
+    fn as_bytes(&self) -> &[u8] {
+        self.as_slice()
     }
 }
 #[derive(Clone, Copy, Default)]

@@ -8,43 +8,70 @@ use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::SunByRef;
 use crate::tonic::ToZeroCopyResponse;
+use crate::zero_copy::ZeroCopyBuffer;
 
-/// A wrapper around [`tonic::Response<Vec<u8>>`] that remembers the protobuf
+/// A wrapper around [`tonic::Response<SmallVec<[u8; 64]>>`] that remembers the protobuf
 /// message type that produced the encoded bytes.
 #[derive(Debug)]
 pub struct ZeroCopyResponse<T> {
-    inner: Response<Vec<u8>>,
+    inner: Response<ZeroCopyBuffer>,
     _marker: PhantomData<T>,
 }
 
 impl<T> ZeroCopyResponse<T> {
     #[inline]
     pub fn from_response(request: Response<Vec<u8>>) -> Self {
-        Self { inner: request, _marker: PhantomData }
+        let (metadata, payload, extensions) = request.into_parts();
+        let payload: ZeroCopyBuffer = payload.into();
+        Self {
+            inner: Response::from_parts(metadata, payload, extensions),
+            _marker: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn from_smallvec_response(response: Response<ZeroCopyBuffer>) -> Self {
+        Self {
+            inner: response,
+            _marker: PhantomData,
+        }
     }
 
     #[inline]
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self::from_response(Response::new(bytes))
+        Self::from_smallvec_response(Response::new(bytes.into()))
     }
 
     #[inline]
-    pub fn into_response(self) -> Response<Vec<u8>> {
+    pub fn from_smallvec(bytes: ZeroCopyBuffer) -> Self {
+        Self::from_smallvec_response(Response::new(bytes))
+    }
+
+    #[inline]
+    pub fn into_response(self) -> Response<ZeroCopyBuffer> {
         self.inner
     }
 
     #[inline]
-    pub fn as_response(&self) -> &Response<Vec<u8>> {
+    pub fn as_response(&self) -> &Response<ZeroCopyBuffer> {
         &self.inner
     }
 
     #[inline]
-    pub fn as_response_mut(&mut self) -> &mut Response<Vec<u8>> {
+    pub fn as_response_mut(&mut self) -> &mut Response<ZeroCopyBuffer> {
         &mut self.inner
     }
 }
 
 impl<T> From<ZeroCopyResponse<T>> for Response<Vec<u8>> {
+    #[inline]
+    fn from(request: ZeroCopyResponse<T>) -> Self {
+        let (metadata, payload, extensions) = request.into_response().into_parts();
+        Response::from_parts(metadata, payload.into_vec(), extensions)
+    }
+}
+
+impl<T> From<ZeroCopyResponse<T>> for Response<ZeroCopyBuffer> {
     #[inline]
     fn from(request: ZeroCopyResponse<T>) -> Self {
         request.into_response()
@@ -122,7 +149,7 @@ where
 }
 
 impl<T> ProtoResponse<T> for ZeroCopyResponse<T> {
-    type Encode = Vec<u8>;
+    type Encode = ZeroCopyBuffer;
     type Mode = BytesMode;
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {

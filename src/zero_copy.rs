@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 
 use bytes::Buf;
 use bytes::BufMut;
+use smallvec::SmallVec;
 
 use crate::DecodeError;
 use crate::ProtoExt;
@@ -14,14 +15,15 @@ use crate::bytes::Bytes;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
-use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 
+pub type ZeroCopyBuffer = SmallVec<[u8; 64]>;
+
 #[derive(PartialEq, Eq)]
 pub struct ZeroCopy<T> {
-    inner: Vec<u8>,
+    inner: ZeroCopyBuffer,
     _marker: PhantomData<T>,
 }
 
@@ -47,18 +49,25 @@ impl<T> fmt::Debug for ZeroCopy<T> {
 }
 
 impl<T> ZeroCopy<T> {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            inner: Vec::new(),
+            inner: ZeroCopyBuffer::new(),
             _marker: PhantomData,
         }
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self { inner: bytes, _marker: PhantomData }
+        Self {
+            inner: bytes.into(),
+            _marker: PhantomData,
+        }
     }
 
     pub fn into_bytes(self) -> Vec<u8> {
+        self.inner.into_vec()
+    }
+
+    pub fn into_smallvec(self) -> ZeroCopyBuffer {
         self.inner
     }
 
@@ -79,7 +88,7 @@ impl<T> ZeroCopy<T> {
         T: ProtoExt,
         for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
     {
-        decode_zero_copy_bytes::<T>(Bytes::from(self.inner.clone()))
+        decode_zero_copy_bytes::<T>(Bytes::from(self.inner.clone().into_vec()))
     }
 }
 
@@ -105,6 +114,12 @@ impl<T> From<ZeroCopy<T>> for Vec<u8> {
     }
 }
 
+impl<T> From<ZeroCopy<T>> for ZeroCopyBuffer {
+    fn from(value: ZeroCopy<T>) -> Self {
+        value.into_smallvec()
+    }
+}
+
 impl<T> From<&T> for ZeroCopy<T>
 where
     T: ProtoExt,
@@ -127,7 +142,10 @@ where
                 buf
             }
         });
-        Self::from_bytes(bytes)
+        Self {
+            inner: bytes.into(),
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -153,7 +171,10 @@ where
                 buf
             }
         });
-        Self::from_bytes(bytes)
+        Self {
+            inner: bytes.into(),
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -269,6 +290,22 @@ fn decode_varint_slice(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
     Err(DecodeError::new("invalid or unterminated varint"))
 }
 
+#[inline]
+fn push_key(out: &mut ZeroCopyBuffer, tag: u32, wire_type: WireType) {
+    let mut key = ((tag as u64) << 3) | u64::from(wire_type as u32);
+    loop {
+        let mut byte = (key & 0x7F) as u8;
+        key >>= 7;
+        if key != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if key == 0 {
+            break;
+        }
+    }
+}
+
 /// Peek varint for length prefix ONLY. Since Buf is contiguous, this is safe.
 #[inline]
 fn peek_varint_prefix(buf: &impl Buf) -> Result<(u64, usize), DecodeError> {
@@ -285,7 +322,7 @@ fn peek_varint_prefix(buf: &impl Buf) -> Result<(u64, usize), DecodeError> {
 
 /// Copy payload bytes directly without double-scanning
 #[inline]
-fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut Vec<u8>, ctx: DecodeContext) -> Result<(), DecodeError> {
+fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCopyBuffer, ctx: DecodeContext) -> Result<(), DecodeError> {
     ctx.limit_reached()?;
     into.clear();
 
@@ -339,7 +376,7 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut Vec<u8
 
 /// Append full field (key + payload) with minimized scanning
 #[inline]
-fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut Vec<u8>, ctx: DecodeContext) -> Result<(), DecodeError> {
+fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut ZeroCopyBuffer, ctx: DecodeContext) -> Result<(), DecodeError> {
     ctx.limit_reached()?;
 
     match wire_type {
@@ -347,7 +384,7 @@ fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut Vec
             // Reserve space for key + max varint size
             let key_len = key_len(tag);
             out.reserve(key_len + 10);
-            encode_key(tag, wire_type, out);
+            push_key(out, tag, wire_type);
 
             // Direct slice access - no byte-by-byte loop
             let bytes = buf.chunk();
@@ -370,7 +407,7 @@ fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut Vec
 
             let key_len = key_len(tag);
             out.reserve(key_len + SIZE);
-            encode_key(tag, wire_type, out);
+            push_key(out, tag, wire_type);
 
             let start = out.len();
             out.resize(start + SIZE, 0);
@@ -385,7 +422,7 @@ fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut Vec
 
             let key_len = key_len(tag);
             out.reserve(key_len + SIZE);
-            encode_key(tag, wire_type, out);
+            push_key(out, tag, wire_type);
 
             let start = out.len();
             out.resize(start + SIZE, 0);
@@ -404,7 +441,7 @@ fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut Vec
             // Reserve and copy key + length + payload
             let key_len = key_len(tag);
             out.reserve(key_len + len_len + payload_len);
-            encode_key(tag, wire_type, out);
+            push_key(out, tag, wire_type);
 
             // Copy length prefix and payload
             let total_len = len_len + payload_len;
