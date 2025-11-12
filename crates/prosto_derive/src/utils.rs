@@ -42,6 +42,19 @@ pub fn set_inner_type(ty: &Type) -> Option<(Type, SetKind)> {
     None
 }
 
+pub fn cache_padded_inner_type(ty: &Type) -> Option<Type> {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "CachePadded"
+        && let PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
+    }
+
+    None
+}
+
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct FieldConfig {
