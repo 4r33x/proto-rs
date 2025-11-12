@@ -85,11 +85,7 @@ fn transparent_message_roundtrip_top_level() {
 
 #[test]
 fn transparent_message_decode_length_delimited_body() {
-    let body = vec![0x02, 0x08, 0x2A];
-    let decoded = <MessageWrapper as ProtoExt>::decode_length_delimited(
-        &body[..],
-        DecodeContext::default(),
-    )
-    .unwrap();
+    let body = [0x02, 0x08, 0x2A];
+    let decoded = <MessageWrapper as ProtoExt>::decode_length_delimited(&body[..], DecodeContext::default()).unwrap();
     assert_eq!(decoded, MessageWrapper(InnerMessage { value: 42 }));
 }

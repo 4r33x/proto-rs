@@ -1,6 +1,3 @@
-use core::ops::Deref;
-use core::ops::DerefMut;
-
 use bytes::Buf;
 use bytes::BufMut;
 use crossbeam_utils::CachePadded;
@@ -34,32 +31,32 @@ where
 
 impl<T> ProtoWire for CachePadded<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire<EncodeInput<'a> = T> + 'a + Copy,
 {
     type EncodeInput<'a> = &'a CachePadded<T>;
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let inner: &T = (*value).deref();
-        unsafe { T::encoded_len_impl_raw(&inner) }
+        let inner: &T = value;
+        unsafe { T::encoded_len_impl_raw(inner) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        T::encode_raw_unchecked(value, buf);
+        T::encode_raw_unchecked(**value, buf);
     }
 
     #[inline(always)]
     fn decode_into(w: WireType, v: &mut Self, b: &mut impl Buf, c: DecodeContext) -> Result<(), DecodeError> {
-        let inner: &mut T = v.deref_mut();
+        let inner: &mut T = v;
         T::decode_into(w, inner, b, c)
     }
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let inner: &T = (*value).deref();
-        T::is_default_impl(&inner)
+        let inner: &T = value;
+        T::is_default_impl(inner)
     }
 
     #[inline(always)]
@@ -69,7 +66,7 @@ where
 
     #[inline(always)]
     fn clear(&mut self) {
-        let inner: &mut T = self.deref_mut();
+        let inner: &mut T = self;
         T::clear(inner);
     }
 }
@@ -86,7 +83,7 @@ where
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner: &mut <T as ProtoExt>::Shadow<'_> = value.0.deref_mut();
+        let inner: &mut <T as ProtoExt>::Shadow<'_> = &mut value.0;
         T::merge_field(inner, tag, wire, buf, ctx)
     }
 }
@@ -112,7 +109,7 @@ where
 
     #[inline(always)]
     fn decode_into(wt: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner: &mut SHD = value.0.deref_mut();
+        let inner: &mut SHD = &mut value.0;
         SHD::decode_into(wt, inner, buf, ctx)
     }
 
@@ -128,7 +125,7 @@ where
 
     #[inline(always)]
     fn clear(&mut self) {
-        let inner: &mut SHD = self.0.deref_mut();
+        let inner: &mut SHD = &mut self.0;
         SHD::clear(inner);
     }
 }

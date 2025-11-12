@@ -75,9 +75,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
     };
 
     if let Some(idx) = fields.iter().position(|info| info.config.is_transparent) {
-        if fields.len() != 1 {
-            panic!("#[proto(trasparent)] requires a single-field struct");
-        }
+        assert!(fields.len() == 1, "#[proto(trasparent)] requires a single-field struct");
 
         let field = fields.remove(idx);
         let proto_shadow_impl = generate_proto_shadow_impl(name, generics);

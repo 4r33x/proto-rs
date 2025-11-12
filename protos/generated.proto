@@ -1,0 +1,25 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package generated;
+
+message Holder {
+  UserIdTuple tuple = 1;
+  UserIdNamed named = 2;
+}
+
+message InnerMessage {
+  uint32 value = 1;
+}
+
+message MessageWrapper {
+  InnerMessage field_0 = 1;
+}
+
+message UserIdNamed {
+  uint64 id = 1;
+}
+
+message UserIdTuple {
+  uint64 field_0 = 1;
+}
+

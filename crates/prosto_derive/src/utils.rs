@@ -91,7 +91,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("try_from_fn") => cfg.try_from_fn = parse_string_value(&meta),
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
-                Some("trasparent") | Some("transparent") => cfg.is_transparent = true,
+                Some("transparent") => cfg.is_transparent = true,
                 _ => {}
             }
             Ok(())
