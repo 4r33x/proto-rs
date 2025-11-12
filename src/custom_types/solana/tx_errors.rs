@@ -12,7 +12,6 @@ use crate::proto_message;
 
 extern crate self as proto_rs;
 
-#[allow(deprecated)]
 #[allow(clippy::enum_variant_names)]
 #[proto_message(proto_path = "protos/solana.proto")]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -56,7 +55,6 @@ pub enum InstructionErrorProto {
     #[proto(tag = 19)]
     RentEpochModified,
     #[proto(tag = 20)]
-    #[deprecated(since = "2.1.0", note = "Use InstructionError::MissingAccount instead")]
     NotEnoughAccountKeys,
     #[proto(tag = 21)]
     AccountDataSizeChanged,
@@ -128,11 +126,6 @@ pub enum InstructionErrorProto {
     BuiltinProgramsMustConsumeComputeUnits,
 }
 
-std::thread_local! {
-    static INSTRUCTION_ERROR_SHADOW: Cell<InstructionErrorProto> =
-        Cell::new(InstructionErrorProto::GenericError);
-}
-
 #[allow(deprecated)]
 fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
     match value {
@@ -193,7 +186,6 @@ fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorPr
     }
 }
 
-#[allow(deprecated)]
 impl ProtoShadow<InstructionError> for InstructionErrorProto {
     type Sun<'a> = &'a InstructionError;
     type OwnedSun = InstructionError;
