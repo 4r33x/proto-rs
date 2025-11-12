@@ -11,6 +11,7 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
 use crate::utils::MethodInfo;
+use crate::utils::cache_padded_inner_type;
 use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
 use crate::utils::is_bytes_array;
@@ -233,6 +234,9 @@ fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
         (false, true, inner)
     } else if let Some((inner, _)) = set_inner_type(ty) {
         (false, true, inner)
+    } else if let Some(inner) = cache_padded_inner_type(ty) {
+        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&inner);
+        (is_option, is_repeated, inner_type)
     } else if let Type::Array(_) = ty {
         if is_bytes_array(ty) {
             // Preserve array type for bytes
@@ -322,6 +326,7 @@ fn extract_type_name(ty: &Type) -> String {
 
 #[cfg(test)]
 mod tests {
+    use quote::quote;
     use syn::parse_quote;
 
     use super::*;
@@ -356,5 +361,25 @@ mod tests {
 
         let ty: Type = parse_quote! { String };
         assert_eq!(get_field_proto_type(&ty), "string");
+    }
+
+    #[test]
+    fn cache_padded_vec_is_repeated() {
+        let ty: Type = parse_quote! { crossbeam_utils::CachePadded<Vec<u32>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(!is_option);
+        assert!(is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
+    }
+
+    #[test]
+    fn cache_padded_option_is_optional() {
+        let ty: Type = parse_quote! { crossbeam_utils::CachePadded<Option<String>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(is_option);
+        assert!(!is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
     }
 }
