@@ -1,19 +1,15 @@
 #![allow(deprecated)]
 
-use core::cell::Cell;
-
 use solana_instruction_error::InstructionError;
 use solana_transaction_error::TransactionError;
 
 use crate::DecodeError;
-use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::proto_message;
 
 extern crate self as proto_rs;
 
-#[allow(clippy::enum_variant_names)]
-#[proto_message(proto_path = "protos/solana.proto")]
+#[proto_message(proto_path = "protos/solana.proto", sun = InstructionError)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum InstructionErrorProto {
     #[proto(tag = 1)]
@@ -126,70 +122,10 @@ pub enum InstructionErrorProto {
     BuiltinProgramsMustConsumeComputeUnits,
 }
 
-#[allow(deprecated)]
-fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
-    match value {
-        InstructionError::GenericError => InstructionErrorProto::GenericError,
-        InstructionError::InvalidArgument => InstructionErrorProto::InvalidArgument,
-        InstructionError::InvalidInstructionData => InstructionErrorProto::InvalidInstructionData,
-        InstructionError::InvalidAccountData => InstructionErrorProto::InvalidAccountData,
-        InstructionError::AccountDataTooSmall => InstructionErrorProto::AccountDataTooSmall,
-        InstructionError::InsufficientFunds => InstructionErrorProto::InsufficientFunds,
-        InstructionError::IncorrectProgramId => InstructionErrorProto::IncorrectProgramId,
-        InstructionError::MissingRequiredSignature => InstructionErrorProto::MissingRequiredSignature,
-        InstructionError::AccountAlreadyInitialized => InstructionErrorProto::AccountAlreadyInitialized,
-        InstructionError::UninitializedAccount => InstructionErrorProto::UninitializedAccount,
-        InstructionError::UnbalancedInstruction => InstructionErrorProto::UnbalancedInstruction,
-        InstructionError::ModifiedProgramId => InstructionErrorProto::ModifiedProgramId,
-        InstructionError::ExternalAccountLamportSpend => InstructionErrorProto::ExternalAccountLamportSpend,
-        InstructionError::ExternalAccountDataModified => InstructionErrorProto::ExternalAccountDataModified,
-        InstructionError::ReadonlyLamportChange => InstructionErrorProto::ReadonlyLamportChange,
-        InstructionError::ReadonlyDataModified => InstructionErrorProto::ReadonlyDataModified,
-        InstructionError::DuplicateAccountIndex => InstructionErrorProto::DuplicateAccountIndex,
-        InstructionError::ExecutableModified => InstructionErrorProto::ExecutableModified,
-        InstructionError::RentEpochModified => InstructionErrorProto::RentEpochModified,
-        InstructionError::NotEnoughAccountKeys => InstructionErrorProto::NotEnoughAccountKeys,
-        InstructionError::AccountDataSizeChanged => InstructionErrorProto::AccountDataSizeChanged,
-        InstructionError::AccountNotExecutable => InstructionErrorProto::AccountNotExecutable,
-        InstructionError::AccountBorrowFailed => InstructionErrorProto::AccountBorrowFailed,
-        InstructionError::AccountBorrowOutstanding => InstructionErrorProto::AccountBorrowOutstanding,
-        InstructionError::DuplicateAccountOutOfSync => InstructionErrorProto::DuplicateAccountOutOfSync,
-        InstructionError::Custom(value) => InstructionErrorProto::Custom(*value),
-        InstructionError::InvalidError => InstructionErrorProto::InvalidError,
-        InstructionError::ExecutableDataModified => InstructionErrorProto::ExecutableDataModified,
-        InstructionError::ExecutableLamportChange => InstructionErrorProto::ExecutableLamportChange,
-        InstructionError::ExecutableAccountNotRentExempt => InstructionErrorProto::ExecutableAccountNotRentExempt,
-        InstructionError::UnsupportedProgramId => InstructionErrorProto::UnsupportedProgramId,
-        InstructionError::CallDepth => InstructionErrorProto::CallDepth,
-        InstructionError::MissingAccount => InstructionErrorProto::MissingAccount,
-        InstructionError::ReentrancyNotAllowed => InstructionErrorProto::ReentrancyNotAllowed,
-        InstructionError::MaxSeedLengthExceeded => InstructionErrorProto::MaxSeedLengthExceeded,
-        InstructionError::InvalidSeeds => InstructionErrorProto::InvalidSeeds,
-        InstructionError::InvalidRealloc => InstructionErrorProto::InvalidRealloc,
-        InstructionError::ComputationalBudgetExceeded => InstructionErrorProto::ComputationalBudgetExceeded,
-        InstructionError::PrivilegeEscalation => InstructionErrorProto::PrivilegeEscalation,
-        InstructionError::ProgramEnvironmentSetupFailure => InstructionErrorProto::ProgramEnvironmentSetupFailure,
-        InstructionError::ProgramFailedToComplete => InstructionErrorProto::ProgramFailedToComplete,
-        InstructionError::ProgramFailedToCompile => InstructionErrorProto::ProgramFailedToCompile,
-        InstructionError::Immutable => InstructionErrorProto::Immutable,
-        InstructionError::IncorrectAuthority => InstructionErrorProto::IncorrectAuthority,
-        InstructionError::BorshIoError => InstructionErrorProto::BorshIoError,
-        InstructionError::AccountNotRentExempt => InstructionErrorProto::AccountNotRentExempt,
-        InstructionError::InvalidAccountOwner => InstructionErrorProto::InvalidAccountOwner,
-        InstructionError::ArithmeticOverflow => InstructionErrorProto::ArithmeticOverflow,
-        InstructionError::UnsupportedSysvar => InstructionErrorProto::UnsupportedSysvar,
-        InstructionError::IllegalOwner => InstructionErrorProto::IllegalOwner,
-        InstructionError::MaxAccountsDataAllocationsExceeded => InstructionErrorProto::MaxAccountsDataAllocationsExceeded,
-        InstructionError::MaxAccountsExceeded => InstructionErrorProto::MaxAccountsExceeded,
-        InstructionError::MaxInstructionTraceLengthExceeded => InstructionErrorProto::MaxInstructionTraceLengthExceeded,
-        InstructionError::BuiltinProgramsMustConsumeComputeUnits => InstructionErrorProto::BuiltinProgramsMustConsumeComputeUnits,
-    }
-}
-
 impl ProtoShadow<InstructionError> for InstructionErrorProto {
     type Sun<'a> = &'a InstructionError;
     type OwnedSun = InstructionError;
-    type View<'a> = &'a InstructionErrorProto;
+    type View<'a> = Self;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let value = match self {
@@ -253,24 +189,11 @@ impl ProtoShadow<InstructionError> for InstructionErrorProto {
     }
 
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        INSTRUCTION_ERROR_SHADOW.with(|cell| {
-            cell.set(instruction_error_from_native(value));
-            unsafe { &*cell.as_ptr() }
-        })
+        instruction_error_from_native(value)
     }
 }
 
-impl ProtoExt for InstructionError {
-    type Shadow<'b> = InstructionErrorProto;
-
-    #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), DecodeError> {
-        <InstructionErrorProto as ProtoExt>::merge_field(value, tag, wire_type, buf, ctx)
-    }
-}
-
-#[allow(clippy::large_enum_variant)]
-#[proto_message(proto_path = "protos/solana.proto")]
+#[proto_message(proto_path = "protos/solana.proto", sun = TransactionError)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TransactionErrorProto {
     #[proto(tag = 1)]
@@ -293,8 +216,8 @@ pub enum TransactionErrorProto {
     InstructionError {
         #[proto(tag = 1)]
         index: u8,
-        #[proto(tag = 2, message)]
-        error: InstructionErrorProto,
+        #[proto(tag = 2)]
+        error: InstructionError,
     },
     #[proto(tag = 10)]
     CallChainTooDeep,
@@ -364,60 +287,6 @@ pub enum TransactionErrorProto {
     CommitCancelled,
 }
 
-std::thread_local! {
-    static TRANSACTION_ERROR_SHADOW: Cell<TransactionErrorProto> =
-        Cell::new(TransactionErrorProto::AccountInUse);
-}
-
-#[allow(deprecated)]
-fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorProto {
-    match value {
-        TransactionError::AccountInUse => TransactionErrorProto::AccountInUse,
-        TransactionError::AccountLoadedTwice => TransactionErrorProto::AccountLoadedTwice,
-        TransactionError::AccountNotFound => TransactionErrorProto::AccountNotFound,
-        TransactionError::ProgramAccountNotFound => TransactionErrorProto::ProgramAccountNotFound,
-        TransactionError::InsufficientFundsForFee => TransactionErrorProto::InsufficientFundsForFee,
-        TransactionError::InvalidAccountForFee => TransactionErrorProto::InvalidAccountForFee,
-        TransactionError::AlreadyProcessed => TransactionErrorProto::AlreadyProcessed,
-        TransactionError::BlockhashNotFound => TransactionErrorProto::BlockhashNotFound,
-        TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError {
-            index: *index,
-            error: instruction_error_from_native(error),
-        },
-        TransactionError::CallChainTooDeep => TransactionErrorProto::CallChainTooDeep,
-        TransactionError::MissingSignatureForFee => TransactionErrorProto::MissingSignatureForFee,
-        TransactionError::InvalidAccountIndex => TransactionErrorProto::InvalidAccountIndex,
-        TransactionError::SignatureFailure => TransactionErrorProto::SignatureFailure,
-        TransactionError::InvalidProgramForExecution => TransactionErrorProto::InvalidProgramForExecution,
-        TransactionError::SanitizeFailure => TransactionErrorProto::SanitizeFailure,
-        TransactionError::ClusterMaintenance => TransactionErrorProto::ClusterMaintenance,
-        TransactionError::AccountBorrowOutstanding => TransactionErrorProto::AccountBorrowOutstanding,
-        TransactionError::WouldExceedMaxBlockCostLimit => TransactionErrorProto::WouldExceedMaxBlockCostLimit,
-        TransactionError::UnsupportedVersion => TransactionErrorProto::UnsupportedVersion,
-        TransactionError::InvalidWritableAccount => TransactionErrorProto::InvalidWritableAccount,
-        TransactionError::WouldExceedMaxAccountCostLimit => TransactionErrorProto::WouldExceedMaxAccountCostLimit,
-        TransactionError::WouldExceedAccountDataBlockLimit => TransactionErrorProto::WouldExceedAccountDataBlockLimit,
-        TransactionError::TooManyAccountLocks => TransactionErrorProto::TooManyAccountLocks,
-        TransactionError::AddressLookupTableNotFound => TransactionErrorProto::AddressLookupTableNotFound,
-        TransactionError::InvalidAddressLookupTableOwner => TransactionErrorProto::InvalidAddressLookupTableOwner,
-        TransactionError::InvalidAddressLookupTableData => TransactionErrorProto::InvalidAddressLookupTableData,
-        TransactionError::InvalidAddressLookupTableIndex => TransactionErrorProto::InvalidAddressLookupTableIndex,
-        TransactionError::InvalidRentPayingAccount => TransactionErrorProto::InvalidRentPayingAccount,
-        TransactionError::WouldExceedMaxVoteCostLimit => TransactionErrorProto::WouldExceedMaxVoteCostLimit,
-        TransactionError::WouldExceedAccountDataTotalLimit => TransactionErrorProto::WouldExceedAccountDataTotalLimit,
-        TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(*index),
-        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index: *account_index },
-        TransactionError::MaxLoadedAccountsDataSizeExceeded => TransactionErrorProto::MaxLoadedAccountsDataSizeExceeded,
-        TransactionError::InvalidLoadedAccountsDataSizeLimit => TransactionErrorProto::InvalidLoadedAccountsDataSizeLimit,
-        TransactionError::ResanitizationNeeded => TransactionErrorProto::ResanitizationNeeded,
-        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index: *account_index },
-        TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
-        TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
-        TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
-    }
-}
-
-#[allow(deprecated)]
 impl ProtoShadow<TransactionError> for TransactionErrorProto {
     type Sun<'a> = &'a TransactionError;
     type OwnedSun = TransactionError;
@@ -433,10 +302,7 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
             Self::InvalidAccountForFee => TransactionError::InvalidAccountForFee,
             Self::AlreadyProcessed => TransactionError::AlreadyProcessed,
             Self::BlockhashNotFound => TransactionError::BlockhashNotFound,
-            Self::InstructionError { index, error } => {
-                let error = <InstructionErrorProto as ProtoShadow<InstructionError>>::to_sun(error)?;
-                TransactionError::InstructionError(index, error)
-            }
+            Self::InstructionError { index, error } => TransactionError::InstructionError(index, error),
             Self::CallChainTooDeep => TransactionError::CallChainTooDeep,
             Self::MissingSignatureForFee => TransactionError::MissingSignatureForFee,
             Self::InvalidAccountIndex => TransactionError::InvalidAccountIndex,
@@ -473,18 +339,109 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
     }
 
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        TRANSACTION_ERROR_SHADOW.with(|cell| {
-            cell.set(transaction_error_from_native(value));
-            unsafe { &*cell.as_ptr() }
-        })
+        todo!()
     }
 }
 
-impl ProtoExt for TransactionError {
-    type Shadow<'b> = TransactionErrorProto;
+fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
+    match value {
+        InstructionError::GenericError => InstructionErrorProto::GenericError,
+        InstructionError::InvalidArgument => InstructionErrorProto::InvalidArgument,
+        InstructionError::InvalidInstructionData => InstructionErrorProto::InvalidInstructionData,
+        InstructionError::InvalidAccountData => InstructionErrorProto::InvalidAccountData,
+        InstructionError::AccountDataTooSmall => InstructionErrorProto::AccountDataTooSmall,
+        InstructionError::InsufficientFunds => InstructionErrorProto::InsufficientFunds,
+        InstructionError::IncorrectProgramId => InstructionErrorProto::IncorrectProgramId,
+        InstructionError::MissingRequiredSignature => InstructionErrorProto::MissingRequiredSignature,
+        InstructionError::AccountAlreadyInitialized => InstructionErrorProto::AccountAlreadyInitialized,
+        InstructionError::UninitializedAccount => InstructionErrorProto::UninitializedAccount,
+        InstructionError::UnbalancedInstruction => InstructionErrorProto::UnbalancedInstruction,
+        InstructionError::ModifiedProgramId => InstructionErrorProto::ModifiedProgramId,
+        InstructionError::ExternalAccountLamportSpend => InstructionErrorProto::ExternalAccountLamportSpend,
+        InstructionError::ExternalAccountDataModified => InstructionErrorProto::ExternalAccountDataModified,
+        InstructionError::ReadonlyLamportChange => InstructionErrorProto::ReadonlyLamportChange,
+        InstructionError::ReadonlyDataModified => InstructionErrorProto::ReadonlyDataModified,
+        InstructionError::DuplicateAccountIndex => InstructionErrorProto::DuplicateAccountIndex,
+        InstructionError::ExecutableModified => InstructionErrorProto::ExecutableModified,
+        InstructionError::RentEpochModified => InstructionErrorProto::RentEpochModified,
+        InstructionError::NotEnoughAccountKeys => InstructionErrorProto::NotEnoughAccountKeys,
+        InstructionError::AccountDataSizeChanged => InstructionErrorProto::AccountDataSizeChanged,
+        InstructionError::AccountNotExecutable => InstructionErrorProto::AccountNotExecutable,
+        InstructionError::AccountBorrowFailed => InstructionErrorProto::AccountBorrowFailed,
+        InstructionError::AccountBorrowOutstanding => InstructionErrorProto::AccountBorrowOutstanding,
+        InstructionError::DuplicateAccountOutOfSync => InstructionErrorProto::DuplicateAccountOutOfSync,
+        InstructionError::Custom(value) => InstructionErrorProto::Custom(*value),
+        InstructionError::InvalidError => InstructionErrorProto::InvalidError,
+        InstructionError::ExecutableDataModified => InstructionErrorProto::ExecutableDataModified,
+        InstructionError::ExecutableLamportChange => InstructionErrorProto::ExecutableLamportChange,
+        InstructionError::ExecutableAccountNotRentExempt => InstructionErrorProto::ExecutableAccountNotRentExempt,
+        InstructionError::UnsupportedProgramId => InstructionErrorProto::UnsupportedProgramId,
+        InstructionError::CallDepth => InstructionErrorProto::CallDepth,
+        InstructionError::MissingAccount => InstructionErrorProto::MissingAccount,
+        InstructionError::ReentrancyNotAllowed => InstructionErrorProto::ReentrancyNotAllowed,
+        InstructionError::MaxSeedLengthExceeded => InstructionErrorProto::MaxSeedLengthExceeded,
+        InstructionError::InvalidSeeds => InstructionErrorProto::InvalidSeeds,
+        InstructionError::InvalidRealloc => InstructionErrorProto::InvalidRealloc,
+        InstructionError::ComputationalBudgetExceeded => InstructionErrorProto::ComputationalBudgetExceeded,
+        InstructionError::PrivilegeEscalation => InstructionErrorProto::PrivilegeEscalation,
+        InstructionError::ProgramEnvironmentSetupFailure => InstructionErrorProto::ProgramEnvironmentSetupFailure,
+        InstructionError::ProgramFailedToComplete => InstructionErrorProto::ProgramFailedToComplete,
+        InstructionError::ProgramFailedToCompile => InstructionErrorProto::ProgramFailedToCompile,
+        InstructionError::Immutable => InstructionErrorProto::Immutable,
+        InstructionError::IncorrectAuthority => InstructionErrorProto::IncorrectAuthority,
+        InstructionError::BorshIoError => InstructionErrorProto::BorshIoError,
+        InstructionError::AccountNotRentExempt => InstructionErrorProto::AccountNotRentExempt,
+        InstructionError::InvalidAccountOwner => InstructionErrorProto::InvalidAccountOwner,
+        InstructionError::ArithmeticOverflow => InstructionErrorProto::ArithmeticOverflow,
+        InstructionError::UnsupportedSysvar => InstructionErrorProto::UnsupportedSysvar,
+        InstructionError::IllegalOwner => InstructionErrorProto::IllegalOwner,
+        InstructionError::MaxAccountsDataAllocationsExceeded => InstructionErrorProto::MaxAccountsDataAllocationsExceeded,
+        InstructionError::MaxAccountsExceeded => InstructionErrorProto::MaxAccountsExceeded,
+        InstructionError::MaxInstructionTraceLengthExceeded => InstructionErrorProto::MaxInstructionTraceLengthExceeded,
+        InstructionError::BuiltinProgramsMustConsumeComputeUnits => InstructionErrorProto::BuiltinProgramsMustConsumeComputeUnits,
+    }
+}
 
-    #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: crate::encoding::WireType, buf: &mut impl bytes::Buf, ctx: crate::encoding::DecodeContext) -> Result<(), DecodeError> {
-        <TransactionErrorProto as ProtoExt>::merge_field(value, tag, wire_type, buf, ctx)
+fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorProto {
+    match value {
+        TransactionError::AccountInUse => TransactionErrorProto::AccountInUse,
+        TransactionError::AccountLoadedTwice => TransactionErrorProto::AccountLoadedTwice,
+        TransactionError::AccountNotFound => TransactionErrorProto::AccountNotFound,
+        TransactionError::ProgramAccountNotFound => TransactionErrorProto::ProgramAccountNotFound,
+        TransactionError::InsufficientFundsForFee => TransactionErrorProto::InsufficientFundsForFee,
+        TransactionError::InvalidAccountForFee => TransactionErrorProto::InvalidAccountForFee,
+        TransactionError::AlreadyProcessed => TransactionErrorProto::AlreadyProcessed,
+        TransactionError::BlockhashNotFound => TransactionErrorProto::BlockhashNotFound,
+        TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError { index: *index, error: error.clone() },
+        TransactionError::CallChainTooDeep => TransactionErrorProto::CallChainTooDeep,
+        TransactionError::MissingSignatureForFee => TransactionErrorProto::MissingSignatureForFee,
+        TransactionError::InvalidAccountIndex => TransactionErrorProto::InvalidAccountIndex,
+        TransactionError::SignatureFailure => TransactionErrorProto::SignatureFailure,
+        TransactionError::InvalidProgramForExecution => TransactionErrorProto::InvalidProgramForExecution,
+        TransactionError::SanitizeFailure => TransactionErrorProto::SanitizeFailure,
+        TransactionError::ClusterMaintenance => TransactionErrorProto::ClusterMaintenance,
+        TransactionError::AccountBorrowOutstanding => TransactionErrorProto::AccountBorrowOutstanding,
+        TransactionError::WouldExceedMaxBlockCostLimit => TransactionErrorProto::WouldExceedMaxBlockCostLimit,
+        TransactionError::UnsupportedVersion => TransactionErrorProto::UnsupportedVersion,
+        TransactionError::InvalidWritableAccount => TransactionErrorProto::InvalidWritableAccount,
+        TransactionError::WouldExceedMaxAccountCostLimit => TransactionErrorProto::WouldExceedMaxAccountCostLimit,
+        TransactionError::WouldExceedAccountDataBlockLimit => TransactionErrorProto::WouldExceedAccountDataBlockLimit,
+        TransactionError::TooManyAccountLocks => TransactionErrorProto::TooManyAccountLocks,
+        TransactionError::AddressLookupTableNotFound => TransactionErrorProto::AddressLookupTableNotFound,
+        TransactionError::InvalidAddressLookupTableOwner => TransactionErrorProto::InvalidAddressLookupTableOwner,
+        TransactionError::InvalidAddressLookupTableData => TransactionErrorProto::InvalidAddressLookupTableData,
+        TransactionError::InvalidAddressLookupTableIndex => TransactionErrorProto::InvalidAddressLookupTableIndex,
+        TransactionError::InvalidRentPayingAccount => TransactionErrorProto::InvalidRentPayingAccount,
+        TransactionError::WouldExceedMaxVoteCostLimit => TransactionErrorProto::WouldExceedMaxVoteCostLimit,
+        TransactionError::WouldExceedAccountDataTotalLimit => TransactionErrorProto::WouldExceedAccountDataTotalLimit,
+        TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(*index),
+        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index: *account_index },
+        TransactionError::MaxLoadedAccountsDataSizeExceeded => TransactionErrorProto::MaxLoadedAccountsDataSizeExceeded,
+        TransactionError::InvalidLoadedAccountsDataSizeLimit => TransactionErrorProto::InvalidLoadedAccountsDataSizeLimit,
+        TransactionError::ResanitizationNeeded => TransactionErrorProto::ResanitizationNeeded,
+        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index: *account_index },
+        TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
+        TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
+        TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
     }
 }
