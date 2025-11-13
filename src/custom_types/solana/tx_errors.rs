@@ -123,7 +123,7 @@ pub enum InstructionErrorProto {
 }
 
 impl ProtoShadow<InstructionError> for InstructionErrorProto {
-    type Sun<'a> = InstructionError;
+    type Sun<'a> = &'a InstructionError;
     type OwnedSun = InstructionError;
     type View<'a> = Self;
 
@@ -288,7 +288,7 @@ pub enum TransactionErrorProto {
 }
 
 impl ProtoShadow<TransactionError> for TransactionErrorProto {
-    type Sun<'a> = TransactionError;
+    type Sun<'a> = &'a TransactionError;
     type OwnedSun = TransactionError;
     type View<'a> = Self;
 
@@ -346,7 +346,7 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
     }
 }
 
-fn instruction_error_from_native(value: InstructionError) -> InstructionErrorProto {
+fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
     match value {
         InstructionError::GenericError => InstructionErrorProto::GenericError,
         InstructionError::InvalidArgument => InstructionErrorProto::InvalidArgument,
@@ -373,7 +373,7 @@ fn instruction_error_from_native(value: InstructionError) -> InstructionErrorPro
         InstructionError::AccountBorrowFailed => InstructionErrorProto::AccountBorrowFailed,
         InstructionError::AccountBorrowOutstanding => InstructionErrorProto::AccountBorrowOutstanding,
         InstructionError::DuplicateAccountOutOfSync => InstructionErrorProto::DuplicateAccountOutOfSync,
-        InstructionError::Custom(value) => InstructionErrorProto::Custom(value),
+        InstructionError::Custom(value) => InstructionErrorProto::Custom(*value),
         InstructionError::InvalidError => InstructionErrorProto::InvalidError,
         InstructionError::ExecutableDataModified => InstructionErrorProto::ExecutableDataModified,
         InstructionError::ExecutableLamportChange => InstructionErrorProto::ExecutableLamportChange,
@@ -405,7 +405,7 @@ fn instruction_error_from_native(value: InstructionError) -> InstructionErrorPro
     }
 }
 
-fn transaction_error_from_native(value: TransactionError) -> TransactionErrorProto {
+fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorProto {
     match value {
         TransactionError::AccountInUse => TransactionErrorProto::AccountInUse,
         TransactionError::AccountLoadedTwice => TransactionErrorProto::AccountLoadedTwice,
@@ -416,7 +416,7 @@ fn transaction_error_from_native(value: TransactionError) -> TransactionErrorPro
         TransactionError::AlreadyProcessed => TransactionErrorProto::AlreadyProcessed,
         TransactionError::BlockhashNotFound => TransactionErrorProto::BlockhashNotFound,
         TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError {
-            index,
+            index: *index,
             error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(error),
         },
         TransactionError::CallChainTooDeep => TransactionErrorProto::CallChainTooDeep,
@@ -440,12 +440,12 @@ fn transaction_error_from_native(value: TransactionError) -> TransactionErrorPro
         TransactionError::InvalidRentPayingAccount => TransactionErrorProto::InvalidRentPayingAccount,
         TransactionError::WouldExceedMaxVoteCostLimit => TransactionErrorProto::WouldExceedMaxVoteCostLimit,
         TransactionError::WouldExceedAccountDataTotalLimit => TransactionErrorProto::WouldExceedAccountDataTotalLimit,
-        TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(index),
-        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index },
+        TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(*index),
+        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index: *account_index },
         TransactionError::MaxLoadedAccountsDataSizeExceeded => TransactionErrorProto::MaxLoadedAccountsDataSizeExceeded,
         TransactionError::InvalidLoadedAccountsDataSizeLimit => TransactionErrorProto::InvalidLoadedAccountsDataSizeLimit,
         TransactionError::ResanitizationNeeded => TransactionErrorProto::ResanitizationNeeded,
-        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index },
+        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index: *account_index },
         TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
         TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
         TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
@@ -466,7 +466,7 @@ mod tests {
             other => panic!("unexpected instruction error: {other:?}"),
         }
 
-        let roundtrip = <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(InstructionError::Custom(7));
+        let roundtrip = <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(&InstructionError::Custom(7));
         assert!(matches!(roundtrip, InstructionErrorProto::Custom(7)));
     }
 
@@ -474,7 +474,7 @@ mod tests {
     fn transaction_error_roundtrip_via_shadow() {
         let proto = TransactionErrorProto::InstructionError {
             index: 3,
-            error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(InstructionError::InvalidArgument),
+            error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(&InstructionError::InvalidArgument),
         };
         let restored = ProtoShadow::<TransactionError>::to_sun(proto).expect("decode");
         assert_eq!(restored, TransactionError::InstructionError(3, InstructionError::InvalidArgument),);
@@ -483,7 +483,7 @@ mod tests {
     #[test]
     fn transaction_error_protoext_roundtrip() {
         let error = TransactionError::InsufficientFundsForRent { account_index: 9 };
-        let encoded = <TransactionError as ProtoExt>::encode_to_vec(error);
+        let encoded = <TransactionError as ProtoExt>::encode_to_vec(&error);
         let decoded = <TransactionError as ProtoExt>::decode(encoded.as_slice()).expect("decode");
         assert_eq!(decoded, TransactionError::InsufficientFundsForRent { account_index: 9 },);
     }

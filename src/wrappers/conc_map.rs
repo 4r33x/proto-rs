@@ -177,7 +177,7 @@ where
     #[inline]
     fn encode_with_tag(tag: u32, shadow: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = shadow.into_guard();
-        for (k, v) in guard.iter() {
+        for (k, v) in &guard {
             let key_default = K::is_default_impl(&k);
             let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&k) } };
             let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };

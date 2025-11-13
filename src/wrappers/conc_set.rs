@@ -195,18 +195,15 @@ where
                 }
                 let guard = value.into_guard();
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = guard
-                    .iter()
-                    .map(|v| unsafe { T::encoded_len_impl_raw(&v) })
-                    .sum::<usize>();
+                let body_len = guard.iter().map(|v| unsafe { T::encoded_len_impl_raw(&v) }).sum::<usize>();
                 encode_varint(body_len as u64, buf);
-                for v in guard.iter() {
+                for v in &guard {
                     T::encode_raw_unchecked(v, buf);
                 }
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 let guard = value.into_guard();
-                for m in guard.iter() {
+                for m in &guard {
                     let len = unsafe { T::encoded_len_impl_raw(&m) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);

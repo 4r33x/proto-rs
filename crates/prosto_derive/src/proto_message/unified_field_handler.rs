@@ -267,9 +267,8 @@ fn is_papaya_hash_map_type(ty: &Type) -> bool {
     };
 
     let mut segments = type_path.path.segments.iter();
-    let last = match segments.next_back() {
-        Some(seg) => seg,
-        None => return false,
+    let Some(last) = segments.next_back() else {
+        return false;
     };
 
     if last.ident != "HashMap" {
@@ -285,10 +284,7 @@ fn is_papaya_hash_set_type(ty: &Type) -> bool {
     };
 
     let mut segments = type_path.path.segments.iter();
-    let last = match segments.next_back() {
-        Some(seg) => seg,
-        None => return false,
-    };
+    let Some(last) = segments.next_back() else { return false };
 
     if last.ident != "HashSet" {
         return false;
@@ -457,41 +453,6 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::parse_field_config;
-
-    #[test]
-    fn direct_scalar_field_derefs_binding() {
-        let field: Field = syn::parse_quote! {
-            #[proto(tag = 1)]
-            value: u32
-        };
-
-        let config = parse_field_config(&field);
-        let parsed = parse_field_type(&field.ty);
-        let proto_ty = compute_proto_ty(&field, &config, &parsed);
-        let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
-
-        let info = FieldInfo {
-            index: 0,
-            field: &field,
-            access: FieldAccess::Direct(quote! { value }),
-            config,
-            tag: Some(1),
-            parsed,
-            proto_ty,
-            decode_ty,
-        };
-
-        let binding = encode_input_binding(&info, &TokenStream2::new());
-        assert!(binding.prelude.is_none());
-        let rendered = binding.value.to_string();
-        assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
-    }
-}
-
 pub fn build_is_default_checks(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
     fields
         .iter()
@@ -547,4 +508,40 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::parse_field_config;
+    use crate::utils::parse_field_type;
+
+    #[test]
+    fn direct_scalar_field_derefs_binding() {
+        let field: Field = syn::parse_quote! {
+            #[proto(tag = 1)]
+            value: u32
+        };
+
+        let config = parse_field_config(&field);
+        let parsed = parse_field_type(&field.ty);
+        let proto_ty = compute_proto_ty(&field, &config, &parsed);
+        let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
+
+        let info = FieldInfo {
+            index: 0,
+            field: &field,
+            access: FieldAccess::Direct(quote! { value }),
+            config,
+            tag: Some(1),
+            parsed,
+            proto_ty,
+            decode_ty,
+        };
+
+        let binding = encode_input_binding(&info, &TokenStream2::new());
+        assert!(binding.prelude.is_none());
+        let rendered = binding.value.to_string();
+        assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
+    }
 }

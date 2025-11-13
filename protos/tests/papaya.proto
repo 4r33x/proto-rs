@@ -1,6 +1,6 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
-
-package proto_rs.tests;
+package papaya;
 
 message PapayaCollections {
   map<uint32, string> label_by_id = 1;
@@ -11,3 +11,4 @@ message PapayaCustomCollections {
   map<uint32, string> label_by_id = 1;
   repeated uint32 flags = 2;
 }
+
