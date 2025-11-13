@@ -232,6 +232,8 @@ fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
             return (true, false, inner.clone());
         }
         (true, false, ty.clone())
+    } else if is_bytes_vec(ty) {
+        (false, false, ty.clone())
     } else if let Some(inner) = vec_inner_type(ty) {
         (false, true, inner)
     } else if let Some((inner, _)) = set_inner_type(ty) {
@@ -396,6 +398,20 @@ mod tests {
         assert!(!is_option);
         assert!(is_repeated);
         assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
+    }
+
+    #[test]
+    fn arc_swap_vec_u8_is_bytes() {
+        let ty: Type = parse_quote! { arc_swap::ArcSwap<Vec<u8>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(!is_option);
+        assert!(!is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(Vec<u8>).to_string());
+        assert_eq!(
+            determine_proto_type(&inner, &crate::utils::FieldConfig::default()),
+            "bytes"
+        );
     }
 
     #[test]
