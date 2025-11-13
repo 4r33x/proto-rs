@@ -10,7 +10,7 @@ use crate::proto_message;
 extern crate self as proto_rs;
 
 #[proto_message(proto_path = "protos/solana.proto", sun = InstructionError)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum InstructionErrorProto {
     #[proto(tag = 1)]
     GenericError,
@@ -123,7 +123,7 @@ pub enum InstructionErrorProto {
 }
 
 impl ProtoShadow<InstructionError> for InstructionErrorProto {
-    type Sun<'a> = &'a InstructionError;
+    type Sun<'a> = InstructionError;
     type OwnedSun = InstructionError;
     type View<'a> = Self;
 
@@ -194,7 +194,7 @@ impl ProtoShadow<InstructionError> for InstructionErrorProto {
 }
 
 #[proto_message(proto_path = "protos/solana.proto", sun = TransactionError)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TransactionErrorProto {
     #[proto(tag = 1)]
     AccountInUse,
@@ -288,9 +288,9 @@ pub enum TransactionErrorProto {
 }
 
 impl ProtoShadow<TransactionError> for TransactionErrorProto {
-    type Sun<'a> = &'a TransactionError;
+    type Sun<'a> = TransactionError;
     type OwnedSun = TransactionError;
-    type View<'a> = &'a TransactionErrorProto;
+    type View<'a> = TransactionErrorProto;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let value = match self {
@@ -339,11 +339,11 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
     }
 
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        todo!()
+        transaction_error_from_native(value)
     }
 }
 
-fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
+fn instruction_error_from_native(value: InstructionError) -> InstructionErrorProto {
     match value {
         InstructionError::GenericError => InstructionErrorProto::GenericError,
         InstructionError::InvalidArgument => InstructionErrorProto::InvalidArgument,
@@ -370,7 +370,7 @@ fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorPr
         InstructionError::AccountBorrowFailed => InstructionErrorProto::AccountBorrowFailed,
         InstructionError::AccountBorrowOutstanding => InstructionErrorProto::AccountBorrowOutstanding,
         InstructionError::DuplicateAccountOutOfSync => InstructionErrorProto::DuplicateAccountOutOfSync,
-        InstructionError::Custom(value) => InstructionErrorProto::Custom(*value),
+        InstructionError::Custom(value) => InstructionErrorProto::Custom(value),
         InstructionError::InvalidError => InstructionErrorProto::InvalidError,
         InstructionError::ExecutableDataModified => InstructionErrorProto::ExecutableDataModified,
         InstructionError::ExecutableLamportChange => InstructionErrorProto::ExecutableLamportChange,
@@ -402,7 +402,7 @@ fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorPr
     }
 }
 
-fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorProto {
+fn transaction_error_from_native(value: TransactionError) -> TransactionErrorProto {
     match value {
         TransactionError::AccountInUse => TransactionErrorProto::AccountInUse,
         TransactionError::AccountLoadedTwice => TransactionErrorProto::AccountLoadedTwice,
@@ -412,7 +412,7 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
         TransactionError::InvalidAccountForFee => TransactionErrorProto::InvalidAccountForFee,
         TransactionError::AlreadyProcessed => TransactionErrorProto::AlreadyProcessed,
         TransactionError::BlockhashNotFound => TransactionErrorProto::BlockhashNotFound,
-        TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError { index: *index, error: error.clone() },
+        TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError { index, error },
         TransactionError::CallChainTooDeep => TransactionErrorProto::CallChainTooDeep,
         TransactionError::MissingSignatureForFee => TransactionErrorProto::MissingSignatureForFee,
         TransactionError::InvalidAccountIndex => TransactionErrorProto::InvalidAccountIndex,
@@ -434,12 +434,12 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
         TransactionError::InvalidRentPayingAccount => TransactionErrorProto::InvalidRentPayingAccount,
         TransactionError::WouldExceedMaxVoteCostLimit => TransactionErrorProto::WouldExceedMaxVoteCostLimit,
         TransactionError::WouldExceedAccountDataTotalLimit => TransactionErrorProto::WouldExceedAccountDataTotalLimit,
-        TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(*index),
-        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index: *account_index },
+        TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(index),
+        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index },
         TransactionError::MaxLoadedAccountsDataSizeExceeded => TransactionErrorProto::MaxLoadedAccountsDataSizeExceeded,
         TransactionError::InvalidLoadedAccountsDataSizeLimit => TransactionErrorProto::InvalidLoadedAccountsDataSizeLimit,
         TransactionError::ResanitizationNeeded => TransactionErrorProto::ResanitizationNeeded,
-        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index: *account_index },
+        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index },
         TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
         TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
         TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
