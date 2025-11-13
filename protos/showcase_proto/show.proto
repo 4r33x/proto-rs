@@ -109,7 +109,7 @@ message FieldNumbering {
 
 message FileData {
   string name = 1;
-  repeated uint32 content = 2;
+  bytes content = 2;
   uint64 size = 3;
 }
 
@@ -330,7 +330,7 @@ message VecTestEnumU64 {
 message VecTestEnumU8Test {}
 
 message VecTestEnumU8Test2 {
-  repeated uint32 test = 1;
+  bytes test = 1;
 }
 message VecTestEnumU8 {
   oneof value {

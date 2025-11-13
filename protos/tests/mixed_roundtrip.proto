@@ -5,12 +5,12 @@ package mixed_roundtrip;
 message ConversionInner {
   uint64 id = 1;
   string label = 2;
-  repeated uint32 payload = 3;
+  bytes payload = 3;
 }
 
 message MixedProto {
   string name = 9;
-  repeated uint32 raw = 2;
+  bytes raw = 2;
   bytes bytes_field = 11;
   optional bytes optional_data = 10;
   optional bytes optional_payload = 20;

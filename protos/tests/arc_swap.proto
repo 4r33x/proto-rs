@@ -3,7 +3,7 @@ syntax = "proto3";
 package arc_swap;
 
 message ArcSwapContainerHolder {
-  repeated uint32 swap_bytes = 1;
+  bytes swap_bytes = 1;
   repeated uint64 swap_u64s = 2;
   repeated uint64 swap_array_u64 = 3;
   bytes swap_array_bytes = 4;
@@ -19,17 +19,6 @@ message OptionalSwapHolder {
 
 message SwapHolder {
   SwapInner primary = 1;
-}
-
-message ArcSwapContainerHolder {
-  bytes swap_bytes = 1;
-  repeated uint64 swap_u64s = 2;
-  repeated uint64 swap_array_u64 = 3;
-  bytes swap_array_bytes = 4;
-}
-
-message ArcSwapOptionBytesHolder {
-  optional bytes maybe_swap_bytes = 1;
 }
 
 message SwapInner {

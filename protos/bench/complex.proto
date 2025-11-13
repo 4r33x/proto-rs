@@ -63,7 +63,7 @@ message ComplexEnumEmpty {}
 
 message ComplexRoot {
   string id = 1;
-  repeated uint32 payload = 2;
+  bytes payload = 2;
   repeated NestedLeaf leaves = 3;
   repeated DeepMessage deep_list = 4;
   map<string, NestedLeaf> leaf_lookup = 5;
@@ -86,7 +86,7 @@ message ComplexRoot {
 
 message DeepMessage {
   string label = 1;
-  repeated uint32 blob = 2;
+  bytes blob = 2;
   repeated NestedLeaf leaves = 3;
   map<string, NestedLeaf> leaf_lookup = 4;
   repeated SimpleEnum simple_codes = 5;
@@ -105,12 +105,12 @@ message NestedLeaf {
   string name = 2;
   bool active = 3;
   repeated int32 scores = 4;
-  repeated uint32 payload = 5;
+  bytes payload = 5;
   repeated bytes attachments = 6;
 }
 
 message OneBytes {
-  repeated uint32 v = 1;
+  bytes v = 1;
 }
 
 message OneComplexEnum {

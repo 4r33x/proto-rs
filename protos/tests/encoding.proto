@@ -35,7 +35,7 @@ message SampleMessage {
   uint32 id = 1;
   bool flag = 2;
   string name = 3;
-  repeated uint32 data = 4;
+  bytes data = 4;
   optional NestedMessage nested = 5;
   repeated NestedMessage nested_list = 6;
   repeated int64 values = 7;
