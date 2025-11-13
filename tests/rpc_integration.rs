@@ -97,7 +97,7 @@ fn sample_to_tonic(msg: &SampleMessage) -> tonic_prost_test::encoding::SampleMes
         id: prost.id,
         flag: prost.flag,
         name: prost.name,
-        data: prost.data.clone(),
+        data: prost.data,
         nested: prost.nested.map(|nested| nested_to_tonic(&nested)),
         nested_list: prost.nested_list.into_iter().map(|nested| nested_to_tonic(&nested)).collect(),
         values: prost.values,
@@ -119,7 +119,7 @@ fn sample_from_tonic(msg: tonic_prost_test::encoding::SampleMessage) -> SampleMe
         optional_mode,
     } = msg;
 
-    let data = data.clone();
+    let data = data;
 
     let nested = nested.map(nested_from_tonic);
     let nested_list = nested_list.into_iter().map(nested_from_tonic).collect();
