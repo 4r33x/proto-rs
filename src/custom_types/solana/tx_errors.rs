@@ -290,7 +290,7 @@ pub enum TransactionErrorProto {
 impl ProtoShadow<TransactionError> for TransactionErrorProto {
     type Sun<'a> = TransactionError;
     type OwnedSun = TransactionError;
-    type View<'a> = TransactionErrorProto;
+    type View<'a> = Self;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let value = match self {
