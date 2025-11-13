@@ -223,7 +223,10 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
             }
         } else if matches!(field.access, FieldAccess::Direct(_)) {
             if is_value_encode_type(proto_ty) {
-                quote! { *(#access_expr) }
+                quote! {{
+                    let borrowed: &#proto_ty = ::core::borrow::Borrow::borrow(&#access_expr);
+                    *borrowed
+                }}
             } else {
                 access_expr.clone()
             }
@@ -394,6 +397,41 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::parse_field_config;
+
+    #[test]
+    fn direct_scalar_field_derefs_binding() {
+        let field: Field = syn::parse_quote! {
+            #[proto(tag = 1)]
+            value: u32
+        };
+
+        let config = parse_field_config(&field);
+        let parsed = parse_field_type(&field.ty);
+        let proto_ty = compute_proto_ty(&field, &config, &parsed);
+        let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
+
+        let info = FieldInfo {
+            index: 0,
+            field: &field,
+            access: FieldAccess::Direct(quote! { value }),
+            config,
+            tag: Some(1),
+            parsed,
+            proto_ty,
+            decode_ty,
+        };
+
+        let binding = encode_input_binding(&info, &TokenStream2::new());
+        assert!(binding.prelude.is_none());
+        let rendered = binding.value.to_string();
+        assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
+    }
 }
 
 pub fn build_is_default_checks(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
