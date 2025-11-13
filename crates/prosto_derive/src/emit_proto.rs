@@ -156,9 +156,8 @@ fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_
 
 fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
     match (is_option, is_repeated) {
-        (true, true) => "repeated ",
         (true, false) => "optional ",
-        (false, true) => "repeated ",
+        (true | false, true) => "repeated ",
         (false, false) => "",
     }
 }

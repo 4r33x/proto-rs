@@ -142,12 +142,12 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
 fn parse_proto_rename(field: &Field, tokens: TokenStream) -> ProtoRename {
     use proc_macro2::TokenStream as TokenStream2;
 
-    let tokens2: TokenStream2 = tokens.into();
+    let tokens2: TokenStream2 = tokens;
 
-    if let Ok(lit) = syn::parse2::<Lit>(tokens2.clone()) {
-        if let Lit::Str(value) = lit {
-            return parse_proto_rename_string(field, value.value());
-        }
+    if let Ok(lit) = syn::parse2::<Lit>(tokens2.clone())
+        && let Lit::Str(value) = lit
+    {
+        return parse_proto_rename_string(field, value.value());
     }
 
     if let Ok(ty) = syn::parse2::<Type>(tokens2.clone()) {
@@ -161,7 +161,7 @@ fn parse_proto_rename(field: &Field, tokens: TokenStream) -> ProtoRename {
 
     panic!(
         "invalid value for #[proto(rename = ...)] on field {}",
-        field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string())
+        field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string)
     );
 }
 
@@ -190,12 +190,11 @@ fn parse_proto_rename_string(field: &Field, raw: String) -> ProtoRename {
     }
 
     let base = base_tokens.join(" ");
-    if base.is_empty() {
-        panic!(
-            "#[proto(rename = ...)] on field {} requires a target type",
-            field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string())
-        );
-    }
+    assert!(
+        !base.is_empty(),
+        "#[proto(rename = ...)] on field {} requires a target type",
+        field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string)
+    );
 
     let proto_type = canonicalize_proto_type_from_str(&base).unwrap_or_else(|| canonicalize_proto_type_from_type_str(&base));
 
@@ -207,14 +206,14 @@ fn canonicalize_proto_type_from_str(base: &str) -> Option<String> {
 }
 
 fn canonicalize_proto_type_from_type_str(base: &str) -> String {
-    syn::parse_str::<Type>(base).map(|ty| canonicalize_proto_type_from_type(&ty)).unwrap_or_else(|_| base.to_string())
+    syn::parse_str::<Type>(base).map_or_else(|_| base.to_string(), |ty| canonicalize_proto_type_from_type(&ty))
 }
 
 fn canonicalize_proto_type_from_type(ty: &Type) -> String {
-    if let Some(name) = proto_scalar_ident(ty) {
-        if is_known_proto_scalar(&name) {
-            return name;
-        }
+    if let Some(name) = proto_scalar_ident(ty)
+        && is_known_proto_scalar(&name)
+    {
+        return name;
     }
 
     if is_bytes_vec(ty) || is_bytes_array(ty) {
@@ -352,7 +351,7 @@ pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
         if is_bytes_array(ty) {
             return (false, false, ty.clone());
         }
-        let (is_option, _, inner_ty) = extract_field_wrapper_info(&*array.elem);
+        let (is_option, _, inner_ty) = extract_field_wrapper_info(&array.elem);
         return (is_option, true, inner_ty);
     }
 
