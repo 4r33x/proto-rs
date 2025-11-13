@@ -34,7 +34,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let default_index = crate::utils::find_marked_default_variant(data)?.unwrap_or(0);
-    let mut variants = collect_variant_infos(data)?;
+    let mut variants = collect_variant_infos(data, config)?;
     if variants.is_empty() {
         return Err(syn::Error::new(input.ident.span(), "proto_message enum must contain at least one variant"));
     }
@@ -53,6 +53,20 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     let is_default_match_arms = variants.iter().map(build_variant_is_default_arm).collect::<Vec<_>>();
     let encoded_len_arms = variants.iter().map(build_variant_encoded_len_arm).collect::<Vec<_>>();
     let encode_arms = variants.iter().map(build_variant_encode_arm).collect::<Vec<_>>();
+
+    let decode_into_body = if let Some(sun) = config.suns.first() {
+        let target_ty = &sun.ty;
+        quote! {
+            let decoded = <#target_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
+            *value = <Self as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(decoded);
+            Ok(())
+        }
+    } else {
+        quote! {
+            *value = <Self as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
+            Ok(())
+        }
+    };
 
     let proto_ext_impl = if config.has_suns() {
         let impls = config
@@ -104,9 +118,16 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
         }
     };
 
+    let encode_input_ty = if let Some(sun) = config.suns.first() {
+        let target_ty = &sun.ty;
+        quote! { <Self as ::proto_rs::ProtoShadow<#target_ty>>::View<'b> }
+    } else {
+        quote! { <Self as ::proto_rs::ProtoShadow<Self>>::View<'b> }
+    };
+
     let proto_wire_impl = quote! {
         impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
-            type EncodeInput<'b> = &'b Self;
+            type EncodeInput<'b> = #encode_input_ty;
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
 
             #[inline(always)]
@@ -121,14 +142,14 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 
             #[inline(always)]
             fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                match *value {
+                match &*value {
                     #(#is_default_match_arms,)*
                 }
             }
 
             #[inline(always)]
             unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                match *value {
+                match &*value {
                     #(#encoded_len_arms,)*
                 }
             }
@@ -154,8 +175,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
                     ::proto_rs::encoding::WireType::LengthDelimited,
                     wire_type,
                 )?;
-                *value = <Self as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
-                Ok(())
+                #decode_into_body
             }
         }
     };
@@ -190,9 +210,11 @@ struct TupleVariantInfo<'a> {
     binding_ident: Ident,
 }
 
-fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_>>> {
+fn collect_variant_infos<'a>(data: &'a syn::DataEnum, config: &'a UnifiedProtoConfig) -> syn::Result<Vec<VariantInfo<'a>>> {
     let mut used_tags = BTreeSet::new();
     let mut variants = Vec::new();
+
+    let owned_access = config.has_suns();
 
     for (idx, variant) in data.variants.iter().enumerate() {
         let tag = resolve_variant_tag(variant, idx + 1)?;
@@ -223,6 +245,7 @@ fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_
                     parsed,
                     proto_ty,
                     decode_ty,
+                    owned_access,
                 };
 
                 if !field_info.config.skip {
@@ -259,6 +282,7 @@ fn collect_variant_infos(data: &syn::DataEnum) -> syn::Result<Vec<VariantInfo<'_
                             parsed,
                             proto_ty,
                             decode_ty,
+                            owned_access,
                         }
                     })
                     .collect();

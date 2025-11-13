@@ -25,6 +25,7 @@ pub struct FieldInfo<'a> {
     pub parsed: ParsedFieldType,
     pub proto_ty: Type,
     pub decode_ty: Type,
+    pub owned_access: bool,
 }
 
 #[derive(Clone)]
@@ -222,7 +223,9 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
                 quote! { (#access_expr).as_ref().map(|inner| inner) }
             }
         } else if matches!(field.access, FieldAccess::Direct(_)) {
-            if is_value_encode_type(proto_ty) {
+            if field.owned_access {
+                access_expr.clone()
+            } else if is_value_encode_type(proto_ty) {
                 quote! { *(#access_expr) }
             } else {
                 access_expr.clone()

@@ -47,6 +47,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
                     parsed,
                     proto_ty,
                     decode_ty,
+                    owned_access: false,
                 }
             })
             .collect::<Vec<_>>(),
@@ -68,6 +69,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
                     parsed,
                     proto_ty,
                     decode_ty,
+                    owned_access: false,
                 }
             })
             .collect::<Vec<_>>(),
