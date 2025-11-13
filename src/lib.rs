@@ -13,29 +13,6 @@
 
 extern crate self as proto_rs;
 
-pub trait CopyScalar<T: Copy> {
-    fn copy_scalar(self) -> T;
-}
-
-impl<T: Copy> CopyScalar<T> for T {
-    #[inline(always)]
-    fn copy_scalar(self) -> T {
-        self
-    }
-}
-
-impl<'a, T: Copy> CopyScalar<T> for &'a T {
-    #[inline(always)]
-    fn copy_scalar(self) -> T {
-        *self
-    }
-}
-
-#[inline(always)]
-pub fn copy_scalar<T: Copy>(value: impl CopyScalar<T>) -> T {
-    value.copy_scalar()
-}
-
 pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;

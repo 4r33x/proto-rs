@@ -223,7 +223,10 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
             }
         } else if matches!(field.access, FieldAccess::Direct(_)) {
             if is_value_encode_type(proto_ty) {
-                quote! { ::proto_rs::copy_scalar(#access_expr) }
+                quote! {{
+                    let borrowed: &#proto_ty = ::core::borrow::Borrow::borrow(&#access_expr);
+                    *borrowed
+                }}
             } else {
                 access_expr.clone()
             }
@@ -402,7 +405,7 @@ mod tests {
     use crate::utils::parse_field_config;
 
     #[test]
-    fn direct_scalar_field_uses_copy_scalar() {
+    fn direct_scalar_field_derefs_binding() {
         let field: Field = syn::parse_quote! {
             #[proto(tag = 1)]
             value: u32
@@ -427,7 +430,7 @@ mod tests {
         let binding = encode_input_binding(&info, &TokenStream2::new());
         assert!(binding.prelude.is_none());
         let rendered = binding.value.to_string();
-        assert!(rendered.contains("copy_scalar"), "binding should use copy_scalar: {rendered}");
+        assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
     }
 }
 
