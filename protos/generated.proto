@@ -23,3 +23,10 @@ message UserIdTuple {
   uint64 field_0 = 1;
 }
 
+message UserWithId {
+  optional uint32 id1 = 1;
+  uint64 id2 = 2;
+  uint32 id3 = 3;
+  bytes id4 = 4;
+}
+

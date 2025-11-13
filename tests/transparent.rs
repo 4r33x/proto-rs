@@ -17,6 +17,19 @@ pub struct UserIdNamed {
 
 #[proto_message]
 #[derive(Debug, PartialEq, Eq)]
+pub struct UserWithId {
+    #[proto(rename = "optional uint32")]
+    pub id1: UserIdNamed,
+    #[proto(rename = "uint64")]
+    pub id2: UserIdNamed,
+    #[proto(rename = u8)]
+    pub id3: UserIdNamed,
+    #[proto(rename = Vec<u8>)]
+    pub id4: UserIdNamed,
+}
+
+#[proto_message]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Holder {
     #[proto(tag = 1)]
     pub tuple: UserIdTuple,
