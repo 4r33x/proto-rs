@@ -67,6 +67,7 @@ const_panic = { version = "0.2.15", features = [
   "derive",
 ] }
 arc-swap = { version = "1.7", optional = true }
+papaya = { version = "0.2.3", optional = true }
 smallvec.workspace = true
 
 [dev-dependencies]
@@ -101,6 +102,8 @@ solana = [
 chrono = ["dep:chrono"]
 # Lock-free atomic Arc wrappers
 arc_swap = ["dep:arc-swap"]
+# Concurrent papaya collections
+papaya = ["dep:papaya"]
 # Schema collection for build scripts
 build-schemas = ["inventory"]
 # Enable live proto dumping

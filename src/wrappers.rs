@@ -6,6 +6,11 @@ mod options;
 mod sets;
 mod vecs;
 
+#[cfg(feature = "papaya")]
+pub(crate) mod conc_map;
+#[cfg(feature = "papaya")]
+mod conc_set;
+
 #[cfg(feature = "cache_padded")]
 mod cache_padded;
 

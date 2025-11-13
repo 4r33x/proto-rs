@@ -77,10 +77,12 @@ pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoKind;
 pub use crate::traits::ProtoShadow;
 pub use crate::traits::ProtoWire;
-// pub use crate::traits::RepeatedCollection;
 pub use crate::traits::Shadow;
 pub use crate::traits::SunOf;
 pub use crate::traits::ViewOf;
+// pub use crate::traits::RepeatedCollection;
+#[cfg(feature = "papaya")]
+pub use crate::wrappers::conc_map::papaya_map_encode_input;
 pub use crate::zero_copy::ToZeroCopy;
 pub use crate::zero_copy::ZeroCopy;
 
