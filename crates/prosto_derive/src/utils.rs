@@ -22,6 +22,13 @@ pub use type_info::is_bytes_array;
 pub use type_info::is_bytes_vec;
 pub use type_info::parse_field_type;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProtoRename {
+    pub proto_type: String,
+    pub is_optional: Option<bool>,
+    pub is_repeated: Option<bool>,
+}
+
 pub fn set_inner_type(ty: &Type) -> Option<(Type, SetKind)> {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()
@@ -84,6 +91,7 @@ pub struct FieldConfig {
     pub import_path: Option<String>,
     pub custom_tag: Option<usize>,
     pub is_transparent: bool,
+    pub rename: Option<ProtoRename>,
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -118,6 +126,10 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
                 Some("transparent") => cfg.is_transparent = true,
+                Some("rename") => {
+                    let tokens: TokenStream = meta.value().expect("rename expects a value").parse().expect("failed to parse rename attribute");
+                    cfg.rename = Some(parse_proto_rename(field, tokens));
+                }
                 _ => {}
             }
             Ok(())
@@ -125,6 +137,123 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
     }
 
     cfg
+}
+
+fn parse_proto_rename(field: &Field, tokens: TokenStream) -> ProtoRename {
+    use proc_macro2::TokenStream as TokenStream2;
+
+    let tokens2: TokenStream2 = tokens.into();
+
+    if let Ok(lit) = syn::parse2::<Lit>(tokens2.clone()) {
+        if let Lit::Str(value) = lit {
+            return parse_proto_rename_string(field, value.value());
+        }
+    }
+
+    if let Ok(ty) = syn::parse2::<Type>(tokens2.clone()) {
+        return parse_proto_rename_type(&ty);
+    }
+
+    if let Ok(path) = syn::parse2::<syn::Path>(tokens2.clone()) {
+        let path_str = path.segments.iter().map(|seg| seg.ident.to_string()).collect::<Vec<_>>().join("::");
+        return parse_proto_rename_string(field, path_str);
+    }
+
+    panic!(
+        "invalid value for #[proto(rename = ...)] on field {}",
+        field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string())
+    );
+}
+
+fn parse_proto_rename_type(ty: &Type) -> ProtoRename {
+    let (is_optional, is_repeated, inner_ty) = extract_field_wrapper_info(ty);
+    let proto_type = canonicalize_proto_type_from_type(&inner_ty);
+
+    ProtoRename {
+        proto_type,
+        is_optional: is_optional.then_some(true),
+        is_repeated: is_repeated.then_some(true),
+    }
+}
+
+fn parse_proto_rename_string(field: &Field, raw: String) -> ProtoRename {
+    let mut is_optional = None;
+    let mut is_repeated = None;
+    let mut base_tokens = Vec::new();
+
+    for token in raw.split_whitespace() {
+        match token {
+            "optional" => is_optional = Some(true),
+            "repeated" => is_repeated = Some(true),
+            _ => base_tokens.push(token),
+        }
+    }
+
+    let base = base_tokens.join(" ");
+    if base.is_empty() {
+        panic!(
+            "#[proto(rename = ...)] on field {} requires a target type",
+            field.ident.as_ref().map(ToString::to_string).unwrap_or_else(|| "<tuple field>".to_string())
+        );
+    }
+
+    let proto_type = canonicalize_proto_type_from_str(&base).unwrap_or_else(|| canonicalize_proto_type_from_type_str(&base));
+
+    ProtoRename { proto_type, is_optional, is_repeated }
+}
+
+fn canonicalize_proto_type_from_str(base: &str) -> Option<String> {
+    if is_known_proto_scalar(base) { Some(base.to_string()) } else { None }
+}
+
+fn canonicalize_proto_type_from_type_str(base: &str) -> String {
+    syn::parse_str::<Type>(base).map(|ty| canonicalize_proto_type_from_type(&ty)).unwrap_or_else(|_| base.to_string())
+}
+
+fn canonicalize_proto_type_from_type(ty: &Type) -> String {
+    if let Some(name) = proto_scalar_ident(ty) {
+        if is_known_proto_scalar(&name) {
+            return name;
+        }
+    }
+
+    if is_bytes_vec(ty) || is_bytes_array(ty) {
+        return "bytes".to_string();
+    }
+
+    let parsed = parse_field_type(ty);
+    if parsed.map_kind.is_some() {
+        return parsed.proto_type;
+    }
+
+    if parsed.is_message_like {
+        let base_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
+        strip_proto_suffix(&base_name)
+    } else if parsed.proto_type == "message" {
+        rust_type_path_ident(ty).to_string()
+    } else {
+        parsed.proto_type
+    }
+}
+
+fn proto_scalar_ident(ty: &Type) -> Option<String> {
+    if let Type::Path(path) = ty {
+        if path.qself.is_some() {
+            return None;
+        }
+        let segments: Vec<String> = path.path.segments.iter().map(|seg| seg.ident.to_string()).collect();
+        if segments.len() == 1 {
+            return Some(segments[0].clone());
+        }
+    }
+    None
+}
+
+fn is_known_proto_scalar(name: &str) -> bool {
+    matches!(
+        name,
+        "double" | "float" | "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "fixed32" | "fixed64" | "sfixed32" | "sfixed64" | "bool" | "string" | "bytes"
+    )
 }
 
 fn parse_string_value(meta: &syn::meta::ParseNestedMeta) -> Option<String> {
@@ -180,6 +309,54 @@ pub fn vec_inner_type(ty: &Type) -> Option<Type> {
         return Some(inner.clone());
     }
     None
+}
+
+pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
+    if is_option_type(ty) || is_arc_swap_option_type(ty) {
+        if let Type::Path(type_path) = ty
+            && let Some(segment) = type_path.path.segments.last()
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+        {
+            let (_, inner_repeated, inner_ty) = extract_field_wrapper_info(inner);
+            return (true, inner_repeated, inner_ty);
+        }
+        return (true, false, ty.clone());
+    }
+
+    if is_bytes_vec(ty) {
+        return (false, false, ty.clone());
+    }
+
+    if let Some(inner) = vec_inner_type(ty) {
+        let (_, _, inner_ty) = extract_field_wrapper_info(&inner);
+        return (false, true, inner_ty);
+    }
+
+    if let Some((inner, _)) = set_inner_type(ty) {
+        let (_, _, inner_ty) = extract_field_wrapper_info(&inner);
+        return (false, true, inner_ty);
+    }
+
+    if let Some(inner) = cache_padded_inner_type(ty) {
+        let (is_option, is_repeated, inner_ty) = extract_field_wrapper_info(&inner);
+        return (is_option, is_repeated, inner_ty);
+    }
+
+    if let Some(inner) = arc_swap_inner_type(ty) {
+        let (is_option, is_repeated, inner_ty) = extract_field_wrapper_info(&inner);
+        return (is_option, is_repeated, inner_ty);
+    }
+
+    if let Type::Array(array) = ty {
+        if is_bytes_array(ty) {
+            return (false, false, ty.clone());
+        }
+        let (is_option, _, inner_ty) = extract_field_wrapper_info(&*array.elem);
+        return (is_option, true, inner_ty);
+    }
+
+    (false, false, ty.clone())
 }
 
 pub struct MethodInfo {
