@@ -55,6 +55,19 @@ pub fn cache_padded_inner_type(ty: &Type) -> Option<Type> {
     None
 }
 
+pub fn arc_swap_inner_type(ty: &Type) -> Option<Type> {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "ArcSwap"
+        && let PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
+    }
+
+    None
+}
+
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct FieldConfig {
@@ -151,6 +164,10 @@ pub fn rust_type_path_ident(ty: &Type) -> syn::Ident {
 
 pub fn is_option_type(ty: &Type) -> bool {
     matches!(last_path_segment(ty), Some(seg) if seg.ident == "Option")
+}
+
+pub fn is_arc_swap_option_type(ty: &Type) -> bool {
+    matches!(last_path_segment(ty), Some(seg) if seg.ident == "ArcSwapOption")
 }
 
 pub fn vec_inner_type(ty: &Type) -> Option<Type> {

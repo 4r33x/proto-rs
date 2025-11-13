@@ -11,9 +11,11 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
 use crate::utils::MethodInfo;
+use crate::utils::arc_swap_inner_type;
 use crate::utils::cache_padded_inner_type;
 use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
+use crate::utils::is_arc_swap_option_type;
 use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::parse_field_config;
@@ -221,7 +223,7 @@ fn get_field_proto_type(ty: &Type) -> String {
 fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     use crate::utils::is_option_type;
 
-    if is_option_type(ty) {
+    if is_option_type(ty) || is_arc_swap_option_type(ty) {
         if let Type::Path(type_path) = ty
             && let Some(segment) = type_path.path.segments.last()
             && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
@@ -235,6 +237,9 @@ fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     } else if let Some((inner, _)) = set_inner_type(ty) {
         (false, true, inner)
     } else if let Some(inner) = cache_padded_inner_type(ty) {
+        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&inner);
+        (is_option, is_repeated, inner_type)
+    } else if let Some(inner) = arc_swap_inner_type(ty) {
         let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&inner);
         (is_option, is_repeated, inner_type)
     } else if let Type::Array(_) = ty {
@@ -376,6 +381,26 @@ mod tests {
     #[test]
     fn cache_padded_option_is_optional() {
         let ty: Type = parse_quote! { crossbeam_utils::CachePadded<Option<String>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(is_option);
+        assert!(!is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
+    }
+
+    #[test]
+    fn arc_swap_vec_is_repeated() {
+        let ty: Type = parse_quote! { arc_swap::ArcSwap<Vec<u32>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(!is_option);
+        assert!(is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
+    }
+
+    #[test]
+    fn arc_swap_option_is_optional() {
+        let ty: Type = parse_quote! { arc_swap::ArcSwapOption<String> };
         let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
 
         assert!(is_option);

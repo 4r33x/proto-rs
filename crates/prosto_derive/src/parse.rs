@@ -251,7 +251,7 @@ fn extract_field_type_name(ty: &syn::Type) -> String {
     {
         let ident = &segment.ident;
 
-        if matches!(ident.to_string().as_str(), "Option" | "Vec")
+        if (ident == "Option" || ident == "Vec" || ident == "ArcSwap" || ident == "ArcSwapOption")
             && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
             && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
         {
@@ -315,6 +315,12 @@ mod tests {
         assert_eq!(extract_field_type_name(&ty), "MyType");
 
         let ty: syn::Type = parse_quote! { Vec<MyType> };
+        assert_eq!(extract_field_type_name(&ty), "MyType");
+
+        let ty: syn::Type = parse_quote! { arc_swap::ArcSwap<MyType> };
+        assert_eq!(extract_field_type_name(&ty), "MyType");
+
+        let ty: syn::Type = parse_quote! { arc_swap::ArcSwapOption<MyType> };
         assert_eq!(extract_field_type_name(&ty), "MyType");
     }
 
