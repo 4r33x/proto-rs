@@ -217,7 +217,7 @@ pub enum TransactionErrorProto {
         #[proto(tag = 1)]
         index: u8,
         #[proto(tag = 2)]
-        error: InstructionError,
+        error: InstructionErrorProto,
     },
     #[proto(tag = 10)]
     CallChainTooDeep,
@@ -302,7 +302,10 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
             Self::InvalidAccountForFee => TransactionError::InvalidAccountForFee,
             Self::AlreadyProcessed => TransactionError::AlreadyProcessed,
             Self::BlockhashNotFound => TransactionError::BlockhashNotFound,
-            Self::InstructionError { index, error } => TransactionError::InstructionError(index, error),
+            Self::InstructionError { index, error } => {
+                let error = ProtoShadow::<InstructionError>::to_sun(error)?;
+                TransactionError::InstructionError(index, error)
+            }
             Self::CallChainTooDeep => TransactionError::CallChainTooDeep,
             Self::MissingSignatureForFee => TransactionError::MissingSignatureForFee,
             Self::InvalidAccountIndex => TransactionError::InvalidAccountIndex,
@@ -412,7 +415,10 @@ fn transaction_error_from_native(value: TransactionError) -> TransactionErrorPro
         TransactionError::InvalidAccountForFee => TransactionErrorProto::InvalidAccountForFee,
         TransactionError::AlreadyProcessed => TransactionErrorProto::AlreadyProcessed,
         TransactionError::BlockhashNotFound => TransactionErrorProto::BlockhashNotFound,
-        TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError { index, error },
+        TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError {
+            index,
+            error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(error),
+        },
         TransactionError::CallChainTooDeep => TransactionErrorProto::CallChainTooDeep,
         TransactionError::MissingSignatureForFee => TransactionErrorProto::MissingSignatureForFee,
         TransactionError::InvalidAccountIndex => TransactionErrorProto::InvalidAccountIndex,
@@ -443,5 +449,42 @@ fn transaction_error_from_native(value: TransactionError) -> TransactionErrorPro
         TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
         TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
         TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ProtoExt;
+
+    #[test]
+    fn instruction_error_roundtrip_via_shadow() {
+        let proto = InstructionErrorProto::Custom(7);
+        let restored = ProtoShadow::<InstructionError>::to_sun(proto.clone()).expect("decode");
+        match restored {
+            InstructionError::Custom(value) => assert_eq!(value, 7),
+            other => panic!("unexpected instruction error: {other:?}"),
+        }
+
+        let roundtrip = <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(InstructionError::Custom(7));
+        assert!(matches!(roundtrip, InstructionErrorProto::Custom(7)));
+    }
+
+    #[test]
+    fn transaction_error_roundtrip_via_shadow() {
+        let proto = TransactionErrorProto::InstructionError {
+            index: 3,
+            error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(InstructionError::InvalidArgument),
+        };
+        let restored = ProtoShadow::<TransactionError>::to_sun(proto).expect("decode");
+        assert_eq!(restored, TransactionError::InstructionError(3, InstructionError::InvalidArgument),);
+    }
+
+    #[test]
+    fn transaction_error_protoext_roundtrip() {
+        let error = TransactionError::InsufficientFundsForRent { account_index: 9 };
+        let encoded = <TransactionError as ProtoExt>::encode_to_vec(error);
+        let decoded = <TransactionError as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        assert_eq!(decoded, TransactionError::InsufficientFundsForRent { account_index: 9 },);
     }
 }

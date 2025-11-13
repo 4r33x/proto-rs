@@ -1,0 +1,14 @@
+syntax = "proto3";
+package proto_rs.tests.borrowed_enum;
+
+message BorrowedEnumProto {
+  oneof kind {
+    uint32 number = 1;
+    BorrowedPair pair = 2;
+  }
+}
+
+message BorrowedPair {
+  uint32 left = 1;
+  uint32 right = 2;
+}
