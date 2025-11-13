@@ -11,22 +11,18 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 
 use crate::utils::MethodInfo;
-use crate::utils::arc_swap_inner_type;
-use crate::utils::cache_padded_inner_type;
 use crate::utils::collect_discriminants_for_variants;
+use crate::utils::extract_field_wrapper_info;
 use crate::utils::find_marked_default_variant;
-use crate::utils::is_arc_swap_option_type;
 use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::rust_type_path_ident;
-use crate::utils::set_inner_type;
 use crate::utils::strip_proto_suffix;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
-use crate::utils::vec_inner_type;
 
 pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{}", err));
@@ -121,24 +117,50 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
     let mut proto_fields = Vec::new();
 
     for (idx, field) in fields.iter().enumerate() {
-        let field_num = idx + 1;
+        let config = parse_field_config(field);
+        if config.skip {
+            continue;
+        }
+
         let field_name = format!("field_{idx}");
-        let ty = &field.ty;
-
-        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(ty);
-        let proto_type = determine_proto_type(&inner_type, &crate::utils::FieldConfig::default());
-
-        let modifier = if is_repeated {
-            "repeated "
-        } else if is_option {
-            "optional "
+        let ty = if let Some(ref into_type) = config.into_type {
+            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| field.ty.clone())
         } else {
-            ""
+            field.ty.clone()
         };
-        proto_fields.push(format!("  {modifier}{proto_type} {field_name} = {field_num};"));
+
+        let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
+        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+
+        let modifier = field_modifier(is_option, is_repeated);
+        let tag = config.custom_tag.unwrap_or(idx + 1);
+        proto_fields.push(format!("  {modifier}{proto_type} {field_name} = {tag};"));
     }
 
     format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"))
+}
+
+fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool) -> String {
+    if let Some(rename) = &config.rename {
+        if let Some(flag) = rename.is_optional {
+            *is_option = flag;
+        }
+        if let Some(flag) = rename.is_repeated {
+            *is_repeated = flag;
+        }
+        return rename.proto_type.clone();
+    }
+
+    determine_proto_type(inner_type, config)
+}
+
+fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
+    match (is_option, is_repeated) {
+        (true, true) => "optional repeated ",
+        (true, false) => "optional ",
+        (false, true) => "repeated ",
+        (false, false) => "",
+    }
 }
 
 /// Generate proto fields for named struct/enum variant
@@ -163,19 +185,13 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
         };
 
         // Extract wrapper info
-        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&ty);
+        let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
 
         // Determine proto type string
-        let proto_type = determine_proto_type(&inner_type, &config);
+        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
 
         // Add modifier
-        let modifier = if is_repeated {
-            "repeated "
-        } else if is_option {
-            "optional "
-        } else {
-            ""
-        };
+        let modifier = field_modifier(is_option, is_repeated);
 
         let tag = config.custom_tag.unwrap_or(field_num);
 
@@ -216,46 +232,6 @@ fn get_field_proto_type(ty: &Type) -> String {
         strip_proto_suffix(&rust_name)
     } else {
         parsed.proto_type
-    }
-}
-
-/// Extract (`is_option`, `is_repeated`, `inner_type`) from a field type
-fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
-    use crate::utils::is_option_type;
-
-    if is_option_type(ty) || is_arc_swap_option_type(ty) {
-        if let Type::Path(type_path) = ty
-            && let Some(segment) = type_path.path.segments.last()
-            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-            && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
-        {
-            return (true, false, inner.clone());
-        }
-        (true, false, ty.clone())
-    } else if is_bytes_vec(ty) {
-        (false, false, ty.clone())
-    } else if let Some(inner) = vec_inner_type(ty) {
-        (false, true, inner)
-    } else if let Some((inner, _)) = set_inner_type(ty) {
-        (false, true, inner)
-    } else if let Some(inner) = cache_padded_inner_type(ty) {
-        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&inner);
-        (is_option, is_repeated, inner_type)
-    } else if let Some(inner) = arc_swap_inner_type(ty) {
-        let (is_option, is_repeated, inner_type) = extract_field_wrapper_info(&inner);
-        (is_option, is_repeated, inner_type)
-    } else if let Type::Array(_) = ty {
-        if is_bytes_array(ty) {
-            // Preserve array type for bytes
-            (false, false, ty.clone())
-        } else if let Type::Array(type_array) = ty {
-            // For normal arrays, repeated + inner element
-            (false, true, (*type_array.elem).clone())
-        } else {
-            unreachable!()
-        }
-    } else {
-        (false, false, ty.clone())
     }
 }
 
@@ -408,10 +384,7 @@ mod tests {
         assert!(!is_option);
         assert!(!is_repeated);
         assert_eq!(quote!(#inner).to_string(), quote!(Vec<u8>).to_string());
-        assert_eq!(
-            determine_proto_type(&inner, &crate::utils::FieldConfig::default()),
-            "bytes"
-        );
+        assert_eq!(determine_proto_type(&inner, &crate::utils::FieldConfig::default()), "bytes");
     }
 
     #[test]
@@ -422,5 +395,60 @@ mod tests {
         assert!(is_option);
         assert!(!is_repeated);
         assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
+    }
+
+    #[test]
+    fn rename_rust_type_to_scalar_proto() {
+        let fields: syn::FieldsNamed = parse_quote!({
+            #[proto(rename = u64)]
+            id: Option<MyId>,
+        });
+
+        let proto = generate_named_struct_proto("User", &fields.named);
+        assert!(proto.contains("optional uint64 id = 1;"));
+    }
+
+    #[test]
+    fn rename_vec_bytes_to_bytes_scalar() {
+        let fields: syn::FieldsNamed = parse_quote!({
+            #[proto(rename = Vec<u8>)]
+            payload: Blob,
+        });
+
+        let proto = generate_named_struct_proto("Packet", &fields.named);
+        assert!(proto.contains("bytes payload = 1;"));
+    }
+
+    #[test]
+    fn rename_vec_to_repeated_scalar() {
+        let fields: syn::FieldsNamed = parse_quote!({
+            #[proto(rename = Vec<u64>)]
+            values: Numbers,
+        });
+
+        let proto = generate_named_struct_proto("Counter", &fields.named);
+        assert!(proto.contains("repeated uint64 values = 1;"));
+    }
+
+    #[test]
+    fn rename_proto_string_overrides_modifier() {
+        let fields: syn::FieldsNamed = parse_quote!({
+            #[proto(rename = "optional uint64")]
+            id: MyId,
+        });
+
+        let proto = generate_named_struct_proto("Record", &fields.named);
+        assert!(proto.contains("optional uint64 id = 1;"));
+    }
+
+    #[test]
+    fn tuple_struct_field_honors_rename() {
+        let fields: syn::FieldsUnnamed = parse_quote!((
+            #[proto(rename = Vec<u64>)]
+            Numbers,
+        ));
+
+        let proto = generate_tuple_struct_proto("Wrapper", &fields.unnamed);
+        assert!(proto.contains("repeated uint64 field_0 = 1;"));
     }
 }
