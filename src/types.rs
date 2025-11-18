@@ -922,7 +922,21 @@ impl_narrow_varint!(i16, i32, sint32, I16, "i16 overflow");
 
 #[cfg(test)]
 mod tests {
+    use prosto_derive::proto_message;
+
     use super::*;
+    #[proto_message(proto_path = "protos/atomic_test.proto")]
+    struct AtomicWrapper {
+        f1: AtomicBool,
+        f2: AtomicU8,
+        f3: AtomicU16,
+        f4: AtomicU32,
+        f5: AtomicU64,
+        f6: AtomicI8,
+        f7: AtomicI16,
+        f8: AtomicI32,
+        f9: AtomicI64,
+    }
 
     #[test]
     fn test_impl_name() {

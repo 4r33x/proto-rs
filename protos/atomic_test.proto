@@ -1,0 +1,16 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package atomic_test;
+
+message AtomicWrapper {
+  AtomicBool f1 = 1;
+  AtomicU8 f2 = 2;
+  AtomicU16 f3 = 3;
+  AtomicU32 f4 = 4;
+  AtomicU64 f5 = 5;
+  AtomicI8 f6 = 6;
+  AtomicI16 f7 = 7;
+  AtomicI32 f8 = 8;
+  AtomicI64 f9 = 9;
+}
+
