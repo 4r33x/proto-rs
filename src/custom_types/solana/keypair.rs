@@ -38,6 +38,11 @@ mod tests {
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
 
+    #[proto_message(proto_path = "protos/solana_test.proto")]
+    struct KeypairWrapper {
+        key: Keypair,
+    }
+
     fn sample_keypair_bytes() -> [u8; BYTES] {
         let mut data = [0u8; BYTES];
         for (idx, byte) in data.iter_mut().enumerate() {

@@ -457,6 +457,15 @@ mod tests {
     use super::*;
     use crate::ProtoExt;
 
+    #[proto_message(proto_path = "protos/solana_test.proto")]
+    struct TxErrorWrapper {
+        inner: TransactionError,
+    }
+    #[proto_message(proto_path = "protos/solana_test.proto")]
+    struct IxErrorWrapper {
+        inner: InstructionError,
+    }
+
     #[test]
     fn instruction_error_roundtrip_via_shadow() {
         let proto = InstructionErrorProto::Custom(7);
