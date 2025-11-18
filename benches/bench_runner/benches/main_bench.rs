@@ -139,7 +139,7 @@ impl BenchRecorder {
         let now = Utc::now();
 
         writeln!(&mut buffer, "\n# Benchmark Run — {}\n", now.format("%Y-%m-%d %H:%M:%S")).map_err(io::Error::other)?;
-        writeln!(&mut buffer, "| Group | Benchmark | Ops / s | MiB/s | Speedup vs Prost |").map_err(io::Error::other)?;
+        writeln!(&mut buffer, "| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |").map_err(io::Error::other)?;
         writeln!(&mut buffer, "| --- | --- | ---: | ---: | ---: |").map_err(io::Error::other)?;
 
         // Index avg_us for all benchmarks
@@ -388,7 +388,7 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("zero_copy_vs_clone", "prost clone + encode", total, iters, Some(prost_len as u64));
+            bench_recorder().record("zero_copy_vs_clone", "prost clone + encode | encode_to_vec", total, iters, Some(prost_len as u64));
 
             total
         });
@@ -405,7 +405,7 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("zero_copy_vs_clone", "proto_rs zero_copy", total, iters, Some(proto_len as u64));
+            bench_recorder().record("zero_copy_vs_clone", "proto_rs zero_copy | encode_to_vec", total, iters, Some(proto_len as u64));
 
             total
         });
