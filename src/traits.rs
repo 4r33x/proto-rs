@@ -199,16 +199,11 @@ pub trait ProtoWire: Sized {
             0
         }
     }
-    #[allow(clippy::missing_safety_doc)]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize;
 
     #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
         if Self::is_default_impl(value) { 0 } else { unsafe { Self::encoded_len_impl_raw(value) } }
     }
-
-    /// Encode *this value only* (no field tag and no default check).
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut);
 
     #[inline(always)]
     fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
@@ -234,6 +229,11 @@ pub trait ProtoWire: Sized {
         encode_varint(body_len as u64, buf);
         Self::encode_raw_unchecked(value, buf);
     }
+
+    #[allow(clippy::missing_safety_doc)]
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize;
+    /// Encode *this value only* (no field tag and no default check).
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut);
 
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
