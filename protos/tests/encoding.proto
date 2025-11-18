@@ -9,12 +9,6 @@ enum SampleEnum {
   UNSPECIFIED = 3;
 }
 
-enum SampleEnum {
-  ZERO = 0;
-  ONE = 1;
-  TWO = 2;
-}
-
 enum StatusWithDefaultAttribute {
   ACTIVE = 0;
   PENDING = 1;
@@ -41,7 +35,7 @@ message SampleMessage {
   uint32 id = 1;
   bool flag = 2;
   string name = 3;
-  repeated uint32 data = 4;
+  bytes data = 4;
   optional NestedMessage nested = 5;
   repeated NestedMessage nested_list = 6;
   repeated int64 values = 7;
@@ -60,20 +54,20 @@ message ZeroCopyContainer {
 
 message ZeroCopyEnumContainer {
   SampleEnum direct = 1;
-  ZeroCopy raw_direct = 2;
+  SampleEnum raw_direct = 2;
   repeated SampleEnum repeated_direct = 3;
-  ZeroCopy raw_list = 4;
-  ZeroCopy nested = 5;
-  ZeroCopy nested_message = 6;
+  SampleEnumList raw_list = 4;
+  ZeroCopyEnumMessage nested = 5;
+  SampleMessage nested_message = 6;
 }
 
 message ZeroCopyEnumMessage {
-  ZeroCopy bag = 1;
+  SampleEnumList bag = 1;
   SampleEnum status = 2;
   repeated SampleEnum timeline = 3;
 }
 
 message ZeroCopyMessage {
-  ZeroCopy payload = 1;
+  NestedMessage payload = 1;
 }
 
