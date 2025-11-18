@@ -9,7 +9,7 @@ use crate::proto_message;
 
 extern crate self as proto_rs;
 
-#[proto_message(proto_path = "protos/solana.proto", sun = InstructionError)]
+#[proto_message(proto_path = "protos/solana.proto", sun = &InstructionError)]
 #[derive(Clone, PartialEq, Eq)]
 pub enum InstructionErrorProto {
     #[proto(tag = 1)]
@@ -193,7 +193,7 @@ impl ProtoShadow<InstructionError> for InstructionErrorProto {
     }
 }
 
-#[proto_message(proto_path = "protos/solana.proto", sun = TransactionError)]
+#[proto_message(proto_path = "protos/solana.proto", sun = &TransactionError)]
 #[derive(Clone, PartialEq, Eq)]
 pub enum TransactionErrorProto {
     #[proto(tag = 1)]

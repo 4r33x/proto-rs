@@ -208,7 +208,10 @@ impl BenchRecorder {
                     "-".to_string()
                 };
 
-                writeln!(&mut buffer, "| {group_name} | {bench_name} | {ops_per_sec:.2} | {throughput_display} | {rel_display} |").map_err(io::Error::other)?;
+                let bench_name_clean = bench_name.replace(" | ", " · ");
+                let bench_name_clean = bench_name_clean.replace('|', "\\|");
+
+                writeln!(&mut buffer, "| {group_name} | {bench_name_clean} | {ops_per_sec:.2} | {throughput_display} | {rel_display} |").map_err(io::Error::other)?;
             }
         }
 
