@@ -8,7 +8,7 @@ use crate::proto_message;
 extern crate self as proto_rs;
 
 #[allow(dead_code)]
-#[proto_message(proto_path = "protos/solana.proto", sun = solana_signature::Signature)]
+#[proto_message(proto_path = "protos/solana.proto", sun = Signature)]
 pub struct SignatureProto {
     #[proto(tag = 1)]
     pub inner: [u8; BYTES],
@@ -39,6 +39,10 @@ mod tests {
     use crate::encoding::WireType;
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
+    #[proto_message(proto_path = "protos/solana_test.proto")]
+    struct SignatureWrapper {
+        sig: Signature,
+    }
 
     fn sample_signature_bytes() -> [u8; BYTES] {
         let mut data = [0u8; BYTES];
