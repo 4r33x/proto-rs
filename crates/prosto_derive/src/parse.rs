@@ -69,6 +69,7 @@ pub struct UnifiedProtoConfig {
 pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
+    pub by_ref: bool,
 }
 
 impl UnifiedProtoConfig {
@@ -168,9 +169,14 @@ impl UnifiedProtoConfig {
     }
 
     fn push_sun(&mut self, ty: Type) {
+        let by_ref = is_reference_sun(&ty);
         let ty = normalize_sun_type(ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
-        self.suns.push(SunConfig { ty, message_ident });
+        self.suns.push(SunConfig {
+            ty,
+            message_ident,
+            by_ref,
+        });
     }
 }
 
@@ -180,6 +186,15 @@ fn normalize_sun_type(ty: Type) -> Type {
         Type::Group(group) => normalize_sun_type(*group.elem),
         Type::Paren(paren) => normalize_sun_type(*paren.elem),
         other => other,
+    }
+}
+
+fn is_reference_sun(ty: &Type) -> bool {
+    match ty {
+        Type::Reference(_) => true,
+        Type::Group(group) => is_reference_sun(&group.elem),
+        Type::Paren(paren) => is_reference_sun(&paren.elem),
+        _ => false,
     }
 }
 

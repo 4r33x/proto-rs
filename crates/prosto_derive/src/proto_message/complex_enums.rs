@@ -56,10 +56,18 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 
     let decode_into_body = if let Some(sun) = config.suns.first() {
         let target_ty = &sun.ty;
-        quote! {
-            let decoded = <#target_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
-            *value = <Self as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(decoded);
-            Ok(())
+        if sun.by_ref {
+            quote! {
+                let decoded = <#target_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
+                *value = <Self as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(&decoded);
+                Ok(())
+            }
+        } else {
+            quote! {
+                let decoded = <#target_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
+                *value = <Self as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(decoded);
+                Ok(())
+            }
         }
     } else {
         quote! {
