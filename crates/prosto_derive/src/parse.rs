@@ -147,6 +147,9 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
 fn extract_type_ident(ty: &Type) -> Option<String> {
     match ty {
         Type::Path(path) => path.path.segments.last().map(|segment| segment.ident.to_string()),
+        Type::Reference(reference) => extract_type_ident(&reference.elem),
+        Type::Group(group) => extract_type_ident(&group.elem),
+        Type::Paren(paren) => extract_type_ident(&paren.elem),
         _ => None,
     }
 }
@@ -165,8 +168,18 @@ impl UnifiedProtoConfig {
     }
 
     fn push_sun(&mut self, ty: Type) {
+        let ty = normalize_sun_type(ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
         self.suns.push(SunConfig { ty, message_ident });
+    }
+}
+
+fn normalize_sun_type(ty: Type) -> Type {
+    match ty {
+        Type::Reference(reference) => *reference.elem,
+        Type::Group(group) => normalize_sun_type(*group.elem),
+        Type::Paren(paren) => normalize_sun_type(*paren.elem),
+        other => other,
     }
 }
 
@@ -330,5 +343,23 @@ mod tests {
         assert_eq!(config.proto_path(), "protos/generated.proto");
         assert!(!config.rpc_server);
         assert!(!config.rpc_client);
+    }
+
+    #[test]
+    fn parses_owned_sun_type() {
+        let ty: Type = parse_quote!(OwnedType);
+        let normalized = normalize_sun_type(ty);
+
+        assert_eq!(extract_type_ident(&normalized), Some("OwnedType".to_string()));
+        assert!(matches!(normalized, Type::Path(_)));
+    }
+
+    #[test]
+    fn parses_borrowed_sun_type() {
+        let ty: Type = parse_quote!(&BorrowedType);
+        let normalized = normalize_sun_type(ty);
+
+        assert_eq!(extract_type_ident(&normalized), Some("BorrowedType".to_string()));
+        assert!(matches!(normalized, Type::Path(_)));
     }
 }
