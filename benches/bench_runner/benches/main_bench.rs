@@ -65,66 +65,22 @@ impl BenchRecorder {
         const MIB: f64 = 1024.0 * 1024.0;
 
         // ---------------------------------------------------------------------
-        // 1. Explicit compile-time mapping between prost baseline ↔ proto_rs test
+        // Simplified baseline mapping: proto_rs bench -> prost bench
         // ---------------------------------------------------------------------
-        const BASELINE_MAP: &[(&str, &str)] = &[
-            ("prost decode canonical input", "proto_rs decode canonical input"),
-            ("prost decode proto_rs input", "proto_rs decode proto_rs input"),
-            // Component decode
-            ("prost decode", "proto_rs decode"),
-            ("prost decode_to_vec", "proto_rs decode_to_vec"),
-            // Micro field decode
-            ("one_string | prost decode", "one_string | proto_rs decode"),
-            ("one_bytes | prost decode", "one_bytes | proto_rs decode"),
-            ("one_enum | prost decode", "one_enum | proto_rs decode"),
-            ("one_nested_leaf | prost decode", "one_nested_leaf | proto_rs decode"),
-            ("one_deep_message | prost decode", "one_deep_message | proto_rs decode"),
-            ("one_complex_enum | prost decode", "one_complex_enum | proto_rs decode"),
-            // Collection decode
-            ("tags_len1 | prost decode", "tags_len1 | proto_rs decode"),
-            ("attachments_len1 | prost decode", "attachments_len1 | proto_rs decode"),
-            ("codes_len1 | prost decode", "codes_len1 | proto_rs decode"),
-            ("leaves_len1 | prost decode", "leaves_len1 | proto_rs decode"),
-            ("deep_list_len1 | prost decode", "deep_list_len1 | proto_rs decode"),
-            ("status_history_len1 | prost decode", "status_history_len1 | proto_rs decode"),
-            ("leaf_lookup_len1 | prost decode", "leaf_lookup_len1 | proto_rs decode"),
-            // Global encode/decode pairs
-            ("prost clone + encode", "proto_rs zero_copy"),
-            ("prost encode_to_vec", "proto_rs encode_to_vec"),
-            // Component benches (suffix-based, already covers all *_components_encode)
-            ("prost encode_to_vec", "proto_rs encode_to_vec"),
-            // Micro field benches
-            ("one_string | prost encode_to_vec", "one_string | proto_rs encode_to_vec"),
-            ("one_bytes | prost encode_to_vec", "one_bytes | proto_rs encode_to_vec"),
-            ("one_enum | prost encode_to_vec", "one_enum | proto_rs encode_to_vec"),
-            ("one_nested_leaf | prost encode_to_vec", "one_nested_leaf | proto_rs encode_to_vec"),
-            ("one_deep_message | prost encode_to_vec", "one_deep_message | proto_rs encode_to_vec"),
-            ("one_complex_enum | prost encode_to_vec", "one_complex_enum | proto_rs encode_to_vec"),
-            // Collection benches (len=1 collections)
-            ("tags_len1 | prost encode_to_vec", "tags_len1 | proto_rs encode_to_vec"),
-            ("attachments_len1 | prost encode_to_vec", "attachments_len1 | proto_rs encode_to_vec"),
-            ("codes_len1 | prost encode_to_vec", "codes_len1 | proto_rs encode_to_vec"),
-            ("leaves_len1 | prost encode_to_vec", "leaves_len1 | proto_rs encode_to_vec"),
-            ("deep_list_len1 | prost encode_to_vec", "deep_list_len1 | proto_rs encode_to_vec"),
-            ("status_history_len1 | prost encode_to_vec", "status_history_len1 | proto_rs encode_to_vec"),
-            ("leaf_lookup_len1 | prost encode_to_vec", "leaf_lookup_len1 | proto_rs encode_to_vec"),
-        ];
-
         fn baseline_for(bench_name: &str) -> Option<String> {
-            // Exact match from table
-            for (prost_name, proto_name) in BASELINE_MAP {
-                if bench_name.ends_with(proto_name) {
-                    // Replace proto_rs → prost in same prefix context
-                    if let Some(prefix) = bench_name.strip_suffix(proto_name) {
-                        return Some(format!("{prefix}{prost_name}"));
-                    }
+            // Special case mappings where names don't follow the standard pattern
+            const SPECIAL_CASES: &[(&str, &str)] = &[("proto_rs | zero_copy", "prost | clone + encode")];
+
+            for (proto_name, prost_name) in SPECIAL_CASES {
+                if bench_name == *proto_name {
+                    return Some(prost_name.to_string());
                 }
             }
-            // Fallback: any "proto_rs" → "prost" mapping
             if bench_name.contains("proto_rs") {
-                return Some(bench_name.replace("proto_rs", "prost"));
+                Some(bench_name.replacen("proto_rs", "prost", 1))
+            } else {
+                None
             }
-            None
         }
 
         let groups = self.groups.lock().map_err(|_| io::Error::other("bench recorder poisoned"))?;
@@ -133,14 +89,14 @@ impl BenchRecorder {
         let path = base.parent().map(|p| p.join("bench.md")).unwrap_or_else(|| PathBuf::from("../bench.md"));
 
         // ---------------------------------------------------------------------
-        // 2. Build markdown section
+        // Build markdown section
         // ---------------------------------------------------------------------
         let mut buffer = String::new();
         let now = Utc::now();
 
         writeln!(&mut buffer, "\n# Benchmark Run — {}\n", now.format("%Y-%m-%d %H:%M:%S")).map_err(io::Error::other)?;
         writeln!(&mut buffer, "| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |").map_err(io::Error::other)?;
-        writeln!(&mut buffer, "| --- | --- | ---: | ---: | ---: |").map_err(io::Error::other)?;
+        writeln!(&mut buffer, "| --- | --- | --- | ---: | ---: | ---: |").map_err(io::Error::other)?;
 
         // Index avg_us for all benchmarks
         let mut avg_index: HashMap<(String, String), f64> = HashMap::new();
@@ -156,7 +112,7 @@ impl BenchRecorder {
         }
 
         // ---------------------------------------------------------------------
-        // 3. Render rows
+        // Render rows
         // ---------------------------------------------------------------------
         for (group_name, benchmarks) in groups.iter() {
             for (bench_name, aggregate) in benchmarks {
@@ -208,17 +164,30 @@ impl BenchRecorder {
                     "-".to_string()
                 };
 
-                let bench_name_clean = bench_name.replace(" | ", " · ");
-                let bench_name_clean = bench_name_clean.replace('|', "\\|");
+                // Split benchmark name to extract implementation and clean name
+                let (clean_bench_name, impl_name) = if let Some(idx) = bench_name.find(" | ") {
+                    let (name_part, impl_part) = bench_name.split_at(idx);
+                    let impl_part = &impl_part[3..]; // Skip " | "
+                    (name_part.to_string(), impl_part.to_string())
+                } else {
+                    (bench_name.clone(), "-".to_string())
+                };
 
-                writeln!(&mut buffer, "| {group_name} | {bench_name_clean} | {ops_per_sec:.2} | {throughput_display} | {rel_display} |").map_err(io::Error::other)?;
+                let bench_name_clean = clean_bench_name.replace('|', "\\|");
+                let impl_name_clean = impl_name.replace('|', "\\|");
+
+                writeln!(
+                    &mut buffer,
+                    "| {group_name} | {bench_name_clean} | {impl_name_clean} | {ops_per_sec:.2} | {throughput_display} | {rel_display} |"
+                )
+                .map_err(io::Error::other)?;
             }
         }
 
         writeln!(&mut buffer).map_err(io::Error::other)?;
 
         // ---------------------------------------------------------------------
-        // 4. Prepend to existing markdown file
+        // Prepend to existing markdown file
         // ---------------------------------------------------------------------
         let old_content = std::fs::read_to_string(&path).unwrap_or_default();
         let new_content = format!("{buffer}{old_content}");
@@ -247,10 +216,6 @@ where
         });
     });
 }
-
-// ============================================================================
-// Benchmarks
-// ============================================================================
 
 #[allow(clippy::too_many_lines)]
 fn bench_encode_decode(c: &mut Criterion) {
@@ -281,7 +246,7 @@ fn bench_encode_decode(c: &mut Criterion) {
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_encode", "prost encode_to_vec", total, iters, Some(prost_bytes.len() as u64));
+            bench_recorder().record("complex_root_encode", "prost | encode_to_vec", total, iters, Some(prost_bytes.len() as u64));
             total
         });
     });
@@ -295,7 +260,7 @@ fn bench_encode_decode(c: &mut Criterion) {
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_encode", "proto_rs encode_to_vec", total, iters, Some(proto_bytes.len() as u64));
+            bench_recorder().record("complex_root_encode", "proto_rs | encode_to_vec", total, iters, Some(proto_bytes.len() as u64));
             total
         });
     });
@@ -304,14 +269,13 @@ fn bench_encode_decode(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                let start = Instant::now();
                 let data = proto_bytes.clone();
-                let decoded = ComplexRoot::decode(black_box(data)).expect("proto decode failed");
+                let start = Instant::now();
+                let decoded = ComplexRoot::decode(black_box(data)).expect("proto_rs decode failed for proto_rs input");
                 black_box(decoded);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_decode", "proto_rs decode proto_rs input", total, iters, Some(proto_bytes.len() as u64));
-
+            bench_recorder().record("complex_root_decode", "proto_rs | decode proto_rs input", total, iters, Some(proto_bytes.len() as u64));
             total
         });
     });
@@ -320,14 +284,13 @@ fn bench_encode_decode(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                let start = Instant::now();
                 let data = proto_bytes.clone();
-                let decoded = ComplexRootProst::decode(black_box(data)).expect("proto decode failed");
+                let start = Instant::now();
+                let decoded = ComplexRootProst::decode(black_box(data)).expect("prost decode failed for proto_rs input");
                 black_box(decoded);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_decode", "prost decode proto_rs input", total, iters, Some(proto_bytes.len() as u64));
-
+            bench_recorder().record("complex_root_decode", "prost | decode proto_rs input", total, iters, Some(proto_bytes.len() as u64));
             total
         });
     });
@@ -336,14 +299,13 @@ fn bench_encode_decode(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                let start = Instant::now();
                 let data = prost_bytes.clone();
-                let decoded = ComplexRoot::decode(black_box(data)).expect("proto decode failed");
+                let start = Instant::now();
+                let decoded = ComplexRoot::decode(black_box(data)).expect("proto_rs decode failed for prost input");
                 black_box(decoded);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_decode", "proto_rs decode canonical input", total, iters, Some(prost_bytes.len() as u64));
-
+            bench_recorder().record("complex_root_decode", "proto_rs | decode prost input", total, iters, Some(prost_bytes.len() as u64));
             total
         });
     });
@@ -352,14 +314,13 @@ fn bench_encode_decode(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
-                let start = Instant::now();
                 let data = prost_bytes.clone();
-                let decoded = ComplexRootProst::decode(black_box(data)).expect("proto decode failed");
+                let start = Instant::now();
+                let decoded = ComplexRootProst::decode(black_box(data)).expect("prost decode failed for prost input");
                 black_box(decoded);
                 total += start.elapsed();
             }
-            bench_recorder().record("complex_root_decode", "prost decode canonical input", total, iters, Some(prost_bytes.len() as u64));
-
+            bench_recorder().record("complex_root_decode", "prost | decode prost input", total, iters, Some(prost_bytes.len() as u64));
             total
         });
     });
@@ -388,25 +349,25 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("zero_copy_vs_clone", "prost clone + encode | encode_to_vec", total, iters, Some(prost_len as u64));
-
+            bench_recorder().record("zero_copy_vs_clone", "prost | clone + encode", total, iters, Some(prost_len as u64));
             total
         });
     });
+
     group.throughput(Throughput::Bytes(proto_len as u64));
     group.bench_function("proto_rs zero_copy response", |b| {
         let mut buf = Vec::with_capacity(proto_len);
         b.iter_custom(|iters| {
             let mut total = Duration::ZERO;
             for _ in 0..iters {
+                buf.clear();
                 let start = Instant::now();
                 let zero_copy = ComplexRoot::encode_to_vec(&message);
                 buf.put_slice(zero_copy.as_slice());
                 black_box(&buf);
                 total += start.elapsed();
             }
-            bench_recorder().record("zero_copy_vs_clone", "proto_rs zero_copy | encode_to_vec", total, iters, Some(proto_len as u64));
-
+            bench_recorder().record("zero_copy_vs_clone", "proto_rs | zero_copy", total, iters, Some(proto_len as u64));
             total
         });
     });
