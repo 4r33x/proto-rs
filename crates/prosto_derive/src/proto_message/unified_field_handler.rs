@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use proc_macro2::Span;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::Attribute;
@@ -14,7 +13,6 @@ use syn::spanned::Spanned;
 
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
-use crate::utils::is_atomic_type;
 use crate::utils::is_option_type;
 
 #[derive(Clone)]
@@ -240,9 +238,7 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         }
     } else {
         let init_expr = if is_option_type(&field.field.ty) {
-            if is_atomic_type(&field.parsed.elem_type) && field.parsed.is_numeric_scalar {
-                quote! { (#access_expr).as_ref().map(|atomic| atomic.load(::core::sync::atomic::Ordering::Relaxed)) }
-            } else if field.parsed.is_numeric_scalar || is_value_encode_type(&field.parsed.elem_type) {
+            if field.parsed.is_numeric_scalar || is_value_encode_type(&field.parsed.elem_type) {
                 quote! { (#access_expr).clone() }
             } else {
                 quote! { (#access_expr).as_ref().map(|inner| inner) }
@@ -547,35 +543,5 @@ mod tests {
         assert!(binding.prelude.is_none());
         let rendered = binding.value.to_string();
         assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
-    }
-
-    #[test]
-    fn optional_atomic_field_loads_instead_of_cloning() {
-        let field: Field = syn::parse_quote! {
-            #[proto(tag = 1)]
-            value: Option<core::sync::atomic::AtomicU32>
-        };
-
-        let config = parse_field_config(&field);
-        let parsed = parse_field_type(&field.ty);
-        let proto_ty = compute_proto_ty(&field, &config, &parsed);
-        let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
-
-        let info = FieldInfo {
-            index: 0,
-            field: &field,
-            access: FieldAccess::Named(&Ident::new("value", Span::call_site())),
-            config,
-            tag: Some(1),
-            parsed,
-            proto_ty,
-            decode_ty,
-        };
-
-        let binding = encode_input_binding(&info, &quote! { self });
-        let rendered = binding.value.to_string();
-        assert!(rendered.contains("load"), "binding should load atomic values: {rendered}");
-        assert!(rendered.contains("as_ref"), "binding should avoid cloning atomics: {rendered}");
-        assert!(!rendered.contains("clone"), "binding should not clone atomics: {rendered}");
     }
 }

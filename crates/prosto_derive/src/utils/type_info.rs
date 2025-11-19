@@ -79,14 +79,6 @@ pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
     }
 }
 
-pub fn is_atomic_type(ty: &Type) -> bool {
-    matches!(ty, Type::Path(path) if last_ident(path).is_some_and(|id| matches!(id.to_string().as_str(),
-        "AtomicBool" |
-        "AtomicU8" | "AtomicU16" | "AtomicU32" | "AtomicU64" | "AtomicUsize" |
-        "AtomicI8" | "AtomicI16" | "AtomicI32" | "AtomicI64" | "AtomicIsize"
-    )))
-}
-
 /// True if the type is `[u8; N]`.
 pub fn is_bytes_array(ty: &Type) -> bool {
     match ty {
