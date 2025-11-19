@@ -208,10 +208,14 @@ impl From<&tonic_prost_test::advanced::AdvancedNested> for AdvancedNested {
 
 impl From<&AdvancedOrigin> for tonic_prost_test::advanced::AdvancedOrigin {
     fn from(value: &AdvancedOrigin) -> Self {
-        let value = match value {
-            AdvancedOrigin::Raw(text) => Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(text.clone())),
-            AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(nested))),
-            AdvancedOrigin::Missing => Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(tonic_prost_test::advanced::AdvancedOriginMissing {})),
+        let value = if value.is_default() {
+            None
+        } else {
+            match value {
+                AdvancedOrigin::Raw(text) => Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(text.clone())),
+                AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(nested))),
+                AdvancedOrigin::Missing => Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(tonic_prost_test::advanced::AdvancedOriginMissing {})),
+            }
         };
 
         Self { value }
@@ -233,14 +237,18 @@ impl From<&tonic_prost_test::advanced::AdvancedOrigin> for AdvancedOrigin {
 
 impl From<&AdvancedComplexUnion> for tonic_prost_test::advanced::AdvancedComplexUnion {
     fn from(value: &AdvancedComplexUnion) -> Self {
-        let value = match value {
-            AdvancedComplexUnion::Unit => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Unit(tonic_prost_test::advanced::AdvancedComplexUnionUnit {})),
-            AdvancedComplexUnion::Named { label, count } => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Named(
-                tonic_prost_test::advanced::AdvancedComplexUnionNamed { label: label.clone(), count: *count },
-            )),
-            AdvancedComplexUnion::Nested(nested) => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(
-                nested,
-            ))),
+        let value = if value.is_default() {
+            None
+        } else {
+            match value {
+                AdvancedComplexUnion::Unit => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Unit(tonic_prost_test::advanced::AdvancedComplexUnionUnit {})),
+                AdvancedComplexUnion::Named { label, count } => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Named(
+                    tonic_prost_test::advanced::AdvancedComplexUnionNamed { label: label.clone(), count: *count },
+                )),
+                AdvancedComplexUnion::Nested(nested) => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(
+                    nested,
+                ))),
+            }
         };
 
         Self { value }
@@ -279,7 +287,11 @@ impl From<&AdvancedEdgeCase> for tonic_prost_test::advanced::AdvancedEdgeCase {
             zipped: value.zipped.clone(),
             stage_lookup,
             ordered_lookup,
-            origin: Some(tonic_prost_test::advanced::AdvancedOrigin::from(&value.origin)),
+            origin: if value.origin.is_default() {
+                None
+            } else {
+                Some(tonic_prost_test::advanced::AdvancedOrigin::from(&value.origin))
+            },
             nested: if value.nested == AdvancedNested::default() {
                 None
             } else {
@@ -592,4 +604,20 @@ fn advanced_complex_enum_preserves_default_payloads() {
     assert_union_roundtrip(AdvancedComplexUnion::Nested(AdvancedNested::default()));
 
     assert_union_roundtrip(AdvancedComplexUnion::Named { label: String::new(), count: 0 });
+}
+
+#[test]
+fn advanced_complex_enum_default_encodes_as_absent_value() {
+    let default_union = AdvancedComplexUnion::default();
+
+    let prost_value = tonic_prost_test::advanced::AdvancedComplexUnion::from(&default_union);
+    assert!(prost_value.value.is_none());
+
+    let encoded = AdvancedComplexUnion::encode_to_vec(&default_union);
+    let decoded_prost = tonic_prost_test::advanced::AdvancedComplexUnion::decode(encoded.as_slice())
+        .expect("decode prost default union");
+    assert!(decoded_prost.value.is_none());
+
+    let decoded_proto = AdvancedComplexUnion::decode(encoded.as_slice()).expect("decode proto default union");
+    assert_eq!(decoded_proto, default_union);
 }
