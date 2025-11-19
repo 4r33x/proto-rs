@@ -450,4 +450,31 @@ mod tests {
         let proto = generate_tuple_struct_proto("Wrapper", &fields.unnamed);
         assert!(proto.contains("repeated uint64 field_0 = 1;"));
     }
+
+    #[test]
+    fn atomic_types_render_as_scalars() {
+        let fields: syn::FieldsNamed = parse_quote!({
+            f1: core::sync::atomic::AtomicBool,
+            f2: core::sync::atomic::AtomicU8,
+            f3: core::sync::atomic::AtomicU16,
+            f4: core::sync::atomic::AtomicU32,
+            f5: core::sync::atomic::AtomicU64,
+            f6: core::sync::atomic::AtomicI8,
+            f7: core::sync::atomic::AtomicI16,
+            f8: core::sync::atomic::AtomicI32,
+            f9: core::sync::atomic::AtomicI64,
+        });
+
+        let proto = generate_named_struct_proto("AtomicWrapper", &fields.named);
+
+        assert!(proto.contains("bool f1 = 1;"));
+        assert!(proto.contains("uint32 f2 = 2;"));
+        assert!(proto.contains("uint32 f3 = 3;"));
+        assert!(proto.contains("uint32 f4 = 4;"));
+        assert!(proto.contains("uint64 f5 = 5;"));
+        assert!(proto.contains("int32 f6 = 6;"));
+        assert!(proto.contains("int32 f7 = 7;"));
+        assert!(proto.contains("int32 f8 = 8;"));
+        assert!(proto.contains("int64 f9 = 9;"));
+    }
 }
