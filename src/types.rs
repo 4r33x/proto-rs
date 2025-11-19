@@ -936,6 +936,15 @@ mod tests {
         f7: AtomicI16,
         f8: AtomicI32,
         f9: AtomicI64,
+        f10: Option<AtomicBool>,
+        f20: Option<AtomicU8>,
+        f30: Option<AtomicU16>,
+        f40: Option<AtomicU32>,
+        f50: Option<AtomicU64>,
+        f60: Option<AtomicI8>,
+        f70: Option<AtomicI16>,
+        f80: Option<AtomicI32>,
+        f90: Option<AtomicI64>,
     }
 
     #[test]

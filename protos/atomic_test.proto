@@ -3,14 +3,23 @@ syntax = "proto3";
 package atomic_test;
 
 message AtomicWrapper {
-  AtomicBool f1 = 1;
-  AtomicU8 f2 = 2;
-  AtomicU16 f3 = 3;
-  AtomicU32 f4 = 4;
-  AtomicU64 f5 = 5;
-  AtomicI8 f6 = 6;
-  AtomicI16 f7 = 7;
-  AtomicI32 f8 = 8;
-  AtomicI64 f9 = 9;
+  bool f1 = 1;
+  uint32 f2 = 2;
+  uint32 f3 = 3;
+  uint32 f4 = 4;
+  uint64 f5 = 5;
+  int32 f6 = 6;
+  int32 f7 = 7;
+  int32 f8 = 8;
+  int64 f9 = 9;
+  optional bool f10 = 10;
+  optional uint32 f20 = 11;
+  optional uint32 f30 = 12;
+  optional uint32 f40 = 13;
+  optional uint64 f50 = 14;
+  optional int32 f60 = 15;
+  optional int32 f70 = 16;
+  optional int32 f80 = 17;
+  optional int64 f90 = 18;
 }
 
