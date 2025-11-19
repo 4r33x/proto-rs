@@ -83,6 +83,7 @@ pub struct FieldConfig {
     pub into_fn: Option<String>,
     pub from_fn: Option<String>,
     pub try_from_fn: Option<String>,
+    pub treat_as: Option<String>,
     pub skip: bool,
     pub skip_deser_fn: Option<String>, // run after full decode
     pub is_rust_enum: bool,            // treat T as Rust enum -> i32 on wire
@@ -123,6 +124,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("into_fn") => cfg.into_fn = parse_string_value(&meta),
                 Some("from_fn") => cfg.from_fn = parse_string_value(&meta),
                 Some("try_from_fn") => cfg.try_from_fn = parse_string_value(&meta),
+                Some("treat_as") => cfg.treat_as = parse_string_value(&meta),
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
                 Some("transparent") => cfg.is_transparent = true,
@@ -268,6 +270,17 @@ fn parse_usize_value(meta: &syn::meta::ParseNestedMeta) -> Option<usize> {
         syn::Lit::Str(s) => s.value().parse::<usize>().ok(),
         _ => None,
     })
+}
+
+pub fn resolved_field_type(field: &Field, config: &FieldConfig) -> Type {
+    if let Some(treat_as) = &config.treat_as {
+        syn::parse_str::<Type>(treat_as).unwrap_or_else(|_| {
+            let name = field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string);
+            panic!("invalid type in #[proto(treat_as = ...)] on field {name}");
+        })
+    } else {
+        field.ty.clone()
+    }
 }
 
 fn last_path_segment(ty: &Type) -> Option<&syn::PathSegment> {

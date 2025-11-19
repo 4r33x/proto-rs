@@ -614,8 +614,7 @@ fn advanced_complex_enum_default_encodes_as_absent_value() {
     assert!(prost_value.value.is_none());
 
     let encoded = AdvancedComplexUnion::encode_to_vec(&default_union);
-    let decoded_prost = tonic_prost_test::advanced::AdvancedComplexUnion::decode(encoded.as_slice())
-        .expect("decode prost default union");
+    let decoded_prost = tonic_prost_test::advanced::AdvancedComplexUnion::decode(encoded.as_slice()).expect("decode prost default union");
     assert!(decoded_prost.value.is_none());
 
     let decoded_proto = AdvancedComplexUnion::decode(encoded.as_slice()).expect("decode proto default union");

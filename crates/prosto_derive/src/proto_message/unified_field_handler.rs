@@ -72,13 +72,13 @@ fn is_numeric_enum(config: &FieldConfig, parsed: &ParsedFieldType) -> bool {
     config.is_rust_enum || config.is_proto_enum || parsed.is_rust_enum
 }
 
-pub fn compute_proto_ty(field: &Field, config: &FieldConfig, parsed: &ParsedFieldType) -> Type {
+pub fn compute_proto_ty(field: &Field, config: &FieldConfig, parsed: &ParsedFieldType, effective_ty: &Type) -> Type {
     if let Some(into_ty) = &config.into_type {
         parse_type_string(field, into_ty)
     } else if is_numeric_enum(config, parsed) {
         parse_quote! { i32 }
     } else {
-        field.ty.clone()
+        effective_ty.clone()
     }
 }
 
@@ -524,8 +524,9 @@ mod tests {
         };
 
         let config = parse_field_config(&field);
-        let parsed = parse_field_type(&field.ty);
-        let proto_ty = compute_proto_ty(&field, &config, &parsed);
+        let effective_ty = crate::utils::resolved_field_type(&field, &config);
+        let parsed = parse_field_type(&effective_ty);
+        let proto_ty = compute_proto_ty(&field, &config, &parsed, &effective_ty);
         let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
 
         let info = FieldInfo {
