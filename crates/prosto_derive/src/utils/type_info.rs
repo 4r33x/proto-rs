@@ -249,6 +249,15 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
         Type::Path(path) => {
             if let Some(id) = last_ident(path) {
                 return match id.to_string().as_str() {
+                    "AtomicBool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
+                    "AtomicU8" | "AtomicU16" | "AtomicU32" | "AtomicUsize" => {
+                        numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32")
+                    }
+                    "AtomicU64" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
+                    "AtomicI8" | "AtomicI16" | "AtomicI32" | "AtomicIsize" => {
+                        numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32")
+                    }
+                    "AtomicI64" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
                     "u8" | "u16" | "u32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
                     "u64" | "usize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
                     "i8" | "i16" | "i32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
