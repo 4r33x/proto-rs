@@ -172,11 +172,7 @@ impl UnifiedProtoConfig {
         let by_ref = is_reference_sun(&ty);
         let ty = normalize_sun_type(ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
-        self.suns.push(SunConfig {
-            ty,
-            message_ident,
-            by_ref,
-        });
+        self.suns.push(SunConfig { ty, message_ident, by_ref });
     }
 }
 

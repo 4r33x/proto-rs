@@ -8,6 +8,7 @@ use syn::Ident;
 use syn::ItemEnum;
 use syn::Path;
 use syn::Type;
+use syn::TypePath;
 use syn::parse_quote;
 use syn::spanned::Spanned;
 
@@ -238,7 +239,9 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         }
     } else {
         let init_expr = if is_option_type(&field.field.ty) {
-            if field.parsed.is_numeric_scalar || is_value_encode_type(&field.parsed.elem_type) {
+            if is_atomic_like(&field.parsed.elem_type) {
+                quote! { (#access_expr).as_ref().map(|inner| inner) }
+            } else if field.parsed.is_numeric_scalar || is_value_encode_type(&field.parsed.elem_type) {
                 quote! { (#access_expr).clone() }
             } else {
                 quote! { (#access_expr).as_ref().map(|inner| inner) }
@@ -302,6 +305,58 @@ pub fn is_value_encode_type(ty: &Type) -> bool {
             "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
             "f32" | "f64"
         ))
+}
+
+fn is_atomic_type(ty: &Type) -> bool {
+    matches!(ty, Type::Path(type_path)
+    if type_path.qself.is_none()
+        && type_path.path.segments.len() == 1
+        && matches!(type_path.path.segments[0].ident.to_string().as_str(),
+            "AtomicBool"
+                | "AtomicI8"
+                | "AtomicI16"
+                | "AtomicI32"
+                | "AtomicI64"
+                | "AtomicIsize"
+                | "AtomicU8"
+                | "AtomicU16"
+                | "AtomicU32"
+                | "AtomicU64"
+                | "AtomicUsize"
+        ))
+}
+
+fn is_atomic_like(ty: &Type) -> bool {
+    if is_atomic_type(ty) {
+        return true;
+    }
+
+    match ty {
+        Type::Path(path) if path.qself.is_none() => {
+            let ident = path.path.segments.last().map(|seg| seg.ident.to_string());
+            if matches!(ident.as_deref(), Some("Arc" | "Box" | "CachePadded" | "ArcSwap" | "ArcSwapOption")) {
+                if let Some(inner) = single_generic_in_path(path) {
+                    return is_atomic_like(inner);
+                }
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn single_generic_in_path(path: &TypePath) -> Option<&Type> {
+    path.path
+        .segments
+        .last()
+        .and_then(|seg| match &seg.arguments {
+            syn::PathArguments::AngleBracketed(args) => args.args.first(),
+            _ => None,
+        })
+        .and_then(|arg| match arg {
+            syn::GenericArgument::Type(t) => Some(t),
+            _ => None,
+        })
 }
 
 pub fn build_proto_default_expr(fields: &[FieldInfo<'_>], original: &syn::Fields) -> TokenStream2 {
@@ -543,5 +598,34 @@ mod tests {
         assert!(binding.prelude.is_none());
         let rendered = binding.value.to_string();
         assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
+    }
+
+    #[test]
+    fn optional_atomic_fields_borrow_without_cloning() {
+        let field: Field = syn::parse_quote! {
+            #[proto(tag = 1)]
+            value: Option<::core::sync::atomic::AtomicU32>
+        };
+
+        let config = parse_field_config(&field);
+        let parsed = parse_field_type(&field.ty);
+        let proto_ty = compute_proto_ty(&field, &config, &parsed);
+        let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
+
+        let info = FieldInfo {
+            index: 0,
+            field: &field,
+            access: FieldAccess::Direct(quote! { value }),
+            config,
+            tag: Some(1),
+            parsed,
+            proto_ty,
+            decode_ty,
+        };
+
+        let binding = encode_input_binding(&info, &TokenStream2::new());
+        let rendered = binding.value.to_string();
+        assert!(rendered.contains("as_ref"), "binding should borrow optional atomic: {rendered}");
+        assert!(!rendered.contains("clone"), "binding should not clone optional atomic: {rendered}");
     }
 }
