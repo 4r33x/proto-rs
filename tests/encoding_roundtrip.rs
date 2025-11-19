@@ -735,3 +735,58 @@ fn map_default_entries_align_with_prost() {
     let roundtrip = CollectionsMessage::decode(Bytes::from(proto_bytes)).expect("decode proto message");
     assert_eq!(roundtrip, message, "default map entries should survive encode/decode");
 }
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, Debug, PartialEq)]
+enum QuoteLamports {
+    Lamports(u64),
+    WSol(u64),
+    Usdc(u64),
+    Usdt(u64),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, Debug, PartialEq)]
+enum PaymentMethod {
+    Cash(u64),
+    Card(String),
+    Crypto(QuoteLamports),
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, Debug, PartialEq)]
+enum SkippedTupleDefault {
+    Ephemeral(#[proto(skip)] std::rc::Rc<String>),
+    Persistent(u32),
+}
+
+#[test]
+fn complex_enum_is_default_checks_variant_and_fields() {
+    let default_method = PaymentMethod::proto_default();
+    assert!(<PaymentMethod as ProtoWire>::is_default_impl(&&default_method));
+
+    let non_default_variant = PaymentMethod::Card(String::new());
+    assert!(!<PaymentMethod as ProtoWire>::is_default_impl(&&non_default_variant));
+
+    let non_default_field = PaymentMethod::Cash(5);
+    assert!(!<PaymentMethod as ProtoWire>::is_default_impl(&&non_default_field));
+
+    let nested_default = PaymentMethod::Crypto(QuoteLamports::proto_default());
+    assert!(matches!(nested_default, PaymentMethod::Crypto(_)));
+    assert!(!<PaymentMethod as ProtoWire>::is_default_impl(&&nested_default));
+}
+
+#[test]
+fn complex_enum_default_tuple_skip_is_ignored() {
+    use std::rc::Rc;
+
+    let default_value = SkippedTupleDefault::proto_default();
+    assert!(matches!(default_value, SkippedTupleDefault::Ephemeral(_)));
+    assert!(<SkippedTupleDefault as ProtoWire>::is_default_impl(&&default_value));
+
+    let non_default_variant = SkippedTupleDefault::Persistent(0);
+    assert!(!<SkippedTupleDefault as ProtoWire>::is_default_impl(&&non_default_variant));
+
+    let non_default_field = SkippedTupleDefault::Ephemeral(Rc::new("runtime".to_string()));
+    assert!(<SkippedTupleDefault as ProtoWire>::is_default_impl(&&non_default_field));
+}
