@@ -238,7 +238,7 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         }
     } else {
         let init_expr = if is_option_type(&field.field.ty) {
-            if field.parsed.is_numeric_scalar || is_value_encode_type(&field.parsed.elem_type) {
+            if is_value_encode_type(&field.parsed.elem_type) {
                 quote! { (#access_expr).clone() }
             } else {
                 quote! { (#access_expr).as_ref().map(|inner| inner) }
