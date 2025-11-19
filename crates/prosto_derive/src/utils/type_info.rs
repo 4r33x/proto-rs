@@ -248,6 +248,7 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
     match ty {
         Type::Path(path) => {
             if let Some(id) = last_ident(path) {
+                #[allow(clippy::match_same_arms)]
                 return match id.to_string().as_str() {
                     "u8" | "u16" | "u32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
                     "u64" | "usize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),

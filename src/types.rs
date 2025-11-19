@@ -922,6 +922,8 @@ impl_narrow_varint!(i16, i32, sint32, I16, "i16 overflow");
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use prosto_derive::proto_message;
 
     use super::*;
@@ -938,13 +940,16 @@ mod tests {
         f9: AtomicI64,
         f10: Option<AtomicBool>,
         f20: Option<AtomicU8>,
-        f30: Option<AtomicU16>,
-        f40: Option<AtomicU32>,
-        f50: Option<AtomicU64>,
-        f60: Option<AtomicI8>,
-        f70: Option<AtomicI16>,
-        f80: Option<AtomicI32>,
-        f90: Option<AtomicI64>,
+        f11: Option<Arc<AtomicBool>>,
+        f21: Option<Arc<AtomicU8>>,
+        f12: Option<Box<AtomicBool>>,
+        f22: Option<Box<AtomicU8>>,
+        f13: Arc<AtomicBool>,
+        f23: Arc<AtomicU8>,
+        f14: Arc<Vec<AtomicBool>>,
+        f24: Arc<Vec<AtomicU8>>,
+        f15: Vec<AtomicBool>,
+        f25: Vec<AtomicU8>,
     }
 
     #[test]

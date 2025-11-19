@@ -14,12 +14,15 @@ message AtomicWrapper {
   int64 f9 = 9;
   optional bool f10 = 10;
   optional uint32 f20 = 11;
-  optional uint32 f30 = 12;
-  optional uint32 f40 = 13;
-  optional uint64 f50 = 14;
-  optional int32 f60 = 15;
-  optional int32 f70 = 16;
-  optional int32 f80 = 17;
-  optional int64 f90 = 18;
+  optional bool f11 = 12;
+  optional uint32 f21 = 13;
+  optional bool f12 = 14;
+  optional uint32 f22 = 15;
+  bool f13 = 16;
+  uint32 f23 = 17;
+  bool f14 = 18;
+  uint32 f24 = 19;
+  repeated bool f15 = 20;
+  repeated uint32 f25 = 21;
 }
 
