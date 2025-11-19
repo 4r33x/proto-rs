@@ -20,6 +20,7 @@ pub use type_info::ParsedFieldType;
 pub use type_info::SetKind;
 pub use type_info::is_bytes_array;
 pub use type_info::is_bytes_vec;
+pub use type_info::is_atomic_type;
 pub use type_info::parse_field_type;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
