@@ -79,6 +79,14 @@ pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
     }
 }
 
+pub fn is_atomic_type(ty: &Type) -> bool {
+    matches!(ty, Type::Path(path) if last_ident(path).is_some_and(|id| matches!(id.to_string().as_str(),
+        "AtomicBool" |
+        "AtomicU8" | "AtomicU16" | "AtomicU32" | "AtomicU64" | "AtomicUsize" |
+        "AtomicI8" | "AtomicI16" | "AtomicI32" | "AtomicI64" | "AtomicIsize"
+    )))
+}
+
 /// True if the type is `[u8; N]`.
 pub fn is_bytes_array(ty: &Type) -> bool {
     match ty {
@@ -253,6 +261,11 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "u64" | "usize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
                     "i8" | "i16" | "i32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
                     "i64" | "isize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
+                    "AtomicBool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
+                    "AtomicU8" | "AtomicU16" | "AtomicU32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
+                    "AtomicU64" | "AtomicUsize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
+                    "AtomicI8" | "AtomicI16" | "AtomicI32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
+                    "AtomicI64" | "AtomicIsize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
                     "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone(), false),
                     "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone(), false),
                     "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
