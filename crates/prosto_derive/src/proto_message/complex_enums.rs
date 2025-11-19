@@ -439,9 +439,73 @@ fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
 fn build_variant_is_default_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
-        VariantKind::Unit => quote! { Self::#ident => false },
-        VariantKind::Tuple { .. } => quote! { Self::#ident(..) => false },
-        VariantKind::Struct { .. } => quote! { Self::#ident { .. } => false },
+        VariantKind::Unit => {
+            if variant.is_default {
+                quote! { Self::#ident => true }
+            } else {
+                quote! { Self::#ident => false }
+            }
+        }
+        VariantKind::Tuple { field } => {
+            if variant.is_default {
+                let binding_ident = &field.binding_ident;
+                let binding = encode_input_binding(&field.field, &quote! { #binding_ident });
+                let prelude = binding.prelude.into_iter();
+                let value = binding.value;
+                let ty = &field.field.proto_ty;
+                quote! {
+                    Self::#ident(#binding_ident) => {
+                        #( #prelude )*
+                        <#ty as ::proto_rs::ProtoWire>::is_default_impl(&#value)
+                    }
+                }
+            } else {
+                quote! { Self::#ident(..) => false }
+            }
+        }
+        VariantKind::Struct { fields } => {
+            if variant.is_default {
+                if fields.is_empty() {
+                    quote! { Self::#ident { .. } => true }
+                } else {
+                    let bindings = fields.iter().map(|info| {
+                        let field_ident = info.field.ident.as_ref().expect("named field");
+                        if info.config.skip {
+                            quote! { #field_ident: _ }
+                        } else {
+                            quote! { #field_ident }
+                        }
+                    });
+
+                    let checks = fields.iter().filter_map(|info| {
+                        let ty = &info.proto_ty;
+                        let tag = info.tag?;
+                        let field_ident = info.field.ident.as_ref().expect("named field");
+                        let binding = encode_input_binding(info, &quote! { #field_ident });
+                        let prelude = binding.prelude.into_iter();
+                        let value = binding.value;
+                        Some(quote! {
+                            {
+                                let _ = #tag;
+                                #( #prelude )*
+                                if !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&#value) {
+                                    return false;
+                                }
+                            }
+                        })
+                    });
+
+                    quote! {
+                        Self::#ident { #(#bindings),* } => {
+                            #(#checks;)*
+                            true
+                        }
+                    }
+                }
+            } else {
+                quote! { Self::#ident { .. } => false }
+            }
+        }
     }
 }
 
