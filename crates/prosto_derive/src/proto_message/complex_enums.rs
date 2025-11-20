@@ -18,7 +18,9 @@ use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::decode_conversion_assign;
 use super::unified_field_handler::encode_input_binding;
 use super::unified_field_handler::field_proto_default_expr;
+use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
+use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::needs_decode_conversion;
 use super::unified_field_handler::parse_path_string;
 use super::unified_field_handler::sanitize_enum;
@@ -78,32 +80,14 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     };
 
     let proto_ext_impl = if config.has_suns() {
-        let impls = config
+        let impls: Vec<_> = config
             .suns
             .iter()
             .map(|sun| {
                 let target_ty = &sun.ty;
-                quote! {
-                    impl ::proto_rs::ProtoExt for #target_ty {
-                        type Shadow<'b> = #shadow_ty where Self: 'b;
-
-                        #[inline(always)]
-                        fn merge_field(
-                            value: &mut Self::Shadow<'_>,
-                            tag: u32,
-                            wire_type: ::proto_rs::encoding::WireType,
-                            buf: &mut impl ::proto_rs::bytes::Buf,
-                            ctx: ::proto_rs::encoding::DecodeContext,
-                        ) -> Result<(), ::proto_rs::DecodeError> {
-                            match tag {
-                                #(#merge_field_arms,)*
-                                _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                            }
-                        }
-                    }
-                }
+                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &merge_field_arms, &quote! {})
             })
-            .collect::<Vec<_>>();
+            .collect();
         quote! { #(#impls)* }
     } else {
         quote! {
@@ -191,66 +175,11 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 
     let delegating_impls = if config.has_suns() {
         let shadow_ty = quote! { #name #ty_generics };
-        let impls = config
+        let impls: Vec<_> = config
             .suns
             .iter()
-            .map(|sun| {
-                let target_ty = &sun.ty;
-                quote! {
-                    impl ::proto_rs::ProtoWire for #target_ty {
-                        type EncodeInput<'a> = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::Sun<'a>;
-                        const KIND: ::proto_rs::ProtoKind = <#shadow_ty as ::proto_rs::ProtoWire>::KIND;
-
-                        #[inline(always)]
-                        fn proto_default() -> Self {
-                            <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_sun(
-                                <#shadow_ty as ::proto_rs::ProtoWire>::proto_default(),
-                            )
-                            .expect("default shadow must be decodable")
-                        }
-
-                        #[inline(always)]
-                        fn clear(&mut self) {
-                            *self = Self::proto_default();
-                        }
-
-                        #[inline(always)]
-                        fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                            let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                            <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow)
-                        }
-
-                        #[inline(always)]
-                        unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                            let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                            <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow)
-                        }
-
-                        #[inline(always)]
-                        fn encode_raw_unchecked(
-                            value: Self::EncodeInput<'_>,
-                            buf: &mut impl ::proto_rs::bytes::BufMut,
-                        ) {
-                            let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
-                            <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf)
-                        }
-
-                        #[inline(always)]
-                        fn decode_into(
-                            wire_type: ::proto_rs::encoding::WireType,
-                            value: &mut Self,
-                            buf: &mut impl ::proto_rs::bytes::Buf,
-                            ctx: ::proto_rs::encoding::DecodeContext,
-                        ) -> Result<(), ::proto_rs::DecodeError> {
-                            let mut shadow = <#shadow_ty as ::proto_rs::ProtoWire>::proto_default();
-                            <#shadow_ty as ::proto_rs::ProtoWire>::decode_into(wire_type, &mut shadow, buf, ctx)?;
-                            *value = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_sun(shadow)?;
-                            Ok(())
-                        }
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
+            .map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty))
+            .collect();
 
         quote! { #(#impls)* }
     } else {
