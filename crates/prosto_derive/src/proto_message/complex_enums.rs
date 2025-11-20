@@ -345,6 +345,35 @@ fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u3
     Ok(tag_u32)
 }
 
+// Helper: Generate encoding body for empty variants (Unit or empty Struct)
+fn build_empty_variant_encode_body(tag: u32) -> TokenStream2 {
+    quote! {
+        ::proto_rs::encoding::encode_key(
+            #tag,
+            ::proto_rs::encoding::WireType::LengthDelimited,
+            buf,
+        );
+        ::proto_rs::encoding::encode_varint(0, buf);
+    }
+}
+
+// Helper: Generate encoded length for empty variants (Unit or empty Struct)
+fn build_empty_variant_encoded_len(tag: u32) -> TokenStream2 {
+    quote! { ::proto_rs::encoding::key_len(#tag) + 1 }
+}
+
+// Helper: Generate binding patterns for struct fields (handles skip attributes)
+fn build_struct_field_bindings<'a>(fields: &'a [FieldInfo<'a>]) -> impl Iterator<Item = TokenStream2> + 'a {
+    fields.iter().map(|info| {
+        let field_ident = info.field.ident.as_ref().expect("named field");
+        if info.config.skip {
+            quote! { #field_ident: _ }
+        } else {
+            quote! { #field_ident }
+        }
+    })
+}
+
 fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
@@ -404,14 +433,7 @@ fn build_variant_is_default_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
                 if fields.is_empty() {
                     quote! { Self::#ident { .. } => true }
                 } else {
-                    let bindings = fields.iter().map(|info| {
-                        let field_ident = info.field.ident.as_ref().expect("named field");
-                        if info.config.skip {
-                            quote! { #field_ident: _ }
-                        } else {
-                            quote! { #field_ident }
-                        }
-                    });
+                    let bindings = build_struct_field_bindings(fields);
 
                     let checks = fields.iter().filter_map(|info| {
                         let ty = &info.proto_ty;
@@ -449,7 +471,10 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     let tag = variant.tag;
     match &variant.kind {
-        VariantKind::Unit => quote! { Self::#ident => ::proto_rs::encoding::key_len(#tag) + 1 },
+        VariantKind::Unit => {
+            let len_expr = build_empty_variant_encoded_len(tag);
+            quote! { Self::#ident => #len_expr }
+        }
         VariantKind::Tuple { field } => {
             if field.field.config.skip {
                 quote! { Self::#ident(..) => 0 }
@@ -478,18 +503,12 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
         }
         VariantKind::Struct { fields } => {
             if fields.is_empty() {
+                let len_expr = build_empty_variant_encoded_len(tag);
                 quote! {
-                    Self::#ident { .. } => ::proto_rs::encoding::key_len(#tag) + 1
+                    Self::#ident { .. } => #len_expr
                 }
             } else {
-                let bindings = fields.iter().map(|info| {
-                    let field_ident = info.field.ident.as_ref().expect("named field");
-                    if info.config.skip {
-                        quote! { #field_ident: _ }
-                    } else {
-                        quote! { #field_ident }
-                    }
-                });
+                let bindings = build_struct_field_bindings(fields);
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
                 quote! {
                     Self::#ident { #(#bindings),* } => {
@@ -508,16 +527,14 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     let ident = variant.ident;
     let tag = variant.tag;
     match &variant.kind {
-        VariantKind::Unit => quote! {
-            Self::#ident => {
-                ::proto_rs::encoding::encode_key(
-                    #tag,
-                    ::proto_rs::encoding::WireType::LengthDelimited,
-                    buf,
-                );
-                ::proto_rs::encoding::encode_varint(0, buf);
+        VariantKind::Unit => {
+            let encode_body = build_empty_variant_encode_body(tag);
+            quote! {
+                Self::#ident => {
+                    #encode_body
+                }
             }
-        },
+        }
         VariantKind::Tuple { field } => {
             let binding_ident = &field.binding_ident;
             let encode_binding = encode_input_binding(&field.field, &TokenStream2::new());
@@ -551,25 +568,14 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
         }
         VariantKind::Struct { fields } => {
             if fields.is_empty() {
+                let encode_body = build_empty_variant_encode_body(tag);
                 quote! {
                     Self::#ident { .. } => {
-                        ::proto_rs::encoding::encode_key(
-                            #tag,
-                            ::proto_rs::encoding::WireType::LengthDelimited,
-                            buf,
-                        );
-                        ::proto_rs::encoding::encode_varint(0, buf);
+                        #encode_body
                     }
                 }
             } else {
-                let bindings = fields.iter().map(|info| {
-                    let field_ident = info.field.ident.as_ref().expect("named field");
-                    if info.config.skip {
-                        quote! { #field_ident: _ }
-                    } else {
-                        quote! { #field_ident }
-                    }
-                });
+                let bindings = build_struct_field_bindings(fields);
                 let terms = build_encoded_len_terms(fields, &TokenStream2::new());
                 let encode_stmts = build_encode_stmts(fields, &TokenStream2::new());
                 quote! {
