@@ -28,6 +28,14 @@ message QuoteLamports {
   }
 }
 
+
+message SkippedTupleDefault {
+  oneof value {
+    Rc ephemeral = 1;
+    uint32 persistent = 2;
+  }
+}
+
 enum Status {
   ACTIVE = 0;
   PENDING = 1;

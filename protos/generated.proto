@@ -19,6 +19,11 @@ message UserIdNamed {
   uint64 id = 1;
 }
 
+message UserIdTreatAs {
+  map<uint64, uint64> id = 1;
+  map<uint64, uint64> id2 = 2;
+}
+
 message UserIdTuple {
   uint64 field_0 = 1;
 }
