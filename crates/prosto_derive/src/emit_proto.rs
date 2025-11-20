@@ -18,6 +18,7 @@ use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::resolved_field_type;
 use crate::utils::rust_type_path_ident;
 use crate::utils::strip_proto_suffix;
 use crate::utils::to_pascal_case;
@@ -77,8 +78,8 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
             Fields::Unnamed(fields) => {
                 assert!((fields.unnamed.len() == 1), "Complex enum unnamed variants must have exactly one field");
 
-                let field_ty = &fields.unnamed.first().unwrap().ty;
-                let proto_type = get_field_proto_type(field_ty);
+                let field = &fields.unnamed[0];
+                let proto_type = get_field_proto_type(field);
 
                 oneof_fields.push(format!("    {proto_type} {field_name_snake} = {tag};"));
             }
@@ -123,10 +124,11 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
         }
 
         let field_name = format!("field_{idx}");
+        let base_ty = resolved_field_type(field, &config);
         let ty = if let Some(ref into_type) = config.into_type {
-            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| field.ty.clone())
+            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
         } else {
-            field.ty.clone()
+            base_ty
         };
 
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
@@ -177,10 +179,11 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
         let field_name = field.ident.as_ref().unwrap().to_string();
 
         // Get effective type for proto generation
+        let base_ty = resolved_field_type(field, &config);
         let ty = if let Some(ref into_type) = config.into_type {
-            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| field.ty.clone())
+            syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
         } else {
-            field.ty.clone()
+            base_ty
         };
 
         // Extract wrapper info
@@ -201,14 +204,22 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 }
 
 /// Get proto type string for a field type
-fn get_field_proto_type(ty: &Type) -> String {
+fn get_field_proto_type(field: &Field) -> String {
+    let config = parse_field_config(field);
+    let base_ty = resolved_field_type(field, &config);
+    let ty = if let Some(ref into_type) = config.into_type {
+        syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
+    } else {
+        base_ty
+    };
+
     // Handle bytes
-    if is_bytes_vec(ty) || is_bytes_array(ty) {
+    if is_bytes_vec(&ty) || is_bytes_array(&ty) {
         return "bytes".to_string();
     }
 
     // Handle arrays as repeated
-    if let Type::Array(type_array) = ty {
+    if let Type::Array(type_array) = &ty {
         let elem_ty = &*type_array.elem;
         let parsed = parse_field_type(elem_ty);
 
@@ -220,10 +231,14 @@ fn get_field_proto_type(ty: &Type) -> String {
         };
     }
 
-    let parsed = parse_field_type(ty);
+    let parsed = parse_field_type(&ty);
 
     if parsed.map_kind.is_some() {
         return parsed.proto_type;
+    }
+
+    if config.is_rust_enum || config.is_proto_enum || config.is_message {
+        return rust_type_path_ident(&ty).to_string();
     }
 
     if parsed.is_message_like {
@@ -331,18 +346,21 @@ mod tests {
 
     #[test]
     fn test_get_field_proto_type() {
-        let ty: Type = parse_quote! {  [u8; B_LEN] };
-        assert_eq!(get_field_proto_type(&ty), "bytes");
-        let ty: Type = parse_quote! { [u8; 32] };
-        assert_eq!(get_field_proto_type(&ty), "bytes");
-        let ty: Type = parse_quote! { Vec<u8> };
-        assert_eq!(get_field_proto_type(&ty), "bytes");
+        let field: syn::Field = parse_quote! { data: [u8; B_LEN] };
+        assert_eq!(get_field_proto_type(&field), "bytes");
+        let field: syn::Field = parse_quote! { data: [u8; 32] };
+        assert_eq!(get_field_proto_type(&field), "bytes");
+        let field: syn::Field = parse_quote! { data: Vec<u8> };
+        assert_eq!(get_field_proto_type(&field), "bytes");
 
-        let ty: Type = parse_quote! { u32 };
-        assert_eq!(get_field_proto_type(&ty), "uint32");
+        let field: syn::Field = parse_quote! { value: u32 };
+        assert_eq!(get_field_proto_type(&field), "uint32");
 
-        let ty: Type = parse_quote! { String };
-        assert_eq!(get_field_proto_type(&ty), "string");
+        let field: syn::Field = parse_quote! { value: String };
+        assert_eq!(get_field_proto_type(&field), "string");
+
+        let field: syn::Field = parse_quote! { #[proto(treat_as = "std::collections::HashSet<u32>")] value: MySet };
+        assert_eq!(get_field_proto_type(&field), "uint32");
     }
 
     #[test]

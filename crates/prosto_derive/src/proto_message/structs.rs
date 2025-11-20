@@ -20,6 +20,7 @@ use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::resolved_field_type;
 
 pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream2 {
     let name = &input.ident;
@@ -35,8 +36,9 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
             .enumerate()
             .map(|(idx, field)| {
                 let config = parse_field_config(field);
-                let parsed = parse_field_type(&field.ty);
-                let proto_ty = compute_proto_ty(field, &config, &parsed);
+                let effective_ty = resolved_field_type(field, &config);
+                let parsed = parse_field_type(&effective_ty);
+                let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
                 let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
                 FieldInfo {
                     index: idx,
@@ -56,8 +58,9 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
             .enumerate()
             .map(|(idx, field)| {
                 let config = parse_field_config(field);
-                let parsed = parse_field_type(&field.ty);
-                let proto_ty = compute_proto_ty(field, &config, &parsed);
+                let effective_ty = resolved_field_type(field, &config);
+                let parsed = parse_field_type(&effective_ty);
+                let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
                 let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
                 FieldInfo {
                     index: idx,

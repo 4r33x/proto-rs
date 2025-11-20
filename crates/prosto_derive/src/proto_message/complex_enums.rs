@@ -25,6 +25,7 @@ use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::resolved_field_type;
 
 pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &syn::DataEnum, config: &UnifiedProtoConfig) -> syn::Result<TokenStream2> {
     let enum_item = sanitize_enum(item_enum.clone());
@@ -306,8 +307,9 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
 
                 let field = &fields.unnamed[0];
                 let config = parse_field_config(field);
-                let parsed = parse_field_type(&field.ty);
-                let proto_ty = compute_proto_ty(field, &config, &parsed);
+                let effective_ty = resolved_field_type(field, &config);
+                let parsed = parse_field_type(&effective_ty);
+                let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
                 let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
                 let binding_ident = Ident::new(&format!("__proto_rs_variant_{}_value", variant.ident.to_string().to_lowercase()), field.span());
 
@@ -341,8 +343,9 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                     .enumerate()
                     .map(|(field_idx, field)| {
                         let config = parse_field_config(field);
-                        let parsed = parse_field_type(&field.ty);
-                        let proto_ty = compute_proto_ty(field, &config, &parsed);
+                        let effective_ty = resolved_field_type(field, &config);
+                        let parsed = parse_field_type(&effective_ty);
+                        let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
                         let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
                         FieldInfo {
                             index: field_idx,
