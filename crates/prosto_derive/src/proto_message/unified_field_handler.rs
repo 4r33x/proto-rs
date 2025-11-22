@@ -510,12 +510,9 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
         .collect()
 }
 
-/// Generate delegating ProtoWire implementation for a sun type
+/// Generate delegating `ProtoWire` implementation for a sun type
 /// This eliminates code duplication across structs, enums, and complex enums
-pub fn generate_delegating_proto_wire_impl(
-    shadow_ty: &TokenStream2,
-    target_ty: &syn::Type,
-) -> TokenStream2 {
+pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoWire for #target_ty {
             type EncodeInput<'a> = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::Sun<'a>;
@@ -571,14 +568,9 @@ pub fn generate_delegating_proto_wire_impl(
     }
 }
 
-/// Generate sun-based ProtoExt implementation
+/// Generate sun-based `ProtoExt` implementation
 /// This eliminates code duplication across different type handlers
-pub fn generate_sun_proto_ext_impl(
-    shadow_ty: &TokenStream2,
-    target_ty: &syn::Type,
-    decode_arms: &[TokenStream2],
-    post_decode_impl: &TokenStream2,
-) -> TokenStream2 {
+pub fn generate_sun_proto_ext_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type, decode_arms: &[TokenStream2], post_decode_impl: &TokenStream2) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoExt for #target_ty {
             type Shadow<'b> = #shadow_ty where Self: 'b;
