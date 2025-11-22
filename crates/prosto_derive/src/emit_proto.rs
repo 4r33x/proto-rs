@@ -79,9 +79,17 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
                 assert!((fields.unnamed.len() == 1), "Complex enum unnamed variants must have exactly one field");
 
                 let field = &fields.unnamed[0];
-                let proto_type = get_field_proto_type(field);
+                let config = parse_field_config(field);
 
-                oneof_fields.push(format!("    {proto_type} {field_name_snake} = {tag};"));
+                // If the field is marked with #[proto(skip)], treat it like a unit variant (empty message)
+                if config.skip {
+                    let msg_name = format!("{proto_name}{variant_ident}");
+                    nested_messages.push(format!("message {msg_name} {{}}"));
+                    oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
+                } else {
+                    let proto_type = get_field_proto_type(field);
+                    oneof_fields.push(format!("    {proto_type} {field_name_snake} = {tag};"));
+                }
             }
             Fields::Named(fields) => {
                 let msg_name = format!("{proto_name}{variant_ident}");
