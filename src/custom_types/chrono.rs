@@ -44,10 +44,10 @@ mod tests {
 
     #[test]
     fn test_datetime_roundtrip() {
-        let dt = DateTime::from_timestamp(1234567890, 123456789).expect("valid timestamp");
+        let dt = DateTime::from_timestamp(1_234_567_890, 123_456_789).expect("valid timestamp");
 
         // Test encoding and decoding through ProtoExt
-        let encoded = dt.encode_to_vec();
+        let encoded = chrono::DateTime::encode_to_vec(&dt);
         let decoded = DateTime::<Utc>::decode(encoded.as_slice()).expect("decode");
 
         assert_eq!(dt, decoded);
@@ -55,10 +55,10 @@ mod tests {
 
     #[test]
     fn test_datetime_in_wrapper() {
-        let dt = DateTime::from_timestamp(9876543210, 987654321).expect("valid timestamp");
+        let dt = DateTime::from_timestamp(9_876_543_210, 987_654_321).expect("valid timestamp");
         let wrapper = ChronoWrapper { inner: dt };
 
-        let encoded = wrapper.encode_to_vec();
+        let encoded = ChronoWrapper::encode_to_vec(&wrapper);
         let decoded = ChronoWrapper::decode(encoded.as_slice()).expect("decode");
 
         assert_eq!(wrapper.inner, decoded.inner);

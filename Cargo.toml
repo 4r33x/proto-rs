@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.6.6"
+version = "0.6.7"
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
@@ -39,8 +39,8 @@ members = [
 resolver = "3"
 
 [workspace.dependencies]
-prosto_derive = { version = "0.6.6", path = "crates/prosto_derive" }
-proto_rs = { version = "0.6.6", path = "./" }
+prosto_derive = { version = "0.6.7", path = "crates/prosto_derive" }
+proto_rs = { version = "0.6.7", path = "./" }
 prost = { version = "0.14", default-features = false }
 bytes = { version = "1.11.0", default-features = false }
 inventory = { version = "0.3" }
