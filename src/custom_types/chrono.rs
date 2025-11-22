@@ -6,7 +6,7 @@ use crate::ProtoShadow;
 use crate::proto_message;
 
 #[proto_message(proto_path = "protos/chrono.proto", sun = DateTime<Utc>)]
-struct DateTimeProto {
+pub struct DateTimeProto {
     #[proto(tag = 1)]
     pub secs: i64,
     #[proto(tag = 2)]
@@ -34,9 +34,33 @@ impl ProtoShadow<DateTime<Utc>> for DateTimeProto {
 mod tests {
 
     use super::*;
+    use crate::ProtoExt;
 
     #[proto_message(proto_path = "protos/chrono_test.proto")]
     struct ChronoWrapper {
+        #[proto(tag = 1)]
         inner: DateTime<Utc>,
+    }
+
+    #[test]
+    fn test_datetime_roundtrip() {
+        let dt = DateTime::from_timestamp(1234567890, 123456789).expect("valid timestamp");
+
+        // Test encoding and decoding through ProtoExt
+        let encoded = dt.encode_to_vec();
+        let decoded = DateTime::<Utc>::decode(encoded.as_slice()).expect("decode");
+
+        assert_eq!(dt, decoded);
+    }
+
+    #[test]
+    fn test_datetime_in_wrapper() {
+        let dt = DateTime::from_timestamp(9876543210, 987654321).expect("valid timestamp");
+        let wrapper = ChronoWrapper { inner: dt };
+
+        let encoded = wrapper.encode_to_vec();
+        let decoded = ChronoWrapper::decode(encoded.as_slice()).expect("decode");
+
+        assert_eq!(wrapper.inner, decoded.inner);
     }
 }

@@ -2,7 +2,7 @@
 syntax = "proto3";
 package chrono;
 
-message DateTimeProto {
+message DateTime {
   int64 secs = 1;
   uint32 ns = 2;
 }

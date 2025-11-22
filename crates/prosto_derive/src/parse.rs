@@ -6,10 +6,9 @@ use std::collections::HashMap;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::ToTokens;
 use syn::Attribute;
+use syn::parse::Parse;
 use syn::Data;
-use syn::Expr;
 use syn::ItemTrait;
 use syn::Lit;
 use syn::Type;
@@ -124,8 +123,24 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 config.proto_path = Some(lit_str.value());
             }
         } else if meta.path.is_ident("sun") {
-            let expr = meta.value()?.parse::<Expr>()?;
-            parse_sun_list(expr, config)?;
+            // Parse as Type instead of Expr to handle generics like DateTime<Utc>
+            let value = meta.value()?;
+            let lookahead = value.lookahead1();
+            if lookahead.peek(syn::token::Bracket) {
+                // Handle array syntax: sun = [Type1, Type2]
+                let content;
+                syn::bracketed!(content in value);
+                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> =
+                    content.parse_terminated(Type::parse, syn::Token![,])?;
+                for ty in types {
+                    config.push_sun(ty);
+                }
+            } else {
+                // Handle single type: sun = Type
+                let ty: Type = value.parse()?;
+                config.push_sun(ty);
+            }
+            return Ok(());
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {
                 config.rpc_server = lit_bool.value;
@@ -142,7 +157,7 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
         Ok(())
     });
 
-    let _ = syn::parse::Parser::parse(parser, attr);
+    syn::parse::Parser::parse(parser, attr).expect("failed to parse proto_message attributes");
 }
 
 fn extract_type_ident(ty: &Type) -> Option<String> {
@@ -191,23 +206,6 @@ fn is_reference_sun(ty: &Type) -> bool {
         Type::Group(group) => is_reference_sun(&group.elem),
         Type::Paren(paren) => is_reference_sun(&paren.elem),
         _ => false,
-    }
-}
-
-fn parse_sun_list(expr: Expr, config: &mut UnifiedProtoConfig) -> syn::Result<()> {
-    match expr {
-        Expr::Array(array) => {
-            for elem in array.elems {
-                let ty: Type = syn::parse2(elem.into_token_stream())?;
-                config.push_sun(ty);
-            }
-            Ok(())
-        }
-        other => {
-            let ty: Type = syn::parse2(other.into_token_stream())?;
-            config.push_sun(ty);
-            Ok(())
-        }
     }
 }
 
