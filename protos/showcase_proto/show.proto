@@ -28,14 +28,6 @@ message QuoteLamports {
   }
 }
 
-
-message SkippedTupleDefault {
-  oneof value {
-    Rc ephemeral = 1;
-    uint32 persistent = 2;
-  }
-}
-
 enum Status {
   ACTIVE = 0;
   PENDING = 1;
@@ -400,11 +392,15 @@ message VeryComplex {
 message VeryComplexTestSkipAttr {
 
 }
+
+message VeryComplexTestSkipTuple {}
+
+message VeryComplexTestSkipTuple2 {}
 message VeryComplexTestSkip {
   oneof value {
     VeryComplexTestSkipAttr attr = 1;
-    string tuple = 2;
-    string tuple2 = 3;
+    VeryComplexTestSkipTuple tuple = 2;
+    VeryComplexTestSkipTuple2 tuple2 = 3;
   }
 }
 
