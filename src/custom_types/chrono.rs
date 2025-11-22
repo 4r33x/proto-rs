@@ -29,3 +29,14 @@ impl ProtoShadow<DateTime<Utc>> for DateTimeProto {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[proto_message(proto_path = "protos/chrono_test.proto")]
+    struct ChronoWrapper {
+        inner: DateTime<Utc>,
+    }
+}

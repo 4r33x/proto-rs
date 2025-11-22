@@ -99,6 +99,11 @@ mod tests {
 
     use super::*;
 
+    #[proto_message(proto_path = "protos/fastnum_test.proto")]
+    struct D128Wrapper {
+        inner: D128,
+    }
+
     fn encode(value: &D128) -> D128Proto {
         <D128Proto as ProtoShadow<D128>>::from_sun(value)
     }

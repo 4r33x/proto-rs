@@ -59,6 +59,11 @@ mod tests {
 
     use super::*;
 
+    #[proto_message(proto_path = "protos/fastnum_test.proto")]
+    struct UD128Wrapper {
+        inner: UD128,
+    }
+
     fn encode(value: &UD128) -> UD128Proto {
         <UD128Proto as ProtoShadow<UD128>>::from_sun(value)
     }
