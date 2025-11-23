@@ -91,7 +91,6 @@ pub struct FieldConfig {
     pub is_proto_enum: bool,           // prost-like enum (i32 backing)
     pub import_path: Option<String>,
     pub custom_tag: Option<usize>,
-    pub is_transparent: bool,
     pub rename: Option<ProtoRename>,
 }
 
@@ -127,7 +126,6 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("treat_as") => cfg.treat_as = parse_string_value(&meta),
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
-                Some("transparent") => cfg.is_transparent = true,
                 Some("rename") => {
                     let tokens: TokenStream = meta.value().expect("rename expects a value").parse().expect("failed to parse rename attribute");
                     cfg.rename = Some(parse_proto_rename(field, tokens));

@@ -4,14 +4,13 @@ use proto_rs::encoding::DecodeContext;
 use proto_rs::encoding::WireType;
 use proto_rs::proto_message;
 
-#[proto_message]
+#[proto_message(transparent)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct UserIdTuple(#[proto(transparent)] u64);
+pub struct UserIdTuple(u64);
 
-#[proto_message]
+#[proto_message(transparent)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct UserIdNamed {
-    #[proto(transparent)]
     pub id: u64,
 }
 
@@ -56,9 +55,9 @@ pub struct InnerMessage {
     pub value: u32,
 }
 
-#[proto_message]
+#[proto_message(transparent)]
 #[derive(Debug, PartialEq, Eq)]
-pub struct MessageWrapper(#[proto(transparent)] InnerMessage);
+pub struct MessageWrapper(InnerMessage);
 
 #[test]
 fn transparent_tuple_roundtrip() {
