@@ -31,7 +31,7 @@ where
 
 impl<T> ProtoWire for CachePadded<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = T> + 'a + Copy,
+    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
 {
     type EncodeInput<'a> = &'a CachePadded<T>;
     const KIND: ProtoKind = T::KIND;
@@ -39,12 +39,13 @@ where
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         let inner: &T = value;
-        unsafe { T::encoded_len_impl_raw(inner) }
+        unsafe { T::encoded_len_impl_raw(&inner) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        T::encode_raw_unchecked(**value, buf);
+        let inner: &T = value;
+        T::encode_raw_unchecked(inner, buf);
     }
 
     #[inline(always)]
@@ -56,7 +57,7 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let inner: &T = value;
-        T::is_default_impl(inner)
+        T::is_default_impl(&inner)
     }
 
     #[inline(always)]
