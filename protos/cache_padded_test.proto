@@ -5,7 +5,5 @@ package cache_padded_test;
 message AtomicOrderState {
   uint32 inner = 1;
   uint32 inner2 = 2;
-  uint64 inner3 = 3;
-  uint64 inner4 = 4;
 }
 

@@ -164,7 +164,5 @@ mod tests {
     pub struct AtomicOrderState {
         inner: Arc<CachePadded<AtomicU8>>,
         inner2: CachePadded<AtomicU8>,
-        inner3: CachePadded<u64>,
-        inner4: Box<CachePadded<u64>>,
     }
 }
