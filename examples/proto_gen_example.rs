@@ -34,14 +34,14 @@ pub struct BarSub;
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_proto/sigma_rpc.proto")]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
+    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    async fn rizz_uni(&self, request: Request<BarSub>) -> Response<Self::RizzUniStream>;
     async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
     async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong, Status>;
     async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
     async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
     async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
-    async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 
 // A dummy server impl
@@ -92,7 +92,7 @@ impl SigmaRpc for S {
         Ok(Response::new(GoonPong {}))
     }
 
-    async fn rizz_uni(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {
+    async fn rizz_uni(&self, _request: Request<BarSub>) -> Response<Self::RizzUniStream> {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
@@ -109,7 +109,7 @@ impl SigmaRpc for S {
         #[cfg(feature = "stable")]
         let stream: Self::RizzUniStream = Box::pin(stream);
 
-        Ok(Response::new(stream))
+        Response::new(stream)
     }
 }
 
