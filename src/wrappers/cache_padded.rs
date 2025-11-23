@@ -150,3 +150,20 @@ where
         SHD::from_sun(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use core::sync::atomic::AtomicU8;
+    use std::sync::Arc;
+
+    use crossbeam_utils::CachePadded;
+    use prosto_derive::proto_message;
+
+    #[proto_message(proto_path = "protos/cache_padded_test.proto")]
+    pub struct AtomicOrderState {
+        inner: Arc<CachePadded<AtomicU8>>,
+        inner2: CachePadded<AtomicU8>,
+        inner3: CachePadded<u64>,
+        inner4: Box<CachePadded<u64>>,
+    }
+}
