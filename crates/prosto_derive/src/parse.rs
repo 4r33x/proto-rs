@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use syn::Attribute;
-use syn::parse::Parse;
 use syn::Data;
 use syn::ItemTrait;
 use syn::Lit;
 use syn::Type;
+use syn::parse::Parse;
 
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
@@ -73,7 +73,7 @@ pub struct SunConfig {
 }
 
 impl UnifiedProtoConfig {
-    /// Register and emit proto content (only if proto_path is specified)
+    /// Register and emit proto content (only if `proto_path` is specified)
     pub fn register_and_emit_proto(&mut self, type_ident: &str, content: &str) {
         if let Some(proto_path) = self.proto_path() {
             let mat = register_and_emit_proto_inner(proto_path, type_ident, content);
@@ -139,8 +139,7 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 // Handle array syntax: sun = [Type1, Type2]
                 let content;
                 syn::bracketed!(content in value);
-                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> =
-                    content.parse_terminated(Type::parse, syn::Token![,])?;
+                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> = content.parse_terminated(Type::parse, syn::Token![,])?;
                 for ty in types {
                     config.push_sun(ty);
                 }

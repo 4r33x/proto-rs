@@ -1183,7 +1183,7 @@ dependencies = [
 
 [[package]]
 name = "prosto_derive"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "proto_rs"
-version = "0.6.7"
+version = "0.6.8"
 dependencies = [
  "arc-swap",
  "bytes",
