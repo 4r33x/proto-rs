@@ -79,10 +79,10 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         syn::Fields::Unit => Vec::new(),
     };
 
-    if let Some(idx) = fields.iter().position(|info| info.config.is_transparent) {
-        assert!(fields.len() == 1, "#[proto(transparent)] requires a single-field struct");
+    if config.transparent {
+        assert!(fields.len() == 1, "#[proto_message(transparent)] requires a single-field struct");
 
-        let field = fields.remove(idx);
+        let field = fields.remove(0);
         let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
         let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
 

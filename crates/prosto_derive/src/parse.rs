@@ -62,6 +62,7 @@ pub struct UnifiedProtoConfig {
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
+    pub transparent: bool,
 }
 
 #[derive(Clone)]
@@ -72,11 +73,13 @@ pub struct SunConfig {
 }
 
 impl UnifiedProtoConfig {
-    /// Register and emit proto content
+    /// Register and emit proto content (only if proto_path is specified)
     pub fn register_and_emit_proto(&mut self, type_ident: &str, content: &str) {
-        let mat = register_and_emit_proto_inner(self.proto_path(), type_ident, content);
-        let imports = &self.imports_mat;
-        self.imports_mat = quote::quote! { #imports #mat };
+        if let Some(proto_path) = self.proto_path() {
+            let mat = register_and_emit_proto_inner(proto_path, type_ident, content);
+            let imports = &self.imports_mat;
+            self.imports_mat = quote::quote! { #imports #mat };
+        }
     }
 
     /// Parse configuration from attributes and extract all imports
@@ -94,9 +97,12 @@ impl UnifiedProtoConfig {
         // Extract field-level imports
         fields.extract_field_imports(&mut all_imports);
 
-        // Register file imports
-        for package in all_imports.keys() {
-            config.file_imports.entry(config.proto_path().to_owned()).or_default().insert(package.to_owned());
+        // Register file imports (only if proto_path is specified)
+        if let Some(proto_path_str) = config.proto_path.as_deref() {
+            let proto_path = proto_path_str.to_owned();
+            for package in all_imports.keys() {
+                config.file_imports.entry(proto_path.clone()).or_default().insert(package.to_owned());
+            }
         }
 
         config.type_imports = all_imports;
@@ -110,15 +116,18 @@ impl UnifiedProtoConfig {
         self.rpc_package.as_ref().expect("RPC package name required: use rpc_package = \"name\"")
     }
 
-    /// Get the proto file path
-    pub fn proto_path(&self) -> &str {
-        self.proto_path.as_deref().unwrap_or("protos/generated.proto")
+    /// Get the proto file path (returns None if not specified)
+    pub fn proto_path(&self) -> Option<&str> {
+        self.proto_path.as_deref()
     }
 }
 
 fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     let parser = syn::meta::parser(|meta| {
-        if meta.path.is_ident("proto_path") {
+        if meta.path.is_ident("transparent") {
+            config.transparent = true;
+            return Ok(());
+        } else if meta.path.is_ident("proto_path") {
             if let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>() {
                 config.proto_path = Some(lit_str.value());
             }
@@ -349,9 +358,10 @@ mod tests {
     #[test]
     fn test_unified_proto_config_defaults() {
         let config = UnifiedProtoConfig::default();
-        assert_eq!(config.proto_path(), "protos/generated.proto");
+        assert_eq!(config.proto_path(), None);
         assert!(!config.rpc_server);
         assert!(!config.rpc_client);
+        assert!(!config.transparent);
     }
 
     #[test]
