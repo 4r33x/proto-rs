@@ -91,7 +91,11 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
 fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::Ident, signature: &ParsedMethodSignature) -> TokenStream {
     let future_output = if signature.is_streaming {
         let stream_name = signature.stream_type_name.as_ref().expect("streaming method must define stream name");
-        quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
+        if signature.response_is_result {
+            quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
+        } else {
+            quote! { tonic::Response<Self::#stream_name> }
+        }
     } else if signature.response_is_result {
         let response_return_type = &signature.response_return_type;
         quote! { ::core::result::Result<#response_return_type, tonic::Status> }

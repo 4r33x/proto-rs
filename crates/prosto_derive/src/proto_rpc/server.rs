@@ -180,9 +180,15 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
 
     if is_streaming_method(method) {
         let stream_name = method.stream_type_name.as_ref().unwrap();
-        let future_type = method_future_return_type(quote! {
-            ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
-        });
+        let future_type = if method.response_is_result {
+            method_future_return_type(quote! {
+                ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+            })
+        } else {
+            method_future_return_type(quote! {
+                tonic::Response<Self::#stream_name>
+            })
+        };
         quote! {
             #[must_use]
             fn #method_name(
@@ -317,24 +323,48 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
-    let future_type = method_future_return_type(quote! {
-        ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
-    });
-    let future_body = wrap_async_block(
-        quote! {
-            async move {
-                #request_conversion
 
-                let native_response = <Self as super::#trait_name>::#method_name(
-                    self,
-                    native_request
-                ).await?;
+    let (future_type, future_body) = if method.response_is_result {
+        let future_type = method_future_return_type(quote! {
+            ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>
+        });
+        let future_body = wrap_async_block(
+            quote! {
+                async move {
+                    #request_conversion
 
-                Ok(native_response)
-            }
-        },
-        false,
-    );
+                    let native_response = <Self as super::#trait_name>::#method_name(
+                        self,
+                        native_request
+                    ).await?;
+
+                    Ok(native_response)
+                }
+            },
+            false,
+        );
+        (future_type, future_body)
+    } else {
+        let future_type = method_future_return_type(quote! {
+            tonic::Response<Self::#stream_name>
+        });
+        let future_body = wrap_async_block(
+            quote! {
+                async move {
+                    #request_conversion
+
+                    let native_response = <Self as super::#trait_name>::#method_name(
+                        self,
+                        native_request
+                    ).await;
+
+                    native_response
+                }
+            },
+            false,
+        );
+        (future_type, future_body)
+    };
 
     quote! {
         fn #method_name(
@@ -433,28 +463,56 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let decode_type = quote! { #request_proto };
     let mode_type = quote! { <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Mode };
     let codec_init = generate_codec_init(encode_type, decode_type, Some(mode_type));
-    let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
-    let call_future = wrap_async_block(
-        quote! {
-            async move {
-                let response = <T as #trait_name>::#method_name(&inner, request).await?;
-                let mapped = response.map(|stream| {
-                    ::tonic::codegen::tokio_stream::StreamExt::map(
-                        stream,
-                        ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
-                            as fn(
-                                ::core::result::Result<#item_type, tonic::Status>,
-                            ) -> ::core::result::Result<
-                                <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
-                                tonic::Status
-                            >,
-                    )
-                });
-                Ok(mapped)
-            }
-        },
-        true,
-    );
+
+    let (future_type, call_future) = if method.response_is_result {
+        let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
+        let call_future = wrap_async_block(
+            quote! {
+                async move {
+                    let response = <T as #trait_name>::#method_name(&inner, request).await?;
+                    let mapped = response.map(|stream| {
+                        ::tonic::codegen::tokio_stream::StreamExt::map(
+                            stream,
+                            ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
+                                as fn(
+                                    ::core::result::Result<#item_type, tonic::Status>,
+                                ) -> ::core::result::Result<
+                                    <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                                    tonic::Status
+                                >,
+                        )
+                    });
+                    Ok(mapped)
+                }
+            },
+            true,
+        );
+        (future_type, call_future)
+    } else {
+        let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
+        let call_future = wrap_async_block(
+            quote! {
+                async move {
+                    let response = <T as #trait_name>::#method_name(&inner, request).await;
+                    let mapped = response.map(|stream| {
+                        ::tonic::codegen::tokio_stream::StreamExt::map(
+                            stream,
+                            ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
+                                as fn(
+                                    ::core::result::Result<#item_type, tonic::Status>,
+                                ) -> ::core::result::Result<
+                                    <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode,
+                                    tonic::Status
+                                >,
+                        )
+                    });
+                    Ok(mapped)
+                }
+            },
+            true,
+        );
+        (future_type, call_future)
+    };
 
     quote! {
         #route_path => {
