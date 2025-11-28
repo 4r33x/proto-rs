@@ -63,6 +63,7 @@ pub struct UnifiedProtoConfig {
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
     pub transparent: bool,
+    pub proto_generic_types: HashMap<String, Vec<Type>>,
 }
 
 #[derive(Clone)]
@@ -161,6 +162,36 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
+        } else if meta.path.is_ident("proto_generic_types") {
+            // Parse proto_generic_types = [K = [u64, u32], V = [String, u16]]
+            let value = meta.value()?;
+            let content;
+            syn::bracketed!(content in value);
+
+            while !content.is_empty() {
+                // Parse generic parameter name (e.g., K or V)
+                let param_name: syn::Ident = content.parse()?;
+
+                // Parse =
+                let _: syn::Token![=] = content.parse()?;
+
+                // Parse array of types
+                let types_content;
+                syn::bracketed!(types_content in content);
+                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> =
+                    types_content.parse_terminated(Type::parse, syn::Token![,])?;
+
+                config.proto_generic_types.insert(
+                    param_name.to_string(),
+                    types.into_iter().collect()
+                );
+
+                // Parse optional comma between assignments
+                if content.peek(syn::Token![,]) {
+                    let _: syn::Token![,] = content.parse()?;
+                }
+            }
+            return Ok(());
         }
         Ok(())
     });
@@ -316,6 +347,163 @@ fn extract_field_type_name(ty: &syn::Type) -> String {
 fn merge_field_imports(dest: &mut BTreeMap<String, BTreeSet<String>>, src: HashMap<String, Vec<String>>) {
     for (package, types) in src {
         dest.entry(package).or_default().extend(types);
+    }
+}
+
+/// Represents a concrete instantiation of generic types
+#[derive(Clone)]
+pub struct GenericTypeInstantiation {
+    /// The concrete type substitutions (e.g., K -> u64, V -> String)
+    pub substitutions: HashMap<String, Type>,
+    /// The suffix to append to the type name (e.g., "U64String")
+    pub name_suffix: String,
+}
+
+impl UnifiedProtoConfig {
+    /// Check if generic types are specified
+    pub fn has_generic_types(&self) -> bool {
+        !self.proto_generic_types.is_empty()
+    }
+
+    /// Compute all possible instantiations of generic types (Cartesian product)
+    pub fn compute_generic_instantiations(&self) -> Vec<GenericTypeInstantiation> {
+        if !self.has_generic_types() {
+            return vec![];
+        }
+
+        // Extract parameter names and their type options
+        let mut param_names: Vec<String> = self.proto_generic_types.keys().cloned().collect();
+        param_names.sort(); // Ensure consistent ordering
+
+        let type_options: Vec<Vec<Type>> = param_names
+            .iter()
+            .map(|name| self.proto_generic_types.get(name).unwrap().clone())
+            .collect();
+
+        // Compute Cartesian product
+        let combinations = cartesian_product(&type_options);
+
+        // Create instantiations
+        combinations
+            .into_iter()
+            .map(|types| {
+                let mut substitutions = HashMap::new();
+                let mut name_parts = Vec::new();
+
+                for (param_name, ty) in param_names.iter().zip(types.iter()) {
+                    substitutions.insert(param_name.clone(), ty.clone());
+                    name_parts.push(type_to_name_component(ty));
+                }
+
+                GenericTypeInstantiation {
+                    substitutions,
+                    name_suffix: name_parts.join(""),
+                }
+            })
+            .collect()
+    }
+}
+
+/// Compute Cartesian product of vectors
+fn cartesian_product<T: Clone>(lists: &[Vec<T>]) -> Vec<Vec<T>> {
+    if lists.is_empty() {
+        return vec![vec![]];
+    }
+
+    let mut result = vec![vec![]];
+
+    for list in lists {
+        let mut new_result = Vec::new();
+        for existing in &result {
+            for item in list {
+                let mut new_combination = existing.clone();
+                new_combination.push(item.clone());
+                new_result.push(new_combination);
+            }
+        }
+        result = new_result;
+    }
+
+    result
+}
+
+/// Convert a type to a name component for the generated proto message name
+fn type_to_name_component(ty: &Type) -> String {
+    match ty {
+        Type::Path(type_path) => {
+            // Get the last segment of the path
+            if let Some(segment) = type_path.path.segments.last() {
+                let base_name = segment.ident.to_string();
+
+                // Handle generic arguments (e.g., Vec<u8> -> VecU8)
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    let mut result = base_name;
+                    for arg in &args.args {
+                        if let syn::GenericArgument::Type(inner_ty) = arg {
+                            result.push_str(&type_to_name_component(inner_ty));
+                        }
+                    }
+                    return result;
+                }
+
+                base_name
+            } else {
+                "Unknown".to_string()
+            }
+        }
+        Type::Reference(type_ref) => {
+            // Skip reference and use inner type
+            type_to_name_component(&type_ref.elem)
+        }
+        _ => "Unknown".to_string(),
+    }
+}
+
+/// Substitute generic types in a Type with concrete types
+pub fn substitute_generic_types(ty: &Type, substitutions: &HashMap<String, Type>) -> Type {
+    match ty {
+        Type::Path(type_path) => {
+            let mut new_path = type_path.clone();
+
+            // Check if this is a simple generic parameter (e.g., K or V)
+            if type_path.path.segments.len() == 1 {
+                let segment = &type_path.path.segments[0];
+                if segment.arguments.is_empty() {
+                    let ident_str = segment.ident.to_string();
+                    if let Some(concrete_ty) = substitutions.get(&ident_str) {
+                        return concrete_ty.clone();
+                    }
+                }
+            }
+
+            // Recursively substitute in generic arguments
+            for segment in &mut new_path.path.segments {
+                if let syn::PathArguments::AngleBracketed(args) = &mut segment.arguments {
+                    for arg in &mut args.args {
+                        if let syn::GenericArgument::Type(inner_ty) = arg {
+                            *inner_ty = substitute_generic_types(inner_ty, substitutions);
+                        }
+                    }
+                }
+            }
+
+            Type::Path(new_path)
+        }
+        Type::Reference(type_ref) => {
+            let mut new_ref = type_ref.clone();
+            new_ref.elem = Box::new(substitute_generic_types(&type_ref.elem, substitutions));
+            Type::Reference(new_ref)
+        }
+        Type::Tuple(type_tuple) => {
+            let mut new_tuple = type_tuple.clone();
+            new_tuple.elems = new_tuple
+                .elems
+                .into_iter()
+                .map(|elem| substitute_generic_types(&elem, substitutions))
+                .collect();
+            Type::Tuple(new_tuple)
+        }
+        _ => ty.clone(),
     }
 }
 

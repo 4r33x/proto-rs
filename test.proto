@@ -1,0 +1,20 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package test;
+
+message MapWrapperStructu32String {
+  map<uint32, string> field_0 = 1;
+}
+
+message MapWrapperStructu32u16 {
+  map<uint32, uint32> field_0 = 1;
+}
+
+message MapWrapperStructu64String {
+  map<uint64, string> field_0 = 1;
+}
+
+message MapWrapperStructu64u16 {
+  map<uint64, uint32> field_0 = 1;
+}
+
