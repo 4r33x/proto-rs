@@ -119,6 +119,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ============================================================================
+// GENERIC TYPES EXAMPLE
+// ============================================================================
+// This section demonstrates the proto_generic_types feature
+
+use std::collections::HashMap;
+
+/// Generic struct that generates proto messages for all K,V combinations
+/// Generates:
+/// - MapWrapperU64String
+/// - MapWrapperU64U16
+/// - MapWrapperU32String
+/// - MapWrapperU32U16
+#[proto_message(
+    proto_path = "protos/gen_complex_proto/generic_types.proto",
+    proto_generic_types = [K = [u64, u32], V = [String, u16]]
+)]
+#[derive(Clone, Debug)]
+pub struct MapWrapper<K, V> {
+    #[proto(tag = 1)]
+    pub data: HashMap<K, V>,
+
+    #[proto(tag = 2)]
+    pub count: u32,
+}
+
+/// Generic enum example
+/// Generates:
+/// - GenericResultU64
+/// - GenericResultString
+#[proto_message(
+    proto_path = "protos/gen_complex_proto/generic_types.proto",
+    proto_generic_types = [T = [u64, String]]
+)]
+#[derive(Clone, Debug)]
+pub enum GenericResult<T> {
+    #[proto(tag = 1)]
+    Success { value: T },
+
+    #[proto(tag = 2)]
+    Error { message: String },
+}
+
 #[cfg(test)]
 mod tests {
     use tokio_stream::StreamExt;
@@ -145,6 +188,45 @@ mod tests {
         let mut res = client.rizz_uni(BarSub {}).await.unwrap().into_inner();
         while let Some(v) = res.next().await {
             println!("{:?}", v.unwrap())
+        }
+    }
+
+    #[test]
+    fn test_generic_types() {
+        // Test MapWrapper with different type combinations
+        // Note: The generic struct/enum definitions are preserved
+        // and proto messages are generated for all concrete type combinations
+        let mut map1: MapWrapper<u64, String> = MapWrapper {
+            data: HashMap::new(),
+            count: 0,
+        };
+        map1.data.insert(1, "hello".to_string());
+        map1.count = 1;
+        assert_eq!(map1.count, 1);
+        assert!(map1.data.contains_key(&1));
+
+        let mut map2: MapWrapper<u32, u16> = MapWrapper {
+            data: HashMap::new(),
+            count: 0,
+        };
+        map2.data.insert(1u32, 42u16);
+        map2.count = 1;
+        assert_eq!(map2.count, 1);
+        assert_eq!(map2.data.get(&1u32), Some(&42u16));
+
+        // Test GenericResult
+        let success: GenericResult<u64> = GenericResult::Success { value: 42 };
+        match success {
+            GenericResult::Success { value } => assert_eq!(value, 42),
+            _ => panic!("Expected Success"),
+        }
+
+        let error: GenericResult<String> = GenericResult::Error {
+            message: "test error".to_string(),
+        };
+        match error {
+            GenericResult::Error { message } => assert_eq!(message, "test error"),
+            _ => panic!("Expected Error"),
         }
     }
 }

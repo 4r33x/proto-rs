@@ -120,8 +120,21 @@ fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: U
         }
     }
 
-    let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
-    let original_item = sanitize_struct_for_generics(item_struct);
+    // Preserve the original item (struct or enum)
+    let original_item = match input.data {
+        Data::Struct(_) => {
+            let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
+            let sanitized = sanitize_struct_for_generics(item_struct);
+            quote! { #sanitized }
+        }
+        Data::Enum(_) => {
+            let item_enum: ItemEnum = syn::parse2(item_ts).expect("failed to parse enum");
+            let sanitized = sanitize_enum_for_generics(item_enum);
+            quote! { #sanitized }
+        }
+        _ => quote! {},
+    };
+
     let proto_imports = config.imports_mat;
 
     quote! {
@@ -183,6 +196,29 @@ fn sanitize_struct_for_generics(mut item: ItemStruct) -> ItemStruct {
             }
         }
         syn::Fields::Unit => {}
+    }
+    item
+}
+
+fn sanitize_enum_for_generics(mut item: ItemEnum) -> ItemEnum {
+    use unified_field_handler::strip_proto_attrs;
+
+    item.attrs = strip_proto_attrs(&item.attrs);
+    for variant in &mut item.variants {
+        variant.attrs = strip_proto_attrs(&variant.attrs);
+        match &mut variant.fields {
+            syn::Fields::Named(named) => {
+                for field in &mut named.named {
+                    field.attrs = strip_proto_attrs(&field.attrs);
+                }
+            }
+            syn::Fields::Unnamed(unnamed) => {
+                for field in &mut unnamed.unnamed {
+                    field.attrs = strip_proto_attrs(&field.attrs);
+                }
+            }
+            syn::Fields::Unit => {}
+        }
     }
     item
 }
