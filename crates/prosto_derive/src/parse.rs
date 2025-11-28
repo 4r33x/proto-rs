@@ -11,6 +11,7 @@ use syn::Data;
 use syn::ItemTrait;
 use syn::Lit;
 use syn::Type;
+use syn::Ident;
 use syn::parse::Parse;
 
 use crate::utils::parse_field_config;
@@ -63,6 +64,9 @@ pub struct UnifiedProtoConfig {
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
     pub transparent: bool,
+    /// Map from generic parameter name to list of concrete types
+    /// e.g., K -> [u64, u32], V -> [String, u16]
+    pub proto_generic_types: HashMap<String, Vec<Type>>,
 }
 
 #[derive(Clone)]
@@ -80,6 +84,28 @@ impl UnifiedProtoConfig {
             let imports = &self.imports_mat;
             self.imports_mat = quote::quote! { #imports #mat };
         }
+    }
+
+    /// Generate all combinations of generic type substitutions
+    /// Returns a vector of (Vec<(param_name, concrete_type)>, suffix) tuples
+    /// The suffix is used to generate unique type names (e.g., "U64String")
+    pub fn generate_generic_combinations(&self) -> Vec<(Vec<(String, Type)>, String)> {
+        if self.proto_generic_types.is_empty() {
+            return vec![];
+        }
+
+        let mut param_names = Vec::new();
+        let mut param_types: Vec<&Vec<Type>> = Vec::new();
+
+        for (name, types) in &self.proto_generic_types {
+            param_names.push(name.clone());
+            param_types.push(types);
+        }
+
+        // Generate cartesian product
+        let mut combinations = Vec::new();
+        generate_combinations_recursive(&param_names, &param_types, &mut vec![], &mut combinations);
+        combinations
     }
 
     /// Parse configuration from attributes and extract all imports
@@ -161,6 +187,29 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
+        } else if meta.path.is_ident("proto_generic_types") {
+            // Parse proto_generic_types = [K = [u64, u32], V = [String, u16]]
+            let value = meta.value()?;
+            let content;
+            syn::bracketed!(content in value);
+
+            // Parse comma-separated assignments: K = [types], V = [types]
+            while !content.is_empty() {
+                let param_name: Ident = content.parse()?;
+                let _eq: syn::Token![=] = content.parse()?;
+
+                // Parse the array of types
+                let types_content;
+                syn::bracketed!(types_content in content);
+                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> =
+                    types_content.parse_terminated(Type::parse, syn::Token![,])?;
+
+                config.proto_generic_types.insert(param_name.to_string(), types.into_iter().collect());
+
+                // Try to parse comma separator (if not at end)
+                let _ = content.parse::<syn::Token![,]>();
+            }
+            return Ok(());
         }
         Ok(())
     });
@@ -214,6 +263,36 @@ fn is_reference_sun(ty: &Type) -> bool {
         Type::Group(group) => is_reference_sun(&group.elem),
         Type::Paren(paren) => is_reference_sun(&paren.elem),
         _ => false,
+    }
+}
+
+/// Helper function to generate all combinations of generic type substitutions recursively
+fn generate_combinations_recursive(
+    param_names: &[String],
+    param_types: &[&Vec<Type>],
+    current: &mut Vec<(String, Type)>,
+    results: &mut Vec<(Vec<(String, Type)>, String)>,
+) {
+    if current.len() == param_names.len() {
+        // Generate suffix from type names
+        let suffix = current
+            .iter()
+            .map(|(_, ty)| {
+                extract_type_ident(ty)
+                    .unwrap_or_else(|| "Unknown".to_string())
+                    .replace("::", "")
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        results.push((current.clone(), suffix));
+        return;
+    }
+
+    let idx = current.len();
+    for ty in param_types[idx].iter() {
+        current.push((param_names[idx].clone(), ty.clone()));
+        generate_combinations_recursive(param_names, param_types, current, results);
+        current.pop();
     }
 }
 
