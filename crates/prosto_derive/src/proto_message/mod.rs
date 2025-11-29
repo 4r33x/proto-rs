@@ -146,8 +146,8 @@ fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: U
         #proto_imports
 
         // NOTE: Proto files have been generated for all generic type combinations.
-        // The generic types have TYPE_ID and PROTO_TYPE_NAME associated constants
-        // that can be used for runtime dispatching in RPC methods.
+        // The generic types have TYPE_ID and PROTO_TYPE_NAME associated constants.
+        // For proto serialization, use the concrete types directly in RPC methods.
     }
     .into()
 }
@@ -252,6 +252,7 @@ fn generate_type_id_impls(
         #(#impls)*
     }
 }
+
 
 fn sanitize_struct_for_generics(mut item: ItemStruct) -> ItemStruct {
     use unified_field_handler::strip_proto_attrs;
