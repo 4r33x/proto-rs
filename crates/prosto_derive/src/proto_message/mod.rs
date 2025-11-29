@@ -135,16 +135,19 @@ fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: U
         _ => quote! {},
     };
 
+    // Generate associated const implementations for type identification
+    let type_id_impls = generate_type_id_impls(&input.ident, &input.generics, &instantiations);
+
     let proto_imports = config.imports_mat;
 
     quote! {
         #original_item
+        #type_id_impls
         #proto_imports
 
         // NOTE: Proto files have been generated for all generic type combinations.
-        // To use serialization, you can:
-        // 1. Create concrete wrapper types for each combination, OR
-        // 2. Manually implement ProtoWire/ProtoExt for specific instantiations
+        // The generic types have TYPE_ID and PROTO_TYPE_NAME associated constants
+        // that can be used for runtime dispatching in RPC methods.
     }
     .into()
 }
@@ -178,6 +181,52 @@ fn substitute_enum_variants(
         variant.fields = substitute_fields(&variant.fields, substitutions);
     }
     new_data
+}
+
+fn generate_type_id_impls(
+    type_name: &syn::Ident,
+    generics: &syn::Generics,
+    instantiations: &[crate::parse::GenericTypeInstantiation],
+) -> TokenStream2 {
+    let impls: Vec<_> = instantiations
+        .iter()
+        .map(|inst| {
+            let type_id = &inst.name_suffix;
+            let proto_type_name = format!("{}{}", type_name, type_id);
+
+            // Build concrete type arguments
+            let concrete_args: Vec<_> = generics
+                .params
+                .iter()
+                .filter_map(|param| {
+                    if let syn::GenericParam::Type(type_param) = param {
+                        let param_name = type_param.ident.to_string();
+                        inst.substitutions.get(&param_name).cloned()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if concrete_args.is_empty() {
+                return quote! {};
+            }
+
+            quote! {
+                impl #type_name<#(#concrete_args),*> {
+                    /// Type identifier for this generic instantiation
+                    pub const TYPE_ID: &'static str = #type_id;
+
+                    /// Proto message name for this generic instantiation
+                    pub const PROTO_TYPE_NAME: &'static str = #proto_type_name;
+                }
+            }
+        })
+        .collect();
+
+    quote! {
+        #(#impls)*
+    }
 }
 
 fn sanitize_struct_for_generics(mut item: ItemStruct) -> ItemStruct {

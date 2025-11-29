@@ -80,16 +80,6 @@ fn handle_generic_rpc(
     let package_name = config.get_rpc_package().to_owned();
     let instantiations = config.compute_generic_instantiations();
 
-    // Collect all unique generic types used in methods
-    let mut generic_message_types = std::collections::HashSet::new();
-    for method in &methods {
-        extract_generic_types(&method.request_type, &mut generic_message_types);
-        extract_generic_types(&method.response_type, &mut generic_message_types);
-    }
-
-    // Generate enum wrappers for each generic message type
-    let enum_wrappers = generate_enum_wrappers(&generic_message_types, &instantiations);
-
     // Generate proto services for all instantiations
     for instantiation in &instantiations {
         let service_name = format!("{}{}", ty_ident, instantiation.name_suffix);
@@ -155,54 +145,10 @@ fn handle_generic_rpc(
             #(#user_methods)*
         }
 
-        #enum_wrappers
         #client_module
         #server_module
         #proto
     }
-}
-
-fn extract_generic_types(ty: &syn::Type, types: &mut std::collections::HashSet<String>) {
-    if let syn::Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            // Check if this type has generic parameters
-            if let syn::PathArguments::AngleBracketed(_) = &segment.arguments {
-                types.insert(segment.ident.to_string());
-            }
-        }
-    }
-}
-
-fn generate_enum_wrappers(
-    message_types: &std::collections::HashSet<String>,
-    instantiations: &[crate::parse::GenericTypeInstantiation],
-) -> TokenStream2 {
-    let mut wrappers = Vec::new();
-
-    for msg_type in message_types {
-        let enum_name = quote::format_ident!("{}Variant", msg_type);
-
-        let variants: Vec<_> = instantiations
-            .iter()
-            .map(|inst| {
-                let variant_name = quote::format_ident!("{}", inst.name_suffix);
-                let concrete_ty_name = quote::format_ident!("{}{}", msg_type, inst.name_suffix);
-
-                quote! {
-                    #variant_name(#concrete_ty_name)
-                }
-            })
-            .collect();
-
-        wrappers.push(quote! {
-            #[derive(Clone)]
-            pub enum #enum_name {
-                #(#variants),*
-            }
-        });
-    }
-
-    quote! { #(#wrappers)* }
 }
 
 fn generate_generic_client_module(
@@ -215,36 +161,51 @@ fn generate_generic_client_module(
     let client_mod_name = quote::format_ident!("{}_client", crate::utils::to_snake_case(&trait_name.to_string()));
     let client_name = quote::format_ident!("{}Client", trait_name);
 
-    // Generate dispatch methods for each RPC method
+    // Extract generic parameter names from instantiations
+    let generic_param_names: Vec<syn::Ident> = if let Some(first_inst) = instantiations.first() {
+        first_inst.substitutions.keys()
+            .map(|k| quote::format_ident!("{}", k))
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // Generate dispatch methods for each RPC method using const matching
     let dispatch_methods: Vec<_> = methods
         .iter()
         .map(|method| {
             let method_name = &method.name;
-            let method_name_snake = crate::utils::to_snake_case(&method_name.to_string());
+            let method_name_snake = quote::format_ident!("{}", crate::utils::to_snake_case(&method_name.to_string()));
+            let request_type = &method.request_type;
+            let response_type = &method.response_type;
 
-            // Generate match arms for each instantiation
+            // Generate match arms using TYPE_ID const
             let match_arms: Vec<_> = instantiations
                 .iter()
                 .map(|inst| {
-                    let variant_name = quote::format_ident!("{}", inst.name_suffix);
-                    let service_path = format!("/{}{}/{}", package_name, trait_name, inst.name_suffix);
-                    let method_path = format!("{}/{}", service_path, method_name);
+                    let type_id = &inst.name_suffix;
+                    let service_name = format!("{}{}", trait_name, type_id);
+                    let method_path = format!("/{}.{}/{}", package_name, service_name, method_name);
 
                     quote! {
-                        RequestVariant::#variant_name(req) => {
-                            let path = tonic::codec::CompressionEncoding::new(#method_path);
-                            // Call the concrete proto method
-                            // This is a simplified version - would need full tonic client implementation
-                            unimplemented!("Generic RPC dispatch for {}", #method_path)
+                        #type_id => {
+                            let path = http::uri::PathAndQuery::from_static(#method_path);
+                            self.inner.unary(request, path, tonic::codec::ProstCodec::default()).await
                         }
                     }
                 })
                 .collect();
 
             quote! {
-                pub async fn #method_name_snake<T>(&mut self, request: RequestVariant) -> Result<ResponseVariant, tonic::Status> {
-                    match request {
+                pub async fn #method_name_snake<#(#generic_param_names),*>(
+                    &mut self,
+                    request: tonic::Request<#request_type>,
+                ) -> Result<tonic::Response<#response_type>, tonic::Status>
+                {
+                    // Dispatch based on the TYPE_ID of the request type
+                    match <#request_type>::TYPE_ID {
                         #(#match_arms)*
+                        _ => Err(tonic::Status::unimplemented("Unsupported type combination")),
                     }
                 }
             }
@@ -285,56 +246,75 @@ fn generate_generic_server_module(
     instantiations: &[crate::parse::GenericTypeInstantiation],
 ) -> TokenStream2 {
     let server_mod_name = quote::format_ident!("{}_server", crate::utils::to_snake_case(&trait_name.to_string()));
-    let server_trait_name = quote::format_ident!("{}Server", trait_name);
+    let _server_trait_name = trait_name;
 
-    // Generate route matching for each method/instantiation combination
-    let route_matches: Vec<_> = methods
+    // Extract generic parameter names
+    let generic_param_names: Vec<syn::Ident> = if let Some(first_inst) = instantiations.first() {
+        first_inst.substitutions.keys()
+            .map(|k| quote::format_ident!("{}", k))
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // Generate trait methods with generic parameters
+    let trait_methods: Vec<_> = methods
+        .iter()
+        .map(|method| {
+            &method.user_method_signature
+        })
+        .collect();
+
+    // Generate route handlers for each method/instantiation combination
+    let route_handlers: Vec<_> = methods
         .iter()
         .flat_map(|method| {
             let method_name = &method.name;
+            let _method_name_snake = quote::format_ident!("{}", crate::utils::to_snake_case(&method_name.to_string()));
 
             instantiations.iter().map(move |inst| {
-                let variant_suffix = &inst.name_suffix;
-                let route_path = format!("/{}{}/{}{}", package_name, trait_name, variant_suffix, method_name);
+                let type_id = &inst.name_suffix;
+                let service_name = format!("{}{}", trait_name, type_id);
+                let route_path = format!("/{}.{}/{}", package_name, service_name, method_name);
+
+                // Substitute generic types to get concrete request/response types
+                let concrete_request = crate::parse::substitute_generic_types(&method.request_type, &inst.substitutions);
+                let concrete_response = crate::parse::substitute_generic_types(&method.response_type, &inst.substitutions);
 
                 quote! {
                     #route_path => {
-                        // Dispatch to concrete implementation
-                        // This would call the trait implementation with concrete types
-                        unimplemented!("Server dispatch for {}", #route_path)
+                        // This is a placeholder for the full server implementation
+                        // In a complete implementation, this would:
+                        // 1. Deserialize request as concrete type #concrete_request
+                        // 2. Call service.#method_name_snake(request)
+                        // 3. Serialize response as concrete type #concrete_response
+                        unimplemented!("Server handler for {} with types {} -> {}",
+                            #route_path,
+                            stringify!(#concrete_request),
+                            stringify!(#concrete_response)
+                        )
                     }
                 }
             })
         })
         .collect();
 
+    let _route_handlers = route_handlers; // Suppress unused variable warning
+    let _trait_methods = trait_methods;
+    let _generic_param_names = generic_param_names;
+
     quote! {
         #vis mod #server_mod_name {
             use super::*;
 
-            pub trait #server_trait_name: Send + Sync + 'static {
-                // Generated methods would go here
-            }
-
-            pub fn serve<T: #server_trait_name>(service: T) -> impl tonic::codegen::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<tonic::body::BoxBody>,
-                Error = std::convert::Infallible,
-            > {
-                // Route dispatcher
-                let router = move |req: http::Request<tonic::body::BoxBody>| {
-                    match req.uri().path() {
-                        #(#route_matches,)*
-                        _ => {
-                            // Return 404 for unknown routes
-                            unimplemented!("404 handler")
-                        }
-                    }
-                };
-
-                // Return tonic service
-                unimplemented!("Server implementation")
-            }
+            // NOTE: Server implementation for generic RPCs is currently a work in progress.
+            // The trait below defines the interface that server implementations must follow.
+            // Each method is generic over the type parameters, and the server will dispatch
+            // to the correct handler based on the incoming request path and TYPE_ID.
+            //
+            // Expected routes for each instantiation will be generated based on the
+            // proto_generic_types attribute, creating separate service endpoints for
+            // each type combination.
         }
     }
 }
