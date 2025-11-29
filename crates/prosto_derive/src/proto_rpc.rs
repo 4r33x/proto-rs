@@ -27,40 +27,67 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let package_name = config.get_rpc_package().to_owned();
 
     // Extract methods, types, and imports
-    let (mut methods, user_associated_types) = extract_methods_and_types(&input);
+    let (methods, user_associated_types) = extract_methods_and_types(&input);
 
-    // Expand methods with generic types if proto_generic_types is specified
-    if !config.proto_generic_types.is_empty() {
-        methods = expand_generic_methods(&methods, &config);
-    }
+    // For generic types, we keep the trait methods generic but expand in server/client
+    let expanded_methods = if !config.proto_generic_types.is_empty() {
+        expand_generic_methods(&methods, &config)
+    } else {
+        methods.clone()
+    };
 
-    // Generate .proto file if requested
-    let service_content = generate_service_content(trait_name, &methods, &config.type_imports);
+    // Generate .proto file if requested (use expanded methods for proto)
+    let service_content = generate_service_content(trait_name, &expanded_methods, &config.type_imports);
     config.register_and_emit_proto(&ty_ident, &service_content);
     let proto = config.imports_mat.clone();
 
     // Generate user-facing trait
-    let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();
+    let user_trait_def = if !config.proto_generic_types.is_empty() {
+        // For generic traits, add type parameter(s) to the trait itself
+        let generic_param_names: Vec<_> = config.proto_generic_types.keys().map(|k| {
+            syn::Ident::new(k, proc_macro2::Span::call_site())
+        }).collect();
 
-    // Generate client module if requested
+        let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();
+
+        quote! {
+            #vis trait #trait_name<#(#generic_param_names),*> {
+                #(#user_associated_types)*
+                #(#user_methods)*
+            }
+        }
+    } else {
+        let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();
+        quote! {
+            #vis trait #trait_name {
+                #(#user_associated_types)*
+                #(#user_methods)*
+            }
+        }
+    };
+
+    // Generate client module if requested (use expanded methods)
     let client_module = if config.rpc_client {
-        generate_client_module(trait_name, vis, &package_name, &methods)
+        generate_client_module(trait_name, vis, &package_name, &expanded_methods)
     } else {
         quote! {}
     };
 
-    // Generate server module if requested
+    // Generate server module if requested (use expanded methods, include info about generics)
     let server_module = if config.rpc_server {
-        generate_server_module(trait_name, vis, &package_name, &methods)
+        if !config.proto_generic_types.is_empty() {
+            // Pass mapping from expanded methods to their generic types
+            let combinations = config.generate_generic_combinations();
+            generate_server_module_generic(trait_name, vis, &package_name, &methods, &expanded_methods, &combinations)
+        } else {
+            generate_server_module(trait_name, vis, &package_name, &expanded_methods)
+        }
     } else {
         quote! {}
     };
 
     quote! {
-        #vis trait #trait_name {
-            #(#user_associated_types)*
-            #(#user_methods)*
-        }
+        #user_trait_def
 
         #client_module
         #server_module
@@ -223,4 +250,35 @@ fn substitute_type(ty: &Type, substitutions: &[(String, Type)]) -> Type {
     substitutor.visit_type_mut(&mut ty);
 
     ty
+}
+
+/// Generate server module for generic traits
+fn generate_server_module_generic(
+    trait_name: &syn::Ident,
+    vis: &syn::Visibility,
+    package_name: &str,
+    original_methods: &[MethodInfo],
+    expanded_methods: &[MethodInfo],
+    combinations: &[(Vec<(String, Type)>, String)],
+) -> TokenStream2 {
+    // For each expanded method, we need to know:
+    // 1. Which original method it came from
+    // 2. Which generic type substitution it uses
+
+    // Map expanded methods back to their original + substitution
+    let methods_per_original = expanded_methods.len() / original_methods.len();
+    let method_mapping: Vec<_> = expanded_methods.iter().enumerate().map(|(idx, expanded)| {
+        let original_idx = idx / methods_per_original;
+        let combo_idx = idx % methods_per_original;
+        (expanded, &original_methods[original_idx], &combinations[combo_idx])
+    }).collect();
+
+    // Generate server module with modified blanket impl
+    server::generate_server_module_with_generic_mapping(
+        trait_name,
+        vis,
+        package_name,
+        expanded_methods,
+        &method_mapping,
+    )
 }

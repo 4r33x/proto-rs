@@ -371,13 +371,15 @@ async fn proto_client_accepts_borrowed_requests() {
 
 // ==================== Generic Types Tests ====================
 // Tests that generic type expansion works in proto_rpc macro
-// The macro generates concrete implementations for all type combinations
+// The trait uses generic type parameter T, allowing a single generic implementation
 
 use encoding_messages::PairU32SampleEnum;
 use encoding_messages::PairU64String;
 
-// This demonstrates generic type expansion - the macro will generate
-// two concrete methods: echo_pair_pairu64string and echo_pair_pairu32sampleenum
+// This demonstrates generic type expansion:
+// - The trait is generic over T: trait GenericService<T>
+// - The server generates concrete RPC handlers for each T: echo_pair_pairu64string, echo_pair_pairu32sampleenum
+// - User implements the trait generically once
 #[proto_rpc(rpc_package = "generic_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/tests/generic_rpc.proto")]
 #[proto_imports(encoding = ["PairU64String", "PairU32SampleEnum"])]
 #[proto_generic_types = [T = [PairU64String, PairU32SampleEnum]]]
@@ -387,15 +389,14 @@ pub trait GenericService {
 
 struct GenericServerImpl;
 
-impl GenericService for GenericServerImpl {
-    async fn echo_pair_pairu64string(&self, request: Request<PairU64String>) -> Result<Response<PairU64String>, Status> {
-        let mut pair = request.into_inner();
-        pair.value = format!("Echo: {}", pair.value);
-        Ok(Response::new(pair))
-    }
-
-    async fn echo_pair_pairu32sampleenum(&self, request: Request<PairU32SampleEnum>) -> Result<Response<PairU32SampleEnum>, Status> {
+// Single generic implementation
+impl<T> GenericService<T> for GenericServerImpl
+where
+    T: proto_rs::ProtoWire + std::fmt::Debug + Clone + Send + 'static,
+{
+    async fn echo_pair(&self, request: Request<T>) -> Result<Response<T>, Status> {
         let pair = request.into_inner();
+        // Generic implementation that works for all T
         Ok(Response::new(pair))
     }
 }
@@ -432,7 +433,7 @@ async fn test_generic_pairu64string() {
     let response = client.echo_pair_pairu64string(tonic::Request::new(request.clone())).await.unwrap().into_inner();
 
     assert_eq!(response.key, 42);
-    assert_eq!(response.value, "Echo: test");
+    assert_eq!(response.value, "test");
 
     shutdown.send(()).unwrap();
     handle.await.unwrap().unwrap();

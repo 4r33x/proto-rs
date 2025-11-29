@@ -23,6 +23,235 @@ use crate::utils::to_pascal_case;
 // SERVER MODULE GENERATION
 // ============================================================================
 
+pub fn generate_server_module_with_generic_mapping(
+    trait_name: &syn::Ident,
+    vis: &syn::Visibility,
+    package_name: &str,
+    methods: &[MethodInfo],
+    method_mapping: &[(&MethodInfo, &MethodInfo, &(Vec<(String, syn::Type)>, String))],
+) -> TokenStream {
+    // For generic traits, we need to generate blanket impls that call the user's generic trait
+    let server_module = server_module_name(trait_name);
+    let server_struct = server_struct_name(trait_name);
+
+    let (trait_methods, associated_types) = generate_trait_components(methods);
+
+    // Generate blanket methods with generic trait calls
+    let blanket_methods: Vec<_> = method_mapping.iter().map(|(expanded, original, (substitutions, _))| {
+        generate_blanket_method_generic(expanded, original, substitutions, trait_name)
+    }).collect();
+
+    let blanket_types: Vec<_> = methods.iter().filter_map(|m| {
+        if is_streaming_method(m) {
+            Some(generate_blanket_stream_type(m, trait_name))
+        } else {
+            None
+        }
+    }).collect();
+
+    // Collect all unique generic trait bounds for the blanket impl
+    let mut generic_bounds = Vec::new();
+    let mut seen_signatures = std::collections::HashSet::new();
+    for (_, _, (substitutions, _)) in method_mapping {
+        let generic_types: Vec<_> = substitutions.iter().map(|(_, ty)| ty).collect();
+        let sig = quote::quote!(#(#generic_types),*).to_string();
+        if seen_signatures.insert(sig) {
+            generic_bounds.push(quote::quote! {
+                super::#trait_name<#(#generic_types),*>
+            });
+        }
+    }
+
+    let route_handlers = methods.iter().map(|m| generate_route_handler(m, package_name, trait_name)).collect::<Vec<_>>();
+
+    let service_name_value = format!("{package_name}.{trait_name}");
+    let compression_methods = generate_server_compression_methods();
+    let service_fields = generate_service_struct_fields();
+    let service_constructors = generate_service_constructors();
+    let service_future_type = associated_future_type(quote! { ::core::result::Result<Self::Response, Self::Error> }, false);
+    let call_future_body = wrap_async_block(
+        quote! {
+            async move {
+                match req.uri().path() {
+                    #(#route_handlers)*
+                    _ =>  {
+                        let mut response = http::Response::new(tonic::body::Body::default());
+                        let headers = response.headers_mut();
+                        headers.insert(
+                            tonic::Status::GRPC_STATUS,
+                            (tonic::Code::Unimplemented as i32).into(),
+                        );
+                        headers.insert(
+                            http::header::CONTENT_TYPE,
+                            tonic::metadata::GRPC_CONTENT_TYPE,
+                        );
+                        Ok(response)
+                    },
+                }
+            }
+        },
+        true,
+    );
+
+    quote! {
+        #vis mod #server_module {
+            #![allow(
+                unused_variables,
+                dead_code,
+                missing_docs,
+                clippy::wildcard_imports,
+                clippy::let_unit_value
+            )]
+            use tonic::codegen::*;
+            use super::*;
+
+            pub trait #trait_name: ::core::marker::Send + ::core::marker::Sync + 'static {
+                #(#associated_types)*
+                #(#trait_methods)*
+            }
+
+            impl<T> #trait_name for T
+            where
+                T: #(#generic_bounds +)* ::core::marker::Send + ::core::marker::Sync + 'static,
+            {
+                #(#blanket_types)*
+                #(#blanket_methods)*
+            }
+
+            pub struct #server_struct<T> {
+                #service_fields
+            }
+
+            impl<T> #server_struct<T> {
+                #service_constructors
+
+                pub fn with_interceptor<F>(
+                    inner: T,
+                    interceptor: F,
+                ) -> InterceptedService<Self, F>
+                where
+                    F: tonic::service::Interceptor,
+                {
+                    InterceptedService::new(Self::new(inner), interceptor)
+                }
+
+                #compression_methods
+            }
+
+            impl<T> tonic::codegen::Service<http::Request<tonic::body::Body>> for #server_struct<T>
+            where
+                T: #trait_name,
+            {
+                type Response = http::Response<tonic::body::Body>;
+                type Error = ::core::convert::Infallible;
+                type Future = #service_future_type;
+
+                fn poll_ready(
+                    &mut self,
+                    _cx: &mut Context<'_>,
+                ) -> Poll<::core::result::Result<(), Self::Error>> {
+                    Poll::Ready(Ok(()))
+                }
+
+                fn call(&mut self, req: http::Request<tonic::body::Body>) -> Self::Future {
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    #call_future_body
+                }
+            }
+
+            impl<T> ::core::clone::Clone for #server_struct<T> {
+                fn clone(&self) -> Self {
+                    Self {
+                        inner: self.inner.clone(),
+                        accept_compression_encodings: self.accept_compression_encodings,
+                        send_compression_encodings: self.send_compression_encodings,
+                        max_decoding_message_size: self.max_decoding_message_size,
+                        max_encoding_message_size: self.max_encoding_message_size,
+                    }
+                }
+            }
+
+            impl<T> ::core::fmt::Debug for #server_struct<T> {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, #service_name_value)
+                }
+            }
+
+            pub const SERVICE_NAME: &str = #service_name_value;
+
+            impl<T> tonic::server::NamedService for #server_struct<T> {
+                const NAME: &'static str = SERVICE_NAME;
+            }
+        }
+    }
+}
+
+fn generate_blanket_method_generic(
+    expanded: &MethodInfo,
+    original: &MethodInfo,
+    substitutions: &[(String, syn::Type)],
+    trait_name: &syn::Ident,
+) -> TokenStream {
+    let expanded_method_name = &expanded.name;
+    let original_method_name = &original.name;
+    let request_type = &expanded.request_type;
+    let response_type = &expanded.response_type;
+    let response_return_type = &expanded.response_return_type;
+    let request_proto = generate_request_proto_type(request_type);
+    let response_proto = generate_response_proto_type(response_type);
+
+    // Build generic type parameters from substitutions
+    let generic_types: Vec<_> = substitutions.iter().map(|(_, ty)| ty).collect();
+
+    let request_conversion = generate_proto_to_native_request(request_type);
+    let await_suffix = if expanded.response_is_result {
+        quote! { .await? }
+    } else {
+        quote! { .await }
+    };
+
+    let future_type = method_future_return_type(quote! {
+        ::core::result::Result<
+            tonic::Response<
+                <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
+            >,
+            tonic::Status
+        >
+    });
+    let future_body = wrap_async_block(
+        quote! {
+            async move {
+                #request_conversion
+
+                let native_response = <Self as super::#trait_name<#(#generic_types),*>>::#original_method_name(
+                    self,
+                    native_request
+                )#await_suffix;
+
+                let response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::into_response(
+                    native_response
+                );
+
+                Ok(response)
+            }
+        },
+        false,
+    );
+
+    quote! {
+        fn #expanded_method_name(
+            &self,
+            request: tonic::Request<#request_proto>,
+        ) -> #future_type {
+            #future_body
+        }
+    }
+}
+
 pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo]) -> TokenStream {
     let server_module = server_module_name(trait_name);
     let server_struct = server_struct_name(trait_name);
