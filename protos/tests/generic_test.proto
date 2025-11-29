@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package generic_test;
+
+// Generic request messages for all type combinations
+message GenericRequestU64U32 {
+  uint64 key = 1;
+  uint32 value = 2;
+  int32 count = 3;
+}
+
+message GenericRequestU64I32 {
+  uint64 key = 1;
+  int32 value = 2;
+  int32 count = 3;
+}
+
+message GenericRequestStringU32 {
+  string key = 1;
+  uint32 value = 2;
+  int32 count = 3;
+}
+
+message GenericRequestStringI32 {
+  string key = 1;
+  int32 value = 2;
+  int32 count = 3;
+}
+
+// Generic response messages for all type combinations
+message GenericResponseU64U32 {
+  uint64 result = 1;
+  uint32 data = 2;
+  bool success = 3;
+}
+
+message GenericResponseU64I32 {
+  uint64 result = 1;
+  int32 data = 2;
+  bool success = 3;
+}
+
+message GenericResponseStringU32 {
+  string result = 1;
+  uint32 data = 2;
+  bool success = 3;
+}
+
+message GenericResponseStringI32 {
+  string result = 1;
+  int32 data = 2;
+  bool success = 3;
+}

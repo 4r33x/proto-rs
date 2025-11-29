@@ -119,6 +119,95 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ============================================================================
+// GENERIC TYPES EXAMPLE
+// ============================================================================
+// This section demonstrates the proto_generic_types feature
+
+use std::collections::HashMap;
+
+/// Generic struct that generates proto messages for all K,V combinations
+/// Generates:
+/// - MapWrapperU64String
+/// - MapWrapperU64U16
+/// - MapWrapperU32String
+/// - MapWrapperU32U16
+#[proto_message(
+    proto_path = "protos/gen_complex_proto/generic_types.proto",
+    proto_generic_types = [K = [u64, u32], V = [String, u16]]
+)]
+#[derive(Clone, Debug)]
+pub struct MapWrapper<K, V> {
+    #[proto(tag = 1)]
+    pub data: HashMap<K, V>,
+
+    #[proto(tag = 2)]
+    pub count: u32,
+}
+
+/// Generic enum example
+/// Generates:
+/// - GenericResultU64
+/// - GenericResultString
+#[proto_message(
+    proto_path = "protos/gen_complex_proto/generic_types.proto",
+    proto_generic_types = [T = [u64, String]]
+)]
+#[derive(Clone, Debug)]
+pub enum GenericResult<T> {
+    #[proto(tag = 1)]
+    Success { value: T },
+
+    #[proto(tag = 2)]
+    Error { message: String },
+}
+
+// ============================================================================
+// GENERIC RPC EXAMPLE
+// ============================================================================
+// This section demonstrates the proto_generic_types feature for message types
+// that would be used in RPC calls
+
+/// Generic RPC request type
+/// Generates proto messages for all K,V combinations with associated TYPE_ID constants
+#[proto_message(
+    proto_path = "protos/gen_complex_proto/generic_rpc.proto",
+    proto_generic_types = [K = [u64, String], V = [u32, u16]]
+)]
+#[derive(Clone, Debug)]
+pub struct GenericRequest<K, V> {
+    #[proto(tag = 1)]
+    pub key: K,
+
+    #[proto(tag = 2)]
+    pub value: V,
+}
+
+/// Generic RPC response type
+/// Generates proto messages for all K,V combinations with associated TYPE_ID constants
+#[proto_message(
+    proto_path = "protos/gen_complex_proto/generic_rpc.proto",
+    proto_generic_types = [K = [u64, String], V = [u32, u16]]
+)]
+#[derive(Clone, Debug)]
+pub struct GenericResponse<K, V> {
+    #[proto(tag = 1)]
+    pub result: K,
+
+    #[proto(tag = 2)]
+    pub metadata: V,
+}
+
+// NOTE: Full generic RPC trait support (with proto_generic_types on proto_rpc)
+// is a work in progress. The generated client/server code will dispatch based on
+// TYPE_ID constants to call the correct gRPC endpoint for each type combination.
+//
+// Example of how it would work:
+// - User creates GenericRequest<u64, u32> { key: 42, value: 100 }
+// - Client checks GenericRequest::<u64, u32>::TYPE_ID == "U64U32"
+// - Client dispatches to route "/package.ServiceU64U32/Method"
+// - Server receives request and dispatches back to generic trait implementation
+
 #[cfg(test)]
 mod tests {
     use tokio_stream::StreamExt;
@@ -146,5 +235,111 @@ mod tests {
         while let Some(v) = res.next().await {
             println!("{:?}", v.unwrap())
         }
+    }
+
+    #[test]
+    fn test_generic_types() {
+        // Test MapWrapper with different type combinations
+        // Note: The generic struct/enum definitions are preserved
+        // and proto messages are generated for all concrete type combinations
+        let mut map1: MapWrapper<u64, String> = MapWrapper {
+            data: HashMap::new(),
+            count: 0,
+        };
+        map1.data.insert(1, "hello".to_string());
+        map1.count = 1;
+        assert_eq!(map1.count, 1);
+        assert!(map1.data.contains_key(&1));
+
+        let mut map2: MapWrapper<u32, u16> = MapWrapper {
+            data: HashMap::new(),
+            count: 0,
+        };
+        map2.data.insert(1u32, 42u16);
+        map2.count = 1;
+        assert_eq!(map2.count, 1);
+        assert_eq!(map2.data.get(&1u32), Some(&42u16));
+
+        // Test GenericResult
+        let success: GenericResult<u64> = GenericResult::Success { value: 42 };
+        match success {
+            GenericResult::Success { value } => assert_eq!(value, 42),
+            _ => panic!("Expected Success"),
+        }
+
+        let error: GenericResult<String> = GenericResult::Error {
+            message: "test error".to_string(),
+        };
+        match error {
+            GenericResult::Error { message } => assert_eq!(message, "test error"),
+            _ => panic!("Expected Error"),
+        }
+    }
+
+    #[test]
+    fn test_generic_type_ids() {
+        // Test that TYPE_ID constants are generated for each generic instantiation
+        // This demonstrates the enum-based TYPE_ID approach used for RPC dispatching
+
+        // MapWrapper TYPE_IDs (now enums)
+        assert_eq!(MapWrapper::<u64, String>::TYPE_ID, MapWrapperTypeId::u64String);
+        assert_eq!(MapWrapper::<u64, u16>::TYPE_ID, MapWrapperTypeId::u64u16);
+        assert_eq!(MapWrapper::<u32, String>::TYPE_ID, MapWrapperTypeId::u32String);
+        assert_eq!(MapWrapper::<u32, u16>::TYPE_ID, MapWrapperTypeId::u32u16);
+
+        // PROTO_TYPE_NAME constants (still strings)
+        assert_eq!(MapWrapper::<u64, String>::PROTO_TYPE_NAME, "MapWrapperu64String");
+        assert_eq!(MapWrapper::<u32, u16>::PROTO_TYPE_NAME, "MapWrapperu32u16");
+
+        // GenericResult TYPE_IDs (now enums)
+        assert_eq!(GenericResult::<u64>::TYPE_ID, GenericResultTypeId::u64);
+        assert_eq!(GenericResult::<String>::TYPE_ID, GenericResultTypeId::String);
+
+        // GenericRequest TYPE_IDs (for RPC, now enums)
+        assert_eq!(GenericRequest::<u64, u32>::TYPE_ID, GenericRequestTypeId::u64u32);
+        assert_eq!(GenericRequest::<u64, u16>::TYPE_ID, GenericRequestTypeId::u64u16);
+        assert_eq!(GenericRequest::<String, u32>::TYPE_ID, GenericRequestTypeId::Stringu32);
+        assert_eq!(GenericRequest::<String, u16>::TYPE_ID, GenericRequestTypeId::Stringu16);
+
+        // GenericResponse TYPE_IDs (now enums)
+        assert_eq!(GenericResponse::<u64, u32>::TYPE_ID, GenericResponseTypeId::u64u32);
+        assert_eq!(GenericResponse::<String, u16>::TYPE_ID, GenericResponseTypeId::Stringu16);
+
+        println!("All TYPE_ID constants are correctly generated!");
+        println!("TYPE_ID is now an enum for type-safe matching!");
+    }
+
+    #[test]
+    fn test_generic_rpc_usage() {
+        // This test demonstrates how users can work directly with generic types
+        // No wrapper enums needed - just use the generic types directly
+
+        // Create a request with concrete types
+        let _request1: GenericRequest<u64, u32> = GenericRequest {
+            key: 42,
+            value: 100,
+        };
+
+        // The TYPE_ID constant (now an enum) allows the RPC layer to dispatch correctly
+        assert_eq!(GenericRequest::<u64, u32>::TYPE_ID, GenericRequestTypeId::u64u32);
+
+        // Create another request with different concrete types
+        let _request2: GenericRequest<String, u16> = GenericRequest {
+            key: "hello".to_string(),
+            value: 256,
+        };
+
+        assert_eq!(GenericRequest::<String, u16>::TYPE_ID, GenericRequestTypeId::Stringu16);
+
+        // In the actual RPC client/server code, the dispatch now uses enum matching:
+        // match request_type::TYPE_ID {
+        //     GenericRequestTypeId::u64u32 => call("/generic_rpc.GenericRpcu64u32/GenericProcess"),
+        //     GenericRequestTypeId::Stringu16 => call("/generic_rpc.GenericRpcStringu16/GenericProcess"),
+        //     ...
+        // }
+        // This provides type safety and compile-time exhaustiveness checking!
+
+        println!("request1 TYPE_ID: {:?}", GenericRequest::<u64, u32>::TYPE_ID);
+        println!("request2 TYPE_ID: {:?}", GenericRequest::<String, u16>::TYPE_ID);
     }
 }

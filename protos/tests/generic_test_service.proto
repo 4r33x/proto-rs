@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package generic_test;
+
+import "generic_test.proto";
+
+service GenericTestService {
+  rpc ProcessU64U32(GenericRequestU64U32) returns (GenericResponseU64U32);
+  rpc ProcessU64I32(GenericRequestU64I32) returns (GenericResponseU64I32);
+  rpc ProcessStringU32(GenericRequestStringU32) returns (GenericResponseStringU32);
+  rpc ProcessStringI32(GenericRequestStringI32) returns (GenericResponseStringI32);
+}

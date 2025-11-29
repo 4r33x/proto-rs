@@ -13,6 +13,7 @@ fn main() -> io::Result<()> {
             "../../protos/tests/complex_rpc.proto",
             "../../protos/tests/encoding.proto",
             "../../protos/tests/advanced_features.proto",
+            "../../protos/tests/generic_test_service.proto",
         ],
         &["../../protos/ref_proto", "../../protos/tests"],
     )
