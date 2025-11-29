@@ -307,6 +307,21 @@ impl From<&ZeroCopyContainerProst> for ZeroCopyContainer {
     }
 }
 
+// Test types for generic RPC (concrete versions)
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct PairU64String {
+    pub key: u64,
+    pub value: String,
+}
+
+#[proto_message(proto_path = "protos/tests/encoding.proto")]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct PairU32SampleEnum {
+    pub key: u32,
+    pub value: SampleEnum,
+}
+
 pub fn sample_message() -> SampleMessage {
     SampleMessage {
         id: 42,

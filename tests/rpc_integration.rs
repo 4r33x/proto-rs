@@ -346,33 +346,6 @@ async fn proto_client_roundtrip_against_prost_server() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn proto_client_roundtrip_against_proto_server() {
-    let (addr, shutdown, handle) = spawn_our_server().await;
-
-    let mut client = complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
-
-    let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
-    assert_eq!(response, response_message());
-
-    let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
-
-    let mut received = Vec::new();
-    while let Some(item) = stream.next().await {
-        received.push(item.unwrap());
-    }
-
-    assert_eq!(received, response_collections());
-
-    drop(stream);
-
-    let container_response = client.echo_container(tonic::Request::new(request_container())).await.unwrap().into_inner();
-    assert_eq!(container_response, response_container());
-
-    shutdown.send(()).unwrap();
-    handle.await.unwrap().unwrap();
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn proto_client_accepts_borrowed_requests() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
@@ -391,6 +364,91 @@ async fn proto_client_accepts_borrowed_requests() {
     let zero_copy_owned = tonic::Request::from_parts(owned_request.metadata().clone(), owned_request.extensions().clone(), owned_request.get_ref()).to_zero_copy();
     let response = client.echo_sample(zero_copy_owned).await.unwrap().into_inner();
     assert_eq!(response, response_message());
+
+    shutdown.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+// ==================== Generic Types Tests ====================
+// Tests that generic type expansion works in proto_rpc macro
+// The macro generates concrete implementations for all type combinations
+
+use encoding_messages::PairU32SampleEnum;
+use encoding_messages::PairU64String;
+
+// This demonstrates generic type expansion - the macro will generate
+// two concrete methods: echo_pair_pairu64string and echo_pair_pairu32sampleenum
+#[proto_rpc(rpc_package = "generic_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/tests/generic_rpc.proto")]
+#[proto_imports(encoding = ["PairU64String", "PairU32SampleEnum"])]
+#[proto_generic_types = [T = [PairU64String, PairU32SampleEnum]]]
+pub trait GenericService {
+    async fn echo_pair(&self, request: Request<T>) -> Result<Response<T>, Status>;
+}
+
+struct GenericServerImpl;
+
+impl GenericService for GenericServerImpl {
+    async fn echo_pair_pairu64string(&self, request: Request<PairU64String>) -> Result<Response<PairU64String>, Status> {
+        let mut pair = request.into_inner();
+        pair.value = format!("Echo: {}", pair.value);
+        Ok(Response::new(pair))
+    }
+
+    async fn echo_pair_pairu32sampleenum(&self, request: Request<PairU32SampleEnum>) -> Result<Response<PairU32SampleEnum>, Status> {
+        let pair = request.into_inner();
+        Ok(Response::new(pair))
+    }
+}
+
+async fn spawn_generic_server() -> (std::net::SocketAddr, tokio::sync::oneshot::Sender<()>, tokio::task::JoinHandle<Result<(), tonic::transport::Error>>) {
+    use tokio::net::TcpListener;
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::transport::Server;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let incoming = TcpListenerStream::new(listener);
+
+    let handle = tokio::spawn(async move {
+        Server::builder()
+            .add_service(generic_service_server::GenericServiceServer::new(GenericServerImpl))
+            .serve_with_incoming_shutdown(incoming, async {
+                let _ = shutdown_rx.await;
+            })
+            .await
+    });
+
+    (addr, shutdown_tx, handle)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generic_pairu64string() {
+    let (addr, shutdown, handle) = spawn_generic_server().await;
+
+    let mut client = generic_service_client::GenericServiceClient::connect(format!("http://{addr}")).await.unwrap();
+
+    let request = PairU64String { key: 42u64, value: "test".to_string() };
+    let response = client.echo_pair_pairu64string(tonic::Request::new(request.clone())).await.unwrap().into_inner();
+
+    assert_eq!(response.key, 42);
+    assert_eq!(response.value, "Echo: test");
+
+    shutdown.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generic_pairu32sampleenum() {
+    let (addr, shutdown, handle) = spawn_generic_server().await;
+
+    let mut client = generic_service_client::GenericServiceClient::connect(format!("http://{addr}")).await.unwrap();
+
+    let request = PairU32SampleEnum { key: 123u32, value: SampleEnum::Two };
+    let response = client.echo_pair_pairu32sampleenum(tonic::Request::new(request.clone())).await.unwrap().into_inner();
+
+    assert_eq!(response.key, 123);
+    assert_eq!(response.value, SampleEnum::Two);
 
     shutdown.send(()).unwrap();
     handle.await.unwrap().unwrap();

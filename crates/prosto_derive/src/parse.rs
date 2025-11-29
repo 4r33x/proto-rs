@@ -11,7 +11,6 @@ use syn::Data;
 use syn::ItemTrait;
 use syn::Lit;
 use syn::Type;
-use syn::Ident;
 use syn::parse::Parse;
 
 use crate::utils::parse_field_config;
@@ -117,6 +116,9 @@ impl UnifiedProtoConfig {
             parse_attr_params(attr, &mut config);
         }
 
+        // Extract proto_generic_types from item-level attributes (e.g., #[proto_generic_types = [...]])
+        extract_proto_generic_types(item_attrs, &mut config);
+
         // Extract imports from item-level attributes
         let mut all_imports = extract_item_imports(item_attrs);
 
@@ -187,29 +189,6 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
-        } else if meta.path.is_ident("proto_generic_types") {
-            // Parse proto_generic_types = [K = [u64, u32], V = [String, u16]]
-            let value = meta.value()?;
-            let content;
-            syn::bracketed!(content in value);
-
-            // Parse comma-separated assignments: K = [types], V = [types]
-            while !content.is_empty() {
-                let param_name: Ident = content.parse()?;
-                let _eq: syn::Token![=] = content.parse()?;
-
-                // Parse the array of types
-                let types_content;
-                syn::bracketed!(types_content in content);
-                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> =
-                    types_content.parse_terminated(Type::parse, syn::Token![,])?;
-
-                config.proto_generic_types.insert(param_name.to_string(), types.into_iter().collect());
-
-                // Try to parse comma separator (if not at end)
-                let _ = content.parse::<syn::Token![,]>();
-            }
-            return Ok(());
         }
         Ok(())
     });
@@ -293,6 +272,50 @@ fn generate_combinations_recursive(
         current.push((param_names[idx].clone(), ty.clone()));
         generate_combinations_recursive(param_names, param_types, current, results);
         current.pop();
+    }
+}
+
+/// Extract `proto_generic_types` from item attributes
+/// Example: #[proto_generic_types = [K = [u64, u32], V = [String, u16]]]
+fn extract_proto_generic_types(item_attrs: &[Attribute], config: &mut UnifiedProtoConfig) {
+    for attr in item_attrs {
+        if !attr.path().is_ident("proto_generic_types") {
+            continue;
+        }
+
+        // Parse the attribute value
+        if let syn::Meta::NameValue(meta_name_value) = &attr.meta {
+            if let syn::Expr::Array(outer_array) = &meta_name_value.value {
+                // Parse array of assignments: K = [u64, u32], V = [String, u16]
+                for elem in &outer_array.elems {
+                    if let syn::Expr::Assign(assign) = elem {
+                        // Get parameter name (left side)
+                        if let syn::Expr::Path(path) = &*assign.left {
+                            if let Some(param_ident) = path.path.get_ident() {
+                                let param_name = param_ident.to_string();
+
+                                // Get types array (right side)
+                                if let syn::Expr::Array(types_array) = &*assign.right {
+                                    let mut types = Vec::new();
+                                    for type_elem in &types_array.elems {
+                                        if let syn::Expr::Path(type_path) = type_elem {
+                                            types.push(Type::Path(syn::TypePath {
+                                                qself: None,
+                                                path: type_path.path.clone(),
+                                            }));
+                                        }
+                                    }
+
+                                    if !types.is_empty() {
+                                        config.proto_generic_types.insert(param_name, types);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

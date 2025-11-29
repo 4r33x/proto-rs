@@ -124,51 +124,18 @@ fn substitute_generics(
     let new_request_type = substitute_type(&method.request_type, substitutions);
     let new_response_type = substitute_type(&method.response_type, substitutions);
     let new_response_return_type = substitute_type(&method.response_return_type, substitutions);
-
-    // Regenerate the user method signature with the new types
-    let new_user_method_signature = if method.is_streaming {
-        let stream_name = method.stream_type_name.as_ref().expect("streaming method must have stream name");
-        if method.response_is_result {
-            quote! {
-                fn #new_name(
-                    &self,
-                    request: tonic::Request<#new_request_type>,
-                ) -> impl ::core::future::Future<Output = ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status>> + ::core::marker::Send + '_
-                where
-                    Self: ::core::marker::Send + ::core::marker::Sync;
-            }
-        } else {
-            quote! {
-                fn #new_name(
-                    &self,
-                    request: tonic::Request<#new_request_type>,
-                ) -> impl ::core::future::Future<Output = tonic::Response<Self::#stream_name>> + ::core::marker::Send + '_
-                where
-                    Self: ::core::marker::Send + ::core::marker::Sync;
-            }
-        }
-    } else if method.response_is_result {
-        quote! {
-            fn #new_name(
-                &self,
-                request: tonic::Request<#new_request_type>,
-            ) -> impl ::core::future::Future<Output = ::core::result::Result<#new_response_return_type, tonic::Status>> + ::core::marker::Send + '_
-            where
-                Self: ::core::marker::Send + ::core::marker::Sync;
-        }
-    } else {
-        quote! {
-            fn #new_name(
-                &self,
-                request: tonic::Request<#new_request_type>,
-            ) -> impl ::core::future::Future<Output = #new_response_return_type> + ::core::marker::Send + '_
-            where
-                Self: ::core::marker::Send + ::core::marker::Sync;
-        }
-    };
-
     let new_inner_response_type = method.inner_response_type.as_ref().map(|ty| substitute_type(ty, substitutions));
     let new_stream_item_type = method.stream_item_type.as_ref().map(|ty| substitute_type(ty, substitutions));
+
+    // Reuse the method signature generation logic
+    let new_user_method_signature = generate_method_signature(
+        &new_name,
+        &new_request_type,
+        &new_response_return_type,
+        method.response_is_result,
+        method.is_streaming,
+        method.stream_type_name.as_ref(),
+    );
 
     MethodInfo {
         name: new_name,
@@ -181,6 +148,42 @@ fn substitute_generics(
         inner_response_type: new_inner_response_type,
         stream_item_type: new_stream_item_type,
         user_method_signature: new_user_method_signature,
+    }
+}
+
+/// Generate a method signature (reused for both generic and non-generic methods)
+fn generate_method_signature(
+    method_name: &syn::Ident,
+    request_type: &Type,
+    response_return_type: &Type,
+    response_is_result: bool,
+    is_streaming: bool,
+    stream_type_name: Option<&syn::Ident>,
+) -> TokenStream2 {
+    use utils::method_future_return_type;
+
+    let future_output = if is_streaming {
+        let stream_name = stream_type_name.expect("streaming method must define stream name");
+        if response_is_result {
+            quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
+        } else {
+            quote! { tonic::Response<Self::#stream_name> }
+        }
+    } else if response_is_result {
+        quote! { ::core::result::Result<#response_return_type, tonic::Status> }
+    } else {
+        quote! { #response_return_type }
+    };
+
+    let future_type = method_future_return_type(future_output);
+
+    quote! {
+        fn #method_name(
+            &self,
+            request: tonic::Request<#request_type>,
+        ) -> #future_type
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
     }
 }
 
