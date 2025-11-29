@@ -279,33 +279,34 @@ mod tests {
     #[test]
     fn test_generic_type_ids() {
         // Test that TYPE_ID constants are generated for each generic instantiation
-        // This demonstrates the associated const approach used for RPC dispatching
+        // This demonstrates the enum-based TYPE_ID approach used for RPC dispatching
 
-        // MapWrapper TYPE_IDs
-        assert_eq!(MapWrapper::<u64, String>::TYPE_ID, "u64String");
-        assert_eq!(MapWrapper::<u64, u16>::TYPE_ID, "u64u16");
-        assert_eq!(MapWrapper::<u32, String>::TYPE_ID, "u32String");
-        assert_eq!(MapWrapper::<u32, u16>::TYPE_ID, "u32u16");
+        // MapWrapper TYPE_IDs (now enums)
+        assert_eq!(MapWrapper::<u64, String>::TYPE_ID, MapWrapperTypeId::u64String);
+        assert_eq!(MapWrapper::<u64, u16>::TYPE_ID, MapWrapperTypeId::u64u16);
+        assert_eq!(MapWrapper::<u32, String>::TYPE_ID, MapWrapperTypeId::u32String);
+        assert_eq!(MapWrapper::<u32, u16>::TYPE_ID, MapWrapperTypeId::u32u16);
 
-        // PROTO_TYPE_NAME constants
+        // PROTO_TYPE_NAME constants (still strings)
         assert_eq!(MapWrapper::<u64, String>::PROTO_TYPE_NAME, "MapWrapperu64String");
         assert_eq!(MapWrapper::<u32, u16>::PROTO_TYPE_NAME, "MapWrapperu32u16");
 
-        // GenericResult TYPE_IDs
-        assert_eq!(GenericResult::<u64>::TYPE_ID, "u64");
-        assert_eq!(GenericResult::<String>::TYPE_ID, "String");
+        // GenericResult TYPE_IDs (now enums)
+        assert_eq!(GenericResult::<u64>::TYPE_ID, GenericResultTypeId::u64);
+        assert_eq!(GenericResult::<String>::TYPE_ID, GenericResultTypeId::String);
 
-        // GenericRequest TYPE_IDs (for RPC)
-        assert_eq!(GenericRequest::<u64, u32>::TYPE_ID, "u64u32");
-        assert_eq!(GenericRequest::<u64, u16>::TYPE_ID, "u64u16");
-        assert_eq!(GenericRequest::<String, u32>::TYPE_ID, "Stringu32");
-        assert_eq!(GenericRequest::<String, u16>::TYPE_ID, "Stringu16");
+        // GenericRequest TYPE_IDs (for RPC, now enums)
+        assert_eq!(GenericRequest::<u64, u32>::TYPE_ID, GenericRequestTypeId::u64u32);
+        assert_eq!(GenericRequest::<u64, u16>::TYPE_ID, GenericRequestTypeId::u64u16);
+        assert_eq!(GenericRequest::<String, u32>::TYPE_ID, GenericRequestTypeId::Stringu32);
+        assert_eq!(GenericRequest::<String, u16>::TYPE_ID, GenericRequestTypeId::Stringu16);
 
-        // GenericResponse TYPE_IDs
-        assert_eq!(GenericResponse::<u64, u32>::TYPE_ID, "u64u32");
-        assert_eq!(GenericResponse::<String, u16>::TYPE_ID, "Stringu16");
+        // GenericResponse TYPE_IDs (now enums)
+        assert_eq!(GenericResponse::<u64, u32>::TYPE_ID, GenericResponseTypeId::u64u32);
+        assert_eq!(GenericResponse::<String, u16>::TYPE_ID, GenericResponseTypeId::Stringu16);
 
         println!("All TYPE_ID constants are correctly generated!");
+        println!("TYPE_ID is now an enum for type-safe matching!");
     }
 
     #[test]
@@ -319,8 +320,8 @@ mod tests {
             value: 100,
         };
 
-        // The TYPE_ID constant allows the RPC layer to dispatch correctly
-        assert_eq!(GenericRequest::<u64, u32>::TYPE_ID, "u64u32");
+        // The TYPE_ID constant (now an enum) allows the RPC layer to dispatch correctly
+        assert_eq!(GenericRequest::<u64, u32>::TYPE_ID, GenericRequestTypeId::u64u32);
 
         // Create another request with different concrete types
         let _request2: GenericRequest<String, u16> = GenericRequest {
@@ -328,16 +329,17 @@ mod tests {
             value: 256,
         };
 
-        assert_eq!(GenericRequest::<String, u16>::TYPE_ID, "Stringu16");
+        assert_eq!(GenericRequest::<String, u16>::TYPE_ID, GenericRequestTypeId::Stringu16);
 
-        // In the actual RPC client/server code, the dispatch would look like:
+        // In the actual RPC client/server code, the dispatch now uses enum matching:
         // match request_type::TYPE_ID {
-        //     "u64u32" => call("/generic_rpc.GenericRpcu64u32/GenericProcess"),
-        //     "Stringu16" => call("/generic_rpc.GenericRpcStringu16/GenericProcess"),
+        //     GenericRequestTypeId::u64u32 => call("/generic_rpc.GenericRpcu64u32/GenericProcess"),
+        //     GenericRequestTypeId::Stringu16 => call("/generic_rpc.GenericRpcStringu16/GenericProcess"),
         //     ...
         // }
+        // This provides type safety and compile-time exhaustiveness checking!
 
-        println!("request1 TYPE_ID: {}", GenericRequest::<u64, u32>::TYPE_ID);
-        println!("request2 TYPE_ID: {}", GenericRequest::<String, u16>::TYPE_ID);
+        println!("request1 TYPE_ID: {:?}", GenericRequest::<u64, u32>::TYPE_ID);
+        println!("request2 TYPE_ID: {:?}", GenericRequest::<String, u16>::TYPE_ID);
     }
 }

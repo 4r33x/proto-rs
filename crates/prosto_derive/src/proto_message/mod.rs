@@ -188,11 +188,34 @@ fn generate_type_id_impls(
     generics: &syn::Generics,
     instantiations: &[crate::parse::GenericTypeInstantiation],
 ) -> TokenStream2 {
+    if instantiations.is_empty() {
+        return quote! {};
+    }
+
+    // Generate enum for TYPE_ID
+    let enum_name = quote::format_ident!("{}TypeId", type_name);
+    let enum_variants: Vec<_> = instantiations
+        .iter()
+        .map(|inst| {
+            let variant_name = quote::format_ident!("{}", inst.name_suffix);
+            quote! { #variant_name }
+        })
+        .collect();
+
+    let enum_def = quote! {
+        /// Type identifier enum for generic instantiations
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum #enum_name {
+            #(#enum_variants),*
+        }
+    };
+
+    // Generate impl blocks for each instantiation
     let impls: Vec<_> = instantiations
         .iter()
         .map(|inst| {
-            let type_id = &inst.name_suffix;
-            let proto_type_name = format!("{}{}", type_name, type_id);
+            let variant_name = quote::format_ident!("{}", inst.name_suffix);
+            let proto_type_name = format!("{}{}", type_name, inst.name_suffix);
 
             // Build concrete type arguments
             let concrete_args: Vec<_> = generics
@@ -215,7 +238,7 @@ fn generate_type_id_impls(
             quote! {
                 impl #type_name<#(#concrete_args),*> {
                     /// Type identifier for this generic instantiation
-                    pub const TYPE_ID: &'static str = #type_id;
+                    pub const TYPE_ID: #enum_name = #enum_name::#variant_name;
 
                     /// Proto message name for this generic instantiation
                     pub const PROTO_TYPE_NAME: &'static str = #proto_type_name;
@@ -225,6 +248,7 @@ fn generate_type_id_impls(
         .collect();
 
     quote! {
+        #enum_def
         #(#impls)*
     }
 }

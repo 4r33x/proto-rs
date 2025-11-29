@@ -1,6 +1,4 @@
 use proto_rs::proto_message;
-use proto_rs::proto_rpc;
-use tonic::{Request, Response, Status};
 
 /// Generic request type with proto_generic_types attribute
 /// This generates proto messages for all K,V combinations
@@ -38,12 +36,20 @@ pub struct GoonPong<K, V> {
 // - Client dispatches to "/sigma_rpc.SigmaRpcu64String/RizzPingGeneric"
 
 fn main() {
-    // Demonstrate TYPE_ID constants
-    println!("Generic RPC example with TYPE_ID constants:");
-    println!("RizzPing<u64, String>::TYPE_ID = {}", RizzPing::<u64, String>::TYPE_ID);
-    println!("RizzPing<u64, u16>::TYPE_ID = {}", RizzPing::<u64, u16>::TYPE_ID);
-    println!("RizzPing<u32, String>::TYPE_ID = {}", RizzPing::<u32, String>::TYPE_ID);
-    println!("RizzPing<u32, u16>::TYPE_ID = {}", RizzPing::<u32, u16>::TYPE_ID);
+    // Demonstrate TYPE_ID enums (now type-safe!)
+    println!("Generic RPC example with TYPE_ID enums:");
+    println!("RizzPing<u64, String>::TYPE_ID = {:?}", RizzPing::<u64, String>::TYPE_ID);
+    println!("RizzPing<u64, u16>::TYPE_ID = {:?}", RizzPing::<u64, u16>::TYPE_ID);
+    println!("RizzPing<u32, String>::TYPE_ID = {:?}", RizzPing::<u32, String>::TYPE_ID);
+    println!("RizzPing<u32, u16>::TYPE_ID = {:?}", RizzPing::<u32, u16>::TYPE_ID);
 
     println!("\nGoonPong<u64, String>::PROTO_TYPE_NAME = {}", GoonPong::<u64, String>::PROTO_TYPE_NAME);
+
+    // Demonstrate enum matching (type-safe!)
+    match RizzPing::<u64, String>::TYPE_ID {
+        RizzPingTypeId::u64String => println!("\nMatched RizzPing<u64, String> using enum!"),
+        RizzPingTypeId::u64u16 => println!("u64, u16"),
+        RizzPingTypeId::u32String => println!("u32, String"),
+        RizzPingTypeId::u32u16 => println!("u32, u16"),
+    }
 }

@@ -179,16 +179,30 @@ fn generate_generic_client_module(
             let request_type = &method.request_type;
             let response_type = &method.response_type;
 
-            // Generate match arms using TYPE_ID const
+            // Get the request type name for the TypeId enum
+            let request_type_name = match request_type {
+                syn::Type::Path(type_path) => {
+                    if let Some(segment) = type_path.path.segments.last() {
+                        &segment.ident
+                    } else {
+                        return quote! {};
+                    }
+                }
+                _ => return quote! {},
+            };
+
+            let type_id_enum = quote::format_ident!("{}TypeId", request_type_name);
+
+            // Generate match arms using TYPE_ID const (now an enum)
             let match_arms: Vec<_> = instantiations
                 .iter()
                 .map(|inst| {
-                    let type_id = &inst.name_suffix;
-                    let service_name = format!("{}{}", trait_name, type_id);
+                    let type_id_variant = quote::format_ident!("{}", inst.name_suffix);
+                    let service_name = format!("{}{}", trait_name, inst.name_suffix);
                     let method_path = format!("/{}.{}/{}", package_name, service_name, method_name);
 
                     quote! {
-                        #type_id => {
+                        #type_id_enum::#type_id_variant => {
                             let path = http::uri::PathAndQuery::from_static(#method_path);
                             self.inner.unary(request, path, tonic::codec::ProstCodec::default()).await
                         }
@@ -202,10 +216,9 @@ fn generate_generic_client_module(
                     request: tonic::Request<#request_type>,
                 ) -> Result<tonic::Response<#response_type>, tonic::Status>
                 {
-                    // Dispatch based on the TYPE_ID of the request type
+                    // Dispatch based on the TYPE_ID of the request type (enum matching)
                     match <#request_type>::TYPE_ID {
                         #(#match_arms)*
-                        _ => Err(tonic::Status::unimplemented("Unsupported type combination")),
                     }
                 }
             }
@@ -246,16 +259,7 @@ fn generate_generic_server_module(
     instantiations: &[crate::parse::GenericTypeInstantiation],
 ) -> TokenStream2 {
     let server_mod_name = quote::format_ident!("{}_server", crate::utils::to_snake_case(&trait_name.to_string()));
-    let _server_trait_name = trait_name;
-
-    // Extract generic parameter names
-    let generic_param_names: Vec<syn::Ident> = if let Some(first_inst) = instantiations.first() {
-        first_inst.substitutions.keys()
-            .map(|k| quote::format_ident!("{}", k))
-            .collect()
-    } else {
-        vec![]
-    };
+    let server_struct_name = quote::format_ident!("{}Server", trait_name);
 
     // Generate trait methods with generic parameters
     let trait_methods: Vec<_> = methods
@@ -270,51 +274,193 @@ fn generate_generic_server_module(
         .iter()
         .flat_map(|method| {
             let method_name = &method.name;
-            let _method_name_snake = quote::format_ident!("{}", crate::utils::to_snake_case(&method_name.to_string()));
+            let svc_suffix = crate::utils::to_pascal_case(&method_name.to_string());
 
             instantiations.iter().map(move |inst| {
                 let type_id = &inst.name_suffix;
                 let service_name = format!("{}{}", trait_name, type_id);
                 let route_path = format!("/{}.{}/{}", package_name, service_name, method_name);
+                let svc_name = quote::format_ident!("{}{}Svc", svc_suffix, type_id);
 
                 // Substitute generic types to get concrete request/response types
                 let concrete_request = crate::parse::substitute_generic_types(&method.request_type, &inst.substitutions);
                 let concrete_response = crate::parse::substitute_generic_types(&method.response_type, &inst.substitutions);
 
+                // Generate the route handler
                 quote! {
                     #route_path => {
-                        // This is a placeholder for the full server implementation
-                        // In a complete implementation, this would:
-                        // 1. Deserialize request as concrete type #concrete_request
-                        // 2. Call service.#method_name_snake(request)
-                        // 3. Serialize response as concrete type #concrete_response
-                        unimplemented!("Server handler for {} with types {} -> {}",
-                            #route_path,
-                            stringify!(#concrete_request),
-                            stringify!(#concrete_response)
-                        )
+                        #[allow(non_camel_case_types)]
+                        struct #svc_name<T: #trait_name>(pub ::std::sync::Arc<T>);
+
+                        impl<T: #trait_name> tonic::server::UnaryService<#concrete_request> for #svc_name<T> {
+                            type Response = #concrete_response;
+                            type Future = ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<tonic::Response<Self::Response>, tonic::Status>> + Send + 'static>>;
+
+                            fn call(&mut self, request: tonic::Request<#concrete_request>) -> Self::Future {
+                                let inner = ::std::sync::Arc::clone(&self.0);
+                                Box::pin(async move {
+                                    <T as #trait_name>::#method_name(&*inner, request).await
+                                })
+                            }
+                        }
+
+                        let method = #svc_name(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
                     }
                 }
             })
         })
         .collect();
 
-    let _route_handlers = route_handlers; // Suppress unused variable warning
-    let _trait_methods = trait_methods;
-    let _generic_param_names = generic_param_names;
+    let service_name_value = format!("{}.{}", package_name, trait_name);
 
     quote! {
         #vis mod #server_mod_name {
+            #![allow(
+                unused_variables,
+                dead_code,
+                missing_docs,
+                clippy::wildcard_imports,
+                clippy::let_unit_value
+            )]
+            use tonic::codegen::*;
             use super::*;
 
-            // NOTE: Server implementation for generic RPCs is currently a work in progress.
-            // The trait below defines the interface that server implementations must follow.
-            // Each method is generic over the type parameters, and the server will dispatch
-            // to the correct handler based on the incoming request path and TYPE_ID.
-            //
-            // Expected routes for each instantiation will be generated based on the
-            // proto_generic_types attribute, creating separate service endpoints for
-            // each type combination.
+            pub trait #trait_name: ::core::marker::Send + ::core::marker::Sync + 'static {
+                #(#trait_methods)*
+            }
+
+            impl<T> #trait_name for T
+            where
+                T: super::#trait_name + ::core::marker::Send + ::core::marker::Sync + 'static,
+            {
+                #(#trait_methods)*
+            }
+
+            #[derive(Debug)]
+            pub struct #server_struct_name<T> {
+                inner: ::std::sync::Arc<T>,
+                accept_compression_encodings: tonic::codegen::CompressionEncoding,
+                send_compression_encodings: tonic::codegen::CompressionEncoding,
+                max_decoding_message_size: Option<usize>,
+                max_encoding_message_size: Option<usize>,
+            }
+
+            impl<T> #server_struct_name<T> {
+                pub fn new(inner: T) -> Self {
+                    Self {
+                        inner: ::std::sync::Arc::new(inner),
+                        accept_compression_encodings: Default::default(),
+                        send_compression_encodings: Default::default(),
+                        max_decoding_message_size: None,
+                        max_encoding_message_size: None,
+                    }
+                }
+
+                pub fn with_interceptor<F>(
+                    inner: T,
+                    interceptor: F,
+                ) -> InterceptedService<Self, F>
+                where
+                    F: tonic::service::Interceptor,
+                {
+                    InterceptedService::new(Self::new(inner), interceptor)
+                }
+
+                pub fn accept_compressed(mut self, encoding: tonic::codegen::CompressionEncoding) -> Self {
+                    self.accept_compression_encodings.enable(encoding);
+                    self
+                }
+
+                pub fn send_compressed(mut self, encoding: tonic::codegen::CompressionEncoding) -> Self {
+                    self.send_compression_encodings.enable(encoding);
+                    self
+                }
+
+                pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+                    self.max_decoding_message_size = Some(limit);
+                    self
+                }
+
+                pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+                    self.max_encoding_message_size = Some(limit);
+                    self
+                }
+            }
+
+            impl<T, B> tonic::codegen::Service<http::Request<B>> for #server_struct_name<T>
+            where
+                T: #trait_name,
+                B: Body + ::core::marker::Send + 'static,
+                B::Error: Into<StdError> + ::core::marker::Send + 'static,
+            {
+                type Response = http::Response<tonic::body::Body>;
+                type Error = ::core::convert::Infallible;
+                type Future = ::std::pin::Pin<Box<dyn ::std::future::Future<Output = ::core::result::Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+                fn poll_ready(
+                    &mut self,
+                    _cx: &mut Context<'_>
+                ) -> Poll<::core::result::Result<(), Self::Error>> {
+                    Poll::Ready(Ok(()))
+                }
+
+                fn call(&mut self, req: http::Request<B>) -> Self::Future {
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+
+                    Box::pin(async move {
+                        match req.uri().path() {
+                            #(#route_handlers)*
+                            _ =>  {
+                                let mut response = http::Response::new(tonic::body::Body::default());
+                                let headers = response.headers_mut();
+                                headers.insert(
+                                    tonic::Status::GRPC_STATUS,
+                                    (tonic::Code::Unimplemented as i32).into(),
+                                );
+                                headers.insert(
+                                    http::header::CONTENT_TYPE,
+                                    tonic::metadata::GRPC_CONTENT_TYPE,
+                                );
+                                Ok(response)
+                            },
+                        }
+                    })
+                }
+            }
+
+            impl<T> Clone for #server_struct_name<T> {
+                fn clone(&self) -> Self {
+                    Self {
+                        inner: self.inner.clone(),
+                        accept_compression_encodings: self.accept_compression_encodings,
+                        send_compression_encodings: self.send_compression_encodings,
+                        max_decoding_message_size: self.max_decoding_message_size,
+                        max_encoding_message_size: self.max_encoding_message_size,
+                    }
+                }
+            }
+
+            pub const SERVICE_NAME: &str = #service_name_value;
+
+            impl<T> tonic::server::NamedService for #server_struct_name<T> {
+                const NAME: &'static str = SERVICE_NAME;
+            }
         }
     }
 }
