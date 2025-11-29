@@ -3,6 +3,7 @@
 
 #[cfg(feature = "stable")]
 use std::pin::Pin;
+use std::sync::Arc;
 
 use proto_rs::ToZeroCopyResponse;
 use proto_rs::ZeroCopyResponse;
@@ -42,6 +43,8 @@ pub trait SigmaRpc {
     async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
     async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
+    async fn rizz_ping_arced_resp(&self, request: Request<RizzPing>) -> Result<Response<Arc<GoonPong>>, Status>;
+    async fn rizz_ping_boxed_resp(&self, request: Request<RizzPing>) -> Result<Response<Box<GoonPong>>, Status>;
 }
 
 // A dummy server impl
@@ -90,6 +93,12 @@ impl SigmaRpc for S {
 
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {}))
+    }
+    async fn rizz_ping_arced_resp(&self, _req: Request<RizzPing>) -> Result<Response<Arc<GoonPong>>, Status> {
+        Ok(Response::new(Arc::new(GoonPong {})))
+    }
+    async fn rizz_ping_boxed_resp(&self, _req: Request<RizzPing>) -> Result<Response<Box<GoonPong>>, Status> {
+        Ok(Response::new(Box::new(GoonPong {})))
     }
 
     async fn rizz_uni(&self, _request: Request<BarSub>) -> Response<Self::RizzUniStream> {
