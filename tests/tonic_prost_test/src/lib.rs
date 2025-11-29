@@ -16,3 +16,6 @@ pub mod complex_rpc {
 pub mod encoding {
     tonic::include_proto!("encoding");
 }
+pub mod generic_test {
+    tonic::include_proto!("generic_test");
+}
