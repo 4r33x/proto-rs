@@ -6,11 +6,13 @@ use syn::ItemTrait;
 mod client;
 pub mod rpc_common;
 mod server;
-pub mod utils; // Add this
+pub mod utils;
+pub mod generic_helpers;
 
 use client::generate_client_module;
 use server::generate_server_module;
-use utils::extract_methods_and_types; // Add this import
+use utils::extract_methods_and_types;
+use generic_helpers::generate_type_id_impls;
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
@@ -73,12 +75,53 @@ fn handle_generic_rpc(
     user_associated_types: Vec<TokenStream2>,
 ) -> TokenStream2 {
     use crate::utils::MethodInfo;
+    use generic_helpers::extract_generic_types_from_methods;
 
     let trait_name = &input.ident;
     let ty_ident = trait_name.to_string();
     let vis = &input.vis;
     let package_name = config.get_rpc_package().to_owned();
     let instantiations = config.compute_generic_instantiations();
+
+    // Extract all generic types used in the service
+    let generic_type_names = extract_generic_types_from_methods(&methods);
+
+    // Generate TYPE_ID implementations for all generic types used in the service
+    let mut type_id_impls = Vec::new();
+    for type_name in &generic_type_names {
+        // Create a minimal Generics for the type based on the instantiations
+        let generics: syn::Generics = {
+            if let Some(first_inst) = instantiations.first() {
+                let params: Vec<_> = first_inst
+                    .substitutions
+                    .keys()
+                    .map(|k| {
+                        let ident = quote::format_ident!("{}", k);
+                        syn::GenericParam::Type(syn::TypeParam {
+                            attrs: vec![],
+                            ident,
+                            colon_token: None,
+                            bounds: Default::default(),
+                            eq_token: None,
+                            default: None,
+                        })
+                    })
+                    .collect();
+
+                syn::Generics {
+                    lt_token: Some(Default::default()),
+                    params: params.into_iter().collect(),
+                    gt_token: Some(Default::default()),
+                    where_clause: None,
+                }
+            } else {
+                Default::default()
+            }
+        };
+
+        let type_id_impl = generate_type_id_impls(type_name, &generics, &instantiations);
+        type_id_impls.push(type_id_impl);
+    }
 
     // Generate proto services for all instantiations
     for instantiation in &instantiations {
@@ -139,12 +182,18 @@ fn handle_generic_rpc(
         quote! {}
     };
 
+    // Combine all TYPE_ID implementations
+    let all_type_ids = quote! {
+        #(#type_id_impls)*
+    };
+
     quote! {
         #vis trait #trait_name {
             #(#user_associated_types)*
             #(#user_methods)*
         }
 
+        #all_type_ids
         #client_module
         #server_module
         #proto

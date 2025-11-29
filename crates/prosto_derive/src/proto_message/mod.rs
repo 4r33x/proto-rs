@@ -12,7 +12,6 @@ use crate::emit_proto::generate_complex_enum_proto;
 use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
-use crate::parse::substitute_generic_types;
 
 mod complex_enums;
 mod enums;
@@ -30,7 +29,16 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let type_ident = input.ident.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
 
-    // Check if we have generic types specified
+    // If the type has generic parameters, just preserve it as-is without proto generation
+    // Unless proto_generic_types is specified, in which case generate .proto for all instantiations
+    if !input.generics.params.is_empty() && !config.has_generic_types() {
+        // Just return the original item without proto generation
+        // Concrete types or proto_generic_types specification needed for .proto generation
+        return quote! { #item_ts }.into();
+    }
+
+    // Handle generic types with proto_generic_types specified
+    // This generates .proto files for all instantiations
     if config.has_generic_types() {
         return handle_generic_types(input, item_ts, config);
     }
@@ -79,7 +87,11 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+// Helper functions for generic handling are in proto_rpc::generic_helpers
+
 fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: UnifiedProtoConfig) -> TokenStream {
+    use crate::proto_rpc::generic_helpers::{substitute_fields, substitute_enum_variants, generate_type_id_impls};
+
     let type_ident = input.ident.to_string();
     let instantiations = config.compute_generic_instantiations();
 
@@ -92,7 +104,7 @@ fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: U
                 let substituted_fields = substitute_fields(&data.fields, &instantiation.substitutions);
 
                 // Generate proto
-                let proto = generate_struct_proto(&concrete_name, &substituted_fields);
+                let proto = crate::emit_proto::generate_struct_proto(&concrete_name, &substituted_fields);
                 config.register_and_emit_proto(&concrete_name, &proto);
             }
         }
@@ -104,11 +116,11 @@ fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: U
 
                 // Generate proto
                 let proto = if is_simple_enum {
-                    generate_simple_enum_proto(&concrete_name, data)
+                    crate::emit_proto::generate_simple_enum_proto(&concrete_name, data)
                 } else {
                     // Substitute generic types in enum variants
                     let substituted_data = substitute_enum_variants(data, &instantiation.substitutions);
-                    generate_complex_enum_proto(&concrete_name, &substituted_data)
+                    crate::emit_proto::generate_complex_enum_proto(&concrete_name, &substituted_data)
                 };
                 config.register_and_emit_proto(&concrete_name, &proto);
             }
@@ -152,120 +164,18 @@ fn handle_generic_types(input: DeriveInput, item_ts: TokenStream2, mut config: U
     .into()
 }
 
-fn substitute_fields(fields: &Fields, substitutions: &std::collections::HashMap<String, syn::Type>) -> Fields {
-    match fields {
-        Fields::Named(named) => {
-            let mut new_fields = named.clone();
-            for field in &mut new_fields.named {
-                field.ty = substitute_generic_types(&field.ty, substitutions);
-            }
-            Fields::Named(new_fields)
-        }
-        Fields::Unnamed(unnamed) => {
-            let mut new_fields = unnamed.clone();
-            for field in &mut new_fields.unnamed {
-                field.ty = substitute_generic_types(&field.ty, substitutions);
-            }
-            Fields::Unnamed(new_fields)
-        }
-        Fields::Unit => Fields::Unit,
-    }
-}
-
-fn substitute_enum_variants(
-    data: &syn::DataEnum,
-    substitutions: &std::collections::HashMap<String, syn::Type>,
-) -> syn::DataEnum {
-    let mut new_data = data.clone();
-    for variant in &mut new_data.variants {
-        variant.fields = substitute_fields(&variant.fields, substitutions);
-    }
-    new_data
-}
-
-fn generate_type_id_impls(
-    type_name: &syn::Ident,
-    generics: &syn::Generics,
-    instantiations: &[crate::parse::GenericTypeInstantiation],
-) -> TokenStream2 {
-    if instantiations.is_empty() {
-        return quote! {};
-    }
-
-    // Generate enum for TYPE_ID
-    let enum_name = quote::format_ident!("{}TypeId", type_name);
-    let enum_variants: Vec<_> = instantiations
-        .iter()
-        .map(|inst| {
-            let variant_name = quote::format_ident!("{}", inst.name_suffix);
-            quote! { #variant_name }
-        })
-        .collect();
-
-    let enum_def = quote! {
-        /// Type identifier enum for generic instantiations
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum #enum_name {
-            #(#enum_variants),*
-        }
-    };
-
-    // Generate impl blocks for each instantiation
-    let impls: Vec<_> = instantiations
-        .iter()
-        .map(|inst| {
-            let variant_name = quote::format_ident!("{}", inst.name_suffix);
-            let proto_type_name = format!("{}{}", type_name, inst.name_suffix);
-
-            // Build concrete type arguments
-            let concrete_args: Vec<_> = generics
-                .params
-                .iter()
-                .filter_map(|param| {
-                    if let syn::GenericParam::Type(type_param) = param {
-                        let param_name = type_param.ident.to_string();
-                        inst.substitutions.get(&param_name).cloned()
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if concrete_args.is_empty() {
-                return quote! {};
-            }
-
-            quote! {
-                impl #type_name<#(#concrete_args),*> {
-                    /// Type identifier for this generic instantiation
-                    pub const TYPE_ID: #enum_name = #enum_name::#variant_name;
-
-                    /// Proto message name for this generic instantiation
-                    pub const PROTO_TYPE_NAME: &'static str = #proto_type_name;
-                }
-            }
-        })
-        .collect();
-
-    quote! {
-        #enum_def
-        #(#impls)*
-    }
-}
-
-
 fn sanitize_struct_for_generics(mut item: ItemStruct) -> ItemStruct {
     use unified_field_handler::strip_proto_attrs;
 
     item.attrs = strip_proto_attrs(&item.attrs);
     match &mut item.fields {
         syn::Fields::Named(named) => {
-            for field in &mut named.named {
+            for field in named.named.iter_mut() {
                 field.attrs = strip_proto_attrs(&field.attrs);
             }
         }
         syn::Fields::Unnamed(unnamed) => {
-            for field in &mut unnamed.unnamed {
+            for field in unnamed.unnamed.iter_mut() {
                 field.attrs = strip_proto_attrs(&field.attrs);
             }
         }
@@ -278,16 +188,16 @@ fn sanitize_enum_for_generics(mut item: ItemEnum) -> ItemEnum {
     use unified_field_handler::strip_proto_attrs;
 
     item.attrs = strip_proto_attrs(&item.attrs);
-    for variant in &mut item.variants {
+    for variant in item.variants.iter_mut() {
         variant.attrs = strip_proto_attrs(&variant.attrs);
         match &mut variant.fields {
             syn::Fields::Named(named) => {
-                for field in &mut named.named {
+                for field in named.named.iter_mut() {
                     field.attrs = strip_proto_attrs(&field.attrs);
                 }
             }
             syn::Fields::Unnamed(unnamed) => {
-                for field in &mut unnamed.unnamed {
+                for field in unnamed.unnamed.iter_mut() {
                     field.attrs = strip_proto_attrs(&field.attrs);
                 }
             }
@@ -296,3 +206,4 @@ fn sanitize_enum_for_generics(mut item: ItemEnum) -> ItemEnum {
     }
     item
 }
+
