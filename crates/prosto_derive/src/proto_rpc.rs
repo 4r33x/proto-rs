@@ -227,22 +227,65 @@ fn generate_generic_client_module(
 
     quote! {
         #vis mod #client_mod_name {
+            #![allow(
+                unused_variables,
+                dead_code,
+                missing_docs,
+                clippy::wildcard_imports,
+                clippy::let_unit_value
+            )]
+            use tonic::codegen::*;
             use super::*;
 
+            #[derive(Debug, Clone)]
             pub struct #client_name<T> {
                 inner: tonic::client::Grpc<T>,
             }
 
+            impl #client_name<tonic::transport::Channel> {
+                pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+                where
+                    D: TryInto<tonic::transport::Endpoint>,
+                    D::Error: Into<StdError>,
+                {
+                    let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+                    Ok(Self::new(conn))
+                }
+            }
+
             impl<T> #client_name<T>
             where
-                T: tonic::client::GrpcService<tonic::body::BoxBody>,
-                T::Error: Into<tonic::codegen::StdError>,
-                T::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + Send + 'static,
-                <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+                T: tonic::client::GrpcService<tonic::body::Body>,
+                T::Error: Into<StdError>,
+                T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + ::core::marker::Send + 'static,
+                <T::ResponseBody as Body>::Error: Into<StdError> + ::core::marker::Send,
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
                     Self { inner }
+                }
+
+                pub fn with_origin(inner: T, origin: http::Uri) -> Self {
+                    let inner = tonic::client::Grpc::with_origin(inner, origin);
+                    Self { inner }
+                }
+
+                pub fn with_interceptor<F>(
+                    inner: T,
+                    interceptor: F,
+                ) -> #client_name<InterceptedService<T, F>>
+                where
+                    F: tonic::service::Interceptor,
+                    T::ResponseBody: Default,
+                    T: tonic::codegen::Service<
+                        http::Request<tonic::body::Body>,
+                        Response = http::Response<
+                            <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                        >,
+                    >,
+                    <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + Send + Sync,
+                {
+                    #client_name::new(InterceptedService::new(inner, interceptor))
                 }
 
                 #(#dispatch_methods)*
@@ -350,17 +393,21 @@ fn generate_generic_server_module(
 
             #[derive(Debug)]
             pub struct #server_struct_name<T> {
-                inner: ::std::sync::Arc<T>,
-                accept_compression_encodings: tonic::codegen::CompressionEncoding,
-                send_compression_encodings: tonic::codegen::CompressionEncoding,
+                inner: ::proto_rs::alloc::sync::Arc<T>,
+                accept_compression_encodings: EnabledCompressionEncodings,
+                send_compression_encodings: EnabledCompressionEncodings,
                 max_decoding_message_size: Option<usize>,
                 max_encoding_message_size: Option<usize>,
             }
 
             impl<T> #server_struct_name<T> {
                 pub fn new(inner: T) -> Self {
+                    Self::from_arc(::proto_rs::alloc::sync::Arc::new(inner))
+                }
+
+                pub fn from_arc(inner: ::proto_rs::alloc::sync::Arc<T>) -> Self {
                     Self {
-                        inner: ::std::sync::Arc::new(inner),
+                        inner,
                         accept_compression_encodings: Default::default(),
                         send_compression_encodings: Default::default(),
                         max_decoding_message_size: None,
@@ -378,21 +425,25 @@ fn generate_generic_server_module(
                     InterceptedService::new(Self::new(inner), interceptor)
                 }
 
-                pub fn accept_compressed(mut self, encoding: tonic::codegen::CompressionEncoding) -> Self {
+                #[must_use]
+                pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
                     self.accept_compression_encodings.enable(encoding);
                     self
                 }
 
-                pub fn send_compressed(mut self, encoding: tonic::codegen::CompressionEncoding) -> Self {
+                #[must_use]
+                pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
                     self.send_compression_encodings.enable(encoding);
                     self
                 }
 
+                #[must_use]
                 pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
                     self.max_decoding_message_size = Some(limit);
                     self
                 }
 
+                #[must_use]
                 pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
                     self.max_encoding_message_size = Some(limit);
                     self
