@@ -314,13 +314,26 @@ fn generate_proto_ext_impl(
 
     let shadow_ty = quote! { #name #ty_generics };
     let post_decode_hooks = build_post_decode_hooks(fields);
-    let post_decode_impl = if post_decode_hooks.is_empty() {
+
+    // Generate message-level validation if validator is specified
+    let message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(&shadow)?;
+        }
+    } else {
+        quote! {}
+    };
+
+    let has_validation = config.validator.is_some();
+    let post_decode_impl = if post_decode_hooks.is_empty() && !has_validation {
         quote! {}
     } else {
         quote! {
             #[inline(always)]
             fn post_decode(mut shadow: Self::Shadow<'_>) -> Result<Self, ::proto_rs::DecodeError> {
                 #(#post_decode_hooks)*
+                #message_validation
                 ::proto_rs::ProtoShadow::to_sun(shadow)
             }
         }

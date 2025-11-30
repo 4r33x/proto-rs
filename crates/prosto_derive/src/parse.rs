@@ -63,6 +63,7 @@ pub struct UnifiedProtoConfig {
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
     pub transparent: bool,
+    pub validator: Option<String>,
 }
 
 #[derive(Clone)]
@@ -90,6 +91,9 @@ impl UnifiedProtoConfig {
         if !attr.is_empty() {
             parse_attr_params(attr, &mut config);
         }
+
+        // Extract validator from item-level #[proto(validator = ...)] attributes
+        config.validator = extract_item_validator(item_attrs);
 
         // Extract imports from item-level attributes
         let mut all_imports = extract_item_imports(item_attrs);
@@ -215,6 +219,50 @@ fn is_reference_sun(ty: &Type) -> bool {
         Type::Paren(paren) => is_reference_sun(&paren.elem),
         _ => false,
     }
+}
+
+/// Extract `validator` from item-level #[proto(validator = ...)] attributes
+pub fn extract_item_validator(item_attrs: &[Attribute]) -> Option<String> {
+    for attr in item_attrs {
+        if !attr.path().is_ident("proto") {
+            continue;
+        }
+
+        let mut validator = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("validator") {
+                let value_parser = meta.value()?;
+
+                // Try parsing as Expr which can be either a Lit or a Path
+                if let Ok(expr) = value_parser.parse::<syn::Expr>() {
+                    match expr {
+                        // Handle string literals: validator = "validate_fn"
+                        syn::Expr::Lit(expr_lit) => {
+                            if let syn::Lit::Str(s) = expr_lit.lit {
+                                validator = Some(s.value());
+                            }
+                        }
+                        // Handle paths: validator = validate_fn
+                        syn::Expr::Path(expr_path) => {
+                            let path_str = expr_path.path.segments.iter()
+                                .map(|seg| seg.ident.to_string())
+                                .collect::<Vec<_>>()
+                                .join("::");
+                            validator = Some(path_str);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        if validator.is_some() {
+            return validator;
+        }
+    }
+
+    None
 }
 
 /// Extract `proto_imports` from item attributes
