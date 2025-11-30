@@ -4,6 +4,7 @@
 #[cfg(feature = "stable")]
 use std::pin::Pin;
 
+use proto_rs::DecodeError;
 use proto_rs::ToZeroCopyResponse;
 use proto_rs::ZeroCopy;
 use proto_rs::ZeroCopyResponse;
@@ -38,9 +39,24 @@ pub struct RizzPing {
     status: ServiceStatus,
 }
 
+fn validate_id(id: &Id) -> Result<(), DecodeError> {
+    if id.id == 0 {
+        return Err(DecodeError::new("Bad id"));
+    }
+    Ok(())
+}
+fn validate_pong(id: &GoonPong) -> Result<(), DecodeError> {
+    if id.id.id == 0 {
+        return Err(DecodeError::new("Bad id"));
+    }
+    Ok(())
+}
+
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto(validator = validate_pong)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
+    #[proto(validator = validate_id)]
     id: Id,
     status: ZeroCopy<ServiceStatus>,
 }
