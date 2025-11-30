@@ -194,16 +194,23 @@ fn extract_response_return(sig: &syn::Signature) -> (Type, bool) {
 }
 
 fn extract_proto_type(success_ty: &Type) -> Type {
-    if let Type::Path(TypePath { path, .. }) = success_ty
-        && let Some(segment) = path.segments.last()
-        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-        && (segment.ident == "Response" || segment.ident == "ZeroCopyResponse")
-        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-    {
-        inner_ty.clone()
-    } else {
-        success_ty.clone()
+    let mut current = success_ty.clone();
+
+    loop {
+        if let Type::Path(TypePath { path, .. }) = &current
+            && let Some(segment) = path.segments.last()
+            && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+            && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+            && matches!(segment.ident.to_string().as_str(), "Response" | "ZeroCopyResponse" | "Box" | "Arc")
+        {
+            current = inner_ty.clone();
+            continue;
+        }
+
+        break;
     }
+
+    current
 }
 
 fn extract_stream_metadata(response_type: &Type, trait_items: &[TraitItem]) -> (bool, Option<syn::Ident>, Option<Type>, Option<Type>) {
@@ -291,6 +298,16 @@ mod tests {
                     request: tonic::Request<MyRequest>
                 ) -> Result<tonic::Response<Self::ZeroCopyStream>, tonic::Status>;
 
+                async fn arced(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<::std::sync::Arc<MyResponse>>, tonic::Status>;
+
+                async fn boxed(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<::std::boxed::Box<MyResponse>>, tonic::Status>;
+
                 async fn plain(
                     &self,
                     request: tonic::Request<MyRequest>
@@ -336,7 +353,17 @@ mod tests {
         let zero_item = zero_copy_stream.stream_item_type.as_ref().unwrap();
         assert_eq!(quote!(#zero_item).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
 
-        let plain = &signatures[4];
+        let arced = &signatures[4];
+        assert!(arced.response_is_result);
+        let arced_response = &arced.response_type;
+        assert_eq!(quote!(#arced_response).to_string(), "MyResponse");
+
+        let boxed = &signatures[5];
+        assert!(boxed.response_is_result);
+        let boxed_response = &boxed.response_type;
+        assert_eq!(quote!(#boxed_response).to_string(), "MyResponse");
+
+        let plain = &signatures[6];
         assert!(!plain.response_is_result);
         let plain_return = &plain.response_return_type;
         assert_eq!(quote!(#plain_return).to_string(), "MyResponse");

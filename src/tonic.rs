@@ -16,12 +16,15 @@ pub use resp::map_proto_stream_result;
 
 use crate::ProtoExt;
 use crate::ProtoShadow;
+use crate::alloc::boxed::Box;
+use crate::alloc::sync::Arc;
 use crate::coders::AsBytes;
 use crate::coders::BytesMode;
 use crate::coders::ProtoCodec;
 use crate::coders::ProtoDecoder;
 use crate::coders::ProtoEncoder;
 use crate::coders::SunByRef;
+use crate::coders::SunByRefDeref;
 use crate::coders::SunByVal;
 
 pub trait ToZeroCopyResponse<T> {
@@ -87,6 +90,26 @@ where
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         T::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+    }
+}
+
+impl<T> EncoderExt<Arc<T>, SunByRefDeref> for ProtoEncoder<Arc<T>, SunByRefDeref>
+where
+    T: ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+{
+    fn encode_sun(&mut self, item: Arc<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
+        T::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+    }
+}
+
+impl<T> EncoderExt<Box<T>, SunByRefDeref> for ProtoEncoder<Box<T>, SunByRefDeref>
+where
+    T: ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+{
+    fn encode_sun(&mut self, item: Box<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
+        T::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 

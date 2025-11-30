@@ -13,4 +13,6 @@ service SigmaRpc {
   rpc InfallibleZeroCopyPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
   rpc InfalliblePing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
   rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzPingArcedResp(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzPingBoxedResp(goon_types.RizzPing) returns (goon_types.GoonPong) {}
 }

@@ -7,6 +7,8 @@ use crate::BytesMode;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::SunByRef;
+use crate::alloc::boxed::Box;
+use crate::alloc::sync::Arc;
 use crate::tonic::ToZeroCopyResponse;
 use crate::zero_copy::ZeroCopyBuffer;
 
@@ -104,6 +106,34 @@ where
 {
     type Encode = T;
     type Mode = SunByRef;
+    #[inline]
+    fn into_response(self) -> Response<Self::Encode> {
+        self
+    }
+}
+
+impl<T> ProtoResponse<T> for Response<Arc<T>>
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = Arc<T>;
+    type Mode = crate::coders::SunByRefDeref;
+
+    #[inline]
+    fn into_response(self) -> Response<Self::Encode> {
+        self
+    }
+}
+
+impl<T> ProtoResponse<T> for Response<Box<T>>
+where
+    T: ProtoExt + Send + Sync + 'static,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+{
+    type Encode = Box<T>;
+    type Mode = crate::coders::SunByRefDeref;
+
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         self
