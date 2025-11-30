@@ -1,4 +1,3 @@
-use core::cmp;
 use core::fmt;
 use core::marker::PhantomData;
 use core::ops::Deref;
@@ -6,8 +5,6 @@ use core::ops::DerefMut;
 
 use bytes::Buf;
 use bytes::BufMut;
-use bytes::buf::UninitSlice;
-use smallvec::SmallVec;
 
 use crate::DecodeError;
 use crate::ProtoExt;
@@ -17,40 +14,42 @@ use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
-use crate::encoding::encode_varint;
-use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
+//const ZERO_COPY_SIZE: usize = 64;
+
+pub type ZeroCopyBufferInner = Vec<u8>;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ZeroCopyBuffer {
-    inner: SmallVec<[u8; 64]>,
-    pos: usize, // read cursor for Buf
+    inner: ZeroCopyBufferInner,
+    //pos: usize, // read cursor for Buf
 }
 
-impl Buf for ZeroCopyBuffer {
-    #[inline(always)]
-    fn remaining(&self) -> usize {
-        self.inner.len().saturating_sub(self.pos)
-    }
+// impl Buf for ZeroCopyBuffer {
+//     #[inline(always)]
+//     fn remaining(&self) -> usize {
+//         self.inner.len().saturating_sub(self.pos)
+//     }
 
-    #[inline(always)]
-    fn chunk(&self) -> &[u8] {
-        &self.inner[self.pos..]
-    }
+//     #[inline(always)]
+//     fn chunk(&self) -> &[u8] {
+//         &self.inner[self.pos..]
+//     }
 
-    #[inline(always)]
-    fn advance(&mut self, cnt: usize) {
-        self.pos = cmp::min(self.pos + cnt, self.inner.len());
-    }
-}
+//     #[inline(always)]
+//     fn advance(&mut self, cnt: usize) {
+//         self.pos = cmp::min(self.pos + cnt, self.inner.len());
+//     }
+// }
 impl Deref for ZeroCopyBuffer {
-    type Target = SmallVec<[u8; 64]>;
-
+    type Target = ZeroCopyBufferInner;
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 impl DerefMut for ZeroCopyBuffer {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -59,55 +58,63 @@ impl ZeroCopyBuffer {
     #[inline(always)]
     pub fn with_capacity(len: usize) -> Self {
         Self {
-            inner: SmallVec::with_capacity(len),
-            pos: 0,
+            inner: ZeroCopyBufferInner::with_capacity(len),
+            //pos: 0,
         }
     }
 
     #[inline(always)]
     pub fn new() -> Self {
-        Self { inner: SmallVec::new(), pos: 0 }
-    }
-
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.inner.len() - self.pos
-    }
-
-    #[inline(always)]
-    pub fn remaining_capacity(&self) -> usize {
-        self.inner.capacity() - self.inner.len()
-    }
-
-    #[inline(always)]
-    pub fn as_slice(&self) -> &[u8] {
-        &self.inner[self.pos..]
-    }
-    #[inline(always)]
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        &mut self.inner[self.pos..]
-    }
-    #[inline(always)]
-    pub fn advance_all(&mut self) {
-        self.pos = self.inner.len();
-    }
-
-    #[inline(always)]
-    pub fn clear(&mut self) {
-        self.inner.clear();
-    }
-    #[inline(always)]
-    pub fn reset(&mut self) {
-        // Reuse allocated capacity without reallocating
-        let remaining = self.len();
-        if remaining > 0 {
-            self.inner.copy_within(self.pos.., 0);
-            self.inner.truncate(remaining);
-        } else {
-            self.inner.clear();
+        Self {
+            inner: ZeroCopyBufferInner::new(),
+            //pos: 0,
         }
-        self.pos = 0;
     }
+
+    #[inline(always)]
+    pub fn inner_mut(&mut self) -> &mut ZeroCopyBufferInner {
+        &mut self.inner
+    }
+
+    // #[inline(always)]
+    // pub fn len(&self) -> usize {
+    //     self.inner.len()
+    // }
+
+    // #[inline(always)]
+    // pub fn remaining_capacity(&self) -> usize {
+    //     self.inner.capacity() - self.inner.len()
+    // }
+
+    // #[inline(always)]
+    // pub fn as_slice(&self) -> &[u8] {
+    //     self.inner.as_slice()
+    // }
+    // #[inline(always)]
+    // pub fn as_mut_slice(&mut self) -> &mut [u8] {
+    //     &mut self.inner[self.pos..]
+    // }
+    // #[inline(always)]
+    // pub fn advance_all(&mut self) {
+    //     self.pos = self.inner.len();
+    // }
+
+    // #[inline(always)]
+    // pub fn clear(&mut self) {
+    //     self.inner.clear();
+    // }
+    // #[inline(always)]
+    // pub fn reset(&mut self) {
+    //     // Reuse allocated capacity without reallocating
+    //     let remaining = self.len();
+    //     if remaining > 0 {
+    //         self.inner.copy_within(self.pos.., 0);
+    //         self.inner.truncate(remaining);
+    //     } else {
+    //         self.inner.clear();
+    //     }
+    //     self.pos = 0;
+    // }
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -128,83 +135,84 @@ impl<T> fmt::Debug for ZeroCopy<T> {
     }
 }
 
-unsafe impl BufMut for ZeroCopyBuffer {
-    #[inline]
-    fn remaining_mut(&self) -> usize {
-        isize::MAX as usize - self.inner.len()
-    }
+// unsafe impl BufMut for ZeroCopyBuffer {
+//     #[inline]
+//     fn remaining_mut(&self) -> usize {
+//         isize::MAX as usize - self.inner.len()
+//     }
 
-    #[inline]
-    unsafe fn advance_mut(&mut self, cnt: usize) {
-        let len = self.inner.len();
-        let remaining = self.inner.capacity() - len;
-        assert!(remaining >= cnt, "advance_mut beyond capacity: requested {cnt}, available {remaining}");
-        unsafe { self.inner.set_len(len + cnt) };
-    }
+//     #[inline]
+//     unsafe fn advance_mut(&mut self, cnt: usize) {
+//         let len = self.inner.len();
+//         let remaining = self.inner.capacity() - len;
+//         assert!(remaining >= cnt, "advance_mut beyond capacity: requested {cnt}, available {remaining}");
+//         unsafe { self.inner.set_len(len + cnt) };
+//     }
 
-    #[inline]
-    fn chunk_mut(&mut self) -> &mut UninitSlice {
-        if self.inner.capacity() == self.inner.len() {
-            self.inner.reserve(64);
-        }
+//     #[inline]
+//     fn chunk_mut(&mut self) -> &mut UninitSlice {
+//         if self.inner.capacity() == self.inner.len() {
+//             self.inner.reserve(64);
+//         }
 
-        let cap = self.inner.capacity();
-        let len = self.inner.len();
-        let ptr = self.inner.as_mut_ptr();
+//         let cap = self.inner.capacity();
+//         let len = self.inner.len();
+//         let ptr = self.inner.as_mut_ptr();
 
-        unsafe { UninitSlice::from_raw_parts_mut(ptr.add(len), cap - len) }
-    }
+//         unsafe { UninitSlice::from_raw_parts_mut(ptr.add(len), cap - len) }
+//     }
 
-    #[inline]
-    fn put<T: bytes::Buf>(&mut self, mut src: T)
-    where
-        Self: Sized,
-    {
-        self.inner.reserve(src.remaining());
-        while src.has_remaining() {
-            let s = src.chunk();
-            let l = s.len();
-            self.inner.extend_from_slice(s);
-            src.advance(l);
-        }
-    }
+//     #[inline]
+//     fn put<T: bytes::Buf>(&mut self, mut src: T)
+//     where
+//         Self: Sized,
+//     {
+//         self.inner.reserve(src.remaining());
+//         while src.has_remaining() {
+//             let s = src.chunk();
+//             let l = s.len();
+//             self.inner.extend_from_slice(s);
+//             src.advance(l);
+//         }
+//     }
 
-    #[inline]
-    fn put_slice(&mut self, src: &[u8]) {
-        self.inner.extend_from_slice(src);
-    }
+//     #[inline]
+//     fn put_slice(&mut self, src: &[u8]) {
+//         self.inner.extend_from_slice(src);
+//     }
 
-    #[inline]
-    fn put_bytes(&mut self, val: u8, cnt: usize) {
-        let new_len = self.inner.len().saturating_add(cnt);
-        self.inner.resize(new_len, val);
-    }
-}
+//     #[inline]
+//     fn put_bytes(&mut self, val: u8, cnt: usize) {
+//         let new_len = self.inner.len().saturating_add(cnt);
+//         self.inner.resize(new_len, val);
+//     }
+// }
 
 impl<T> ZeroCopy<T> {
+    #[inline(always)]
     pub fn new() -> Self {
         Self {
             inner: ZeroCopyBuffer::new(),
             _marker: PhantomData,
         }
     }
-
+    #[inline(always)]
     pub fn into_buffer(self) -> ZeroCopyBuffer {
         self.inner
     }
-
+    #[inline(always)]
     pub fn as_bytes(&self) -> &[u8] {
         &self.inner
     }
-
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
-
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
-
+    #[inline(always)]
     pub fn decode(&self) -> Result<T, DecodeError>
     where
         T: ProtoExt,
@@ -235,20 +243,22 @@ where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
 {
+    #[inline(always)]
     fn from(value: &T) -> Self {
         let bytes = T::with_shadow(value, |shadow| {
             let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
             if len == 0 {
-                ZeroCopyBuffer::new()
-            } else if <T::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
-                let prefix_len = encoded_len_varint(len as u64);
-                let mut buf = ZeroCopyBuffer::with_capacity(prefix_len + len);
-                encode_varint(len as u64, &mut buf);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                return ZeroCopyBuffer::new();
+            }
+            // TODO use std::hint::unlikely when stable
+            if matches!(<T::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                let total = key_len(1) + len;
+                let mut buf = ZeroCopyBuffer::with_capacity(total);
+                <T::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf.inner);
                 buf
             } else {
                 let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
                 buf
             }
         });
@@ -261,20 +271,22 @@ where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
 {
+    #[inline(always)]
     fn from(value: T) -> Self {
         let bytes = T::with_shadow(value, |shadow| {
             let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
             if len == 0 {
-                ZeroCopyBuffer::new()
-            } else if <T::Shadow<'_> as ProtoWire>::WIRE_TYPE == WireType::LengthDelimited {
-                let prefix_len = encoded_len_varint(len as u64);
-                let mut buf = ZeroCopyBuffer::with_capacity(prefix_len + len);
-                encode_varint(len as u64, &mut buf);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                return ZeroCopyBuffer::new();
+            }
+            // TODO use std::hint::unlikely when stable
+            if matches!(<T::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
+                let total = key_len(1) + len;
+                let mut buf = ZeroCopyBuffer::with_capacity(total);
+                <T::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf.inner);
                 buf
             } else {
                 let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
                 buf
             }
         });

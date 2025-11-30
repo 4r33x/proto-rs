@@ -349,11 +349,11 @@ pub trait ProtoExt: Sized {
             if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
                 let total = key_len(1) + len;
                 let mut buf = ZeroCopyBuffer::with_capacity(total);
-                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
+                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, buf.inner_mut());
                 buf
             } else {
                 let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
                 buf
             }
         })

@@ -1,3 +1,18 @@
+# Benchmark Run — 2025-11-30 00:50:25 - No smallvec (0.6.11)
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| zero_copy_vs_clone | prost | clone + encode | 149514.73 | 538.70 | 1.00× |
+| zero_copy_vs_clone | proto_rs | zero_copy | 262849.32 | 947.04 | 1.76× faster |
+
+
+# Benchmark Run — 2025-11-30 00:26:44  - smallvec (0.6.10)
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| zero_copy_vs_clone | prost | clone + encode | 149645.02 | 539.17 | 1.00× |
+| zero_copy_vs_clone | proto_rs | zero_copy | 99997.23 | 360.29 | 0.67× slower |
+
 
 # Benchmark Run — 2025-11-19 20:25:45
 
@@ -1255,6 +1270,3 @@
 | complex_root_decode | proto_rs decode proto_rs input | 59219.25 | 226.47 | 1.01× faster |
 | complex_root_encode | prost encode_to_vec | 191876.75 | 691.33 | 1.00× |
 | complex_root_encode | proto_rs encode_to_vec | 76167.30 | 291.28 | 0.40× slower |
-
-
-

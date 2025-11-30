@@ -24,6 +24,7 @@ use criterion::measurement::WallTime;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoWire;
+use proto_rs::ZeroCopy;
 use proto_rs::proto_message;
 
 static BENCH_RECORDER: OnceLock<BenchRecorder> = OnceLock::new();
@@ -335,7 +336,7 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
     let proto_len = ComplexRoot::encode_to_vec(&message).len();
 
     let mut group = c.benchmark_group("zero_copy_vs_clone");
-
+    println!("prost len {prost_len} proto_rs len {proto_len}");
     group.throughput(Throughput::Bytes(prost_len as u64));
     group.bench_function("prost clone + encode", |b| {
         let mut buf = Vec::with_capacity(prost_len);
@@ -362,7 +363,7 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
             for _ in 0..iters {
                 buf.clear();
                 let start = Instant::now();
-                let zero_copy = ComplexRoot::encode_to_vec(&message);
+                let zero_copy = ComplexRoot::encode_to_zerocopy(&message);
                 buf.put_slice(zero_copy.as_slice());
                 black_box(&buf);
                 total += start.elapsed();
