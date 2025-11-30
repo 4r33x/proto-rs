@@ -146,7 +146,7 @@ where
                 return ZeroCopyBuffer::new();
             }
             let mut buf = ZeroCopyBuffer::with_capacity(len);
-            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
+            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
             buf
         });
         Self { inner: bytes, _marker: PhantomData }
@@ -166,7 +166,7 @@ where
                 return ZeroCopyBuffer::new();
             }
             let mut buf = ZeroCopyBuffer::with_capacity(len);
-            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
+            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
             buf
         });
         Self { inner: bytes, _marker: PhantomData }
@@ -240,17 +240,11 @@ where
     }
 
     fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-        if Self::is_default_impl(value) {
+        if value.inner.is_empty() {
             0
         } else {
             let payload_len = value.inner.len();
-            if Self::WIRE_TYPE == WireType::LengthDelimited {
-                // For LengthDelimited, need to include the varint-encoded length prefix
-                key_len(tag) + crate::encoding::encoded_len_varint(payload_len as u64) + payload_len
-            } else {
-                // For other wire types (Varint, fixed sizes), no length prefix needed
-                key_len(tag) + payload_len
-            }
+            key_len(tag) + payload_len
         }
     }
 
@@ -258,11 +252,9 @@ where
         buf.put_slice(&value.inner);
     }
 
-    // Use the default encode_entrypoint implementation which properly handles LengthDelimited types
-    // by calling encode_length_delimited when needed
-
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(Self::WIRE_TYPE, wire_type)?;
+
         copy_value_payload(wire_type, buf, &mut value.inner, ctx)
     }
 }
