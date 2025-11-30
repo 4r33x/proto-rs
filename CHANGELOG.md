@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.6.11]
+- Removed SmallVec buffers from zero-copy wrappers and corrected zero-copy encoding/decoding for enums.
+- Added support for `Arc` and `Box` response types in `proto_rpc`.
+
+## [0.6.10]
+- Added infallible streaming RPC method support on the server side.
+
+## [0.6.9]
+- Implemented `CachePadded` wrapper encoding/decoding using reference-based handling.
+
+## [0.6.8]
+- Improved transparent `proto_message` syntax and `proto_path` handling.
+
+## [0.6.7]
+- Added support for `sun` types with concrete generics in `proto_message`.
+
+## [0.6.6]
+- Fixed `proto(skip)` handling for tuple variants in enum proto generation.
+
+## [0.6.5]
+- Optimized `prosto_derive` macro generation to reduce code duplication and improve performance.
+
+## [0.6.4]
+- Added a `treat_as` attribute for `proto_message` fields to override protobuf mappings.
+
+## [0.6.0] - [0.6.3]
+- Introduced `#[proto_transparent]` support for structs and improved transparent decoding.
+- Added wrapper and proto generation support for `ArcSwap` types with roundtrip tests.
+- Added `CachePadded` wrapper detection and implementations.
+- Added support for Rust atomic primitives and SmallVec-backed zero-copy buffers.
+
+## [0.5.0] - [0.6.0] next level design 
+- Removed double conversion and prost from design
+- Implement protobuf encdoding\decodong from scratch
+
 ## [0.5.0]
 - Added solana-signature shadow
 - Fix solana-address shadow (now properly implements HasProto)
