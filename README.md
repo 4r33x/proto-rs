@@ -1,6 +1,6 @@
 # Rust as first-class citizen for gRPC ecosystem
 
-`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all. The crate ships batteries-included attribute support (for example `treat_as` and `proto_transparent`), zero-copy RPC helpers, and a rich catalog of built-in wrappers so your Rust types map cleanly onto generated Protobuf schemas.
+`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all. The crate ships batteries-included attribute support, zero-copy RPC helpers, and a rich catalog of built-in wrappers so your Rust types map cleanly onto auto-generated Protobuf schemas.
 
 ## Motivation
 
@@ -60,7 +60,7 @@ Yep, all types here are Rust types. We can then implement the server just like a
 
 Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
 
-### Attribute quick hits
+### Attribute quick hits (there are more attributes, view examples and tests)
 
 - Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, treating a newtype as a primitive).
 - Add `proto_transparent` to forward the single inner field of a wrapper struct straight into the generated schema.
@@ -102,10 +102,10 @@ pub trait OrdersRpc {
 #[proto_message(proto_path = "protos/runtime.proto")]
 pub struct RuntimeState {
     #[proto(tag = 1)]
-    pub config: arc_swap::ArcSwapAny<Arc<Config>>,
+    pub config: arc_swap::ArcSwap<Arc<Config>>,
     #[proto(tag = 2)]
     pub cached_hits: crossbeam_utils::CachePadded<u64>,
-    #[proto(tag = 3, import_path = "google.protobuf")]
+    #[proto(tag = 3)]
     pub concurrent: std::sync::atomic::AtomicUsize,
 }
 ```
