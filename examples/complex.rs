@@ -75,6 +75,7 @@ pub struct BarSub;
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
+    async fn goon_pong(&self, request: Request<GoonPong>) -> Result<Response<RizzPing>, Status>;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 
@@ -126,6 +127,13 @@ impl SigmaRpc for S {
 
         Ok(Response::new(stream))
     }
+
+    async fn goon_pong(&self, _request: tonic::Request<GoonPong>) -> Result<Response<RizzPing>, tonic::Status> {
+        Ok(Response::new(RizzPing {
+            id: Id { id: 1 },
+            status: ServiceStatus::Active,
+        }))
+    }
 }
 
 #[tokio::main]
@@ -137,6 +145,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+
+    use proto_rs::ProtoExt;
     use tokio_stream::StreamExt;
 
     use super::*;
@@ -149,6 +159,20 @@ mod tests {
             .rizz_ping(RizzPing {
                 id: Id { id: 5 },
                 status: ServiceStatus::Pending,
+            })
+            .await
+            .unwrap();
+        println!("{:?}", res)
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_proto_client_unary_impl_bad_input() {
+        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let res = client
+            .goon_pong(GoonPong {
+                id: Id { id: 0 },
+                status: ZeroCopy::from(&ServiceStatus::Pending),
             })
             .await
             .unwrap();

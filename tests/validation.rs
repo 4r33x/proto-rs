@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
+use proto_rs::DecodeError;
+use proto_rs::ProtoExt;
 use proto_rs::proto_message;
-use proto_rs::{DecodeError, ProtoExt};
 
 // Helper validation functions
 fn validate_id(id: &Id) -> Result<(), DecodeError> {
@@ -81,7 +82,6 @@ pub struct MessageWithBothValidators {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proto_rs::ProtoWire;
 
     #[test]
     fn test_field_validation_good_input() {
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn test_field_validation_bad_input() {
         let msg = MessageWithFieldValidator {
-            id: Id { id: 999 },  // Invalid: id cannot be 999
+            id: Id { id: 999 }, // Invalid: id cannot be 999
             scores: vec![1, 2, 3],
         };
 
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_message_validation_bad_input_negative() {
-        let msg = PositiveCount { count: -5 };  // Invalid: count must be positive
+        let msg = PositiveCount { count: -5 }; // Invalid: count must be positive
 
         let encoded = PositiveCount::encode_to_vec(&msg);
         let result = PositiveCount::decode(&encoded[..]);
@@ -129,10 +129,7 @@ mod tests {
 
     #[test]
     fn test_user_validation_good_input() {
-        let user = User {
-            name: "Alice".to_string(),
-            age: 25,
-        };
+        let user = User { name: "Alice".to_string(), age: 25 };
 
         let encoded = User::encode_to_vec(&user);
         let decoded = User::decode(&encoded[..]).unwrap();
@@ -143,7 +140,7 @@ mod tests {
     fn test_user_validation_both_fields_set() {
         let user = User {
             name: "Bob".to_string(),
-            age: -1,  // Invalid: age cannot be negative
+            age: -1, // Invalid: age cannot be negative
         };
 
         let encoded = User::encode_to_vec(&user);
@@ -167,7 +164,7 @@ mod tests {
     #[test]
     fn test_both_validators_bad_field() {
         let msg = MessageWithBothValidators {
-            id: Id { id: 999 },  // Invalid: id cannot be 999
+            id: Id { id: 999 }, // Invalid: id cannot be 999
             scores: vec![10, 20, 30],
         };
 
@@ -181,7 +178,7 @@ mod tests {
     fn test_both_validators_bad_message() {
         let msg = MessageWithBothValidators {
             id: Id { id: 42 },
-            scores: vec![500, 500],  // Invalid: sum >= 1000
+            scores: vec![500, 500], // Invalid: sum >= 1000
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
@@ -193,8 +190,8 @@ mod tests {
     #[test]
     fn test_both_validators_both_bad() {
         let msg = MessageWithBothValidators {
-            id: Id { id: 999 },  // Invalid: id cannot be 999
-            scores: vec![500, 500],  // Invalid: sum >= 1000
+            id: Id { id: 999 },     // Invalid: id cannot be 999
+            scores: vec![500, 500], // Invalid: sum >= 1000
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
