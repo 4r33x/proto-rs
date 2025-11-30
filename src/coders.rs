@@ -4,7 +4,6 @@ use core::marker::PhantomData;
 
 use crate::alloc::vec::Vec;
 use crate::zero_copy::ZeroCopyBuffer;
-use crate::zero_copy::ZeroCopyBufferInner;
 
 pub trait AsBytes {
     fn as_bytes(&self) -> &[u8];
