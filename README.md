@@ -62,8 +62,8 @@ Macros support all prost types, imports, skipping with default and custom functi
 
 ### Attribute quick hits (there are more attributes, view examples and tests)
 
-- Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, treating a newtype as a primitive).
-- Add `proto_transparent` to forward the single inner field of a wrapper struct straight into the generated schema.
+- Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, for properly treating a type alias).
+- Add `proto_transparent` to skip tag and use this type as zerocost newtype wrapper.
 - Target multiple `sun` domains, including concrete generics like `Sun<MyType<u64>>`, so a single shadow can serve several variants.
 - Mix and match built-in wrappers such as `ArcSwap`, `CachePadded`, and atomic integers; the derive machinery already knows how to serialize them.
 

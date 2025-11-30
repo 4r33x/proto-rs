@@ -133,6 +133,22 @@ pub enum Status {
     Completed,
 }
 
+#[derive(Debug, Hash, PartialEq, Eq)]
+#[proto_message]
+pub struct Foo {
+    #[proto(tag = 1)]
+    pub id: u32,
+    #[proto(tag = 2)]
+    pub meta: u32,
+}
+
+#[derive(Debug)]
+#[proto_message]
+pub struct FooBar {
+    #[proto(tag = 1)]
+    pub map: std::collections::HashMap<Foo, u32>,
+}
+
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 pub enum EnumArrayRustEnumAttributeFailTest {
     Fail { timestamp_array: [Status; 8] },
