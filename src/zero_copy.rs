@@ -113,15 +113,24 @@ where
     T: ProtoExt,
     for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
 {
-    let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
-
     if !buf.has_remaining() {
+        let shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
         return <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow);
     }
 
-    <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
-
-    <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
+    match <T::Shadow<'static> as ProtoWire>::KIND {
+        ProtoKind::Message => {
+            // For messages, the buffer contains raw field data - use T::decode to loop through fields
+            T::decode(buf)
+        }
+        _ => {
+            // For all other types (SimpleEnum, primitives, strings, bytes),
+            // decode the raw value with its wire type
+            let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
+            <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
+            <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
+        }
+    }
 }
 
 impl<T> From<&T> for ZeroCopy<T>
@@ -136,17 +145,9 @@ where
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
-            // TODO use std::hint::unlikely when stable
-            if matches!(<T::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
-                let total = key_len(1) + len;
-                let mut buf = ZeroCopyBuffer::with_capacity(total);
-                <T::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf.inner);
-                buf
-            } else {
-                let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
-                buf
-            }
+            let mut buf = ZeroCopyBuffer::with_capacity(len);
+            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
+            buf
         });
         Self { inner: bytes, _marker: PhantomData }
     }
@@ -164,17 +165,9 @@ where
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
-            // TODO use std::hint::unlikely when stable
-            if matches!(<T::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
-                let total = key_len(1) + len;
-                let mut buf = ZeroCopyBuffer::with_capacity(total);
-                <T::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf.inner);
-                buf
-            } else {
-                let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
-                buf
-            }
+            let mut buf = ZeroCopyBuffer::with_capacity(len);
+            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
+            buf
         });
         Self { inner: bytes, _marker: PhantomData }
     }
@@ -247,16 +240,26 @@ where
     }
 
     fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-        if Self::is_default_impl(value) { 0 } else { key_len(tag) + value.inner.len() }
+        if Self::is_default_impl(value) {
+            0
+        } else {
+            let payload_len = value.inner.len();
+            if Self::WIRE_TYPE == WireType::LengthDelimited {
+                // For LengthDelimited, need to include the varint-encoded length prefix
+                key_len(tag) + crate::encoding::encoded_len_varint(payload_len as u64) + payload_len
+            } else {
+                // For other wire types (Varint, fixed sizes), no length prefix needed
+                key_len(tag) + payload_len
+            }
+        }
     }
 
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         buf.put_slice(&value.inner);
     }
 
-    fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        buf.put_slice(&value.inner);
-    }
+    // Use the default encode_entrypoint implementation which properly handles LengthDelimited types
+    // by calling encode_length_delimited when needed
 
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         check_wire_type(Self::WIRE_TYPE, wire_type)?;
@@ -368,8 +371,12 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCo
                 return Err(DecodeError::new("buffer underflow"));
             }
 
-            into.resize(len_len + payload_len, 0);
-            buf.copy_to_slice(&mut into[..]);
+            // Skip the length prefix, only copy the payload
+            buf.advance(len_len);
+            into.resize(payload_len, 0);
+            if payload_len > 0 {
+                buf.copy_to_slice(&mut into[..]);
+            }
             Ok(())
         }
         WireType::StartGroup | WireType::EndGroup => Err(DecodeError::new("groups are not supported for ZeroCopy")),
