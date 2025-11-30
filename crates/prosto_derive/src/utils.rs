@@ -92,6 +92,7 @@ pub struct FieldConfig {
     pub import_path: Option<String>,
     pub custom_tag: Option<usize>,
     pub rename: Option<ProtoRename>,
+    pub validator: Option<String>,     // field-level validation function
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -130,6 +131,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                     let tokens: TokenStream = meta.value().expect("rename expects a value").parse().expect("failed to parse rename attribute");
                     cfg.rename = Some(parse_proto_rename(field, tokens));
                 }
+                Some("validator") => cfg.validator = parse_string_or_path_value(&meta),
                 _ => {}
             }
             Ok(())
@@ -260,6 +262,33 @@ fn parse_string_value(meta: &syn::meta::ParseNestedMeta) -> Option<String> {
         .ok()
         .and_then(|v| v.parse::<Lit>().ok())
         .and_then(|lit| if let syn::Lit::Str(s) = lit { Some(s.value()) } else { None })
+}
+
+fn parse_string_or_path_value(meta: &syn::meta::ParseNestedMeta) -> Option<String> {
+    let value_parser = meta.value().ok()?;
+
+    // Try parsing as Expr which can be either a Lit or a Path
+    if let Ok(expr) = value_parser.parse::<Expr>() {
+        match expr {
+            // Handle string literals: validator = "validate_fn"
+            Expr::Lit(expr_lit) => {
+                if let syn::Lit::Str(s) = expr_lit.lit {
+                    return Some(s.value());
+                }
+            }
+            // Handle paths: validator = validate_fn
+            Expr::Path(expr_path) => {
+                let path_str = expr_path.path.segments.iter()
+                    .map(|seg| seg.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                return Some(path_str);
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn parse_usize_value(meta: &syn::meta::ParseNestedMeta) -> Option<usize> {

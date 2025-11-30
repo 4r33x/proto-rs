@@ -404,6 +404,17 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
         .filter_map(|info| {
             let tag = info.tag?;
             let access = info.access.access_tokens(base.clone());
+
+            // Generate field validation if validator is specified
+            let validation = if let Some(validator_fn) = &info.config.validator {
+                let validator_path = parse_path_string(info.field, validator_fn);
+                quote! {
+                    #validator_path(&#access)?;
+                }
+            } else {
+                quote! {}
+            };
+
             if needs_decode_conversion(&info.config, &info.parsed) {
                 let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_tmp", info.index), info.field.span());
                 let decode_ty = &info.decode_ty;
@@ -418,6 +429,7 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                             ctx,
                         )?;
                         #assign
+                        #validation
                         Ok(())
                     }
                 })
@@ -430,7 +442,9 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                             &mut #access,
                             buf,
                             ctx,
-                        )
+                        )?;
+                        #validation
+                        Ok(())
                     }
                 })
             }
