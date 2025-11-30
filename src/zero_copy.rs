@@ -119,29 +119,13 @@ where
     }
 
     match <T::Shadow<'static> as ProtoWire>::KIND {
-        ProtoKind::SimpleEnum => {
-            // For SimpleEnum, the buffer includes a tag (tag=1) that we need to decode first
-            let key = crate::encoding::decode_varint(&mut buf)?;
-            let tag = (key >> 3) as u32;
-            let wire_type = WireType::try_from(key & 0x7)
-                .map_err(|_| DecodeError::new("invalid wire type"))?;
-
-            // Verify we got tag=1 as expected
-            if tag != 1 {
-                return Err(DecodeError::new("invalid tag for SimpleEnum in ZeroCopy"));
-            }
-
-            // Decode the enum value
-            let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
-            <T::Shadow<'static> as ProtoWire>::decode_into(wire_type, &mut shadow, &mut buf, DecodeContext::default())?;
-            <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
-        }
         ProtoKind::Message => {
             // For messages, the buffer contains raw field data - use T::decode to loop through fields
             T::decode(buf)
         }
         _ => {
-            // For other types (primitives, strings, bytes), decode the value with its wire type
+            // For all other types (SimpleEnum, primitives, strings, bytes),
+            // decode the raw value with its wire type
             let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
             <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
             <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
@@ -161,17 +145,9 @@ where
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
-            // TODO use std::hint::unlikely when stable
-            if matches!(<T::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
-                let total = key_len(1) + len;
-                let mut buf = ZeroCopyBuffer::with_capacity(total);
-                <T::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf.inner);
-                buf
-            } else {
-                let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
-                buf
-            }
+            let mut buf = ZeroCopyBuffer::with_capacity(len);
+            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
+            buf
         });
         Self { inner: bytes, _marker: PhantomData }
     }
@@ -189,17 +165,9 @@ where
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
-            // TODO use std::hint::unlikely when stable
-            if matches!(<T::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
-                let total = key_len(1) + len;
-                let mut buf = ZeroCopyBuffer::with_capacity(total);
-                <T::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf.inner);
-                buf
-            } else {
-                let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
-                buf
-            }
+            let mut buf = ZeroCopyBuffer::with_capacity(len);
+            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf.inner);
+            buf
         });
         Self { inner: bytes, _marker: PhantomData }
     }
@@ -249,13 +217,7 @@ where
 {
     type EncodeInput<'a> = &'a ZeroCopy<T>;
     const KIND: ProtoKind = T::KIND;
-    // For SimpleEnum, we store [tag=1][value] which is variable-length, so use LengthDelimited
-    // For other types, use T::WIRE_TYPE
-    const WIRE_TYPE: WireType = if matches!(T::KIND, ProtoKind::SimpleEnum) {
-        WireType::LengthDelimited
-    } else {
-        T::WIRE_TYPE
-    };
+    const WIRE_TYPE: WireType = T::WIRE_TYPE;
 
     fn proto_default() -> Self {
         Self::new()
@@ -282,15 +244,12 @@ where
             0
         } else {
             let payload_len = value.inner.len();
-            match Self::WIRE_TYPE {
-                WireType::LengthDelimited => {
-                    // For LengthDelimited, need to include the varint-encoded length prefix
-                    key_len(tag) + crate::encoding::encoded_len_varint(payload_len as u64) + payload_len
-                }
-                _ => {
-                    // For other wire types, no length prefix needed
-                    key_len(tag) + payload_len
-                }
+            if Self::WIRE_TYPE == WireType::LengthDelimited {
+                // For LengthDelimited, need to include the varint-encoded length prefix
+                key_len(tag) + crate::encoding::encoded_len_varint(payload_len as u64) + payload_len
+            } else {
+                // For other wire types (Varint, fixed sizes), no length prefix needed
+                key_len(tag) + payload_len
             }
         }
     }
