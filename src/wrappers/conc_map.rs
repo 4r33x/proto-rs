@@ -10,6 +10,7 @@ use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashMap;
 
+use super::maps::EncodeInputFromRef;
 use super::maps::encode_map_entry_component;
 use super::maps::map_entry_field_len;
 use crate::DecodeError;
@@ -92,8 +93,8 @@ where
 
 impl<K, V, S> ProtoShadow<Self> for HashMap<K, V, S>
 where
-    for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + Eq + Hash + 'a,
-    for<'a> V: ProtoShadow<V> + ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+    for<'a> K: ProtoShadow<K> + ProtoWire + Eq + Hash + 'a,
+    for<'a> V: ProtoShadow<V> + ProtoWire + 'a,
     for<'a> S: BuildHasher + Default + 'a,
 {
     type Sun<'a> = &'a HashMap<K, V, S>;
@@ -114,7 +115,7 @@ where
 impl<K, V, S> ProtoWire for HashMap<K, V, S>
 where
     for<'a> K: ProtoWire<EncodeInput<'a> = &'a K> + Eq + Hash + 'a,
-    for<'a> V: ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+    for<'a> V: ProtoWire + EncodeInputFromRef<'a> + 'a,
     for<'a> S: BuildHasher + Default + 'a,
 {
     type EncodeInput<'a> = crate::wrappers::conc_map::PapayaMapShadow<'a, K, V, S>;
@@ -142,8 +143,9 @@ where
                     let key_default = K::is_default_impl(&k);
                     let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&k) } };
                     let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };
-                    let value_default = V::is_default_impl(&v);
-                    let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&v) } };
+                    let value_input = V::encode_input_from_ref(v);
+                    let value_default = V::is_default_impl(&value_input);
+                    let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&value_input) } };
                     let value_len_total = if value_default { 0 } else { map_entry_field_len(V::WIRE_TYPE, 2, value_body) };
                     let entry_len = key_len_total + value_len_total;
                     key_len(tag) + encoded_len_varint(entry_len as u64) + entry_len
@@ -160,8 +162,9 @@ where
                 let key_default = K::is_default_impl(&k);
                 let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&k) } };
                 let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };
-                let value_default = V::is_default_impl(&v);
-                let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&v) } };
+                let value_input = V::encode_input_from_ref(v);
+                let value_default = V::is_default_impl(&value_input);
+                let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&value_input) } };
                 let value_len_total = if value_default { 0 } else { map_entry_field_len(V::WIRE_TYPE, 2, value_body) };
                 let entry_len = key_len_total + value_len_total;
                 encoded_len_varint(entry_len as u64) + entry_len
@@ -181,8 +184,9 @@ where
             let key_default = K::is_default_impl(&k);
             let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&k) } };
             let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };
-            let value_default = V::is_default_impl(&v);
-            let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&v) } };
+            let value_input = V::encode_input_from_ref(v);
+            let value_default = V::is_default_impl(&value_input);
+            let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&value_input) } };
             let value_len_total = if value_default { 0 } else { map_entry_field_len(V::WIRE_TYPE, 2, value_body) };
             let entry_len = key_len_total + value_len_total;
             encode_key(tag, WireType::LengthDelimited, buf);
@@ -192,7 +196,7 @@ where
                 encode_map_entry_component::<K>(1, key_body, k, buf);
             }
             if !value_default {
-                encode_map_entry_component::<V>(2, value_body, v, buf);
+                encode_map_entry_component::<V>(2, value_body, value_input, buf);
             }
         }
     }
