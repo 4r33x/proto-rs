@@ -22,25 +22,8 @@ pub type ZeroCopyBufferInner = Vec<u8>;
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ZeroCopyBuffer {
     inner: ZeroCopyBufferInner,
-    //pos: usize, // read cursor for Buf
 }
 
-// impl Buf for ZeroCopyBuffer {
-//     #[inline(always)]
-//     fn remaining(&self) -> usize {
-//         self.inner.len().saturating_sub(self.pos)
-//     }
-
-//     #[inline(always)]
-//     fn chunk(&self) -> &[u8] {
-//         &self.inner[self.pos..]
-//     }
-
-//     #[inline(always)]
-//     fn advance(&mut self, cnt: usize) {
-//         self.pos = cmp::min(self.pos + cnt, self.inner.len());
-//     }
-// }
 impl Deref for ZeroCopyBuffer {
     type Target = ZeroCopyBufferInner;
     #[inline(always)]
@@ -59,62 +42,18 @@ impl ZeroCopyBuffer {
     pub fn with_capacity(len: usize) -> Self {
         Self {
             inner: ZeroCopyBufferInner::with_capacity(len),
-            //pos: 0,
         }
     }
 
     #[inline(always)]
     pub fn new() -> Self {
-        Self {
-            inner: ZeroCopyBufferInner::new(),
-            //pos: 0,
-        }
+        Self { inner: ZeroCopyBufferInner::new() }
     }
 
     #[inline(always)]
     pub fn inner_mut(&mut self) -> &mut ZeroCopyBufferInner {
         &mut self.inner
     }
-
-    // #[inline(always)]
-    // pub fn len(&self) -> usize {
-    //     self.inner.len()
-    // }
-
-    // #[inline(always)]
-    // pub fn remaining_capacity(&self) -> usize {
-    //     self.inner.capacity() - self.inner.len()
-    // }
-
-    // #[inline(always)]
-    // pub fn as_slice(&self) -> &[u8] {
-    //     self.inner.as_slice()
-    // }
-    // #[inline(always)]
-    // pub fn as_mut_slice(&mut self) -> &mut [u8] {
-    //     &mut self.inner[self.pos..]
-    // }
-    // #[inline(always)]
-    // pub fn advance_all(&mut self) {
-    //     self.pos = self.inner.len();
-    // }
-
-    // #[inline(always)]
-    // pub fn clear(&mut self) {
-    //     self.inner.clear();
-    // }
-    // #[inline(always)]
-    // pub fn reset(&mut self) {
-    //     // Reuse allocated capacity without reallocating
-    //     let remaining = self.len();
-    //     if remaining > 0 {
-    //         self.inner.copy_within(self.pos.., 0);
-    //         self.inner.truncate(remaining);
-    //     } else {
-    //         self.inner.clear();
-    //     }
-    //     self.pos = 0;
-    // }
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -134,59 +73,6 @@ impl<T> fmt::Debug for ZeroCopy<T> {
         f.debug_struct("ZeroCopy").field("len", &self.inner.len()).finish()
     }
 }
-
-// unsafe impl BufMut for ZeroCopyBuffer {
-//     #[inline]
-//     fn remaining_mut(&self) -> usize {
-//         isize::MAX as usize - self.inner.len()
-//     }
-
-//     #[inline]
-//     unsafe fn advance_mut(&mut self, cnt: usize) {
-//         let len = self.inner.len();
-//         let remaining = self.inner.capacity() - len;
-//         assert!(remaining >= cnt, "advance_mut beyond capacity: requested {cnt}, available {remaining}");
-//         unsafe { self.inner.set_len(len + cnt) };
-//     }
-
-//     #[inline]
-//     fn chunk_mut(&mut self) -> &mut UninitSlice {
-//         if self.inner.capacity() == self.inner.len() {
-//             self.inner.reserve(64);
-//         }
-
-//         let cap = self.inner.capacity();
-//         let len = self.inner.len();
-//         let ptr = self.inner.as_mut_ptr();
-
-//         unsafe { UninitSlice::from_raw_parts_mut(ptr.add(len), cap - len) }
-//     }
-
-//     #[inline]
-//     fn put<T: bytes::Buf>(&mut self, mut src: T)
-//     where
-//         Self: Sized,
-//     {
-//         self.inner.reserve(src.remaining());
-//         while src.has_remaining() {
-//             let s = src.chunk();
-//             let l = s.len();
-//             self.inner.extend_from_slice(s);
-//             src.advance(l);
-//         }
-//     }
-
-//     #[inline]
-//     fn put_slice(&mut self, src: &[u8]) {
-//         self.inner.extend_from_slice(src);
-//     }
-
-//     #[inline]
-//     fn put_bytes(&mut self, val: u8, cnt: usize) {
-//         let new_len = self.inner.len().saturating_add(cnt);
-//         self.inner.resize(new_len, val);
-//     }
-// }
 
 impl<T> ZeroCopy<T> {
     #[inline(always)]
@@ -338,7 +224,7 @@ where
 {
     type EncodeInput<'a> = &'a ZeroCopy<T>;
     const KIND: ProtoKind = T::KIND;
-    const WIRE_TYPE: WireType = T::WIRE_TYPE; // ← ADD THIS!
+    const WIRE_TYPE: WireType = T::WIRE_TYPE;
 
     fn proto_default() -> Self {
         Self::new()
