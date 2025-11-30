@@ -6,6 +6,8 @@ import "encoding.proto";
 
 service ComplexService {
   rpc EchoSample(encoding.SampleMessage) returns (encoding.SampleMessage) {}
+  rpc EchoSampleArc(encoding.SampleMessage) returns (encoding.SampleMessage) {}
+  rpc EchoSampleBox(encoding.SampleMessage) returns (encoding.SampleMessage) {}
   rpc StreamCollections(encoding.SampleMessage) returns (stream encoding.CollectionsMessage) {}
   rpc EchoContainer(encoding.ZeroCopyContainer) returns (encoding.ZeroCopyContainer) {}
 }

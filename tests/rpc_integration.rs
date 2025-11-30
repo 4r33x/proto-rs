@@ -34,6 +34,10 @@ pub trait ComplexService {
 
     async fn echo_sample(&self, request: Request<SampleMessage>) -> Result<Response<SampleMessage>, Status>;
 
+    async fn echo_sample_arc(&self, request: Request<SampleMessage>) -> Result<Response<Arc<SampleMessage>>, Status>;
+
+    async fn echo_sample_box(&self, request: Request<SampleMessage>) -> Result<Response<Box<SampleMessage>>, Status>;
+
     async fn stream_collections(&self, request: Request<SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status>;
 
     async fn echo_container(&self, request: Request<ZeroCopyContainer>) -> Result<Response<ZeroCopyContainer>, Status>;
@@ -212,6 +216,14 @@ impl ComplexService for OurService {
         Ok(Response::new(response_message()))
     }
 
+    async fn echo_sample_arc(&self, _request: Request<SampleMessage>) -> Result<Response<Arc<SampleMessage>>, Status> {
+        Ok(Response::new(Arc::new(response_message())))
+    }
+
+    async fn echo_sample_box(&self, _request: Request<SampleMessage>) -> Result<Response<Box<SampleMessage>>, Status> {
+        Ok(Response::new(Box::new(response_message())))
+    }
+
     async fn stream_collections(&self, _request: Request<SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status> {
         let stream = tokio_stream::iter(response_collections().into_iter().map(Ok));
         let boxed_stream: Self::StreamCollectionsStream = Box::pin(stream);
@@ -230,6 +242,14 @@ impl tonic_prost_test::complex_rpc::complex_service_server::ComplexService for P
     type StreamCollectionsStream = Pin<Box<dyn Stream<Item = Result<tonic_prost_test::encoding::CollectionsMessage, Status>> + Send>>;
 
     async fn echo_sample(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
+        Ok(Response::new(sample_to_tonic(&response_message())))
+    }
+
+    async fn echo_sample_arc(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
+        Ok(Response::new(sample_to_tonic(&response_message())))
+    }
+
+    async fn echo_sample_box(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
         Ok(Response::new(sample_to_tonic(&response_message())))
     }
 
@@ -299,6 +319,12 @@ async fn tonic_client_roundtrip_against_proto_server() {
     let response = client.echo_sample(request.clone()).await.unwrap().into_inner();
     assert_eq!(sample_from_tonic(response), response_message());
 
+    let arced = client.echo_sample_arc(request.clone()).await.unwrap().into_inner();
+    assert_eq!(sample_from_tonic(arced), response_message());
+
+    let boxed = client.echo_sample_box(request.clone()).await.unwrap().into_inner();
+    assert_eq!(sample_from_tonic(boxed), response_message());
+
     let mut stream = client.stream_collections(request).await.unwrap().into_inner();
 
     let mut received = Vec::new();
@@ -327,6 +353,12 @@ async fn proto_client_roundtrip_against_prost_server() {
     let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
+    let arced = client.echo_sample_arc(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    assert_eq!(arced, response_message());
+
+    let boxed = client.echo_sample_box(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    assert_eq!(boxed, response_message());
+
     let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
 
     let mut received = Vec::new();
@@ -353,6 +385,12 @@ async fn proto_client_roundtrip_against_proto_server() {
 
     let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
     assert_eq!(response, response_message());
+
+    let arced = client.echo_sample_arc(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    assert_eq!(arced, response_message());
+
+    let boxed = client.echo_sample_box(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    assert_eq!(boxed, response_message());
 
     let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
 
