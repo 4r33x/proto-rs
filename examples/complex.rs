@@ -40,14 +40,14 @@ pub struct RizzPing {
 }
 
 fn validate_id(id: &Id) -> Result<(), DecodeError> {
-    if id.id == 0 {
-        return Err(DecodeError::new("Bad id"));
+    if id.id == 1 {
+        return Err(DecodeError::new("Bad field id"));
     }
     Ok(())
 }
 fn validate_pong(id: &GoonPong) -> Result<(), DecodeError> {
-    if id.id.id == 0 {
-        return Err(DecodeError::new("Bad id"));
+    if id.id.id == 1 {
+        return Err(DecodeError::new("Bad top id"));
     }
     Ok(())
 }
@@ -171,7 +171,7 @@ mod tests {
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
         let res = client
             .goon_pong(GoonPong {
-                id: Id { id: 0 },
+                id: Id { id: 1 },
                 status: ZeroCopy::from(&ServiceStatus::Pending),
             })
             .await
