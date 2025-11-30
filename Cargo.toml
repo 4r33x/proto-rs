@@ -116,6 +116,7 @@ no-recursion-limit = []
 #TODO!
 default = ["std", "tonic"]
 #derive = ["dep:prost-derive"]
+generic-examples = []
 
 
 [package.metadata.docs.rs]
@@ -158,3 +159,8 @@ incremental = false
 [[bench]]
 name = "varint"
 harness = false
+
+[[example]]
+name = "generic_macros"
+path = "examples/generic_macros.rs"
+required-features = ["generic-examples"]

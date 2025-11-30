@@ -23,9 +23,24 @@ use crate::utils::to_pascal_case;
 // SERVER MODULE GENERATION
 // ============================================================================
 
-pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo]) -> TokenStream {
+pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo], trait_generics: &syn::Generics) -> TokenStream {
     let server_module = server_module_name(trait_name);
     let server_struct = server_struct_name(trait_name);
+    let (_, ty_generics, where_clause) = trait_generics.split_for_impl();
+    let where_clause_tokens = where_clause.map(|wc| quote! { #wc }).unwrap_or_default();
+    let generic_params: Vec<_> = trait_generics.params.iter().collect();
+    let type_params: Vec<_> = trait_generics.type_params().map(|p| &p.ident).collect();
+    let mut struct_generics_items: Vec<TokenStream> = vec![quote! { T }];
+    struct_generics_items.extend(generic_params.iter().map(|param| quote! { #param }));
+    let struct_generics = quote! { <#(#struct_generics_items),*> };
+
+    let mut struct_type_args_items: Vec<TokenStream> = vec![quote! { T }];
+    struct_type_args_items.extend(type_params.iter().map(|param| quote! { #param }));
+    let struct_type_args = quote! { <#(#struct_type_args_items),*> };
+
+    let mut service_generics_items: Vec<TokenStream> = vec![quote! { T }, quote! { B }];
+    service_generics_items.extend(generic_params.iter().map(|param| quote! { #param }));
+    let service_generics = quote! { <#(#service_generics_items),*> };
 
     let (trait_methods, associated_types) = generate_trait_components(methods);
     let (blanket_types, blanket_methods) = generate_blanket_impl_components(methods, trait_name);
@@ -34,7 +49,17 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
     let service_name_value = format!("{package_name}.{trait_name}");
     let compression_methods = generate_server_compression_methods();
     let service_fields = generate_service_struct_fields();
-    let service_constructors = generate_service_constructors();
+    let phantom_field = if type_params.is_empty() {
+        quote! {}
+    } else {
+        quote! { _marker: ::core::marker::PhantomData<(#(#type_params),*)>, }
+    };
+    let phantom_init = if type_params.is_empty() {
+        quote! {}
+    } else {
+        quote! { _marker: ::core::marker::PhantomData, }
+    };
+    let service_constructors = generate_service_constructors(phantom_init.clone());
     let service_future_type = associated_future_type(quote! { ::core::result::Result<Self::Response, Self::Error> }, false);
     let call_future_body = wrap_async_block(
         quote! {
@@ -72,25 +97,27 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             use tonic::codegen::*;
             use super::*;
 
-            pub trait #trait_name: ::core::marker::Send + ::core::marker::Sync + 'static {
+            pub trait #trait_name #ty_generics: ::core::marker::Send + ::core::marker::Sync + 'static #where_clause_tokens {
                 #(#associated_types)*
                 #(#trait_methods)*
             }
 
-            impl<T> #trait_name for T
+            impl #struct_generics #trait_name #ty_generics for T
             where
-                T: super::#trait_name + ::core::marker::Send + ::core::marker::Sync + 'static,
+                T: super::#trait_name #ty_generics + ::core::marker::Send + ::core::marker::Sync + 'static,
+                #where_clause_tokens
             {
                 #(#blanket_types)*
                 #(#blanket_methods)*
             }
 
             #[derive(Debug)]
-            pub struct #server_struct<T> {
+            pub struct #server_struct #struct_generics {
                 #service_fields
+                #phantom_field
             }
 
-            impl<T> #server_struct<T> {
+            impl #struct_generics #server_struct #struct_type_args #where_clause_tokens {
                 #service_constructors
 
                 pub fn with_interceptor<F>(
@@ -106,11 +133,12 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                 #compression_methods
             }
 
-            impl<T, B> tonic::codegen::Service<http::Request<B>> for #server_struct<T>
+            impl #service_generics tonic::codegen::Service<http::Request<B>> for #server_struct #struct_type_args
             where
-                T: #trait_name,
+                T: #trait_name #ty_generics,
                 B: Body + ::core::marker::Send + 'static,
                 B::Error: Into<StdError> + ::core::marker::Send + 'static,
+                #where_clause_tokens
             {
                 type Response = http::Response<tonic::body::Body>;
                 type Error = ::core::convert::Infallible;
@@ -133,7 +161,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                 }
             }
 
-            impl<T> Clone for #server_struct<T> {
+            impl #struct_generics Clone for #server_struct #struct_type_args #where_clause_tokens {
                 fn clone(&self) -> Self {
                     Self {
                         inner: self.inner.clone(),
@@ -141,13 +169,14 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
                         max_encoding_message_size: self.max_encoding_message_size,
+                        #phantom_init
                     }
                 }
             }
 
             pub const SERVICE_NAME: &str = #service_name_value;
 
-            impl<T> tonic::server::NamedService for #server_struct<T> {
+            impl #struct_generics tonic::server::NamedService for #server_struct #struct_type_args #where_clause_tokens {
                 const NAME: &'static str = SERVICE_NAME;
             }
         }

@@ -464,11 +464,7 @@ fn generate_proto_wire_impl(
 
     if config.has_suns() {
         let shadow_ty = quote! { #name #ty_generics };
-        let delegating_impls: Vec<_> = config
-            .suns
-            .iter()
-            .map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty))
-            .collect();
+        let delegating_impls: Vec<_> = config.suns.iter().map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty)).collect();
 
         quote! { #shadow_impl #(#delegating_impls)* }
     } else {

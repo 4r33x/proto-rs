@@ -1,8 +1,12 @@
 //! Utilities for extracting method information from trait definitions
 
+use std::collections::BTreeMap;
+
 use proc_macro2::TokenStream;
+use quote::format_ident;
 use quote::quote;
 use syn::FnArg;
+use syn::GenericParam;
 use syn::ItemTrait;
 use syn::PatType;
 use syn::ReturnType;
@@ -12,6 +16,7 @@ use syn::Type;
 use syn::TypePath;
 
 use crate::utils::MethodInfo;
+use crate::utils::rust_type_path_ident;
 
 struct ParsedMethodSignature {
     request_type: Type,
@@ -155,6 +160,60 @@ pub(crate) fn wrap_async_block(block: TokenStream, boxed: bool) -> TokenStream {
     } else {
         block
     }
+}
+
+pub fn generate_proto_generic_traits(trait_generics: &syn::Generics, generic_types: &BTreeMap<syn::Ident, Vec<Type>>, package: &str, trait_name: &syn::Ident) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    let route_prefix = format!("/{package}.{}", trait_name);
+
+    for param in &trait_generics.params {
+        if let GenericParam::Type(ty_param) = param {
+            let ident = &ty_param.ident;
+            let enum_ident = format_ident!("ProtoGeneric{}", ident);
+            let sealed_ident = format_ident!("Sealed{}", ident);
+
+            let Some(types) = generic_types.get(ident) else {
+                continue;
+            };
+
+            let variants: Vec<_> = types
+                .iter()
+                .map(|ty| {
+                    let variant_ident = format_ident!("{}", rust_type_path_ident(ty));
+                    quote! { #variant_ident }
+                })
+                .collect();
+
+            let impls: Vec<_> = types
+                .iter()
+                .map(|ty| {
+                    let variant_ident = format_ident!("{}", rust_type_path_ident(ty));
+                    quote! {
+                        impl #sealed_ident for #ty {
+                            const ENUM: #enum_ident = #enum_ident::#variant_ident;
+                            const ROUTE_PREFIX: &'static str = #route_prefix;
+                        }
+                    }
+                })
+                .collect();
+
+            tokens.extend(quote! {
+                #[allow(non_camel_case_types)]
+                pub enum #enum_ident {
+                    #(#variants),*
+                }
+
+                pub trait #sealed_ident {
+                    const ENUM: #enum_ident;
+                    const ROUTE_PREFIX: &'static str;
+                }
+
+                #(#impls)*
+            });
+        }
+    }
+
+    tokens
 }
 
 fn extract_request_type(sig: &syn::Signature) -> Type {

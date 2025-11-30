@@ -135,7 +135,7 @@ pub fn generate_service_struct_fields() -> TokenStream {
 }
 
 /// Generate service struct constructors
-pub fn generate_service_constructors() -> TokenStream {
+pub fn generate_service_constructors(extra_fields: TokenStream) -> TokenStream {
     quote! {
         pub fn new(inner: T) -> Self {
             Self::from_arc(::proto_rs::alloc::sync::Arc::new(inner))
@@ -148,18 +148,19 @@ pub fn generate_service_constructors() -> TokenStream {
                 send_compression_encodings: Default::default(),
                 max_decoding_message_size: None,
                 max_encoding_message_size: None,
+                #extra_fields
             }
         }
     }
 }
 
 /// Generate client interceptor method (complex generic bounds)
-pub fn generate_client_with_interceptor(client_struct: &syn::Ident) -> TokenStream {
+pub fn generate_client_with_interceptor(client_struct: &syn::Ident, type_args: TokenStream) -> TokenStream {
     quote! {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> #client_struct<InterceptedService<T, F>>
+        ) -> #client_struct #type_args
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,

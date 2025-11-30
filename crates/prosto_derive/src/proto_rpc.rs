@@ -14,10 +14,12 @@ use utils::extract_methods_and_types; // Add this import
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
+use crate::proto_rpc::utils::generate_proto_generic_traits;
 
 pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let input: ItemTrait = syn::parse(item).expect("Failed to parse trait");
     let trait_name = &input.ident;
+    let trait_generics = input.generics.clone();
     let ty_ident = trait_name.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input);
     let vis = &input.vis;
@@ -31,31 +33,36 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     config.register_and_emit_proto(&ty_ident, &service_content);
     let proto = config.imports_mat.clone();
 
+    let proto_generic_traits = generate_proto_generic_traits(&trait_generics, &config.proto_generic_types, &package_name, trait_name);
+
     // Generate user-facing trait
     let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();
+    let (_, ty_generics, where_clause) = trait_generics.split_for_impl();
+    let where_clause_tokens = where_clause.map(|wc| quote! { #wc }).unwrap_or_default();
 
     // Generate client module if requested
     let client_module = if config.rpc_client {
-        generate_client_module(trait_name, vis, &package_name, &methods)
+        generate_client_module(trait_name, vis, &package_name, &methods, &trait_generics)
     } else {
         quote! {}
     };
 
     // Generate server module if requested
     let server_module = if config.rpc_server {
-        generate_server_module(trait_name, vis, &package_name, &methods)
+        generate_server_module(trait_name, vis, &package_name, &methods, &trait_generics)
     } else {
         quote! {}
     };
 
     quote! {
-        #vis trait #trait_name {
+        #vis trait #trait_name #ty_generics #where_clause_tokens {
             #(#user_associated_types)*
             #(#user_methods)*
         }
 
         #client_module
         #server_module
+        #proto_generic_traits
         #proto
     }
 }

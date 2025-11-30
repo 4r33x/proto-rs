@@ -92,7 +92,7 @@ pub struct FieldConfig {
     pub import_path: Option<String>,
     pub custom_tag: Option<usize>,
     pub rename: Option<ProtoRename>,
-    pub validator: Option<String>,     // field-level validation function
+    pub validator: Option<String>, // field-level validation function
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -278,10 +278,7 @@ fn parse_string_or_path_value(meta: &syn::meta::ParseNestedMeta) -> Option<Strin
             }
             // Handle paths: validator = validate_fn
             Expr::Path(expr_path) => {
-                let path_str = expr_path.path.segments.iter()
-                    .map(|seg| seg.ident.to_string())
-                    .collect::<Vec<_>>()
-                    .join("::");
+                let path_str = expr_path.path.segments.iter().map(|seg| seg.ident.to_string()).collect::<Vec<_>>().join("::");
                 return Some(path_str);
             }
             _ => {}

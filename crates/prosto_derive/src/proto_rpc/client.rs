@@ -19,14 +19,43 @@ use crate::utils::MethodInfo;
 // CLIENT MODULE GENERATION
 // ============================================================================
 
-pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo]) -> TokenStream {
+pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo], trait_generics: &syn::Generics) -> TokenStream {
     let client_module = client_module_name(trait_name);
     let client_struct = client_struct_name(trait_name);
+    let (_, ty_generics, where_clause) = trait_generics.split_for_impl();
+    let where_clause_tokens = where_clause.map(|wc| quote! { #wc }).unwrap_or_default();
+    let generic_params: Vec<_> = trait_generics.params.iter().collect();
+    let type_params: Vec<_> = trait_generics.type_params().map(|p| &p.ident).collect();
+    let mut struct_generics_items: Vec<TokenStream> = vec![quote! { T }];
+    struct_generics_items.extend(generic_params.iter().map(|param| quote! { #param }));
+    let struct_generics = quote! { <#(#struct_generics_items),*> };
+
+    let mut struct_type_args_items: Vec<TokenStream> = vec![quote! { T }];
+    struct_type_args_items.extend(type_params.iter().map(|param| quote! { #param }));
+    let struct_type_args = quote! { <#(#struct_type_args_items),*> };
+
+    let mut channel_type_args_items: Vec<TokenStream> = vec![quote! { tonic::transport::Channel }];
+    channel_type_args_items.extend(type_params.iter().map(|param| quote! { #param }));
+    let channel_type_args = quote! { <#(#channel_type_args_items),*> };
 
     let client_methods = methods.iter().map(|m| generate_client_method(m, package_name, trait_name)).collect::<Vec<_>>();
 
     let compression_methods = generate_client_compression_methods();
-    let with_interceptor = generate_client_with_interceptor(&client_struct);
+    let mut with_interceptor_items: Vec<TokenStream> = vec![quote! { InterceptedService<T, F> }];
+    with_interceptor_items.extend(type_params.iter().map(|param| quote! { #param }));
+    let with_interceptor_args = quote! { <#(#with_interceptor_items),*> };
+    let with_interceptor = generate_client_with_interceptor(&client_struct, with_interceptor_args);
+
+    let phantom_field = if type_params.is_empty() {
+        quote! {}
+    } else {
+        quote! { _marker: ::core::marker::PhantomData<(#(#type_params),*)>, }
+    };
+    let phantom_init = if type_params.is_empty() {
+        quote! {}
+    } else {
+        quote! { _marker: ::core::marker::PhantomData, }
+    };
 
     quote! {
         #vis mod #client_module {
@@ -41,11 +70,12 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
             use super::*;
 
             #[derive(Debug, Clone)]
-            pub struct #client_struct<T> {
+            pub struct #client_struct #struct_generics {
                 inner: tonic::client::Grpc<T>,
+                #phantom_field
             }
 
-            impl #client_struct<tonic::transport::Channel> {
+            impl #ty_generics #client_struct #channel_type_args #where_clause_tokens {
                 pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
                 where
                     D: TryInto<tonic::transport::Endpoint>,
@@ -56,21 +86,22 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                 }
             }
 
-            impl<T> #client_struct<T>
+            impl #struct_generics #client_struct #struct_type_args
             where
                 T: tonic::client::GrpcService<tonic::body::Body>,
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + ::core::marker::Send + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + ::core::marker::Send,
+                #where_clause_tokens
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
-                    Self { inner }
+                    Self { inner, #phantom_init }
                 }
 
                 pub fn with_origin(inner: T, origin: http::Uri) -> Self {
                     let inner = tonic::client::Grpc::with_origin(inner, origin);
-                    Self { inner }
+                    Self { inner, #phantom_init }
                 }
 
                 #with_interceptor
