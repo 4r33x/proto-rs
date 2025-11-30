@@ -1,6 +1,6 @@
 # Rust as first-class citizen for gRPC ecosystem
 
-`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all.
+`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all. The crate ships batteries-included attribute support (for example `treat_as` and `proto_transparent`), zero-copy RPC helpers, and a rich catalog of built-in wrappers so your Rust types map cleanly onto generated Protobuf schemas.
 
 ## Motivation
 
@@ -22,6 +22,7 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 
 - **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code. The generated codec now reuses internal helpers to avoid redundant buffering and unnecessary copies.
 - **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts, and the macro avoids needless boxing/casting in the conversion layer.
+- **Attribute-level control** – Fine-tune your schema surface with `treat_as` for ad-hoc type substitutions, `proto_transparent` for single-field wrappers, concrete `sun` targets (including generic forms like `Sun<T>`), and optional tags/import paths. Built-in wrappers cover `ArcSwap`, `CachePadded`, atomics, and other common containers so everyday Rust types round-trip without extra glue.
 - **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
 - **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs). The helper deduplicates inputs and writes canonical packages derived from the file path.
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
@@ -58,6 +59,56 @@ Yep, all types here are Rust types. We can then implement the server just like a
 ## Advanced Features
 
 Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
+
+### Attribute quick hits
+
+- Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, treating a newtype as a primitive).
+- Add `proto_transparent` to forward the single inner field of a wrapper struct straight into the generated schema.
+- Target multiple `sun` domains, including concrete generics like `Sun<MyType<u64>>`, so a single shadow can serve several variants.
+- Mix and match built-in wrappers such as `ArcSwap`, `CachePadded`, and atomic integers; the derive machinery already knows how to serialize them.
+
+### Feature examples
+
+```rust
+// Swap a newtype's encoding without changing the Rust field type.
+#[derive(Clone)]
+pub struct Cents(pub i64);
+
+#[proto_message(proto_path = "protos/payments.proto")]
+pub struct Payment {
+    #[proto(tag = 1, treat_as = "i64")]
+    pub total: Cents,
+}
+
+// Forward the inner field directly into the schema for wrapper ergonomics.
+#[proto_message(proto_transparent, proto_path = "protos/payments.proto")]
+pub struct UserId(pub uuid::Uuid);
+
+// Target concrete generic domains from a single shadow definition.
+#[proto_message(proto_path = "protos/order.proto", sun = [SunOrder<u64>, SunOrder<i64>])]
+pub struct SunOrderShadow {
+    #[proto(tag = 1)]
+    pub quantity: u64,
+}
+
+// Infallible RPC handler returning zero-copy or boxed responses.
+#[proto_rpc(rpc_package = "orders", rpc_server = true, rpc_client = true, proto_path = "protos/orders.proto")]
+pub trait OrdersRpc {
+    async fn confirm(&self, Request<Order>) -> Response<Box<OrderAck>>;
+    async fn infallible_zero_copy(&self, Request<Order>) -> ZeroCopyResponse<Arc<OrderAck>>;
+}
+
+// Custom wrappers are understood out of the box.
+#[proto_message(proto_path = "protos/runtime.proto")]
+pub struct RuntimeState {
+    #[proto(tag = 1)]
+    pub config: arc_swap::ArcSwapAny<Arc<Config>>,
+    #[proto(tag = 2)]
+    pub cached_hits: crossbeam_utils::CachePadded<u64>,
+    #[proto(tag = 3, import_path = "google.protobuf")]
+    pub concurrent: std::sync::atomic::AtomicUsize,
+}
+```
 
 ### Struct with Advanced Attributes
 
@@ -290,7 +341,7 @@ Each `sun` entry generates a full `ProtoExt` implementation so the same shadow t
 
 ## Zero-copy server responses
 
-Service handlers produced by `#[proto_rpc]` work with [`ZeroCopyResponse`](src/tonic/resp.rs) to avoid cloning payloads. Any borrowed message (`&T`) can be turned into an owned response buffer via [`ToZeroCopyResponse::to_zero_copy`](src/tonic.rs), and the macro also supports infallible method signatures that return a response directly. The server example in [`examples/proto_gen_example.rs`](examples/proto_gen_example.rs) demonstrates both patterns:
+Service handlers produced by `#[proto_rpc]` work with [`ZeroCopyResponse`](src/tonic/resp.rs) to avoid cloning payloads. Any borrowed message (`&T`) can be turned into an owned response buffer via [`ToZeroCopyResponse::to_zero_copy`](src/tonic.rs). The macro accepts infallible method signatures (returning `Response<T>` or the zero-copy variant without `Result`) and understands common wrappers like `Arc<T>` and `Box<T>` so you can return shared or heap-allocated payloads without extra boilerplate. The server example in [`examples/proto_gen_example.rs`](examples/proto_gen_example.rs) demonstrates both patterns:
 
 ```rust
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, ...)]
