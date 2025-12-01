@@ -39,13 +39,13 @@ pub struct RizzPing {
     status: ServiceStatus,
 }
 
-fn validate_id(id: &Id) -> Result<(), DecodeError> {
+fn validate_id(id: &mut Id) -> Result<(), DecodeError> {
     if id.id == 1 {
         return Err(DecodeError::new("Bad field id"));
     }
     Ok(())
 }
-fn validate_pong(id: &GoonPong) -> Result<(), DecodeError> {
+fn validate_pong(id: &mut GoonPong) -> Result<(), DecodeError> {
     if id.id.id == 1 {
         return Err(DecodeError::new("Bad top id"));
     }

@@ -409,7 +409,7 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
             let validation = if let Some(validator_fn) = &info.config.validator {
                 let validator_path = parse_path_string(info.field, validator_fn);
                 quote! {
-                    #validator_path(&#access)?;
+                    #validator_path(&mut #access)?;
                 }
             } else {
                 quote! {}

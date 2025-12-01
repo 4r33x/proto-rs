@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.13]
+- Change validators signature to &mut value
+
+## [0.6.12]
+- Fix maps with Copy values
+
 ## [0.6.11]
 - Removed SmallVec buffers from zero-copy wrappers and corrected zero-copy encoding/decoding for enums.
 - Added support for `Arc` and `Box` response types in `proto_rpc`.
