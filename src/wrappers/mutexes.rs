@@ -72,7 +72,7 @@ where
     }
 }
 
-pub struct StdMutexShadow<S>(pub std::sync::Mutex<S>);
+pub struct StdMutexShadow<S>(pub S);
 
 impl<T> ProtoExt for std::sync::Mutex<T>
 where
@@ -86,8 +86,7 @@ where
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = value.0.get_mut().map_err(|_| DecodeError::new("Mutex lock poisoned"))?;
-        T::merge_field(inner, tag, wire, buf, ctx)
+        T::merge_field(&mut value.0, tag, wire, buf, ctx)
     }
 }
 
@@ -110,8 +109,7 @@ where
 
     #[inline(always)]
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = value.0.get_mut().map_err(|_| DecodeError::new("Mutex lock poisoned"))?;
-        SHD::decode_into(wire_type, inner, buf, ctx)
+        SHD::decode_into(wire_type, &mut value.0, buf, ctx)
     }
 
     #[inline(always)]
@@ -121,14 +119,12 @@ where
 
     #[inline(always)]
     fn proto_default() -> Self {
-        StdMutexShadow(std::sync::Mutex::new(SHD::proto_default()))
+        StdMutexShadow(SHD::proto_default())
     }
 
     #[inline(always)]
     fn clear(&mut self) {
-        if let Ok(inner) = self.0.get_mut() {
-            SHD::clear(inner);
-        }
+        SHD::clear(&mut self.0);
     }
 }
 
@@ -142,8 +138,7 @@ where
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let inner = self.0.into_inner().map_err(|_| DecodeError::new("Mutex lock poisoned"))?;
-        Ok(std::sync::Mutex::new(inner.to_sun()?))
+        Ok(std::sync::Mutex::new(self.0.to_sun()?))
     }
 
     #[inline(always)]
@@ -153,7 +148,7 @@ where
 }
 
 #[cfg(feature = "parking_lot")]
-pub struct ParkingLotMutexShadow<S>(pub parking_lot::Mutex<S>);
+pub struct ParkingLotMutexShadow<S>(pub S);
 
 #[cfg(feature = "parking_lot")]
 impl<T> ProtoShadow<Self> for parking_lot::Mutex<T>
@@ -231,8 +226,7 @@ where
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = value.0.get_mut();
-        T::merge_field(inner, tag, wire, buf, ctx)
+        T::merge_field(&mut value.0, tag, wire, buf, ctx)
     }
 }
 
@@ -256,8 +250,7 @@ where
 
     #[inline(always)]
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = value.0.get_mut();
-        SHD::decode_into(wire_type, inner, buf, ctx)
+        SHD::decode_into(wire_type, &mut value.0, buf, ctx)
     }
 
     #[inline(always)]
@@ -267,12 +260,12 @@ where
 
     #[inline(always)]
     fn proto_default() -> Self {
-        ParkingLotMutexShadow(parking_lot::Mutex::new(SHD::proto_default()))
+        ParkingLotMutexShadow(SHD::proto_default())
     }
 
     #[inline(always)]
     fn clear(&mut self) {
-        SHD::clear(self.0.get_mut());
+        SHD::clear(&mut self.0);
     }
 }
 
@@ -287,7 +280,7 @@ where
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(parking_lot::Mutex::new(self.0.into_inner().to_sun()?))
+        Ok(parking_lot::Mutex::new(self.0.to_sun()?))
     }
 
     #[inline(always)]
