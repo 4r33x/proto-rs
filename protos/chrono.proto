@@ -7,3 +7,8 @@ message DateTime {
   uint32 ns = 2;
 }
 
+message TimeDelta {
+  int64 secs = 1;
+  uint32 ns = 2;
+}
+

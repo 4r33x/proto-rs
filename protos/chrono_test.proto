@@ -6,3 +6,7 @@ message ChronoWrapper {
   DateTime inner = 1;
 }
 
+message DeltaWrapper {
+  TimeDelta inner = 1;
+}
+

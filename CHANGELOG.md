@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.6.14]
+- Add chrono::TimeDelta
+
 ## [0.6.13]
 - Change validators signature to &mut value
 
