@@ -92,7 +92,7 @@ pub struct FieldConfig {
     pub import_path: Option<String>,
     pub custom_tag: Option<usize>,
     pub rename: Option<ProtoRename>,
-    pub validator: Option<String>,     // field-level validation function
+    pub validator: Option<String>, // field-level validation function
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -103,7 +103,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
             continue;
         }
 
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             let key = meta.path.get_ident().map(ToString::to_string);
 
             match key.as_deref() {
@@ -132,10 +132,11 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                     cfg.rename = Some(parse_proto_rename(field, tokens));
                 }
                 Some("validator") => cfg.validator = parse_string_or_path_value(&meta),
-                _ => {}
+                _ => return Err(meta.error("unknown #[proto(...)] attribute")),
             }
             Ok(())
-        });
+        })
+        .expect("failed to parse #[proto(...)] attributes");
     }
 
     cfg
@@ -278,10 +279,7 @@ fn parse_string_or_path_value(meta: &syn::meta::ParseNestedMeta) -> Option<Strin
             }
             // Handle paths: validator = validate_fn
             Expr::Path(expr_path) => {
-                let path_str = expr_path.path.segments.iter()
-                    .map(|seg| seg.ident.to_string())
-                    .collect::<Vec<_>>()
-                    .join("::");
+                let path_str = expr_path.path.segments.iter().map(|seg| seg.ident.to_string()).collect::<Vec<_>>().join("::");
                 return Some(path_str);
             }
             _ => {}
@@ -472,5 +470,23 @@ fn eval_discriminant(expr: &Expr) -> Result<i32, syn::Error> {
         Expr::Group(group) => eval_discriminant(&group.expr),
         Expr::Paren(paren) => eval_discriminant(&paren.expr),
         _ => Err(syn::Error::new(expr.span(), "unsupported enum discriminant expression")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::panic;
+
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn parse_field_config_panics_on_unknown_proto_attribute() {
+        let field: syn::Field = parse_quote! { #[proto(unknown)] value: u32 };
+
+        let result = panic::catch_unwind(|| parse_field_config(&field));
+
+        assert!(result.is_err());
     }
 }

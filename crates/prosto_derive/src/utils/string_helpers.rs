@@ -3,14 +3,21 @@
 /// Convert identifier to `UPPER_SNAKE_CASE` for proto enums
 pub fn to_upper_snake_case(s: &str) -> String {
     let mut result = String::new();
+    let mut chars = s.chars().peekable();
     let mut prev_is_lower = false;
+    let mut prev_is_upper = false;
 
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() && i > 0 && prev_is_lower {
+    while let Some(c) = chars.next() {
+        let next_is_upper = chars.peek().is_some_and(|ch| ch.is_uppercase());
+        let next_is_lower = chars.peek().is_some_and(|ch| ch.is_lowercase());
+
+        if c.is_uppercase() && !result.is_empty() && (prev_is_lower || prev_is_upper && (next_is_upper || next_is_lower)) {
             result.push('_');
         }
+
         result.push(c.to_ascii_uppercase());
         prev_is_lower = c.is_lowercase();
+        prev_is_upper = c.is_uppercase();
     }
 
     result
@@ -19,14 +26,21 @@ pub fn to_upper_snake_case(s: &str) -> String {
 /// Convert identifier to `snake_case`
 pub fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
+    let mut chars = s.chars().peekable();
     let mut prev_is_lower = false;
+    let mut prev_is_upper = false;
 
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() && i > 0 && prev_is_lower {
+    while let Some(c) = chars.next() {
+        let next_is_upper = chars.peek().is_some_and(|ch| ch.is_uppercase());
+        let next_is_lower = chars.peek().is_some_and(|ch| ch.is_lowercase());
+
+        if c.is_uppercase() && !result.is_empty() && (prev_is_lower || prev_is_upper && (next_is_upper || next_is_lower)) {
             result.push('_');
         }
+
         result.push(c.to_ascii_lowercase());
         prev_is_lower = c.is_lowercase();
+        prev_is_upper = c.is_uppercase();
     }
 
     result

@@ -165,6 +165,8 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
+        } else {
+            return Err(meta.error("unknown #[proto(...)] attribute"));
         }
         Ok(())
     });
@@ -229,7 +231,7 @@ pub fn extract_item_validator(item_attrs: &[Attribute]) -> Option<String> {
         }
 
         let mut validator = None;
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("validator") {
                 let value_parser = meta.value()?;
 
@@ -244,18 +246,18 @@ pub fn extract_item_validator(item_attrs: &[Attribute]) -> Option<String> {
                         }
                         // Handle paths: validator = validate_fn
                         syn::Expr::Path(expr_path) => {
-                            let path_str = expr_path.path.segments.iter()
-                                .map(|seg| seg.ident.to_string())
-                                .collect::<Vec<_>>()
-                                .join("::");
+                            let path_str = expr_path.path.segments.iter().map(|seg| seg.ident.to_string()).collect::<Vec<_>>().join("::");
                             validator = Some(path_str);
                         }
                         _ => {}
                     }
                 }
+                return Ok(());
             }
-            Ok(())
-        });
+
+            Err(meta.error("unknown #[proto(...)] attribute"))
+        })
+        .expect("failed to parse #[proto(...)] attributes");
 
         if validator.is_some() {
             return validator;
@@ -369,6 +371,8 @@ fn merge_field_imports(dest: &mut BTreeMap<String, BTreeSet<String>>, src: HashM
 
 #[cfg(test)]
 mod tests {
+    use std::panic;
+
     use syn::parse_quote;
 
     use super::*;
@@ -427,5 +431,16 @@ mod tests {
 
         assert_eq!(extract_type_ident(&normalized), Some("BorrowedType".to_string()));
         assert!(matches!(normalized, Type::Path(_)));
+    }
+
+    #[test]
+    fn panics_on_unknown_validator_attribute() {
+        let attr: syn::Attribute = parse_quote!(#[proto(foo = "bar")]);
+
+        let result = panic::catch_unwind(|| {
+            let _ = extract_item_validator(&[attr]);
+        });
+
+        assert!(result.is_err());
     }
 }
