@@ -2,6 +2,7 @@ mod arcs;
 mod arrays;
 mod boxes;
 mod maps;
+mod mutexes;
 mod options;
 mod sets;
 mod vecs;

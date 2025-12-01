@@ -68,6 +68,7 @@ const_panic = { version = "0.2.15", features = [
 ] }
 arc-swap = { version = "1.7.1", optional = true }
 papaya = { version = "0.2.3", optional = true }
+parking_lot = { version = "0.12", optional = true }
 
 
 [dev-dependencies]
@@ -104,6 +105,8 @@ chrono = ["dep:chrono"]
 arc_swap = ["dep:arc-swap"]
 # Concurrent papaya collections
 papaya = ["dep:papaya"]
+# Mutex wrappers backed by parking_lot
+parking_lot = ["dep:parking_lot"]
 # Schema collection for build scripts
 build-schemas = ["inventory"]
 # Enable live proto dumping

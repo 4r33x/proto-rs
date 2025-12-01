@@ -1,0 +1,24 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package mutex;
+
+message MutexInner {
+  string value = 1;
+  uint32 count = 2;
+}
+
+message StdMutexHolder {
+  MutexInner inner = 1;
+}
+
+message ParkingLotMutexHolder {
+  MutexInner inner = 1;
+}
+
+message ExampleStdMutex {
+  MutexInner value = 1;
+}
+
+message ExampleParkingLotMutex {
+  MutexInner value = 1;
+}
