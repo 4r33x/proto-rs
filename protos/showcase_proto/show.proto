@@ -189,6 +189,14 @@ message SingleField {
   uint64 value = 1;
 }
 
+message SkippedTupleDefaultEphemeral {}
+message SkippedTupleDefault {
+  oneof value {
+    SkippedTupleDefaultEphemeral ephemeral = 1;
+    uint32 persistent = 2;
+  }
+}
+
 message StructFailU16 {
   uint32 amount_2 = 1;
   optional uint32 amount = 2;
