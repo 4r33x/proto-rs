@@ -75,6 +75,19 @@ pub fn arc_swap_inner_type(ty: &Type) -> Option<Type> {
     None
 }
 
+/// Check if a type is a reference (&T or &mut T)
+pub fn is_reference_type(ty: &Type) -> bool {
+    matches!(ty, Type::Reference(_))
+}
+
+/// Strip reference from a type: &T or &mut T -> T
+pub fn strip_reference(ty: &Type) -> Type {
+    match ty {
+        Type::Reference(reference) => (*reference.elem).clone(),
+        other => other.clone(),
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct FieldConfig {
@@ -93,6 +106,7 @@ pub struct FieldConfig {
     pub custom_tag: Option<usize>,
     pub rename: Option<ProtoRename>,
     pub validator: Option<String>, // field-level validation function
+    pub is_reference: bool,        // field is a reference type (&T or &mut T)
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -138,6 +152,9 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
         })
         .expect("failed to parse #[proto(...)] attributes");
     }
+
+    // Detect if the field is a reference type
+    cfg.is_reference = is_reference_type(&field.ty);
 
     cfg
 }
@@ -298,13 +315,21 @@ fn parse_usize_value(meta: &syn::meta::ParseNestedMeta) -> Option<usize> {
 }
 
 pub fn resolved_field_type(field: &Field, config: &FieldConfig) -> Type {
-    if let Some(treat_as) = &config.treat_as {
+    let ty = if let Some(treat_as) = &config.treat_as {
         syn::parse_str::<Type>(treat_as).unwrap_or_else(|_| {
             let name = field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string);
             panic!("invalid type in #[proto(treat_as = ...)] on field {name}");
         })
     } else {
         field.ty.clone()
+    };
+
+    // For reference fields, strip the reference for the Shadow type
+    // The Shadow type will own the data, while the original type has references
+    if config.is_reference {
+        strip_reference(&ty)
+    } else {
+        ty
     }
 }
 
