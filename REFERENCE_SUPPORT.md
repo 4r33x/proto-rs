@@ -1,79 +1,59 @@
-# Reference Field Support Status
+# Reference Field Support - Architectural Limitation
 
-## Current Status
+## Summary
 
-The proto_message macro now **accepts** lifetime parameters in struct definitions:
+**Types with lifetime parameters are NOT supported by the proto_message macro** due to fundamental architectural constraints in the ProtoShadow/ProtoWire framework.
 
-```rust
-#[proto_message]
-struct MyType<'a> {
-    value: u32,
-    name: String,  // Works fine
-    // reference fields below need more work
-}
-```
+## Why Lifetime Parameters Don't Work
 
-## Reference Fields - Architectural Challenge
+The proto_message macro generates implementations of the ProtoExt and ProtoWire traits, which rely on the ProtoShadow trait. This framework was designed with the assumption that message types don't have lifetime parameters.
 
-Supporting actual reference fields like `&'a String` requires significant architectural changes:
+### The Core Issue
+
+When a struct has lifetime parameters (e.g., `MyType<'a>`), the framework encounters unsolvable lifetime variance problems:
 
 ```rust
 #[proto_message]
 struct RefType<'a> {
     value: u32,
-    name: &'a String,  // ← This needs special handling
+    name: &'a String,  // This creates variance issues
 }
 ```
 
-### Why It's Complex
+The generated code needs to create references like `&'b RefType<'a>`, but Rust's type system prevents this when `RefType<'a>` contains references or PhantomData, due to lifetime invariance.
 
-1. **Shadow Type Mismatch**: Currently, `Shadow<'b> = RefType<'b>` but `RefType<'b>` contains references
-2. **Encoding vs Decoding Asymmetry**:
-   - **Encoding**: Can work - we borrow from `&'a String` and serialize
-   - **Decoding**: Problem - we create owned `String` but need `&'a String`
+### Attempts Made
 
-### What's Needed
+1. **Encode-only mode**: Tried implementing types that only support encoding (with panics on decode)
+2. **Custom ProtoShadow**: Attempted generating custom ProtoShadow implementations with different lifetime names
+3. **Direct EncodeInput**: Tried bypassing ProtoShadow::View by directly specifying `EncodeInput<'b> = &'b Self`
+4. **Lifetime bounds**: Attempted adding where clauses like `'a: 'b` to associated types
 
-To fully support reference fields, we need to:
+**All attempts failed** due to Rust's lifetime variance rules and trait constraints.
 
-1. **Generate a separate Shadow struct** with owned fields:
-   ```rust
-   // Original (user-defined)
-   struct RefType<'a> {
-       value: u32,
-       name: &'a String,
-   }
+## Recommended Workaround
 
-   // Generated Shadow (owns data)
-   struct RefTypeShadow {
-       value: u32,
-       name: String,  // Owned, not borrowed
-   }
-   ```
-
-2. **Implement ProtoShadow** to handle conversion
-3. **Update encode logic** to borrow from references
-4. **Update decode logic** to create owned data
-5. **Document that decoding produces owned data**, not the reference type
-
-### Workaround
-
-For now, use owned types in proto messages and create reference wrappers separately:
+Use owned types for proto messages and create separate reference wrapper types:
 
 ```rust
 // Proto message with owned data
 #[proto_message]
+#[derive(Clone, Debug)]
 struct DataOwned {
+    #[proto(tag = 1)]
     value: u32,
+    #[proto(tag = 2)]
     name: String,
 }
 
-// Wrapper with references (not a proto message)
+// Wrapper with references (NOT a proto message)
+#[derive(Debug)]
 struct DataRef<'a> {
     value: u32,
     name: &'a str,
 }
 
+// Conversion helpers
 impl<'a> From<&'a DataOwned> for DataRef<'a> {
     fn from(owned: &'a DataOwned) -> Self {
         DataRef {
@@ -82,15 +62,48 @@ impl<'a> From<&'a DataOwned> for DataRef<'a> {
         }
     }
 }
+
+impl From<DataRef<'_>> for DataOwned {
+    fn from(ref_type: DataRef) -> Self {
+        DataOwned {
+            value: ref_type.value,
+            name: ref_type.name.to_string(),
+        }
+    }
+}
 ```
 
-## Implementation Complexity
+### Usage Example
 
-Implementing full reference support would require:
-- ~200-300 lines of macro code changes
-- New Shadow struct generation logic
-- Field-by-field type transformation
-- ProtoShadow trait implementation generation
-- Comprehensive test coverage
+```rust
+// Decode from wire format (creates owned data)
+let owned = DataOwned::decode(bytes)?;
 
-This is a substantial feature addition that changes the fundamental architecture of how the macro works.
+// Create reference wrapper for convenient access
+let ref_view = DataRef::from(&owned);
+
+// Encode to wire format (from either owned or ref)
+let bytes_from_owned = DataOwned::encode_to_vec(&owned);
+let bytes_from_ref = DataOwned::encode_to_vec(&DataOwned::from(ref_view));
+```
+
+## Why This Limitation Exists
+
+The ProtoShadow trait defines associated types like `View<'a>` that are used during encoding and decoding. For types with their own lifetime parameters, creating these associated types with arbitrary lifetimes creates unsolvable constraints:
+
+- The trait requires `type View<'a>: 'a`
+- For `MyType<'b>`, we'd need `View<'a> = &'a MyType<'b>` where `'b: 'a`
+- But we can't add these bounds to the trait implementation without making it stricter than the trait allows
+- And when `MyType<'b>` contains references, the variance makes `&'a MyType<'b>` ill-formed
+
+## Future Possibilities
+
+Supporting types with lifetime parameters would require a fundamental redesign of the ProtoShadow/ProtoWire trait system. This would be a major breaking change affecting the entire proto-rs ecosystem.
+
+A potential approach would be:
+1. Separate encode-only and decode-capable traits
+2. Remove the Shadow type system for encode-only types
+3. Add GATs (Generic Associated Types) with proper lifetime bounds
+4. Comprehensive refactoring of all existing implementations
+
+This is beyond the scope of incremental improvements and would require careful design and community consensus.
