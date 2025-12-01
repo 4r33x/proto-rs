@@ -2,6 +2,25 @@
 syntax = "proto3";
 package mixed_roundtrip;
 
+
+message PaymentMethod {
+  oneof value {
+    uint64 cash = 1;
+    string card = 2;
+    QuoteLamports crypto = 3;
+  }
+}
+
+
+message QuoteLamports {
+  oneof value {
+    uint64 lamports = 1;
+    uint64 w_sol = 2;
+    uint64 usdc = 3;
+    uint64 usdt = 4;
+  }
+}
+
 message ConversionInner {
   uint64 id = 1;
   string label = 2;
@@ -22,5 +41,13 @@ message MixedProto {
   repeated ConversionInner inner_list = 6;
   repeated ConversionInner fixed_inner = 8;
   repeated int32 values = 15;
+}
+
+message SkippedTupleDefaultEphemeral {}
+message SkippedTupleDefault {
+  oneof value {
+    SkippedTupleDefaultEphemeral ephemeral = 1;
+    uint32 persistent = 2;
+  }
 }
 

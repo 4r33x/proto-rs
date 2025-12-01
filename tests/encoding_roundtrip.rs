@@ -736,7 +736,7 @@ fn map_default_entries_align_with_prost() {
     assert_eq!(roundtrip, message, "default map entries should survive encode/decode");
 }
 
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
 #[derive(Clone, Debug, PartialEq)]
 enum QuoteLamports {
     Lamports(u64),
@@ -745,7 +745,7 @@ enum QuoteLamports {
     Usdt(u64),
 }
 
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
 #[derive(Clone, Debug, PartialEq)]
 enum PaymentMethod {
     Cash(u64),
@@ -753,7 +753,7 @@ enum PaymentMethod {
     Crypto(QuoteLamports),
 }
 
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[proto_message(proto_path = "protos/tests/mixed_roundtrip.proto")]
 #[derive(Clone, Debug, PartialEq)]
 enum SkippedTupleDefault {
     Ephemeral(#[proto(skip)] std::rc::Rc<String>),
