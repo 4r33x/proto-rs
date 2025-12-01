@@ -175,11 +175,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 
     let delegating_impls = if config.has_suns() {
         let shadow_ty = quote! { #name #ty_generics };
-        let impls: Vec<_> = config
-            .suns
-            .iter()
-            .map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty))
-            .collect();
+        let impls: Vec<_> = config.suns.iter().map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty)).collect();
 
         quote! { #(#impls)* }
     } else {
