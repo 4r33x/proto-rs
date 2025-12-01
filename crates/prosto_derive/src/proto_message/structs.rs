@@ -150,9 +150,11 @@ fn generate_transparent_struct_impl(
     let encode_raw_prelude: Vec<_> = encode_raw_binding.prelude.into_iter().collect();
     let encode_raw_value = encode_raw_binding.value;
 
+    let shadow_ty_generics = build_shadow_type_generics(ty_generics);
+
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-            type Shadow<'b> = #name #ty_generics where Self: 'b;
+            type Shadow<'b> = #name #shadow_ty_generics;
 
             #[inline(always)]
             fn merge_field(
@@ -302,6 +304,12 @@ fn sanitize_struct(mut item: ItemStruct) -> ItemStruct {
     item
 }
 
+fn build_shadow_type_generics(ty_generics: &syn::TypeGenerics) -> TokenStream2 {
+    // For the Shadow type, we keep the original lifetime and type parameters as-is
+    // The 'b lifetime in Shadow<'b> is separate from the struct's own lifetimes
+    quote! { #ty_generics }
+}
+
 fn generate_proto_ext_impl(
     name: &syn::Ident,
     impl_generics: &syn::ImplGenerics,
@@ -312,7 +320,9 @@ fn generate_proto_ext_impl(
 ) -> TokenStream2 {
     let decode_arms = build_decode_match_arms(fields, &quote! { value });
 
-    let shadow_ty = quote! { #name #ty_generics };
+    // For the Shadow type, we need to use the shadow lifetime 'b for all lifetime parameters
+    let shadow_ty_generics = build_shadow_type_generics(ty_generics);
+    let shadow_ty = quote! { #name #shadow_ty_generics };
     let post_decode_hooks = build_post_decode_hooks(fields);
 
     // Generate message-level validation if validator is specified
@@ -353,7 +363,7 @@ fn generate_proto_ext_impl(
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty where Self: 'b;
+                type Shadow<'b> = #shadow_ty;
 
                 #[inline(always)]
                 fn merge_field(
@@ -463,7 +473,8 @@ fn generate_proto_wire_impl(
     };
 
     if config.has_suns() {
-        let shadow_ty = quote! { #name #ty_generics };
+        let shadow_ty_generics = build_shadow_type_generics(ty_generics);
+        let shadow_ty = quote! { #name #shadow_ty_generics };
         let delegating_impls: Vec<_> = config.suns.iter().map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty)).collect();
 
         quote! { #shadow_impl #(#delegating_impls)* }
