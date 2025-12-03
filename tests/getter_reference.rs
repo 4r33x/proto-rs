@@ -1,21 +1,25 @@
+use private::TaskCtx;
 use proto_rs::DecodeError;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
 use proto_rs::proto_message;
-
-#[derive(Clone, PartialEq, Debug)]
-struct TaskCtx {
-    flags: u32,
-    values: u32,
-}
-
-impl TaskCtx {
-    fn flags(&self) -> &u32 {
-        &self.flags
+mod private {
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct TaskCtx {
+        flags: u32,
+        values: u32,
     }
+    impl TaskCtx {
+        pub fn new(flags: u32, values: u32) -> Self {
+            Self { flags, values }
+        }
+        pub fn flags(&self) -> &u32 {
+            &self.flags
+        }
 
-    fn values(&self) -> &u32 {
-        &self.values
+        pub fn values(&self) -> &u32 {
+            &self.values
+        }
     }
 }
 
@@ -32,15 +36,14 @@ struct TaskRef<'a> {
     ctx: &'a TaskCtx,
 }
 
+//flattened with getters
 #[proto_message(sun = Task)]
 struct TaskProto {
-    #[proto(tag = 1)]
     cfg_id: u64,
-    #[proto(tag = 2)]
     user_id: u64,
-    #[proto(tag = 3, getter = "$.ctx.flags()")]
+    #[proto(tag = 3, getter = "&*$.ctx.flags()")]
     flags: u32,
-    #[proto(tag = 4, getter = "$.ctx.values()")]
+    #[proto(tag = 4, getter = "&*$.ctx.values()")]
     values: u32,
 }
 
@@ -53,10 +56,7 @@ impl ProtoShadow<Task> for TaskProto {
         Ok(Task {
             cfg_id: self.cfg_id,
             user_id: self.user_id,
-            ctx: TaskCtx {
-                flags: self.flags,
-                values: self.values,
-            },
+            ctx: TaskCtx::new(self.flags, self.values),
         })
     }
 
@@ -74,7 +74,7 @@ fn encode_decode_reference_with_getter() {
     let task = Task {
         cfg_id: 7,
         user_id: 9,
-        ctx: TaskCtx { flags: 1, values: 2 },
+        ctx: TaskCtx::new(1, 2),
     };
     let bytes = Task::encode_to_vec(&task);
     let decoded = Task::decode(bytes.as_slice()).expect("decode task with getters");
