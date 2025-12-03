@@ -41,7 +41,7 @@ struct TaskRef<'a> {
 struct TaskProto {
     cfg_id: u64,
     user_id: u64,
-    #[proto(tag = 3, getter = "&*$.ctx.flags()")]
+    #[proto(getter = "&*$.ctx.flags()")]
     flags: u32,
     #[proto(tag = 4, getter = "&*$.ctx.values()")]
     values: u32,

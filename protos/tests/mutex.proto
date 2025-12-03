@@ -15,11 +15,3 @@ message MutexInner {
   uint32 count = 2;
 }
 
-message ParkingLotMutexHolder {
-  MutexInner inner = 1;
-}
-
-message StdMutexHolder {
-  MutexInner inner = 1;
-}
-
