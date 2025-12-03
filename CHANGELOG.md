@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.15]
+- Add std Mutex and parking_lot Mutex 
+- Add #[proto(getter = &*$.field)] attrubute (view tests/getter_reference.rs)
+
 ## [0.6.14]
 - Add chrono::TimeDelta
 
