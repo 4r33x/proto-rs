@@ -148,7 +148,7 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
             "HashMap" => return parse_map_type(path, ty, MapKind::HashMap),
             "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
             "HashSet" | "BTreeSet" => return parse_set_type(path, ty),
-            "ArcSwap" | "Box" | "Arc" | "CachePadded" => return parse_box_like_type(path, ty),
+            "ArcSwap" | "Box" | "Arc" | "CachePadded" | "Mutex" => return parse_box_like_type(path, ty),
             "ZeroCopy" => return parse_zero_copy_type(path, ty),
             _ => {}
         }

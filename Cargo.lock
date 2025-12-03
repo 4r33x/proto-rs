@@ -1216,6 +1216,7 @@ dependencies = [
  "fastnum",
  "inventory",
  "papaya",
+ "parking_lot",
  "proptest",
  "prost",
  "prosto_derive",
