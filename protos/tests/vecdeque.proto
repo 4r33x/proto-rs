@@ -1,0 +1,15 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package vecdeque;
+
+message Nested {
+  uint32 id = 1;
+  string name = 2;
+}
+
+message VecDequeMessage {
+  int32 numbers = 1;
+  bytes data = 2;
+  Nested children = 3;
+}
+

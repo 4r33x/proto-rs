@@ -88,7 +88,7 @@ pub fn is_bytes_array(ty: &Type) -> bool {
     }
 }
 
-/// True if the type is `Vec<u8>` or `Bytes`.
+/// True if the type is `Vec<u8>`, `VecDeque<u8>`, or `Bytes`.
 pub fn is_bytes_vec(ty: &Type) -> bool {
     match ty {
         Type::Path(path) => {
@@ -96,7 +96,7 @@ pub fn is_bytes_vec(ty: &Type) -> bool {
                 if id == "Bytes" {
                     return true;
                 }
-                if id == "Vec"
+                if (id == "Vec" || id == "VecDeque")
                     && let Some(inner) = single_generic(path)
                 {
                     return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).is_some_and(|i| i == "u8"));
@@ -145,6 +145,7 @@ fn parse_path_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
             "Option" => return parse_option_type(path, ty),
             "ArcSwapOption" => return parse_arc_swap_option_type(path, ty),
             "Vec" => return parse_vec_type(path, ty),
+            "VecDeque" => return parse_vec_deque_type(path, ty),
             "HashMap" => return parse_map_type(path, ty, MapKind::HashMap),
             "BTreeMap" => return parse_map_type(path, ty, MapKind::BTreeMap),
             "HashSet" | "BTreeSet" => return parse_set_type(path, ty),
@@ -191,6 +192,40 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
             false,
             false,
             parse_quote! { ::proto_rs::alloc::vec::Vec<u8> },
+            (*inner_ty).clone(),
+            false,
+        );
+    }
+
+    let inner = parse_field_type(inner_ty);
+    ParsedFieldType {
+        rust_type: ty.clone(),
+        proto_type: inner.proto_type.clone(),
+        prost_type: inner.prost_type.clone(),
+        is_option: false,
+
+        is_message_like: inner.is_message_like,
+        is_numeric_scalar: inner.is_numeric_scalar,
+        proto_rust_type: inner.proto_rust_type.clone(),
+        elem_type: inner.elem_type.clone(),
+        is_rust_enum: inner.is_rust_enum,
+        map_kind: None,
+    }
+}
+
+fn parse_vec_deque_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
+    let Some(inner_ty) = single_generic(path) else {
+        panic!("VecDeque must have a single generic argument");
+    };
+
+    if matches!(inner_ty, Type::Path(p) if last_ident(p).is_some_and(|id| id == "u8")) {
+        return ParsedFieldType::new(
+            ty.clone(),
+            "bytes",
+            quote! { bytes },
+            false,
+            false,
+            parse_quote! { ::proto_rs::alloc::collections::VecDeque<u8> },
             (*inner_ty).clone(),
             false,
         );
