@@ -2,6 +2,14 @@
 syntax = "proto3";
 package mutex;
 
+message ExampleParkingLotMutex {
+  MutexInner value = 1;
+}
+
+message ExampleStdMutex {
+  MutexInner value = 1;
+}
+
 message MutexInner {
   string value = 1;
   uint32 count = 2;

@@ -122,7 +122,7 @@ impl SigmaRpc for S {
         Response::new(stream)
     }
 
-    fn sync_rizz_ping(&self, request: tonic::Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+    fn sync_rizz_ping(&self, _request: tonic::Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {}))
     }
 }
@@ -151,7 +151,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running SigmaRpc server"]
     async fn test_proto_client_stream_impl() {
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
         let mut res = client.rizz_uni(BarSub {}).await.unwrap().into_inner();
@@ -161,14 +160,15 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires running SigmaRpc server"]
     async fn test_zero_copy_client_requests() {
         use proto_rs::ZeroCopyRequest;
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
 
         let borrowed = RizzPing {};
-        let zero_copy: ZeroCopyRequest<_> = proto_rs::ToZeroCopyRequest::to_zero_copy(&borrowed);
-        client.rizz_ping(zero_copy).await.unwrap();
+        let zero_copy_1: ZeroCopyRequest<RizzPing> = proto_rs::ToZeroCopyRequest::to_zero_copy(&borrowed);
+        let zero_copy_2: ZeroCopyRequest<RizzPing> = proto_rs::ToZeroCopyRequest::to_zero_copy(&borrowed);
+        client.rizz_ping(zero_copy_1).await.unwrap();
+        client.sync_rizz_ping(zero_copy_2).await.unwrap();
     }
 
     #[test]
