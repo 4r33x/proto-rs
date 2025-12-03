@@ -1,5 +1,7 @@
 #![allow(clippy::inline_always)]
 #![allow(clippy::wrong_self_convention)]
+use core::marker::PhantomData;
+
 use bytes::Buf;
 use bytes::BufMut;
 
@@ -360,15 +362,19 @@ pub trait ProtoExt: Sized {
     }
 }
 
-//Example implementation
+//Example implementation with lifetimes
 #[expect(dead_code)]
-struct ID {
+struct ID<'b> {
     id: u64,
+    _pd: PhantomData<&'b ()>,
 }
-impl ProtoShadow<Self> for ID {
-    type Sun<'a> = &'a Self; // borrowed during encoding
-    type OwnedSun = Self; // owned form after decoding
-    type View<'a> = &'a Self;
+impl<'b> ProtoShadow<ID<'b>> for ID<'b> {
+    // During encoding we look at &ID<'b>
+    type Sun<'a> = ID<'a>;
+    // After decoding we own an ID<'b>
+    type OwnedSun = ID<'b>;
+    // Views are just &ID<'b> again
+    type View<'a> = ID<'a>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -380,11 +386,8 @@ impl ProtoShadow<Self> for ID {
         value
     }
 }
-impl ProtoExt for ID {
-    type Shadow<'b>
-        = ID
-    where
-        Self: 'b;
+impl<'b> ProtoExt for ID<'b> {
+    type Shadow<'a> = ID<'b>;
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -401,14 +404,17 @@ impl ProtoExt for ID {
     }
 }
 
-impl ProtoWire for ID {
-    type EncodeInput<'b> = &'b Self;
+impl<'b> ProtoWire for ID<'b> {
+    type EncodeInput<'a> = ID<'a>;
     const KIND: ProtoKind = ProtoKind::Message;
     const WIRE_TYPE: WireType = WireType::LengthDelimited;
 
     #[inline(always)]
     fn proto_default() -> Self {
-        Self { id: ProtoWire::proto_default() }
+        Self {
+            id: ProtoWire::proto_default(),
+            _pd: PhantomData,
+        }
     }
 
     #[inline(always)]
