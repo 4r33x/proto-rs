@@ -18,6 +18,7 @@ struct ParsedMethodSignature {
     response_type: Type,
     response_return_type: Type,
     response_is_result: bool,
+    is_async: bool,
     is_streaming: bool,
     stream_type_name: Option<syn::Ident>,
     inner_response_type: Option<Type>,
@@ -30,12 +31,14 @@ impl ParsedMethodSignature {
         let (response_return_type, response_is_result) = extract_response_return(sig);
         let response_type = extract_proto_type(&response_return_type);
         let (is_streaming, stream_type_name, inner_response_type, stream_item_type) = extract_stream_metadata(&response_type, trait_items);
+        let is_async = sig.asyncness.is_some();
 
         Self {
             request_type,
             response_type,
             response_return_type,
             response_is_result,
+            is_async,
             is_streaming,
             stream_type_name,
             inner_response_type,
@@ -63,6 +66,7 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                     response_type: signature.response_type,
                     response_return_type: signature.response_return_type,
                     response_is_result: signature.response_is_result,
+                    is_async: signature.is_async,
                     is_streaming: signature.is_streaming,
                     stream_type_name: signature.stream_type_name,
                     inner_response_type: signature.inner_response_type,
@@ -106,14 +110,14 @@ fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::I
 
     let request_type = &signature.request_type;
 
-    let future_type = method_future_return_type(future_output);
+    let return_type = if signature.is_async { method_future_return_type(future_output) } else { future_output };
 
     quote! {
         #(#attrs)*
         fn #method_name(
             &self,
             request: tonic::Request<#request_type>,
-        ) -> #future_type
+        ) -> #return_type
         where
             Self: ::core::marker::Send + ::core::marker::Sync;
     }
@@ -312,6 +316,11 @@ mod tests {
                     &self,
                     request: tonic::Request<MyRequest>
                 ) -> MyResponse;
+
+                fn sync_plain(
+                    &self,
+                    request: tonic::Request<MyRequest>
+                ) -> Result<tonic::Response<MyResponse>, tonic::Status>;
             }
         };
 
@@ -367,5 +376,11 @@ mod tests {
         assert!(!plain.response_is_result);
         let plain_return = &plain.response_return_type;
         assert_eq!(quote!(#plain_return).to_string(), "MyResponse");
+
+        let sync_plain = &signatures[7];
+        assert!(sync_plain.response_is_result);
+        assert!(!sync_plain.is_async);
+        let sync_response = &sync_plain.response_return_type;
+        assert_eq!(quote!(#sync_response).to_string(), "tonic :: Response < MyResponse >");
     }
 }
