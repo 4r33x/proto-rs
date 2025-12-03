@@ -15,4 +15,5 @@ service SigmaRpc {
   rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
   rpc RizzPingArcedResp(goon_types.RizzPing) returns (goon_types.GoonPong) {}
   rpc RizzPingBoxedResp(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc SyncRizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
 }

@@ -45,6 +45,7 @@ pub trait SigmaRpc {
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn rizz_ping_arced_resp(&self, request: Request<RizzPing>) -> Result<Response<Arc<GoonPong>>, Status>;
     async fn rizz_ping_boxed_resp(&self, request: Request<RizzPing>) -> Result<Response<Box<GoonPong>>, Status>;
+    fn sync_rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
 }
 
 // A dummy server impl
@@ -119,6 +120,10 @@ impl SigmaRpc for S {
         let stream: Self::RizzUniStream = Box::pin(stream);
 
         Response::new(stream)
+    }
+
+    fn sync_rizz_ping(&self, request: tonic::Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        Ok(Response::new(GoonPong {}))
     }
 }
 
