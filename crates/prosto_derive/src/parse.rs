@@ -10,6 +10,7 @@ use syn::Attribute;
 use syn::Data;
 use syn::ItemTrait;
 use syn::Lit;
+use syn::LitStr;
 use syn::Type;
 use syn::parse::Parse;
 
@@ -58,6 +59,7 @@ pub struct UnifiedProtoConfig {
     pub rpc_server: bool,
     pub rpc_client: bool,
     rpc_package: Option<String>,
+    pub import_all_from: Option<String>,
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
@@ -97,6 +99,7 @@ impl UnifiedProtoConfig {
 
         // Extract imports from item-level attributes
         let mut all_imports = extract_item_imports(item_attrs);
+        config.import_all_from = extract_import_all_from(item_attrs);
 
         // Extract field-level imports
         fields.extract_field_imports(&mut all_imports);
@@ -106,6 +109,14 @@ impl UnifiedProtoConfig {
             let proto_path = proto_path_str.to_owned();
             for package in all_imports.keys() {
                 config.file_imports.entry(proto_path.clone()).or_default().insert(package.to_owned());
+            }
+
+            if let Some(import_all_from) = &config.import_all_from {
+                config
+                    .file_imports
+                    .entry(proto_path)
+                    .or_default()
+                    .insert(import_all_from.to_owned());
             }
         }
 
@@ -292,6 +303,20 @@ pub fn extract_item_imports(item_attrs: &[Attribute]) -> BTreeMap<String, BTreeS
     }
 
     imports
+}
+
+pub fn extract_import_all_from(item_attrs: &[Attribute]) -> Option<String> {
+    for attr in item_attrs {
+        if !attr.path().is_ident("proto_import_all_from") {
+            continue;
+        }
+
+        if let Ok(path) = attr.parse_args::<LitStr>() {
+            return Some(path.value());
+        }
+    }
+
+    None
 }
 
 fn extract_string_array(array: &syn::ExprArray) -> BTreeSet<String> {
