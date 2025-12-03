@@ -1,3 +1,4 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
 package vecdeque;
 
@@ -7,7 +8,8 @@ message Nested {
 }
 
 message VecDequeMessage {
-  repeated int32 numbers = 1;
+  int32 numbers = 1;
   bytes data = 2;
-  repeated Nested children = 3;
+  Nested children = 3;
 }
+

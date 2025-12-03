@@ -7,10 +7,6 @@ use syn::Type;
 use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 
-// ============================================================================
-// CONVERSION HELPERS
-// ============================================================================
-
 /// Generate proto-to-native request conversion (used in server)
 pub fn generate_proto_to_native_request(_request_type: &Type) -> TokenStream {
     quote! { let native_request = request; }

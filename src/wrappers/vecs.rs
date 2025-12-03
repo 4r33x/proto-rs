@@ -379,13 +379,6 @@ where
     }
 }
 
-/// Implements `ProtoWire` for `Vec<Primitive>` prost-compatible numeric types.
-/// This is a specialized version of the generic `Vec<T>` implementation,
-/// using packed encoding for numeric primitives.
-///
-/// - Uses packed `LengthDelimited` encoding
-/// - Uses per-element `ProtoWire` encode/decode
-/// - Skips unsafe code and generics resolution overhead
 macro_rules! impl_proto_wire_vec_for_copy {
     ($($ty:ty => $kind:expr),* $(,)?) => {
         $(
@@ -394,9 +387,6 @@ macro_rules! impl_proto_wire_vec_for_copy {
                 const KIND: crate::traits::ProtoKind = $kind;
                 const _REPEATED_SUPPORT: Option<&'static str> = Some("Vec");
 
-                // -------------------------------------------------------------------------
-                // encoded_len_impl / encoded_len_tagged
-                // -------------------------------------------------------------------------
                 #[inline(always)]
                 fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
                     unsafe { Self::encoded_len_impl_raw(value) }

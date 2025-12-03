@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.16]
+- Add sync methods optimisation
+- Add #[proto_import_all_from(package_name)] attribute
+
 ## [0.6.15]
 - Add std Mutex and parking_lot Mutex 
 - Add #[proto(getter = &*$.field)] attrubute (view tests/getter_reference.rs)

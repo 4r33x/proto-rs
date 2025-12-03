@@ -349,16 +349,8 @@ impl_google_wrapper!(
 impl_google_wrapper!(String, string, "StringValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::String);
 impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
 impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
-impl_google_wrapper!(
-    VecDeque<u8>,
-    bytes,
-    "BytesValue",
-    by_ref,
-    (!is_empty),
-    (is_empty),
-    (clear),
-    crate::traits::ProtoKind::Bytes
-);
+
+impl_google_wrapper!(VecDeque<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
 
 macro_rules! impl_atomic_primitive {
     ($ty:ty, $prim:expr, $default:expr, $base:ty, $module:ident,
