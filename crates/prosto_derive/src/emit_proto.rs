@@ -286,18 +286,23 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     parsed.proto_type
 }
 
-pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo], proto_imports: &BTreeMap<String, BTreeSet<String>>) -> String {
+pub fn generate_service_content(
+    trait_name: &syn::Ident,
+    methods: &[MethodInfo],
+    proto_imports: &BTreeMap<String, BTreeSet<String>>,
+    import_all_from: Option<&str>,
+) -> String {
     let mut lines = vec![format!("service {} {{", trait_name)];
 
     for method in methods {
         let method_name = to_pascal_case(&method.name.to_string());
-        let request_type = qualify_type_name(&method.request_type, proto_imports);
+        let request_type = qualify_type_name(&method.request_type, proto_imports, import_all_from);
 
         let rpc_def = if method.is_streaming {
-            let response_type = qualify_type_name(method.inner_response_type.as_ref().unwrap(), proto_imports);
+            let response_type = qualify_type_name(method.inner_response_type.as_ref().unwrap(), proto_imports, import_all_from);
             format!("  rpc {method_name}({request_type}) returns (stream {response_type}) {{}}")
         } else {
-            let response_type = qualify_type_name(&method.response_type, proto_imports);
+            let response_type = qualify_type_name(&method.response_type, proto_imports, import_all_from);
             format!("  rpc {method_name}({request_type}) returns ({response_type}) {{}}")
         };
 
@@ -308,7 +313,11 @@ pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo],
     lines.join("\n")
 }
 
-fn qualify_type_name(ty: &Type, proto_imports: &BTreeMap<String, BTreeSet<String>>) -> String {
+fn qualify_type_name(
+    ty: &Type,
+    proto_imports: &BTreeMap<String, BTreeSet<String>>,
+    import_all_from: Option<&str>,
+) -> String {
     let type_name = extract_type_name(ty);
 
     // Check if type is in any import
@@ -316,6 +325,10 @@ fn qualify_type_name(ty: &Type, proto_imports: &BTreeMap<String, BTreeSet<String
         if types.contains(&type_name) {
             return format!("{package}.{type_name}");
         }
+    }
+
+    if let Some(package) = import_all_from {
+        return format!("{package}.{type_name}");
     }
 
     type_name
@@ -335,6 +348,47 @@ mod tests {
     use syn::parse_quote;
 
     use super::*;
+
+    #[test]
+    fn qualify_type_name_falls_back_to_import_all_from() {
+        let trait_name = syn::Ident::new("Example", proc_macro2::Span::call_site());
+        let mut proto_imports: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        proto_imports.insert("custom".to_string(), BTreeSet::from(["Special".to_string()]));
+
+        let methods = vec![
+            MethodInfo {
+                name: syn::Ident::new("foo", proc_macro2::Span::call_site()),
+                request_type: parse_quote!(Foo),
+                response_type: parse_quote!(Bar),
+                response_return_type: parse_quote!(Bar),
+                response_is_result: true,
+                is_async: true,
+                is_streaming: false,
+                stream_type_name: None,
+                inner_response_type: None,
+                stream_item_type: None,
+                user_method_signature: quote! {},
+            },
+            MethodInfo {
+                name: syn::Ident::new("special", proc_macro2::Span::call_site()),
+                request_type: parse_quote!(Special),
+                response_type: parse_quote!(Bar),
+                response_return_type: parse_quote!(Bar),
+                response_is_result: true,
+                is_async: true,
+                is_streaming: false,
+                stream_type_name: None,
+                inner_response_type: None,
+                stream_item_type: None,
+                user_method_signature: quote! {},
+            },
+        ];
+
+        let service = generate_service_content(&trait_name, &methods, &proto_imports, Some("shared"));
+
+        assert!(service.contains("rpc Foo(shared.Foo) returns (shared.Bar)"));
+        assert!(service.contains("rpc Special(custom.Special) returns (shared.Bar)"));
+    }
 
     // #[test]
     // fn test_simple_enum_generation() {
