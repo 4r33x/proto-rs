@@ -404,6 +404,7 @@ pub struct MethodInfo {
     pub response_type: Type,
     pub response_return_type: Type,
     pub response_is_result: bool,
+    pub is_async: bool,
     pub is_streaming: bool,
     pub stream_type_name: Option<syn::Ident>,
     pub inner_response_type: Option<Type>,

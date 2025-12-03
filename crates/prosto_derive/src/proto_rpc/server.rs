@@ -272,10 +272,16 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let response_proto = generate_response_proto_type(response_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
-    let await_suffix = if method.response_is_result {
-        quote! { .await? }
+    let await_suffix = if method.is_async {
+        if method.response_is_result {
+            quote! { .await? }
+        } else {
+            quote! { .await }
+        }
+    } else if method.response_is_result {
+        quote! { ? }
     } else {
-        quote! { .await }
+        quote! {}
     };
 
     let future_type = method_future_return_type(quote! {
@@ -323,6 +329,16 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type);
+    let await_suffix = if method.is_async {
+        quote! { .await }
+    } else {
+        quote! {}
+    };
+    let await_question_suffix = if method.is_async {
+        quote! { .await? }
+    } else {
+        quote! { ? }
+    };
 
     let (future_type, future_body) = if method.response_is_result {
         let future_type = method_future_return_type(quote! {
@@ -336,7 +352,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     let native_response = <Self as super::#trait_name>::#method_name(
                         self,
                         native_request
-                    ).await?;
+                    )#await_question_suffix;
 
                     Ok(native_response)
                 }
@@ -356,7 +372,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     let native_response = <Self as super::#trait_name>::#method_name(
                         self,
                         native_request
-                    ).await;
+                    )#await_suffix;
 
                     native_response
                 }
@@ -408,11 +424,16 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     };
     let decode_type = quote! { #request_proto };
     let codec_init = generate_codec_init(encode_type.clone(), decode_type, Some(mode_type));
+    let await_suffix = if method.is_async {
+        quote! { .await }
+    } else {
+        quote! {}
+    };
     let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::Response>, tonic::Status> }, true);
     let call_future = wrap_async_block(
         quote! {
             async move {
-                <T as #trait_name>::#method_name(&inner, request).await
+                <T as #trait_name>::#method_name(&inner, request)#await_suffix
             }
         },
         true,
@@ -463,13 +484,23 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let decode_type = quote! { #request_proto };
     let mode_type = quote! { <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Mode };
     let codec_init = generate_codec_init(encode_type, decode_type, Some(mode_type));
+    let await_suffix = if method.is_async {
+        quote! { .await }
+    } else {
+        quote! {}
+    };
+    let await_question_suffix = if method.is_async {
+        quote! { .await? }
+    } else {
+        quote! { ? }
+    };
 
     let (future_type, call_future) = if method.response_is_result {
         let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
         let call_future = wrap_async_block(
             quote! {
                 async move {
-                    let response = <T as #trait_name>::#method_name(&inner, request).await?;
+                    let response = <T as #trait_name>::#method_name(&inner, request)#await_question_suffix;
                     let mapped = response.map(|stream| {
                         ::tonic::codegen::tokio_stream::StreamExt::map(
                             stream,
@@ -493,7 +524,7 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
         let call_future = wrap_async_block(
             quote! {
                 async move {
-                    let response = <T as #trait_name>::#method_name(&inner, request).await;
+                    let response = <T as #trait_name>::#method_name(&inner, request)#await_suffix;
                     let mapped = response.map(|stream| {
                         ::tonic::codegen::tokio_stream::StreamExt::map(
                             stream,
