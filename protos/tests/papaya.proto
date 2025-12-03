@@ -12,3 +12,11 @@ message PapayaCustomCollections {
   repeated uint32 flags = 2;
 }
 
+message PapayaStringSet {
+  repeated string tags = 1;
+}
+
+message PapayaCustomStringSet {
+  repeated string tags = 1;
+}
+

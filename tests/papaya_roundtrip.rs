@@ -41,6 +41,20 @@ pub struct PapayaCustomCollections {
     pub flags: papaya::HashSet<u32, IdentityBuildHasher>,
 }
 
+#[proto_message(proto_path = "protos/tests/papaya.proto")]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PapayaStringSet {
+    #[proto(tag = 1)]
+    pub tags: papaya::HashSet<String>,
+}
+
+#[proto_message(proto_path = "protos/tests/papaya.proto")]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PapayaCustomStringSet {
+    #[proto(tag = 1)]
+    pub tags: papaya::HashSet<String, IdentityBuildHasher>,
+}
+
 #[test]
 fn papaya_hash_collections_roundtrip() {
     let message = PapayaCollections::default();
@@ -90,6 +104,43 @@ fn papaya_hash_collections_support_custom_hashers() {
 
     let encoded = PapayaCustomCollections::encode_to_vec(&message);
     let decoded = PapayaCustomCollections::decode(&encoded[..]).expect("decode papaya custom collections");
+
+    assert_eq!(decoded, message);
+}
+
+#[test]
+fn papaya_hashset_roundtrip_with_strings() {
+    let message = PapayaStringSet::default();
+
+    {
+        let guard = message.tags.pin();
+        guard.insert("red".to_string());
+        guard.insert("green".to_string());
+        guard.insert("blue".to_string());
+    }
+
+    let encoded = PapayaStringSet::encode_to_vec(&message);
+    let decoded = PapayaStringSet::decode(&encoded[..]).expect("decode papaya string set");
+
+    assert_eq!(decoded, message);
+
+    let guard = decoded.tags.pin();
+    assert_eq!(guard.len(), 3);
+    assert!(guard.contains("red"));
+}
+
+#[test]
+fn papaya_hashset_roundtrip_with_custom_hasher_strings() {
+    let message = PapayaCustomStringSet::default();
+
+    {
+        let guard = message.tags.pin();
+        guard.insert("alpha".to_string());
+        guard.insert("beta".to_string());
+    }
+
+    let encoded = PapayaCustomStringSet::encode_to_vec(&message);
+    let decoded = PapayaCustomStringSet::decode(&encoded[..]).expect("decode papaya custom string set");
 
     assert_eq!(decoded, message);
 }
