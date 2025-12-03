@@ -189,9 +189,20 @@ pub struct EncodeBinding {
 
 pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> EncodeBinding {
     let proto_ty = &field.proto_ty;
-    let access_expr = match &field.access {
-        FieldAccess::Direct(tokens) => tokens.clone(),
-        _ => field.access.access_tokens(base.clone()),
+    let access_expr = if let Some(getter) = &field.config.getter {
+        let base_str = base.to_string();
+        let getter_expr = getter.replace('$', &base_str);
+        syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
+            panic!(
+                "invalid getter expression in #[proto(getter = ...)] on field {}",
+                field.field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string)
+            )
+        })
+    } else {
+        match &field.access {
+            FieldAccess::Direct(tokens) => tokens.clone(),
+            _ => field.access.access_tokens(base.clone()),
+        }
     };
 
     if is_papaya_hash_map_type(&field.field.ty) {
@@ -242,6 +253,15 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
                 quote! { (#access_expr).clone() }
             } else {
                 quote! { (#access_expr).as_ref().map(|inner| inner) }
+            }
+        } else if field.config.getter.is_some() {
+            if is_value_encode_type(proto_ty) {
+                quote! {{
+                    let borrowed: &#proto_ty = #access_expr;
+                    *borrowed
+                }}
+            } else {
+                access_expr.clone()
             }
         } else if matches!(field.access, FieldAccess::Direct(_)) {
             if is_value_encode_type(proto_ty) {

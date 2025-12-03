@@ -90,6 +90,7 @@ pub struct FieldConfig {
     pub is_message: bool,              // force message semantics
     pub is_proto_enum: bool,           // prost-like enum (i32 backing)
     pub import_path: Option<String>,
+    pub getter: Option<String>,
     pub custom_tag: Option<usize>,
     pub rename: Option<ProtoRename>,
     pub validator: Option<String>, // field-level validation function
@@ -119,6 +120,7 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("rust_enum") => cfg.is_rust_enum = true,
                 Some("enum") => cfg.is_proto_enum = true,
                 Some("message") => cfg.is_message = true,
+                Some("getter") => cfg.getter = parse_string_value(&meta),
                 Some("into") => cfg.into_type = parse_string_value(&meta),
                 Some("from") => cfg.from_type = parse_string_value(&meta),
                 Some("into_fn") => cfg.into_fn = parse_string_value(&meta),
