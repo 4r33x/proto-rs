@@ -2,6 +2,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
+use std::collections::HashSet;
 use syn::Type;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
@@ -200,12 +201,16 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
 fn generate_trait_components(methods: &[MethodInfo]) -> (Vec<TokenStream>, Vec<TokenStream>) {
     let mut trait_methods = Vec::new();
     let mut associated_types = Vec::new();
+    let mut seen_streams = HashSet::new();
 
     for method in methods {
         trait_methods.push(generate_trait_method(method));
 
         if is_streaming_method(method) {
-            associated_types.push(generate_stream_associated_type(method));
+            let stream_name = method.stream_type_name.as_ref().unwrap();
+            if seen_streams.insert(stream_name) {
+                associated_types.push(generate_stream_associated_type(method));
+            }
         }
     }
 
