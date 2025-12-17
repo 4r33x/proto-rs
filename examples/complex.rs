@@ -106,6 +106,11 @@ impl SigmaRpc for S {
     #[cfg(not(feature = "stable"))]
     type RizzUniStream = impl Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
 
+    #[cfg(feature = "stable")]
+    type RizzUniStream2 = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
+    #[cfg(not(feature = "stable"))]
+    type RizzUniStream2 = impl Stream<Item = Result<FooResponse, Status>> + Send;
+
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
             id: Id { id: 10 },
@@ -114,6 +119,41 @@ impl SigmaRpc for S {
     }
 
     async fn rizz_uni(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        tokio::spawn(async move {
+            for _ in 0..5 {
+                if tx.send(Ok(FooResponse {}.to_zero_copy())).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+        #[cfg(feature = "stable")]
+        let stream: Self::RizzUniStream = Box::pin(stream);
+
+        Ok(Response::new(stream))
+    }
+    async fn rizz_uni2(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream2>, Status> {
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        tokio::spawn(async move {
+            for _ in 0..5 {
+                if tx.send(Ok(FooResponse {})).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+        #[cfg(feature = "stable")]
+        let stream: Self::RizzUniStream2 = Box::pin(stream);
+
+        Ok(Response::new(stream))
+    }
+
+    async fn rizz_uni_other(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
