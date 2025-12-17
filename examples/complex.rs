@@ -74,9 +74,12 @@ pub struct BarSub;
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"] )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    type RizzUniStream2: Stream<Item = Result<FooResponse, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn goon_pong(&self, request: Request<GoonPong>) -> Result<Response<RizzPing>, Status>;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
+    async fn rizz_uni2(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream2>, Status>;
+    async fn rizz_uni_other(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 }
 
 // A dummy server impl
