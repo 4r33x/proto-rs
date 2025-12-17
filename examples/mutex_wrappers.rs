@@ -1,7 +1,7 @@
-use proto_rs::proto_message;
 use proto_rs::ProtoExt;
+use proto_rs::proto_message;
 
-#[proto_message(proto_path = "protos/tests/mutex.proto")]
+#[proto_message(proto_path = "protos/tests/mutex_example.proto")]
 #[derive(Debug, Default)]
 struct MutexInner {
     #[proto(tag = 1)]
@@ -10,7 +10,7 @@ struct MutexInner {
     count: u32,
 }
 
-#[proto_message(proto_path = "protos/tests/mutex.proto")]
+#[proto_message(proto_path = "protos/tests/mutex_example.proto")]
 #[derive(Debug)]
 struct ExampleStdMutex {
     #[proto(tag = 1)]
@@ -20,13 +20,16 @@ struct ExampleStdMutex {
 impl Default for ExampleStdMutex {
     fn default() -> Self {
         Self {
-            value: std::sync::Mutex::new(MutexInner { value: String::from("hello"), count: 1 }),
+            value: std::sync::Mutex::new(MutexInner {
+                value: String::from("hello"),
+                count: 1,
+            }),
         }
     }
 }
 
 #[cfg(feature = "parking_lot")]
-#[proto_message(proto_path = "protos/tests/mutex.proto")]
+#[proto_message(proto_path = "protos/tests/mutex_example.proto")]
 #[derive(Debug)]
 struct ExampleParkingLotMutex {
     #[proto(tag = 1)]
@@ -37,7 +40,10 @@ struct ExampleParkingLotMutex {
 impl Default for ExampleParkingLotMutex {
     fn default() -> Self {
         Self {
-            value: parking_lot::Mutex::new(MutexInner { value: String::from("world"), count: 2 }),
+            value: parking_lot::Mutex::new(MutexInner {
+                value: String::from("world"),
+                count: 2,
+            }),
         }
     }
 }

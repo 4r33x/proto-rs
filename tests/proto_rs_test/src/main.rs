@@ -64,6 +64,9 @@ impl SigmaRpc for S {
     async fn rizz_ping_boxed_resp(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         self.rizz_ping(req).await
     }
+    async fn sync_rizz_ping(&self, req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        self.rizz_ping(req).await
+    }
 }
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     use tonic::transport::Server;
