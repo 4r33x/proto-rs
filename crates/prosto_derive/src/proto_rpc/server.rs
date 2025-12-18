@@ -47,6 +47,51 @@ fn response_to_proto_response(response_return_type: &Type, response_binding: &To
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use quote::ToTokens;
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn deduplicates_stream_types_in_blanket_impl() {
+        let methods = vec![
+            MethodInfo {
+                name: parse_quote!(rizz_uni),
+                request_type: parse_quote!(BarSub),
+                response_type: parse_quote!(FooResponse),
+                response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
+                response_is_result: true,
+                is_async: true,
+                is_streaming: true,
+                stream_type_name: Some(parse_quote!(RizzUniStream)),
+                inner_response_type: Some(parse_quote!(FooResponse)),
+                stream_item_type: Some(parse_quote!(FooResponse)),
+                user_method_signature: TokenStream::default(),
+            },
+            MethodInfo {
+                name: parse_quote!(rizz_uni_other),
+                request_type: parse_quote!(BarSub),
+                response_type: parse_quote!(FooResponse),
+                response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
+                response_is_result: true,
+                is_async: true,
+                is_streaming: true,
+                stream_type_name: Some(parse_quote!(RizzUniStream)),
+                inner_response_type: Some(parse_quote!(FooResponse)),
+                stream_item_type: Some(parse_quote!(FooResponse)),
+                user_method_signature: TokenStream::default(),
+            },
+        ];
+
+        let (blanket_types, _) = generate_blanket_impl_components(&methods, &parse_quote!(SigmaRpc));
+
+        assert_eq!(blanket_types.len(), 1, "duplicate stream types should be skipped");
+        assert_eq!(blanket_types[0].to_token_stream().to_string(), "type RizzUniStream = < Self as super :: SigmaRpc > :: RizzUniStream ;");
+    }
+}
+
 fn wrap_call_future(is_async: bool, body: TokenStream) -> TokenStream {
     if is_async {
         wrap_async_block(quote! { async move { #body } }, true)
@@ -280,10 +325,14 @@ fn generate_stream_associated_type(method: &MethodInfo) -> TokenStream {
 fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Ident) -> (Vec<TokenStream>, Vec<TokenStream>) {
     let mut blanket_types = Vec::new();
     let mut blanket_methods = Vec::new();
+    let mut seen_streams = HashSet::new();
 
     for method in methods {
         if is_streaming_method(method) {
-            blanket_types.push(generate_blanket_stream_type(method, trait_name));
+            let stream_name = method.stream_type_name.as_ref().unwrap();
+            if seen_streams.insert(stream_name.to_string()) {
+                blanket_types.push(generate_blanket_stream_type(method, trait_name));
+            }
         }
         blanket_methods.push(generate_blanket_method(method, trait_name));
     }
