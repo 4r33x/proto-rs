@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.6.17]
+- Fix multiple streams duplicate assoc. type error
+
 ## [0.6.16]
 - Add sync methods optimisation
 - Add #[proto_import_all_from(package_name)] attribute
