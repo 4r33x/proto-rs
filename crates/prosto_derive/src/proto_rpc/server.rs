@@ -314,7 +314,7 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
-    let request_conversion = generate_proto_to_native_request(request_type);
+    let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result);
     let response_conversion = response_to_proto_response(response_return_type, &quote! { native_response }, &response_proto);
 
     if method.is_async {
@@ -392,7 +392,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let request_proto = generate_request_proto_type(request_type);
 
-    let request_conversion = generate_proto_to_native_request(request_type);
+    let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result);
 
     if method.response_is_result {
         let result_type = quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> };

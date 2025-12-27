@@ -125,13 +125,20 @@ pub const fn const_unreachable<T: ProtoWire>(structure_name: &'static str) -> ! 
     }
 }
 
+#[track_caller]
+#[allow(clippy::extra_unused_type_parameters)]
+pub const fn const_test_validate_with_ext<T: ProtoWire>() -> ! {
+    const_panic::concat_panic!("Type has validator with ext and it should not be used in infallible rpc methods", T::KIND.dbg_name())
+}
+
 pub trait ProtoWire: Sized {
     type EncodeInput<'a>;
     const KIND: ProtoKind;
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
 
     const _REPEATED_SUPPORT: Option<&'static str> = None;
-    const _TEST: () = {
+
+    const _TEST_REPEATED: () = {
         if let Some(name) = Self::_REPEATED_SUPPORT
             && let ProtoKind::Repeated(_) = Self::KIND
         {
@@ -360,7 +367,8 @@ pub trait ProtoExt: Sized {
             }
         })
     }
-
+    #[cfg(feature = "tonic")]
+    const VALIDATE_WITH_EXT: bool = false;
     #[cfg(feature = "tonic")]
     #[inline(always)]
     fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {

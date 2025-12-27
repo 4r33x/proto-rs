@@ -343,6 +343,8 @@ fn generate_proto_ext_impl(
         let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
         quote! {
             #[cfg(feature = "tonic")]
+            const VALIDATE_WITH_EXT: bool = true;
+            #[cfg(feature = "tonic")]
             #[inline(always)]
             fn validate_with_ext(
                 value: &mut Self,

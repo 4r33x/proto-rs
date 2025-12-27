@@ -53,7 +53,7 @@ fn validate_pong(id: &mut GoonPong) -> Result<(), DecodeError> {
     Ok(())
 }
 
-fn validate_pong_with_ext(id: &mut GoonPong, ext: &Extensions) -> Result<(), DecodeError> {
+fn validate_pong_with_ext(id: &mut GoonPong, _ext: &Extensions) -> Result<(), DecodeError> {
     if id.id.id == 1 {
         return Err(DecodeError::new("Bad top id"));
     }
