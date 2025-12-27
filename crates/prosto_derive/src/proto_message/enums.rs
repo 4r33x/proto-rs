@@ -8,6 +8,7 @@ use syn::spanned::Spanned;
 
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
+use super::build_validate_with_ext_impl;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
@@ -86,23 +87,7 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
         }
     }];
 
-    let validate_with_ext_impl = if let Some(validator_fn) = &config.validator_with_ext {
-        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
-        quote! {
-            #[cfg(feature = "tonic")]
-            const VALIDATE_WITH_EXT: bool = true;
-            #[cfg(feature = "tonic")]
-            #[inline(always)]
-            fn validate_with_ext(
-                value: &mut Self,
-                ext: &::tonic::Extensions,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                #validator_path(value, ext)
-            }
-        }
-    } else {
-        quote! {}
-    };
+    let validate_with_ext_impl = build_validate_with_ext_impl(config);
 
     let proto_ext_impl = if config.has_suns() {
         let impls: Vec<_> = config
