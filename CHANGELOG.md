@@ -1,6 +1,9 @@
 # Changelog
 
 ## [0.6.17]
+- Add #[proto(validator_with_ext = ...)] attribute
+
+## [0.6.17]
 - Fix multiple streams duplicate assoc. type error
 
 ## [0.6.16]
