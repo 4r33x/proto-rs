@@ -1,6 +1,9 @@
 # Changelog
 
-## [0.6.17]
+## [0.6.19]
+- Remove #[cfg(feature = "tonic")] gate on validate_with_ext method
+
+## [0.6.18]
 - Add #[proto(validator_with_ext = ...)] attribute
 
 ## [0.6.17]
