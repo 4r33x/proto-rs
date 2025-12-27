@@ -4,10 +4,10 @@ use proto_rs::DecodeError;
 use proto_rs::ProtoExt;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
+use tonic::Extensions;
 use tonic::Request;
 use tonic::Response;
 use tonic::Status;
-use tonic::Extensions;
 
 #[derive(Clone, Debug)]
 struct ValidationFlag(u8);
@@ -48,13 +48,15 @@ impl ValidationWithExt for ValidationWithExtService {
 #[cfg(feature = "tonic")]
 #[test]
 fn validates_with_ext_flag_is_enabled() {
-    assert!(<Pong as ProtoExt>::VALIDATE_WITH_EXT);
+    const _: () = {
+        assert!(<Pong as ProtoExt>::VALIDATE_WITH_EXT);
+    };
 }
 
 #[cfg(feature = "tonic")]
 #[tokio::test]
 async fn server_validation_with_ext_rejects_flagged_request() {
-    let service = ValidationWithExtService::default();
+    let service = ValidationWithExtService {};
     let mut request = Request::new(Pong { id: 42 });
     request.extensions_mut().insert(ValidationFlag(1));
 
@@ -68,7 +70,7 @@ async fn server_validation_with_ext_rejects_flagged_request() {
 #[cfg(feature = "tonic")]
 #[tokio::test]
 async fn server_validation_with_ext_accepts_clean_request() {
-    let service = ValidationWithExtService::default();
+    let service = ValidationWithExtService {};
     let request = Request::new(Pong { id: 7 });
 
     let response = <ValidationWithExtService as validation_with_ext_server::ValidationWithExt>::check(&service, request)
