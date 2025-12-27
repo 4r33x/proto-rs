@@ -339,13 +339,29 @@ fn generate_proto_ext_impl(
         }
     };
 
+    let validate_with_ext_impl = if let Some(validator_fn) = &config.validator_with_ext {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
+        quote! {
+            #[cfg(feature = "tonic")]
+            #[inline(always)]
+            fn validate_with_ext(
+                value: &mut Self,
+                ext: &::tonic::Extensions,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                #validator_path(value, ext)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     if config.has_suns() {
         let impls: Vec<_> = config
             .suns
             .iter()
             .map(|sun| {
                 let target_ty = &sun.ty;
-                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &post_decode_impl)
+                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &post_decode_impl, &validate_with_ext_impl)
             })
             .collect();
 
@@ -370,6 +386,7 @@ fn generate_proto_ext_impl(
                 }
 
                 #post_decode_impl
+                #validate_with_ext_impl
             }
         }
     }

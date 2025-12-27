@@ -8,8 +8,17 @@ use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 
 /// Generate proto-to-native request conversion (used in server)
-pub fn generate_proto_to_native_request(_request_type: &Type) -> TokenStream {
-    quote! { let native_request = request; }
+pub fn generate_proto_to_native_request(request_type: &Type) -> TokenStream {
+    quote! {
+        let mut request = request;
+        let extensions = request.extensions().clone();
+        {
+            let message = request.get_mut();
+            <#request_type as ::proto_rs::ProtoExt>::validate_with_ext(message, &extensions)
+                .map_err(|err| tonic::Status::invalid_argument(format!("validation failed: {err}")))?;
+        }
+        let native_request = request;
+    }
 }
 
 /// Generate native-to-proto request conversion (used in client - unary)

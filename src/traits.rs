@@ -360,6 +360,12 @@ pub trait ProtoExt: Sized {
             }
         })
     }
+
+    #[cfg(feature = "tonic")]
+    #[inline(always)]
+    fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {
+        Ok(())
+    }
 }
 
 //Example implementation with lifetimes
