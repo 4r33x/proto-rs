@@ -66,6 +66,7 @@ pub struct UnifiedProtoConfig {
     pub suns: Vec<SunConfig>,
     pub transparent: bool,
     pub validator: Option<String>,
+    pub proto_generic_types: BTreeMap<syn::Ident, Vec<Type>>,
 }
 
 #[derive(Clone)]
@@ -172,6 +173,15 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {
                 config.rpc_client = lit_bool.value;
             }
+        } else if meta.path.is_ident("proto_generic_types") {
+            let value = meta.value()?;
+            let content;
+            syn::bracketed!(content in value);
+            let pairs: syn::punctuated::Punctuated<ProtoGenericType, syn::Token![,]> = content.parse_terminated(ProtoGenericType::parse, syn::Token![,])?;
+
+            for pair in pairs {
+                config.proto_generic_types.entry(pair.ident).or_default().extend(pair.types);
+            }
         } else if meta.path.is_ident("rpc_package")
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
@@ -183,6 +193,24 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     });
 
     syn::parse::Parser::parse(parser, attr).expect("failed to parse proto_message attributes");
+}
+
+#[derive(Debug)]
+struct ProtoGenericType {
+    ident: syn::Ident,
+    types: Vec<Type>,
+}
+
+impl Parse for ProtoGenericType {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident: syn::Ident = input.parse()?;
+        let _: syn::Token![=] = input.parse()?;
+        let content;
+        syn::bracketed!(content in input);
+        let types = content.parse_terminated(Type::parse, syn::Token![,])?.into_iter().collect();
+
+        Ok(Self { ident, types })
+    }
 }
 
 fn extract_type_ident(ty: &Type) -> Option<String> {
