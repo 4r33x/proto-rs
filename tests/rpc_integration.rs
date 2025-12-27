@@ -123,8 +123,6 @@ fn sample_from_tonic(msg: tonic_prost_test::encoding::SampleMessage) -> SampleMe
         optional_mode,
     } = msg;
 
-    let data = data;
-
     let nested = nested.map(nested_from_tonic);
     let nested_list = nested_list.into_iter().map(nested_from_tonic).collect();
 

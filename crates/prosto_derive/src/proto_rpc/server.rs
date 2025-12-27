@@ -1,8 +1,9 @@
 //! Server generation - refactored to use common RPC utilities
 
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::HashSet;
 use syn::Type;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
@@ -47,60 +48,11 @@ fn response_to_proto_response(response_return_type: &Type, response_binding: &To
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use quote::ToTokens;
-    use syn::parse_quote;
-
-    use super::*;
-
-    #[test]
-    fn deduplicates_stream_types_in_blanket_impl() {
-        let methods = vec![
-            MethodInfo {
-                name: parse_quote!(rizz_uni),
-                request_type: parse_quote!(BarSub),
-                response_type: parse_quote!(FooResponse),
-                response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
-                response_is_result: true,
-                is_async: true,
-                is_streaming: true,
-                stream_type_name: Some(parse_quote!(RizzUniStream)),
-                inner_response_type: Some(parse_quote!(FooResponse)),
-                stream_item_type: Some(parse_quote!(FooResponse)),
-                user_method_signature: TokenStream::default(),
-            },
-            MethodInfo {
-                name: parse_quote!(rizz_uni_other),
-                request_type: parse_quote!(BarSub),
-                response_type: parse_quote!(FooResponse),
-                response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
-                response_is_result: true,
-                is_async: true,
-                is_streaming: true,
-                stream_type_name: Some(parse_quote!(RizzUniStream)),
-                inner_response_type: Some(parse_quote!(FooResponse)),
-                stream_item_type: Some(parse_quote!(FooResponse)),
-                user_method_signature: TokenStream::default(),
-            },
-        ];
-
-        let (blanket_types, _) = generate_blanket_impl_components(&methods, &parse_quote!(SigmaRpc));
-
-        assert_eq!(blanket_types.len(), 1, "duplicate stream types should be skipped");
-        assert_eq!(blanket_types[0].to_token_stream().to_string(), "type RizzUniStream = < Self as super :: SigmaRpc > :: RizzUniStream ;");
-    }
-}
-
 fn wrap_call_future(is_async: bool, body: TokenStream) -> TokenStream {
-    if is_async {
+    if is_async || cfg!(feature = "stable") {
         wrap_async_block(quote! { async move { #body } }, true)
     } else {
-        if cfg!(feature = "stable") {
-            wrap_async_block(quote! { async move { #body } }, true)
-        } else {
-            wrap_async_block(quote! {  {::core::future::ready( #body )}  }, false)
-        }
+        wrap_async_block(quote! {  {::core::future::ready( #body )}  }, false)
     }
 }
 
@@ -725,5 +677,50 @@ pub fn generate_server_compression_methods() -> TokenStream {
             self.max_encoding_message_size = Some(limit);
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::ToTokens;
+    use syn::parse_quote;
+
+    use super::*;
+
+    #[test]
+    fn deduplicates_stream_types_in_blanket_impl() {
+        let methods = vec![
+            MethodInfo {
+                name: parse_quote!(rizz_uni),
+                request_type: parse_quote!(BarSub),
+                response_type: parse_quote!(FooResponse),
+                response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
+                response_is_result: true,
+                is_async: true,
+                is_streaming: true,
+                stream_type_name: Some(parse_quote!(RizzUniStream)),
+                inner_response_type: Some(parse_quote!(FooResponse)),
+                stream_item_type: Some(parse_quote!(FooResponse)),
+                user_method_signature: TokenStream::default(),
+            },
+            MethodInfo {
+                name: parse_quote!(rizz_uni_other),
+                request_type: parse_quote!(BarSub),
+                response_type: parse_quote!(FooResponse),
+                response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
+                response_is_result: true,
+                is_async: true,
+                is_streaming: true,
+                stream_type_name: Some(parse_quote!(RizzUniStream)),
+                inner_response_type: Some(parse_quote!(FooResponse)),
+                stream_item_type: Some(parse_quote!(FooResponse)),
+                user_method_signature: TokenStream::default(),
+            },
+        ];
+
+        let (blanket_types, _) = generate_blanket_impl_components(&methods, &parse_quote!(SigmaRpc));
+
+        assert_eq!(blanket_types.len(), 1, "duplicate stream types should be skipped");
+        assert_eq!(blanket_types[0].to_token_stream().to_string(), "type RizzUniStream = < Self as super :: SigmaRpc > :: RizzUniStream ;");
     }
 }

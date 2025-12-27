@@ -456,11 +456,12 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
 mod tests {
     use super::*;
     use crate::ProtoExt;
-
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/solana_test.proto")]
     struct TxErrorWrapper {
         inner: TransactionError,
     }
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/solana_test.proto")]
     struct IxErrorWrapper {
         inner: InstructionError,

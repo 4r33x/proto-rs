@@ -24,7 +24,6 @@ use criterion::measurement::WallTime;
 use prost::Message as ProstMessage;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoWire;
-use proto_rs::ZeroCopy;
 use proto_rs::proto_message;
 
 static BENCH_RECORDER: OnceLock<BenchRecorder> = OnceLock::new();

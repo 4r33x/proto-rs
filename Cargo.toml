@@ -1,16 +1,12 @@
-[package]
-name = "proto_rs"
-version = "0.6.17"
-description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
-documentation = "https://docs.rs/proto_rs"
-readme = "README.md"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
-homepage.workspace = true
-keywords.workspace = true
-categories.workspace = true
+[workspace]
+members = [
+  "crates/prosto_derive",
+  "tests/tonic_prost_test",
+  "tests/proto_rs_test",
+  "tests/proto_build_test",
+  "benches/bench_runner",
+]
+resolver = "3"
 
 [workspace.package]
 edition = "2024"
@@ -28,16 +24,6 @@ categories = [
   "rust-patterns",
 ]
 
-[workspace]
-members = [
-  "crates/prosto_derive",
-  "tests/tonic_prost_test",
-  "tests/proto_rs_test",
-  "tests/proto_build_test",
-  "benches/bench_runner",
-]
-resolver = "3"
-
 [workspace.dependencies]
 prosto_derive = { version = "0.6.17", path = "crates/prosto_derive" }
 proto_rs = { version = "0.6.17", path = "./" }
@@ -47,6 +33,35 @@ inventory = { version = "0.3" }
 chrono = "0.4"
 criterion = { version = "0.7" }
 tonic = { version = "0.14.2" }
+
+[workspace.lints.clippy]
+#cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+#restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }
+
+[workspace.lints.rust]
+unsafe_code = { level = "forbid", priority = 0 }
+
+[package]
+name = "proto_rs"
+version = "0.6.17"
+description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
+documentation = "https://docs.rs/proto_rs"
+readme = "README.md"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
 
 
 [dependencies]
@@ -121,25 +136,14 @@ default = ["std", "tonic"]
 #derive = ["dep:prost-derive"]
 
 
-[package.metadata.docs.rs]
-all-features = true
 
 
-[workspace.lints.rust]
-unsafe_code = { level = "forbid", priority = 0 }
 
 
 # [lints.rust]
 # unsafe_code = { level = "forbid", priority = 0 }
 
-[workspace.lints.clippy]
-#cargo = { level = "deny", priority = -1 }
-complexity = { level = "deny", priority = -1 }
-correctness = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-perf = { level = "deny", priority = -1 }
-#restriction = { level = "warn", priority = -1 }
-style = { level = "deny", priority = -1 }
+
 
 [lints.clippy]
 #cargo = { level = "deny", priority = -1 }
@@ -149,6 +153,8 @@ pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
 #restriction = { level = "warn", priority = -1 }
 style = { level = "deny", priority = -1 }
+
+
 
 [profile.bench]
 #use thin here to improve compile time

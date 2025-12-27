@@ -1,5 +1,3 @@
-#![cfg(feature = "papaya")]
-
 use core::hash::BuildHasher;
 use core::hash::Hash;
 use core::ops::Deref;

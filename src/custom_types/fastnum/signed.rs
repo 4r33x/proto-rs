@@ -99,6 +99,7 @@ mod tests {
 
     use super::*;
 
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/fastnum_test.proto")]
     struct D128Wrapper {
         inner: D128,

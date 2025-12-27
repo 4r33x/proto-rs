@@ -118,18 +118,15 @@ where
         return <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow);
     }
 
-    match <T::Shadow<'static> as ProtoWire>::KIND {
-        ProtoKind::Message => {
-            // For messages, the buffer contains raw field data - use T::decode to loop through fields
-            T::decode(buf)
-        }
-        _ => {
-            // For all other types (SimpleEnum, primitives, strings, bytes),
-            // decode the raw value with its wire type
-            let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
-            <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
-            <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
-        }
+    if let ProtoKind::Message = <T::Shadow<'static> as ProtoWire>::KIND {
+        // For messages, the buffer contains raw field data - use T::decode to loop through fields
+        T::decode(buf)
+    } else {
+        // For all other types (SimpleEnum, primitives, strings, bytes),
+        // decode the raw value with its wire type
+        let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
+        <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
+        <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
     }
 }
 

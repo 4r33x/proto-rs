@@ -930,6 +930,8 @@ mod tests {
     use prosto_derive::proto_message;
 
     use super::*;
+
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/atomic_test.proto")]
     struct AtomicWrapper {
         f1: AtomicBool,

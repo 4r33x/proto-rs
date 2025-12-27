@@ -58,7 +58,7 @@ mod tests {
     use fastnum::udec128;
 
     use super::*;
-
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/fastnum_test.proto")]
     struct UD128Wrapper {
         inner: UD128,

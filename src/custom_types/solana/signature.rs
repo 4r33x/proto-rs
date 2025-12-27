@@ -39,7 +39,7 @@ mod tests {
     use crate::encoding::WireType;
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
-
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/solana_test.proto")]
     struct SignatureWrapper {
         sig: Signature,

@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_large_values() {
-        roundtrip(TimeDelta::try_seconds(123456789).unwrap());
+        roundtrip(TimeDelta::try_seconds(123_456_789).unwrap());
         roundtrip(TimeDelta::try_milliseconds(i64::MAX / 2).unwrap());
         roundtrip(TimeDelta::try_milliseconds(-i64::MAX / 2).unwrap());
     }
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_wrapper_struct() {
-        let td = TimeDelta::new(123, 987_654_321 % 1_000_000_000).unwrap();
+        let td = TimeDelta::new(123, 987_654_321).unwrap();
         let wrapper = DeltaWrapper { inner: td };
 
         let encoded = DeltaWrapper::encode_to_vec(&wrapper);

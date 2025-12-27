@@ -404,7 +404,7 @@ impl<'b> ProtoExt for ID<'b> {
     }
 }
 
-impl<'b> ProtoWire for ID<'b> {
+impl ProtoWire for ID<'_> {
     type EncodeInput<'a> = ID<'a>;
     const KIND: ProtoKind = ProtoKind::Message;
     const WIRE_TYPE: WireType = WireType::LengthDelimited;

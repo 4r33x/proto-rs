@@ -159,7 +159,7 @@ mod tests {
 
     use crossbeam_utils::CachePadded;
     use prosto_derive::proto_message;
-
+    #[allow(dead_code)]
     #[proto_message(proto_path = "protos/cache_padded_test.proto")]
     pub struct AtomicOrderState {
         inner: Arc<CachePadded<AtomicU8>>,
