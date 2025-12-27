@@ -70,6 +70,10 @@ pub struct GoonPong {
     status: ZeroCopy<ServiceStatus>,
 }
 
+const _: () = {
+    assert!(<GoonPong as proto_rs::ProtoExt>::VALIDATE_WITH_EXT);
+};
+
 #[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct FooResponse;
