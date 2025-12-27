@@ -17,6 +17,7 @@ use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
+use super::build_validate_with_ext_impl;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
@@ -339,13 +340,15 @@ fn generate_proto_ext_impl(
         }
     };
 
+    let validate_with_ext_impl = build_validate_with_ext_impl(config);
+
     if config.has_suns() {
         let impls: Vec<_> = config
             .suns
             .iter()
             .map(|sun| {
                 let target_ty = &sun.ty;
-                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &post_decode_impl)
+                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &post_decode_impl, &validate_with_ext_impl)
             })
             .collect();
 
@@ -370,6 +373,7 @@ fn generate_proto_ext_impl(
                 }
 
                 #post_decode_impl
+                #validate_with_ext_impl
             }
         }
     }

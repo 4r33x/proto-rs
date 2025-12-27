@@ -8,6 +8,7 @@ use syn::spanned::Spanned;
 
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
+use super::build_validate_with_ext_impl;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
@@ -86,13 +87,15 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
         }
     }];
 
+    let validate_with_ext_impl = build_validate_with_ext_impl(config);
+
     let proto_ext_impl = if config.has_suns() {
         let impls: Vec<_> = config
             .suns
             .iter()
             .map(|sun| {
                 let target_ty = &sun.ty;
-                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &quote! {})
+                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &quote! {}, &validate_with_ext_impl)
             })
             .collect();
         quote! { #(#impls)* }
@@ -124,6 +127,8 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
                         _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                     }
                 }
+
+                #validate_with_ext_impl
             }
         }
     };

@@ -66,6 +66,7 @@ pub struct UnifiedProtoConfig {
     pub suns: Vec<SunConfig>,
     pub transparent: bool,
     pub validator: Option<String>,
+    pub validator_with_ext: Option<String>,
 }
 
 #[derive(Clone)]
@@ -94,8 +95,10 @@ impl UnifiedProtoConfig {
             parse_attr_params(attr, &mut config);
         }
 
-        // Extract validator from item-level #[proto(validator = ...)] attributes
-        config.validator = extract_item_validator(item_attrs);
+        // Extract validators from item-level #[proto(...)] attributes
+        let item_validators = extract_item_validators(item_attrs);
+        config.validator = item_validators.validator;
+        config.validator_with_ext = item_validators.validator_with_ext;
 
         // Extract imports from item-level attributes
         let mut all_imports = extract_item_imports(item_attrs);
@@ -112,11 +115,7 @@ impl UnifiedProtoConfig {
             }
 
             if let Some(import_all_from) = &config.import_all_from {
-                config
-                    .file_imports
-                    .entry(proto_path)
-                    .or_default()
-                    .insert(import_all_from.to_owned());
+                config.file_imports.entry(proto_path).or_default().insert(import_all_from.to_owned());
             }
         }
 
@@ -234,14 +233,23 @@ fn is_reference_sun(ty: &Type) -> bool {
     }
 }
 
-/// Extract `validator` from item-level #[proto(validator = ...)] attributes
-pub fn extract_item_validator(item_attrs: &[Attribute]) -> Option<String> {
+pub struct ItemValidators {
+    pub validator: Option<String>,
+    pub validator_with_ext: Option<String>,
+}
+
+/// Extract validators from item-level #[proto(...)] attributes
+pub fn extract_item_validators(item_attrs: &[Attribute]) -> ItemValidators {
+    let mut validators = ItemValidators {
+        validator: None,
+        validator_with_ext: None,
+    };
+
     for attr in item_attrs {
         if !attr.path().is_ident("proto") {
             continue;
         }
 
-        let mut validator = None;
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("validator") {
                 let value_parser = meta.value()?;
@@ -252,13 +260,33 @@ pub fn extract_item_validator(item_attrs: &[Attribute]) -> Option<String> {
                         // Handle string literals: validator = "validate_fn"
                         syn::Expr::Lit(expr_lit) => {
                             if let syn::Lit::Str(s) = expr_lit.lit {
-                                validator = Some(s.value());
+                                validators.validator = Some(s.value());
                             }
                         }
                         // Handle paths: validator = validate_fn
                         syn::Expr::Path(expr_path) => {
                             let path_str = expr_path.path.segments.iter().map(|seg| seg.ident.to_string()).collect::<Vec<_>>().join("::");
-                            validator = Some(path_str);
+                            validators.validator = Some(path_str);
+                        }
+                        _ => {}
+                    }
+                }
+                return Ok(());
+            }
+
+            if meta.path.is_ident("validator_with_ext") {
+                let value_parser = meta.value()?;
+
+                if let Ok(expr) = value_parser.parse::<syn::Expr>() {
+                    match expr {
+                        syn::Expr::Lit(expr_lit) => {
+                            if let syn::Lit::Str(s) = expr_lit.lit {
+                                validators.validator_with_ext = Some(s.value());
+                            }
+                        }
+                        syn::Expr::Path(expr_path) => {
+                            let path_str = expr_path.path.segments.iter().map(|seg| seg.ident.to_string()).collect::<Vec<_>>().join("::");
+                            validators.validator_with_ext = Some(path_str);
                         }
                         _ => {}
                     }
@@ -269,13 +297,9 @@ pub fn extract_item_validator(item_attrs: &[Attribute]) -> Option<String> {
             Err(meta.error("unknown #[proto(...)] attribute"))
         })
         .expect("failed to parse #[proto(...)] attributes");
-
-        if validator.is_some() {
-            return validator;
-        }
     }
 
-    None
+    validators
 }
 
 /// Extract `proto_imports` from item attributes
@@ -463,7 +487,7 @@ mod tests {
         let attr: syn::Attribute = parse_quote!(#[proto(foo = "bar")]);
 
         let result = panic::catch_unwind(|| {
-            let _ = extract_item_validator(&[attr]);
+            let _ = extract_item_validators(&[attr]);
         });
 
         assert!(result.is_err());

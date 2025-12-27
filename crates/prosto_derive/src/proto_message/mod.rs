@@ -13,6 +13,25 @@ use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
 
+pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
+    let Some(validator_fn) = &config.validator_with_ext else {
+        return quote! {};
+    };
+    let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
+    quote! {
+        #[cfg(feature = "tonic")]
+        const VALIDATE_WITH_EXT: bool = true;
+        #[cfg(feature = "tonic")]
+        #[inline(always)]
+        fn validate_with_ext(
+            value: &mut Self,
+            ext: &::tonic::Extensions,
+        ) -> Result<(), ::proto_rs::DecodeError> {
+            #validator_path(value, ext)
+        }
+    }
+}
+
 mod complex_enums;
 mod enums;
 mod structs;

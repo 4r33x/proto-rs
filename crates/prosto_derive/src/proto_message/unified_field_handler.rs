@@ -604,7 +604,13 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
 
 /// Generate sun-based `ProtoExt` implementation
 /// This eliminates code duplication across different type handlers
-pub fn generate_sun_proto_ext_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type, decode_arms: &[TokenStream2], post_decode_impl: &TokenStream2) -> TokenStream2 {
+pub fn generate_sun_proto_ext_impl(
+    shadow_ty: &TokenStream2,
+    target_ty: &syn::Type,
+    decode_arms: &[TokenStream2],
+    post_decode_impl: &TokenStream2,
+    validate_with_ext_impl: &TokenStream2,
+) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoExt for #target_ty {
             type Shadow<'b> = #shadow_ty where Self: 'b;
@@ -624,6 +630,7 @@ pub fn generate_sun_proto_ext_impl(shadow_ty: &TokenStream2, target_ty: &syn::Ty
             }
 
             #post_decode_impl
+            #validate_with_ext_impl
         }
     }
 }

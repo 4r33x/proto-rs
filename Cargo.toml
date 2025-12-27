@@ -63,7 +63,6 @@ categories.workspace = true
 [package.metadata.docs.rs]
 all-features = true
 
-
 [dependencies]
 prosto_derive.workspace = true
 bytes.workspace = true
