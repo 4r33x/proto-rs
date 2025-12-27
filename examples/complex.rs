@@ -12,6 +12,7 @@ use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::Extensions;
 use tonic::Request;
 use tonic::Response;
 use tonic::Status;
@@ -52,8 +53,16 @@ fn validate_pong(id: &mut GoonPong) -> Result<(), DecodeError> {
     Ok(())
 }
 
+fn validate_pong_with_ext(id: &mut GoonPong, ext: &Extensions) -> Result<(), DecodeError> {
+    if id.id.id == 1 {
+        return Err(DecodeError::new("Bad top id"));
+    }
+    Ok(())
+}
+
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[proto(validator = validate_pong)]
+#[proto(validator_with_ext = validate_pong_with_ext)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
     #[proto(validator = validate_id)]
