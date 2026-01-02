@@ -22,7 +22,7 @@ For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this cr
 
 - **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code. The generated codec now reuses internal helpers to avoid redundant buffering and unnecessary copies.
 - **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts, and the macro avoids needless boxing/casting in the conversion layer.
-- **Attribute-level control** – Fine-tune your schema surface with `treat_as` for ad-hoc type substitutions, `proto_transparent` for single-field wrappers, concrete `sun` targets (including generic forms like `Sun<T>`), and optional tags/import paths. Built-in wrappers cover `ArcSwap`, `CachePadded`, atomics, and other common containers so everyday Rust types round-trip without extra glue.
+- **Attribute-level control** – Fine-tune your schema surface with `treat_as` for ad-hoc type substitutions, `transparent` for single-field wrappers, concrete `sun` targets (including generic forms like `Sun<T>`), and optional tags/import paths. Built-in wrappers cover `ArcSwap`, `CachePadded`, atomics, and other common containers so everyday Rust types round-trip without extra glue.
 - **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
 - **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs). The helper deduplicates inputs and writes canonical packages derived from the file path.
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
@@ -63,7 +63,7 @@ Macros support all prost types, imports, skipping with default and custom functi
 ### Attribute quick hits (there are more attributes, view examples and tests)
 
 - Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, for properly treating a type alias).
-- Add `proto_transparent` to skip tag and use this type as zerocost newtype wrapper.
+- Add `transparent` to skip tag and use this type as zerocost newtype wrapper.
 - Target multiple `sun` domains, including concrete generics like `Sun<MyType<u64>>`, so a single shadow can serve several variants.
 - Mix and match built-in wrappers such as `ArcSwap`, `CachePadded`, and atomic integers; the derive machinery already knows how to serialize them.
 
@@ -81,7 +81,7 @@ pub struct Payment {
 }
 
 // Forward the inner field directly into the schema for wrapper ergonomics.
-#[proto_message(proto_transparent, proto_path = "protos/payments.proto")]
+#[proto_message(transparent, proto_path = "protos/payments.proto")]
 pub struct UserId(pub uuid::Uuid);
 
 // Target concrete generic domains from a single shadow definition.

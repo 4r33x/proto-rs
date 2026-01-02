@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::VecDeque;
 
 use chrono::DateTime;
 use chrono::Utc;
@@ -10,6 +11,30 @@ use serde::Deserialize;
 use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
+
+// #[proto_message(transparent, proto_path = "protos/showcase_proto/show.proto")]
+// #[derive(Debug)]
+// pub struct Lru<K, V, const CAP: usize> {
+//     items: VecDeque<(K, V)>, // MRU..LRU
+// }
+
+pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
+pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;
+
+#[proto_message]
+#[derive(Debug, PartialEq, Eq)]
+pub struct UserIdTreatAs {
+    #[proto(treat_as = "proto_rs::alloc::collections::BTreeMap<u64, u64>")]
+    pub id: ComplexType,
+    #[proto(treat_as = "std::collections::HashMap<u64, u64>")]
+    pub id2: ComplexType2,
+}
+
+#[proto_message(transparent, proto_path = "protos/showcase_proto/show.proto")]
+#[derive(Clone, PartialEq, Default)]
+pub struct StructTransparent {
+    inner: Vec<u8>,
+}
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, PartialEq, Default)]

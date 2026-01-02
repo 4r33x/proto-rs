@@ -676,3 +676,25 @@ impl_proto_wire_vecdeque_for_copy! {
     f32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F32),
     f64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F64),
 }
+
+#[cfg(test)]
+mod test {
+    use std::collections::VecDeque;
+
+    use prosto_derive::proto_message;
+
+    #[allow(dead_code)]
+    #[proto_message(proto_path = "protos/vec_test.proto")]
+    struct VecWrapper {
+        inner1: Vec<u8>,
+        inner2: Vec<u16>,
+        inner3: Vec<u64>,
+    }
+    #[allow(dead_code)]
+    #[proto_message(proto_path = "protos/vec_test.proto")]
+    struct VecDWrapper {
+        inner1: VecDeque<u8>,
+        inner2: VecDeque<u16>,
+        inner3: VecDeque<u64>,
+    }
+}

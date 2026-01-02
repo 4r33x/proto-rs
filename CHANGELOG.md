@@ -53,7 +53,7 @@
 - Added a `treat_as` attribute for `proto_message` fields to override protobuf mappings.
 
 ## [0.6.0] - [0.6.3]
-- Introduced `#[proto_transparent]` support for structs and improved transparent decoding.
+- Introduced `#[transparent]` support for structs and improved transparent decoding.
 - Added wrapper and proto generation support for `ArcSwap` types with roundtrip tests.
 - Added `CachePadded` wrapper detection and implementations.
 - Added support for Rust atomic primitives and SmallVec-backed zero-copy buffers.

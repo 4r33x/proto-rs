@@ -194,6 +194,10 @@ message StructFailU16 {
   optional uint32 amount = 2;
 }
 
+message StructTransparent {
+  bytes inner = 1;
+}
+
 message StructU16 {
   uint32 inner = 1;
 }

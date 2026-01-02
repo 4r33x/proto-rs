@@ -14,18 +14,6 @@ pub struct UserIdNamed {
     pub id: u64,
 }
 
-pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
-pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;
-
-#[proto_message]
-#[derive(Debug, PartialEq, Eq)]
-pub struct UserIdTreatAs {
-    #[proto(treat_as = "proto_rs::alloc::collections::BTreeMap<u64, u64>")]
-    pub id: ComplexType,
-    #[proto(treat_as = "std::collections::HashMap<u64, u64>")]
-    pub id2: ComplexType2,
-}
-
 #[proto_message]
 #[derive(Debug, PartialEq, Eq)]
 pub struct UserWithId {
@@ -37,6 +25,18 @@ pub struct UserWithId {
     pub id3: UserIdNamed,
     #[proto(rename = Vec<u8>)]
     pub id4: UserIdNamed,
+}
+
+pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
+pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;
+
+#[proto_message]
+#[derive(Debug, PartialEq, Eq)]
+pub struct UserIdTreatAs {
+    #[proto(treat_as = "proto_rs::alloc::collections::BTreeMap<u64, u64>")]
+    pub id: ComplexType,
+    #[proto(treat_as = "std::collections::HashMap<u64, u64>")]
+    pub id2: ComplexType2,
 }
 
 #[proto_message]
