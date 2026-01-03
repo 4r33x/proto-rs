@@ -22,14 +22,14 @@ use crate::zero_copy::ZeroCopyBuffer;
 // ---------- conversion trait users implement ----------
 pub trait ProtoShadow<T>: Sized {
     /// Borrowed or owned form used during encoding.
-    type Sun<'a>: 'a;
+    type Sun<'a>;
 
     /// The value returned after decoding — can be fully owned
     /// (e.g. `D128`, `String`) or a zero-copy wrapper `ZeroCopyAccess<T>`.
     type OwnedSun: Sized;
 
     /// The *resulting* shadow type when constructed from a given Sun<'b>, it could be just zero-copy view so we can encode it to buffer
-    type View<'a>: 'a;
+    type View<'a>;
 
     /// Decoder to owned value
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError>;
@@ -257,6 +257,7 @@ pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
 pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::Sun<'a>;
 pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::OwnedSun;
 pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::View<'a>;
+
 pub trait ProtoExt: Sized {
     /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
     type Shadow<'b>: ProtoShadow<Self, OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>;
@@ -367,7 +368,7 @@ pub trait ProtoExt: Sized {
             }
         })
     }
-    #[cfg(feature = "tonic")]
+
     const VALIDATE_WITH_EXT: bool = false;
 
     #[inline(always)]
@@ -376,19 +377,23 @@ pub trait ProtoExt: Sized {
     }
 }
 
-//Example implementation with lifetimes
+//Example implementation with lifetimes and generics
 #[expect(dead_code)]
-struct ID<'b> {
+struct ID<'b, K, V> {
     id: u64,
+    k: K,
+    v: V,
     _pd: PhantomData<&'b ()>,
 }
-impl<'b> ProtoShadow<ID<'b>> for ID<'b> {
-    // During encoding we look at &ID<'b>
-    type Sun<'a> = ID<'a>;
-    // After decoding we own an ID<'b>
-    type OwnedSun = ID<'b>;
-    // Views are just &ID<'b> again
-    type View<'a> = ID<'a>;
+
+impl<'b, K, V> ProtoShadow<ID<'b, K, V>> for ID<'b, K, V>
+where
+    K: ProtoShadow<K, OwnedSun = K>,
+    V: ProtoShadow<V, OwnedSun = V>,
+{
+    type Sun<'a> = ID<'a, K, V>;
+    type OwnedSun = ID<'b, K, V>;
+    type View<'a> = ID<'a, K, V>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -400,8 +405,15 @@ impl<'b> ProtoShadow<ID<'b>> for ID<'b> {
         value
     }
 }
-impl<'b> ProtoExt for ID<'b> {
-    type Shadow<'a> = ID<'b>;
+
+impl<'b, K, V> ProtoExt for ID<'b, K, V>
+where
+    K: ProtoExt + ProtoWire + ProtoShadow<K, OwnedSun = K>,
+    V: ProtoExt + ProtoWire + ProtoShadow<V, OwnedSun = V>,
+    // IMPORTANT: required so that ID can be its own shadow and its View is ID<'a, K, V>
+    for<'a> ID<'b, K, V>: ProtoWire<EncodeInput<'a> = ID<'a, K, V>>,
+{
+    type Shadow<'a> = ID<'b, K, V>;
 
     #[inline(always)]
     fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -413,48 +425,68 @@ impl<'b> ProtoExt for ID<'b> {
                 value.id = encoding::decode_varint(buf)? as u64;
                 Ok(())
             }
+
+            // If you have tags for k/v, they should delegate into their shadows:
+            // 2 => K::merge_field(&mut value.k, /*...*/, buf, ctx),
+            // 3 => V::merge_field(&mut value.v, /*...*/, buf, ctx),
             _ => encoding::skip_field(wire_type, tag, buf, ctx),
         }
     }
 }
 
-impl ProtoWire for ID<'_> {
-    type EncodeInput<'a> = ID<'a>;
+impl<K, V> ProtoWire for ID<'_, K, V>
+where
+    K: ProtoWire + ProtoExt + ProtoShadow<K, OwnedSun = K>,
+    V: ProtoWire + ProtoExt + ProtoShadow<V, OwnedSun = V>,
+    for<'a> K: ProtoWire<EncodeInput<'a> = K>,
+    for<'a> V: ProtoWire<EncodeInput<'a> = V>,
+{
+    type EncodeInput<'a> = ID<'a, K, V>;
+
     const KIND: ProtoKind = ProtoKind::Message;
     const WIRE_TYPE: WireType = WireType::LengthDelimited;
 
     #[inline(always)]
     fn proto_default() -> Self {
         Self {
-            id: ProtoWire::proto_default(),
+            id: <u64 as ProtoWire>::proto_default(),
+            k: K::proto_default(),
+            v: V::proto_default(),
             _pd: PhantomData,
         }
     }
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.id.is_default_by_val()
-    }
-    #[inline(always)]
-    fn clear(&mut self) {
-        self.id.clear();
+        <u64 as ProtoWire>::is_default_impl(&value.id) && K::is_default_impl(&value.k) && V::is_default_impl(&value.v)
     }
 
     #[inline(always)]
-    /// Returns the encoded length of the message without a length delimiter.
+    fn clear(&mut self) {
+        self.id.clear();
+        self.k.clear();
+        self.v.clear();
+    }
+
+    #[inline(always)]
     unsafe fn encoded_len_impl_raw(v: &Self::EncodeInput<'_>) -> usize {
-        encoding::key_len(1) + u64::encoded_len_impl(&v.id)
+        let mut len = 0;
+        len += <u64 as ProtoWire>::encoded_len_tagged_impl(&v.id, 1);
+        len += K::encoded_len_tagged_impl(&v.k, 2);
+        len += V::encoded_len_tagged_impl(&v.v, 3);
+        len
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        // write internal field(s)
-        encode_key(1, WireType::Varint, buf);
-        encode_varint(value.id, buf);
+        <u64 as ProtoWire>::encode_with_tag(1, value.id, buf);
+        K::encode_with_tag(2, value.k, buf);
+        V::encode_with_tag(3, value.v, buf);
     }
+
     #[inline(always)]
     fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        check_wire_type(WireType::Varint, wire_type)?;
+        check_wire_type(WireType::LengthDelimited, wire_type)?;
         *value = ID::decode_length_delimited(buf, ctx)?;
         Ok(())
     }

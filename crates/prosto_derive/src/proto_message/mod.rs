@@ -19,7 +19,6 @@ pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> Token
     };
     let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
     quote! {
-        #[cfg(feature = "tonic")]
         const VALIDATE_WITH_EXT: bool = true;
 
         #[inline(always)]
