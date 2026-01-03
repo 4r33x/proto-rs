@@ -11,7 +11,12 @@ use syn::ItemStruct;
 use crate::emit_proto::generate_complex_enum_proto;
 use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
+use crate::emit_proto::transparent_proto_type;
 use crate::parse::UnifiedProtoConfig;
+use crate::write_file::ProtoTypeId;
+use crate::write_file::TypeInfo;
+use crate::write_file::module_path_from_call_site;
+use crate::write_file::register_type_info;
 
 pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
     let Some(validator_fn) = &config.validator_with_ext else {
@@ -46,8 +51,32 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse2(item_ts.clone()).expect("proto_message expects a type definition");
 
     let type_ident = input.ident.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
+    let module_path = module_path_from_call_site();
+    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, module_path, &input.attrs, &input.data);
     let proto_names = config.proto_message_names(&type_ident);
+
+    if config.transparent {
+        let transparent = match &input.data {
+            Data::Struct(data) => match &data.fields {
+                Fields::Named(fields) => fields.named.first(),
+                Fields::Unnamed(fields) => fields.unnamed.first(),
+                Fields::Unit => None,
+            }
+            .map(transparent_proto_type),
+            _ => None,
+        };
+
+        if let Some(transparent) = transparent {
+            let type_id = ProtoTypeId::for_type(&config.module_path, &config.type_name);
+            register_type_info(
+                type_id,
+                TypeInfo {
+                    type_name: config.type_name.clone(),
+                    transparent: Some(transparent),
+                },
+            );
+        }
+    }
 
     let tokens = match input.data {
         Data::Struct(ref data) => {

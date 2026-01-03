@@ -12,16 +12,19 @@ use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
 use crate::proto_rpc::utils::extract_methods_and_types;
+use crate::write_file::module_path_from_call_site;
 
 pub fn proto_dump_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Ok(input) = syn::parse::<DeriveInput>(item.clone()) {
         let type_ident = input.ident.to_string();
-        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
+        let module_path = module_path_from_call_site();
+        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, module_path, &input.attrs, &input.data);
         return struct_or_enum(input, config);
     }
     if let Ok(input) = syn::parse::<syn::ItemTrait>(item) {
         let type_ident = input.ident.to_string();
-        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input);
+        let module_path = module_path_from_call_site();
+        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, module_path, &input.attrs, &input);
         return trait_service(input, config);
     }
 
