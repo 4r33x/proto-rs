@@ -24,8 +24,12 @@ use crate::utils::strip_proto_suffix;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
+use crate::write_file::ProtoEntry;
+use crate::write_file::ProtoFieldEntry;
+use crate::write_file::ProtoTypeId;
+use crate::write_file::TypeIdContext;
 
-pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
+pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> ProtoEntry {
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{}", err));
 
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
@@ -55,14 +59,16 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
         })
         .collect();
 
-    format!("enum {} {{\n{}\n}}\n\n", name, variants.join("\n"))
+    let content = format!("enum {} {{\n{}\n}}\n\n", name, variants.join("\n"));
+    ProtoEntry::definition(content, Vec::new())
 }
 
-pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
+pub fn generate_complex_enum_proto(name: &str, data: &DataEnum, type_id_context: &TypeIdContext) -> ProtoEntry {
     let proto_name = name.to_string();
 
     let mut nested_messages = Vec::new();
     let mut oneof_fields = Vec::new();
+    let mut field_entries = Vec::new();
 
     for (idx, variant) in data.variants.iter().enumerate() {
         let tag = idx + 1;
@@ -87,43 +93,71 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
                     nested_messages.push(format!("message {msg_name} {{}}"));
                     oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
                 } else {
-                    let proto_type = get_field_proto_type(field);
-                    oneof_fields.push(format!("    {proto_type} {field_name_snake} = {tag};"));
+                    let base_ty = resolved_field_type(field, &config);
+                    let ty = if let Some(ref into_type) = config.into_type {
+                        syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
+                    } else {
+                        base_ty
+                    };
+                    let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
+                    let proto_info = resolve_proto_type_with_info(&inner_type, &config, &mut is_option, &mut is_repeated, type_id_context);
+                    let modifier = field_modifier(is_option, is_repeated);
+                    oneof_fields.push(format!("    {}{} {field_name_snake} = {tag};", modifier, proto_info.proto_type));
+
+                    if let Some(field_entry) = proto_field_entry(
+                        proto_info.type_id,
+                        &field_name_snake,
+                        &modifier,
+                        tag,
+                        &proto_info.proto_type,
+                        "    ",
+                        proto_info.allow_rename,
+                    ) {
+                        field_entries.push(field_entry);
+                    }
                 }
             }
             Fields::Named(fields) => {
                 let msg_name = format!("{proto_name}{variant_ident}");
-                let field_defs = generate_named_fields(&fields.named);
+                let (field_defs, nested_entries) = generate_named_fields(&fields.named, type_id_context, "  ");
 
                 nested_messages.push(format!("message {msg_name} {{\n{field_defs}\n}}"));
                 oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
+                field_entries.extend(nested_entries);
             }
         }
     }
 
-    format!(
+    let content = format!(
         "{}\nmessage {} {{\n  oneof value {{\n{}\n  }}\n}}\n\n",
         nested_messages.join("\n\n"),
         proto_name,
         oneof_fields.join("\n")
-    )
+    );
+    ProtoEntry::definition(content, field_entries)
 }
 
-pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
+pub fn generate_struct_proto(name: &str, fields: &Fields, type_id_context: &TypeIdContext) -> ProtoEntry {
     match fields {
-        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named),
-        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed),
-        Fields::Unit => format!("message {name} {{}}\n\n"),
+        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named, type_id_context),
+        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed, type_id_context),
+        Fields::Unit => ProtoEntry::definition(format!("message {name} {{}}\n\n"), Vec::new()),
     }
 }
 
-fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
-    let field_defs = generate_named_fields(fields);
-    format!("message {name} {{\n{field_defs}\n}}\n\n")
+fn generate_named_struct_proto(
+    name: &str,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    type_id_context: &TypeIdContext,
+) -> ProtoEntry {
+    let (field_defs, field_entries) = generate_named_fields(fields, type_id_context, "  ");
+    let content = format!("message {name} {{\n{field_defs}\n}}\n\n");
+    ProtoEntry::definition(content, field_entries)
 }
 
-fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) -> String {
+fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>, type_id_context: &TypeIdContext) -> ProtoEntry {
     let mut proto_fields = Vec::new();
+    let mut field_entries = Vec::new();
 
     for (idx, field) in fields.iter().enumerate() {
         let config = parse_field_config(field);
@@ -140,28 +174,26 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
         };
 
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
-        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+        let proto_info = resolve_proto_type_with_info(&inner_type, &config, &mut is_option, &mut is_repeated, type_id_context);
 
         let modifier = field_modifier(is_option, is_repeated);
         let tag = config.custom_tag.unwrap_or(idx + 1);
-        proto_fields.push(format!("  {modifier}{proto_type} {field_name} = {tag};"));
+        proto_fields.push(format!("  {modifier}{} {field_name} = {tag};", proto_info.proto_type));
+        if let Some(field_entry) = proto_field_entry(
+            proto_info.type_id,
+            &field_name,
+            &modifier,
+            tag,
+            &proto_info.proto_type,
+            "  ",
+            proto_info.allow_rename,
+        ) {
+            field_entries.push(field_entry);
+        }
     }
 
-    format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"))
-}
-
-fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool) -> String {
-    if let Some(rename) = &config.rename {
-        if let Some(flag) = rename.is_optional {
-            *is_option = flag;
-        }
-        if let Some(flag) = rename.is_repeated {
-            *is_repeated = flag;
-        }
-        return rename.proto_type.clone();
-    }
-
-    determine_proto_type(inner_type, config)
+    let content = format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"));
+    ProtoEntry::definition(content, field_entries)
 }
 
 fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
@@ -173,8 +205,13 @@ fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
 }
 
 /// Generate proto fields for named struct/enum variant
-fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
+fn generate_named_fields(
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    type_id_context: &TypeIdContext,
+    indent: &str,
+) -> (String, Vec<ProtoFieldEntry>) {
     let mut proto_fields = Vec::new();
+    let mut field_entries = Vec::new();
     let mut field_num = 0;
 
     for field in fields {
@@ -196,22 +233,32 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 
         // Extract wrapper info
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
-
-        // Determine proto type string
-        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+        let proto_info = resolve_proto_type_with_info(&inner_type, &config, &mut is_option, &mut is_repeated, type_id_context);
 
         // Add modifier
         let modifier = field_modifier(is_option, is_repeated);
 
         let tag = config.custom_tag.unwrap_or(field_num);
 
-        proto_fields.push(format!("  {modifier}{proto_type} {field_name} = {tag};"));
+        proto_fields.push(format!("{indent}{modifier}{} {field_name} = {tag};", proto_info.proto_type));
+        if let Some(field_entry) = proto_field_entry(
+            proto_info.type_id,
+            &field_name,
+            &modifier,
+            tag,
+            &proto_info.proto_type,
+            indent,
+            proto_info.allow_rename,
+        ) {
+            field_entries.push(field_entry);
+        }
     }
 
-    proto_fields.join("\n")
+    (proto_fields.join("\n"), field_entries)
 }
 
 /// Get proto type string for a field type
+#[cfg(test)]
 fn get_field_proto_type(field: &Field) -> String {
     let config = parse_field_config(field);
     let base_ty = resolved_field_type(field, &config);
@@ -284,6 +331,101 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     }
 
     parsed.proto_type
+}
+
+struct ProtoTypeInfo {
+    proto_type: String,
+    type_id: Option<ProtoTypeId>,
+    allow_rename: bool,
+}
+
+fn resolve_proto_type_with_info(
+    inner_type: &Type,
+    config: &crate::utils::FieldConfig,
+    is_option: &mut bool,
+    is_repeated: &mut bool,
+    type_id_context: &TypeIdContext,
+) -> ProtoTypeInfo {
+    if let Some(rename) = &config.rename {
+        if let Some(flag) = rename.is_optional {
+            *is_option = flag;
+        }
+        if let Some(flag) = rename.is_repeated {
+            *is_repeated = flag;
+        }
+        return ProtoTypeInfo {
+            proto_type: rename.proto_type.clone(),
+            type_id: None,
+            allow_rename: false,
+        };
+    }
+
+    let proto_type = determine_proto_type(inner_type, config);
+    let parsed = parse_field_type(inner_type);
+    let can_rename = parsed.is_message_like
+        && config.import_path.is_none()
+        && !config.is_rust_enum
+        && !config.is_proto_enum
+        && !config.is_message
+        && parsed.map_kind.is_none();
+    let type_id = can_rename.then(|| type_id_context.type_id_for_type(inner_type)).flatten();
+    let allow_rename = type_id.is_some();
+
+    ProtoTypeInfo {
+        proto_type,
+        type_id,
+        allow_rename,
+    }
+}
+
+fn proto_field_entry(
+    type_id: Option<ProtoTypeId>,
+    field_name: &str,
+    modifier: &str,
+    tag: usize,
+    proto_type: &str,
+    indent: &str,
+    allow_rename: bool,
+) -> Option<ProtoFieldEntry> {
+    type_id.map(|type_id| {
+        ProtoFieldEntry::new(
+            type_id,
+            field_name.to_string(),
+            modifier.to_string(),
+            tag,
+            proto_type.to_string(),
+            indent.to_string(),
+            allow_rename,
+        )
+    })
+}
+
+pub fn transparent_proto_type(fields: &Fields, type_id_context: &TypeIdContext) -> Option<String> {
+    let (field, config) = match fields {
+        Fields::Named(fields) if fields.named.len() == 1 => {
+            let field = fields.named.first()?;
+            (field, parse_field_config(field))
+        }
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            let field = fields.unnamed.first()?;
+            (field, parse_field_config(field))
+        }
+        _ => return None,
+    };
+
+    if config.skip {
+        return None;
+    }
+
+    let base_ty = resolved_field_type(field, &config);
+    let ty = if let Some(ref into_type) = config.into_type {
+        syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
+    } else {
+        base_ty
+    };
+    let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
+    let proto_info = resolve_proto_type_with_info(&inner_type, &config, &mut is_option, &mut is_repeated, type_id_context);
+    Some(proto_info.proto_type)
 }
 
 pub fn generate_service_content(

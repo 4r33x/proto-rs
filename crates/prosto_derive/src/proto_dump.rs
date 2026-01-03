@@ -12,16 +12,17 @@ use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
 use crate::proto_rpc::utils::extract_methods_and_types;
+use crate::write_file::ProtoEntry;
 
 pub fn proto_dump_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Ok(input) = syn::parse::<DeriveInput>(item.clone()) {
         let type_ident = input.ident.to_string();
-        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
+        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data, input.ident.span());
         return struct_or_enum(input, config);
     }
     if let Ok(input) = syn::parse::<syn::ItemTrait>(item) {
         let type_ident = input.ident.to_string();
-        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input);
+        let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input, input.ident.span());
         return trait_service(input, config);
     }
 
@@ -33,19 +34,19 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
     let clean_name = proto_name.strip_suffix("Proto").unwrap_or(&proto_name);
 
     let proto_def = match &input.data {
-        Data::Struct(data) => generate_struct_proto(clean_name, &data.fields),
+        Data::Struct(data) => generate_struct_proto(clean_name, &data.fields, &config.type_id_context),
         Data::Enum(data) => {
             let is_simple_enum = data.variants.iter().all(|v| matches!(v.fields, Fields::Unit));
             if is_simple_enum {
                 generate_simple_enum_proto(clean_name, data)
             } else {
-                generate_complex_enum_proto(clean_name, data)
+                generate_complex_enum_proto(clean_name, data, &config.type_id_context)
             }
         }
         Data::Union(_) => panic!("proto_dump can only be used on structs and enums, make PR/issue if you want unions"),
     };
 
-    config.register_and_emit_proto(clean_name, &proto_def);
+    config.register_and_emit_proto(clean_name, proto_def);
     strip_proto_attributes(&mut input.data);
     let proto = config.imports_mat;
     quote! {
@@ -65,7 +66,7 @@ fn trait_service(mut input: ItemTrait, mut config: UnifiedProtoConfig) -> TokenS
         &config.type_imports,
         config.import_all_from.as_deref(),
     );
-    config.register_and_emit_proto(clean_name, &proto_def);
+    config.register_and_emit_proto(clean_name, ProtoEntry::definition(proto_def, Vec::new()));
     strip_proto_attributes_from_trait(&mut input);
     let proto = config.imports_mat;
     quote! {

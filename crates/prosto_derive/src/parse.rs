@@ -16,6 +16,8 @@ use syn::parse::Parse;
 
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
+use crate::write_file::ProtoEntry;
+use crate::write_file::TypeIdContext;
 use crate::write_file::register_and_emit_proto_inner;
 use crate::write_file::register_imports;
 
@@ -53,7 +55,7 @@ impl ParseFieldAttr for () {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct UnifiedProtoConfig {
     pub proto_path: Option<String>,
     pub rpc_server: bool,
@@ -67,6 +69,7 @@ pub struct UnifiedProtoConfig {
     pub transparent: bool,
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
+    pub type_id_context: TypeIdContext,
 }
 
 #[derive(Clone)]
@@ -76,19 +79,41 @@ pub struct SunConfig {
     pub by_ref: bool,
 }
 
+impl Default for UnifiedProtoConfig {
+    fn default() -> Self {
+        Self {
+            proto_path: None,
+            rpc_server: false,
+            rpc_client: false,
+            rpc_package: None,
+            import_all_from: None,
+            type_imports: BTreeMap::new(),
+            file_imports: BTreeMap::new(),
+            imports_mat: TokenStream2::new(),
+            suns: Vec::new(),
+            transparent: false,
+            validator: None,
+            validator_with_ext: None,
+            type_id_context: TypeIdContext::new(proc_macro2::Span::call_site()),
+        }
+    }
+}
+
 impl UnifiedProtoConfig {
     /// Register and emit proto content (only if `proto_path` is specified)
-    pub fn register_and_emit_proto(&mut self, type_ident: &str, content: &str) {
+    pub fn register_and_emit_proto(&mut self, type_ident: &str, entry: ProtoEntry) {
         if let Some(proto_path) = self.proto_path() {
-            let mat = register_and_emit_proto_inner(proto_path, type_ident, content);
+            let type_id = self.type_id_context.proto_type_id(type_ident);
+            let mat = register_and_emit_proto_inner(proto_path, type_ident, type_id, entry);
             let imports = &self.imports_mat;
             self.imports_mat = quote::quote! { #imports #mat };
         }
     }
 
     /// Parse configuration from attributes and extract all imports
-    pub fn from_attributes(attr: TokenStream, type_ident: &str, item_attrs: &[Attribute], fields: impl ParseFieldAttr) -> Self {
+    pub fn from_attributes(attr: TokenStream, type_ident: &str, item_attrs: &[Attribute], fields: impl ParseFieldAttr, span: proc_macro2::Span) -> Self {
         let mut config = Self::default();
+        config.type_id_context = TypeIdContext::new(span);
 
         // Parse attribute parameters
         if !attr.is_empty() {

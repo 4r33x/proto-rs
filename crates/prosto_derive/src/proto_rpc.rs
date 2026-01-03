@@ -14,12 +14,13 @@ use utils::extract_methods_and_types; // Add this import
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
+use crate::write_file::ProtoEntry;
 
 pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let input: ItemTrait = syn::parse(item).expect("Failed to parse trait");
     let trait_name = &input.ident;
     let ty_ident = trait_name.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input);
+    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input, input.ident.span());
     let vis = &input.vis;
     let package_name = config.get_rpc_package().to_owned();
 
@@ -33,7 +34,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
         &config.type_imports,
         config.import_all_from.as_deref(),
     );
-    config.register_and_emit_proto(&ty_ident, &service_content);
+    config.register_and_emit_proto(&ty_ident, ProtoEntry::definition(service_content, Vec::new()));
     let proto = config.imports_mat.clone();
 
     // Generate user-facing trait

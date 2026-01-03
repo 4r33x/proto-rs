@@ -11,7 +11,10 @@ use syn::ItemStruct;
 use crate::emit_proto::generate_complex_enum_proto;
 use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
+use crate::emit_proto::transparent_proto_type;
 use crate::parse::UnifiedProtoConfig;
+use crate::write_file::TypeInfo;
+use crate::write_file::register_type_info;
 
 pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
     let Some(validator_fn) = &config.validator_with_ext else {
@@ -46,14 +49,20 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse2(item_ts.clone()).expect("proto_message expects a type definition");
 
     let type_ident = input.ident.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
+    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data, input.ident.span());
     let proto_names = config.proto_message_names(&type_ident);
 
     let tokens = match input.data {
         Data::Struct(ref data) => {
+            if config.transparent {
+                if let Some(proto_type) = transparent_proto_type(&data.fields, &config.type_id_context) {
+                    let type_id = config.type_id_context.proto_type_id(&type_ident);
+                    register_type_info(type_id, TypeInfo { transparent: Some(proto_type) });
+                }
+            }
             for proto_name in &proto_names {
-                let proto = generate_struct_proto(proto_name, &data.fields);
-                config.register_and_emit_proto(proto_name, &proto);
+                let proto = generate_struct_proto(proto_name, &data.fields, &config.type_id_context);
+                config.register_and_emit_proto(proto_name, proto);
             }
 
             let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
@@ -65,9 +74,9 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let proto = if is_simple_enum {
                     generate_simple_enum_proto(proto_name, data)
                 } else {
-                    generate_complex_enum_proto(proto_name, data)
+                    generate_complex_enum_proto(proto_name, data, &config.type_id_context)
                 };
-                config.register_and_emit_proto(proto_name, &proto);
+                config.register_and_emit_proto(proto_name, proto);
             }
 
             let item_enum: ItemEnum = syn::parse2(item_ts).expect("failed to parse enum");
