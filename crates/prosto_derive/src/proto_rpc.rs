@@ -14,12 +14,14 @@ use utils::extract_methods_and_types; // Add this import
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
+use crate::write_file::module_path_from_call_site;
 
 pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let input: ItemTrait = syn::parse(item).expect("Failed to parse trait");
     let trait_name = &input.ident;
     let ty_ident = trait_name.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input);
+    let module_path = module_path_from_call_site();
+    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, module_path, &input.attrs, &input);
     let vis = &input.vis;
     let package_name = config.get_rpc_package().to_owned();
 

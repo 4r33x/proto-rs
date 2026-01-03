@@ -59,6 +59,8 @@ pub struct UnifiedProtoConfig {
     pub rpc_server: bool,
     pub rpc_client: bool,
     rpc_package: Option<String>,
+    pub module_path: String,
+    pub type_name: String,
     pub import_all_from: Option<String>,
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
@@ -80,15 +82,24 @@ impl UnifiedProtoConfig {
     /// Register and emit proto content (only if `proto_path` is specified)
     pub fn register_and_emit_proto(&mut self, type_ident: &str, content: &str) {
         if let Some(proto_path) = self.proto_path() {
-            let mat = register_and_emit_proto_inner(proto_path, type_ident, content);
+            let proto_type_id = crate::write_file::ProtoTypeId::for_definition(&self.module_path, &self.type_name, type_ident);
+            let mat = register_and_emit_proto_inner(proto_path, type_ident, proto_type_id, content);
             let imports = &self.imports_mat;
             self.imports_mat = quote::quote! { #imports #mat };
         }
     }
 
     /// Parse configuration from attributes and extract all imports
-    pub fn from_attributes(attr: TokenStream, type_ident: &str, item_attrs: &[Attribute], fields: impl ParseFieldAttr) -> Self {
+    pub fn from_attributes(
+        attr: TokenStream,
+        type_ident: &str,
+        module_path: String,
+        item_attrs: &[Attribute],
+        fields: impl ParseFieldAttr,
+    ) -> Self {
         let mut config = Self::default();
+        config.module_path = module_path;
+        config.type_name = type_ident.to_string();
 
         // Parse attribute parameters
         if !attr.is_empty() {
@@ -462,6 +473,8 @@ mod tests {
         assert!(!config.rpc_server);
         assert!(!config.rpc_client);
         assert!(!config.transparent);
+        assert!(config.module_path.is_empty());
+        assert!(config.type_name.is_empty());
     }
 
     #[test]

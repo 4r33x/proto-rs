@@ -150,7 +150,7 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
     format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"))
 }
 
-fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool) -> String {
+pub(crate) fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool) -> String {
     if let Some(rename) = &config.rename {
         if let Some(flag) = rename.is_optional {
             *is_option = flag;
@@ -162,6 +162,19 @@ fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_
     }
 
     determine_proto_type(inner_type, config)
+}
+
+pub(crate) fn transparent_proto_type(field: &Field) -> String {
+    let config = parse_field_config(field);
+    let base_ty = resolved_field_type(field, &config);
+    let ty = if let Some(ref into_type) = config.into_type {
+        syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
+    } else {
+        base_ty
+    };
+
+    let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
+    resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated)
 }
 
 fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
