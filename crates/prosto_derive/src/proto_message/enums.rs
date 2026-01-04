@@ -102,7 +102,7 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty where Self: 'b;
+                type Shadow<'b> = #shadow_ty;
 
                 #[inline(always)]
                 fn merge_field(

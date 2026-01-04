@@ -21,6 +21,7 @@ use super::unified_field_handler::field_proto_default_expr;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::build_validate_with_ext_impl;
+use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::needs_decode_conversion;
 use super::unified_field_handler::parse_path_string;
@@ -35,7 +36,6 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
 
     let name = &input.ident;
     let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let default_index = crate::utils::find_marked_default_variant(data)?.unwrap_or(0);
     let mut variants = collect_variant_infos(data, config)?;
@@ -47,7 +47,11 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     }
     variants[default_index].is_default = true;
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+    let bound_fields = collect_variant_fields(&variants);
+    let bounded_generics = add_proto_wire_bounds(generics, bound_fields);
+    let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
+
+    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
 
     let shadow_ty = quote! { #name #ty_generics };
 
@@ -95,7 +99,7 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty where Self: 'b;
+                type Shadow<'b> = #shadow_ty;
 
                 #[inline(always)]
                 fn merge_field(
@@ -306,6 +310,22 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
     }
 
     Ok(variants)
+}
+
+fn collect_variant_fields<'a>(variants: &'a [VariantInfo<'a>]) -> Vec<&'a FieldInfo<'a>> {
+    let mut fields = Vec::new();
+    for variant in variants {
+        match &variant.kind {
+            VariantKind::Unit => {}
+            VariantKind::Tuple { field } => {
+                fields.push(&field.field);
+            }
+            VariantKind::Struct { fields: struct_fields } => {
+                fields.extend(struct_fields.iter());
+            }
+        }
+    }
+    fields
 }
 
 fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u32> {

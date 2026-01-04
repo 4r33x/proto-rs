@@ -18,6 +18,7 @@ use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::build_validate_with_ext_impl;
+use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
@@ -28,7 +29,6 @@ use crate::utils::resolved_field_type;
 pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream2 {
     let name = &input.ident;
     let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let struct_item = sanitize_struct(item_struct.clone());
 
@@ -80,11 +80,14 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         syn::Fields::Unit => Vec::new(),
     };
 
+    let bounded_generics = add_proto_wire_bounds(generics, fields.iter());
+    let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
+
     if config.transparent {
         assert!(fields.len() == 1, "#[proto_message(transparent)] requires a single-field struct");
 
         let field = fields.remove(0);
-        let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+        let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
         let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
 
         return quote! {
@@ -96,7 +99,7 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
 
     let fields = assign_tags(fields);
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
 
     let proto_ext_impl = generate_proto_ext_impl(name, &impl_generics, &ty_generics, where_clause, &fields, config);
     let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields, config);
@@ -153,7 +156,7 @@ fn generate_transparent_struct_impl(
 
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-            type Shadow<'b> = #name #ty_generics where Self: 'b;
+            type Shadow<'b> = #name #ty_generics;
 
             #[inline(always)]
             fn merge_field(
@@ -356,7 +359,7 @@ fn generate_proto_ext_impl(
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty where Self: 'b;
+                type Shadow<'b> = #shadow_ty;
 
                 #[inline(always)]
                 fn merge_field(

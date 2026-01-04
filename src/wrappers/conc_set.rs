@@ -6,7 +6,7 @@ use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashSet;
 
-use super::maps::EncodeInputFromRef;
+use crate::EncodeInputFromRef;
 
 #[cfg(feature = "std")]
 pub type PapayaSetGuard<'a, T, S> = papaya::HashSetRef<'a, T, S, papaya::LocalGuard<'a>>;

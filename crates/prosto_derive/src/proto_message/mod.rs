@@ -33,6 +33,7 @@ pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> Token
 
 mod complex_enums;
 mod enums;
+mod generic_bounds;
 mod structs;
 mod unified_field_handler;
 

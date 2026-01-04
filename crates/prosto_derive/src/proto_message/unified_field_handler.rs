@@ -102,7 +102,7 @@ pub fn needs_decode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -
     config.from_type.is_some() || config.from_fn.is_some() || config.try_from_fn.is_some() || config.into_type.is_some() || is_numeric_enum(config, parsed)
 }
 
-fn uses_proto_wire_directly(info: &FieldInfo<'_>) -> bool {
+pub(super) fn uses_proto_wire_directly(info: &FieldInfo<'_>) -> bool {
     !info.config.skip && !needs_encode_conversion(&info.config, &info.parsed) && info.config.from_type.is_none() && info.config.from_fn.is_none() && info.config.try_from_fn.is_none()
 }
 
@@ -249,10 +249,19 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         }
     } else {
         let init_expr = if is_option_type(&field.field.ty) {
-            if is_value_encode_type(&field.parsed.elem_type) {
-                quote! { (#access_expr).clone() }
+            if field.config.getter.is_some() {
+                if is_value_encode_type(&field.parsed.elem_type) {
+                    quote! { (#access_expr).clone() }
+                } else {
+                    quote! { (#access_expr).as_ref().map(|inner| inner) }
+                }
             } else {
-                quote! { (#access_expr).as_ref().map(|inner| inner) }
+                let inner_ty = &field.parsed.elem_type;
+                quote! {
+                    (#access_expr).as_ref().map(|inner| {
+                        <#inner_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(inner)
+                    })
+                }
             }
         } else if field.config.getter.is_some() {
             if is_value_encode_type(proto_ty) {
@@ -263,19 +272,10 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
             } else {
                 access_expr.clone()
             }
-        } else if matches!(field.access, FieldAccess::Direct(_)) {
-            if is_value_encode_type(proto_ty) {
-                quote! {{
-                    let borrowed: &#proto_ty = ::core::borrow::Borrow::borrow(&#access_expr);
-                    *borrowed
-                }}
-            } else {
-                access_expr.clone()
-            }
-        } else if is_value_encode_type(proto_ty) {
-            access_expr.clone()
         } else {
-            quote! { &(#access_expr) }
+            quote! {
+                <#proto_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(&(#access_expr))
+            }
         };
         EncodeBinding { prelude: None, value: init_expr }
     }
@@ -613,7 +613,7 @@ pub fn generate_sun_proto_ext_impl(
 ) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoExt for #target_ty {
-            type Shadow<'b> = #shadow_ty where Self: 'b;
+            type Shadow<'b> = #shadow_ty;
 
             #[inline(always)]
             fn merge_field(
