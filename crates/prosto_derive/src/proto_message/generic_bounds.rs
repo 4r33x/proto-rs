@@ -32,7 +32,7 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
     let mut bounded = generics.clone();
     let where_clause = bounded.make_where_clause();
     for ident in &used {
-        where_clause.predicates.push(parse_quote!(#ident: 'static));
+        where_clause.predicates.push(parse_quote!(for<'a> #ident: 'a));
     }
     for ident in used {
         where_clause.predicates.push(parse_quote!(for<'a> #ident: ::proto_rs::EncodeInputFromRef<'a>));
