@@ -30,12 +30,6 @@ pub struct UserIdTreatAs {
     pub id2: ComplexType2,
 }
 
-#[proto_message(transparent, proto_path = "protos/showcase_proto/show.proto")]
-#[derive(Clone, PartialEq, Default)]
-pub struct StructTransparent {
-    inner: Vec<u8>,
-}
-
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone, PartialEq, Default)]
 pub struct StructU16 {
