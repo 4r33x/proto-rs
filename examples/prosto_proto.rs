@@ -12,11 +12,11 @@ use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
-// #[proto_message(transparent, proto_path = "protos/showcase_proto/show.proto")]
-// #[derive(Debug)]
-// pub struct Lru<K, V, const CAP: usize> {
-//     items: VecDeque<(K, V)>, // MRU..LRU
-// }
+#[proto_message(transparent)]
+#[derive(Debug)]
+pub struct TinyLru<K, V, const CAP: usize> {
+    items: VecDeque<(K, V)>, // MRU..LRU
+}
 
 pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
 pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;
