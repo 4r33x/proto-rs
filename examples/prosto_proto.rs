@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use chrono::DateTime;
@@ -12,10 +13,23 @@ use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
-#[proto_message(transparent)]
+// #[proto_message(transparent)]
+// #[derive(Debug)]
+// pub struct TinyLru<K, V, const CAP: usize> {
+//     items: VecDeque<(K, V)>, // MRU..LRU
+// }
+
+#[proto_message]
 #[derive(Debug)]
-pub struct TinyLru<K, V, const CAP: usize> {
-    items: VecDeque<(K, V)>, // MRU..LRU
+pub struct GenericStruct<K, V, S, const CAP: usize> {
+    k: K,
+    v: V,
+    s: S,
+    vec_k: Vec<K>,
+    vec_v: VecDeque<V>,
+    //kv: HashMap<K, V>,
+    // kvs: (K, V, S),
+    // vec_kv: Vec<(K, V)>,
 }
 
 pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
