@@ -48,6 +48,12 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
     let proto_names = config.proto_message_names(&type_ident);
 
+    if config.transparent && config.proto_path().is_some() {
+        return Error::new_spanned(&input.ident, "transparent proto_message types must not be written to .proto files")
+            .to_compile_error()
+            .into();
+    }
+
     let tokens = match input.data {
         Data::Struct(ref data) => {
             for proto_name in &proto_names {
