@@ -161,21 +161,16 @@ fn collect_ref_type_params_inner(ty: &Type, params: &BTreeSet<Ident>, used: &mut
                 }
             }
 
-            if type_path.qself.is_none() {
-                if let Some(segment) = type_path.path.segments.last() {
-                    match segment.ident.to_string().as_str() {
-                        "Vec" | "VecDeque" | "BTreeSet" | "HashSet" => {
-                            if let Some(inner_ty) = first_type_arg(&segment.arguments) {
-                                collect_ref_type_params_inner(inner_ty, params, used, true);
-                            }
+            if type_path.qself.is_none()
+                && let Some(segment) = type_path.path.segments.last()
+            {
+                match segment.ident.to_string().as_str() {
+                    "Vec" | "VecDeque" | "BTreeSet" | "HashSet" | "HashMap" | "BTreeMap" => {
+                        if let Some(inner_ty) = first_type_arg(&segment.arguments) {
+                            collect_ref_type_params_inner(inner_ty, params, used, true);
                         }
-                        "HashMap" | "BTreeMap" => {
-                            if let Some(key_ty) = first_type_arg(&segment.arguments) {
-                                collect_ref_type_params_inner(key_ty, params, used, true);
-                            }
-                        }
-                        _ => {}
                     }
+                    _ => {}
                 }
             }
 
