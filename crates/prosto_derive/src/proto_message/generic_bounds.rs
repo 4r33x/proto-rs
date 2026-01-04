@@ -31,7 +31,7 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
 
     let mut bounded = generics.clone();
     let where_clause = bounded.make_where_clause();
-    for ident in &type_params {
+    for ident in &used {
         where_clause.predicates.push(parse_quote!(#ident: 'static));
     }
     for ident in used {
