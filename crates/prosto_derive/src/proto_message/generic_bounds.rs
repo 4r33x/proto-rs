@@ -73,8 +73,7 @@ fn collect_type_params(ty: &Type, params: &BTreeSet<Ident>, used: &mut BTreeSet<
                                         }
                                     }
                                 }
-                                GenericArgument::Lifetime(_) | GenericArgument::Const(_) => {}
-                                _ => {}
+                                GenericArgument::Lifetime(_) | GenericArgument::Const(_) | GenericArgument::AssocConst(_) | _ => {}
                             }
                         }
                     }
