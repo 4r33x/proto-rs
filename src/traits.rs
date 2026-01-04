@@ -256,30 +256,44 @@ pub trait EncodeInputFromRef<'a>: ProtoWire {
     fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a>;
 }
 
-impl<'a, T> EncodeInputFromRef<'a> for T
-where
-    T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
-{
+trait EncodeInputFromRefValue<'a, T: ?Sized> {
+    type Output;
+    fn encode_input_from_ref(value: &'a T) -> Self::Output;
+}
+
+impl<'a, T> EncodeInputFromRefValue<'a, T> for &'a T {
+    type Output = &'a T;
+
     #[inline(always)]
-    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
+    fn encode_input_from_ref(value: &'a T) -> Self::Output {
         value
     }
 }
 
-macro_rules! impl_encode_input_from_ref_copy {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl<'a> EncodeInputFromRef<'a> for $ty {
-                #[inline(always)]
-                fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
-                    *value
-                }
-            }
-        )*
-    };
+impl<'a, T> EncodeInputFromRefValue<'a, T> for T
+where
+    T: Clone,
+{
+    type Output = T;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a T) -> Self::Output {
+        value.clone()
+    }
 }
 
-impl_encode_input_from_ref_copy!(bool, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64);
+impl<'a, T> EncodeInputFromRef<'a> for T
+where
+    T: ProtoWire,
+    <T as ProtoWire>::EncodeInput<'a>: EncodeInputFromRefValue<'a, T, Output = <T as ProtoWire>::EncodeInput<'a>>,
+{
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
+        <<T as ProtoWire>::EncodeInput<'a> as EncodeInputFromRefValue<'a, T>>::encode_input_from_ref(value)
+    }
+}
+
+ 
 
 // Helper alias to shorten signatures:
 pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
