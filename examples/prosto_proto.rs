@@ -50,6 +50,7 @@ pub struct GenericStruct<K: std::hash::Hash + Eq, V, S, const CAP: usize> {
     vec_k: Vec<K>,
     vec_v: VecDeque<V>,
     kv: HashMap<K, V>,
+    //TODO! tuples not yet supported, but I think they should be, especially when new build system with auto import resolving lands
     // kvs: (K, V, S),
     // vec_kv: Vec<(K, V)>,
 }
