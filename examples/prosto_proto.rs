@@ -15,10 +15,27 @@ inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.t
 
 #[proto_message(transparent)]
 #[derive(Debug)]
-pub struct TinyLru<T, const CAP: usize> {
+pub struct TinyLruTransparent<T, const CAP: usize> {
     items: VecDeque<T>, // MRU..LRU
 }
 #[proto_message(transparent)]
+#[derive(Debug)]
+pub struct TinyLruVecTransparent<T, const CAP: usize> {
+    items: Vec<T>, // MRU..LRU
+}
+
+#[proto_message(transparent)]
+#[derive(Debug)]
+pub struct GenericMapTransparent<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP: usize> {
+    kv: HashMap<K, V, S>,
+}
+
+#[proto_message]
+#[derive(Debug)]
+pub struct TinyLru<T, const CAP: usize> {
+    items: VecDeque<T>, // MRU..LRU
+}
+#[proto_message]
 #[derive(Debug)]
 pub struct TinyLruVec<T, const CAP: usize> {
     items: Vec<T>, // MRU..LRU
