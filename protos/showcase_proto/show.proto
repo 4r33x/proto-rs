@@ -214,7 +214,7 @@ message StructU816 {
 }
 
 message TinyLruKeydStringU8 {
-  LruPairStringU8 items = 1;
+  repeated LruPairStringU8 items = 1;
 }
 
 message TinyLruU8 {

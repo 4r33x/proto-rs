@@ -510,6 +510,36 @@ mod tests {
     }
 
     #[test]
+    fn vec_deque_is_repeated() {
+        let ty: Type = parse_quote! { std::collections::VecDeque<u32> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(!is_option);
+        assert!(is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
+    }
+
+    #[test]
+    fn option_vec_deque_is_optional_repeated() {
+        let ty: Type = parse_quote! { Option<std::collections::VecDeque<String>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(is_option);
+        assert!(is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
+    }
+
+    #[test]
+    fn option_map_is_optional_not_repeated() {
+        let ty: Type = parse_quote! { Option<std::collections::HashMap<String, u32>> };
+        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
+
+        assert!(is_option);
+        assert!(!is_repeated);
+        assert_eq!(quote!(#inner).to_string(), quote!(std::collections::HashMap<String, u32>).to_string());
+    }
+
+    #[test]
     fn rename_rust_type_to_scalar_proto() {
         let fields: syn::FieldsNamed = parse_quote!({
             #[proto(rename = u64)]

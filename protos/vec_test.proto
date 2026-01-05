@@ -4,8 +4,8 @@ package vec_test;
 
 message VecDWrapper {
   bytes inner1 = 1;
-  uint32 inner2 = 2;
-  uint64 inner3 = 3;
+  repeated uint32 inner2 = 2;
+  repeated uint64 inner3 = 3;
 }
 
 message VecWrapper {

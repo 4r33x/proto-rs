@@ -399,6 +399,18 @@ pub fn vec_inner_type(ty: &Type) -> Option<Type> {
     None
 }
 
+pub fn vec_deque_inner_type(ty: &Type) -> Option<Type> {
+    if let Type::Path(path) = ty
+        && let Some(seg) = path.path.segments.last()
+        && seg.ident == "VecDeque"
+        && let PathArguments::AngleBracketed(args) = &seg.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
+    }
+    None
+}
+
 pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     if is_option_type(ty) || is_arc_swap_option_type(ty) {
         if let Type::Path(type_path) = ty
@@ -417,6 +429,11 @@ pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     }
 
     if let Some(inner) = vec_inner_type(ty) {
+        let (_, _, inner_ty) = extract_field_wrapper_info(&inner);
+        return (false, true, inner_ty);
+    }
+
+    if let Some(inner) = vec_deque_inner_type(ty) {
         let (_, _, inner_ty) = extract_field_wrapper_info(&inner);
         return (false, true, inner_ty);
     }
