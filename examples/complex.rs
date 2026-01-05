@@ -33,6 +33,18 @@ pub struct Id {
     pub id: u64,
 }
 
+#[proto_message]
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct IdGeneric<T> {
+    pub id: T,
+}
+
+#[proto_message(transparent)]
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct IdGenericTransparent<T> {
+    pub id: T,
+}
+
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing {
@@ -93,6 +105,8 @@ pub trait SigmaRpc {
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
     async fn rizz_uni2(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream2>, Status>;
     async fn rizz_uni_other(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
+    async fn with_generic(&self, request: Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, Status>;
+    async fn with_generic_transparent(&self, request: Request<IdGenericTransparent<u64>>) -> Result<Response<IdGenericTransparent<u32>>, Status>;
 }
 
 // A dummy server impl
@@ -190,6 +204,13 @@ impl SigmaRpc for S {
             status: ServiceStatus::Active,
         }))
     }
+
+    async fn with_generic(&self, _request: tonic::Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, tonic::Status> {
+        Ok(IdGeneric { id: 1u32 }.into())
+    }
+    async fn with_generic_transparent(&self, _request: tonic::Request<IdGenericTransparent<u64>>) -> Result<Response<IdGenericTransparent<u32>>, tonic::Status> {
+        Ok(IdGenericTransparent { id: 1u32 }.into())
+    }
 }
 
 #[tokio::main]
@@ -204,6 +225,7 @@ mod tests {
 
     use proto_rs::ProtoExt;
     use tokio_stream::StreamExt;
+    use tonic::IntoRequest;
 
     use super::*;
     use crate::sigma_rpc_client::SigmaRpcClient;
@@ -218,6 +240,18 @@ mod tests {
             })
             .await
             .unwrap();
+        println!("{:?}", res)
+    }
+    #[tokio::test]
+    async fn test_proto_client_unary_generic_impl() {
+        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let res = client.with_generic(IdGeneric { id: 5 }).await.unwrap();
+        println!("{:?}", res)
+    }
+    #[tokio::test]
+    async fn test_proto_client_unary_generic_transparent_impl() {
+        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let res = client.with_generic(IdGenericTransparent { id: 5 }).await.unwrap();
         println!("{:?}", res)
     }
 
