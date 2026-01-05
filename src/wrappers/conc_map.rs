@@ -108,6 +108,18 @@ where
     }
 }
 
+impl<'a, K, V, S> EncodeInputFromRef<'a> for HashMap<K, V, S>
+where
+    for<'b> K: ProtoWire + EncodeInputFromRef<'b> + Eq + Hash + 'b,
+    for<'b> V: ProtoWire + EncodeInputFromRef<'b> + 'b,
+    for<'b> S: BuildHasher + Default + 'b,
+{
+    #[inline]
+    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
+        PapayaMapShadow::new(value)
+    }
+}
+
 impl<K, V, S> ProtoWire for HashMap<K, V, S>
 where
     for<'a> K: ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,

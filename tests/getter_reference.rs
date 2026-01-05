@@ -81,3 +81,41 @@ fn encode_decode_reference_with_getter() {
 
     assert_eq!(decoded, task);
 }
+
+#[cfg(feature = "papaya")]
+#[test]
+fn encode_decode_papaya_getters() {
+    use papaya::HashMap;
+    use papaya::HashSet;
+
+    #[proto_message]
+    struct PapayaHolder {
+        #[proto(getter = "&$.map")]
+        map: HashMap<u64, u64>,
+        #[proto(getter = "&$.set")]
+        set: HashSet<u64>,
+    }
+
+    let map = HashMap::default();
+    let set = HashSet::default();
+    let guard = map.pin();
+    guard.insert(1, 10);
+    guard.insert(2, 20);
+    drop(guard);
+    let guard = set.pin();
+    guard.insert(7);
+    guard.insert(8);
+    drop(guard);
+    let holder = PapayaHolder { map, set };
+
+    let bytes = PapayaHolder::encode_to_vec(&holder);
+    let decoded = PapayaHolder::decode(bytes.as_slice()).expect("decode papaya holder");
+
+    let map_guard = decoded.map.pin();
+    assert_eq!(map_guard.get(&1), Some(&10));
+    assert_eq!(map_guard.get(&2), Some(&20));
+    drop(map_guard);
+    let set_guard = decoded.set.pin();
+    assert!(set_guard.contains(&7));
+    assert!(set_guard.contains(&8));
+}

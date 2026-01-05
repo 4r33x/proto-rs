@@ -16,14 +16,20 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
         return generics.clone();
     }
 
-    let mut used = BTreeSet::new();
+    let mut used_lifetimes = BTreeSet::new();
+    let mut used_encode = BTreeSet::new();
     let mut bound_types = Vec::new();
 
     for info in fields {
         if !uses_proto_wire_directly(info) {
             continue;
         }
-        collect_type_params(&info.parsed.rust_type, &type_params, &mut used);
+        collect_type_params(&info.parsed.rust_type, &type_params, &mut used_lifetimes);
+        if info.parsed.map_kind.is_some() {
+            collect_type_params(&info.parsed.proto_rust_type, &type_params, &mut used_encode);
+        } else {
+            collect_type_params(&info.parsed.rust_type, &type_params, &mut used_encode);
+        }
         if info.parsed.is_option {
             bound_types.push(info.parsed.elem_type.clone());
         } else {
@@ -31,16 +37,16 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
         }
     }
 
-    if used.is_empty() && bound_types.is_empty() {
+    if used_lifetimes.is_empty() && used_encode.is_empty() && bound_types.is_empty() {
         return generics.clone();
     }
 
     let mut bounded = generics.clone();
     let where_clause = bounded.make_where_clause();
-    for ident in &used {
+    for ident in &used_lifetimes {
         where_clause.predicates.push(parse_quote!(for<'a> #ident: 'a));
     }
-    for ident in used {
+    for ident in used_encode {
         where_clause.predicates.push(parse_quote!(for<'a> #ident: ::proto_rs::EncodeInputFromRef<'a>));
     }
     for ty in bound_types {
