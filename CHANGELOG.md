@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.6.22]
+- Fixed VecDeque .proto definitions
+
 ## [0.6.21]
 - Relaxed generic bounds in generated code
 - Fixed Copy generic types

@@ -8,8 +8,8 @@ message Nested {
 }
 
 message VecDequeMessage {
-  int32 numbers = 1;
+  repeated int32 numbers = 1;
   bytes data = 2;
-  Nested children = 3;
+  repeated Nested children = 3;
 }
 
