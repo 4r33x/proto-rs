@@ -98,6 +98,11 @@ pub struct GenericPapayaSet<K: std::hash::Hash + Eq> {
     inner: papaya::HashSet<K>,
 }
 
+#[proto_message]
+pub struct ConcretePapayaSet {
+    inner: GenericPapayaSet<u8>,
+}
+
 // #[proto_message]
 // pub struct ConcreteMap {
 //     inner: GenericMap<u64, String, std::hash::RandomState, 32>,
