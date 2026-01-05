@@ -330,10 +330,6 @@ pub fn rust_type_path_ident(ty: &Type) -> syn::Ident {
     }
 }
 
-pub fn type_name_with_generics(ty: &Type) -> String {
-    format_type_name(ty, false, false)
-}
-
 pub fn type_name_with_generics_for_path(ty: &Type) -> String {
     format_type_name(ty, true, true)
 }
