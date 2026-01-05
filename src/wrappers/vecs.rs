@@ -4,6 +4,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -13,6 +14,7 @@ use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
+use crate::encoding::skip_field;
 use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for Vec<T>
@@ -217,6 +219,23 @@ where
     }
 }
 
+impl<T> ProtoExt for Vec<T>
+where
+    T: ProtoWire,
+    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+{
+    type Shadow<'b> = Vec<T>;
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            <Vec<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+}
+
 impl<T: ProtoWire> ProtoWire for VecDeque<T>
 where
     for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
@@ -376,6 +395,23 @@ where
     #[inline]
     fn clear(&mut self) {
         VecDeque::clear(self);
+    }
+}
+
+impl<T> ProtoExt for VecDeque<T>
+where
+    T: ProtoWire,
+    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+{
+    type Shadow<'b> = VecDeque<T>;
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            <VecDeque<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
     }
 }
 

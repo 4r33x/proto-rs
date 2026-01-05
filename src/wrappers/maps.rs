@@ -4,6 +4,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -14,35 +15,6 @@ use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::traits::ProtoKind;
-
-pub(crate) trait EncodeInputFromRef<'a>: ProtoWire {
-    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a>;
-}
-
-impl<'a, T> EncodeInputFromRef<'a> for T
-where
-    T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
-{
-    #[inline(always)]
-    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
-        value
-    }
-}
-
-macro_rules! impl_encode_input_from_ref_copy {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl<'a> EncodeInputFromRef<'a> for $ty {
-                #[inline(always)]
-                fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
-                    *value
-                }
-            }
-        )*
-    };
-}
-
-impl_encode_input_from_ref_copy!(bool, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64);
 
 #[inline(always)]
 pub(crate) fn encode_map_entry_component<T>(field_tag: u32, body_len: usize, value: T::EncodeInput<'_>, buf: &mut impl BufMut)

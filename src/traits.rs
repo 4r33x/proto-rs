@@ -252,6 +252,49 @@ pub trait ProtoWire: Sized {
     fn clear(&mut self);
 }
 
+pub trait EncodeInputFromRef<'a>: ProtoWire {
+    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a>;
+}
+
+trait EncodeInputFromRefValue<'a, T: ?Sized> {
+    type Output;
+    fn encode_input_from_ref(value: &'a T) -> Self::Output;
+}
+
+impl<'a, T> EncodeInputFromRefValue<'a, T> for &'a T {
+    type Output = &'a T;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a T) -> Self::Output {
+        value
+    }
+}
+
+impl<'a, T> EncodeInputFromRefValue<'a, T> for T
+where
+    T: Clone,
+{
+    type Output = T;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a T) -> Self::Output {
+        value.clone()
+    }
+}
+
+impl<'a, T> EncodeInputFromRef<'a> for T
+where
+    T: ProtoWire,
+    <T as ProtoWire>::EncodeInput<'a>: EncodeInputFromRefValue<'a, T, Output = <T as ProtoWire>::EncodeInput<'a>>,
+{
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
+        <<T as ProtoWire>::EncodeInput<'a> as EncodeInputFromRefValue<'a, T>>::encode_input_from_ref(value)
+    }
+}
+
+ 
+
 // Helper alias to shorten signatures:
 pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
 pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::Sun<'a>;

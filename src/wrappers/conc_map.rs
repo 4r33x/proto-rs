@@ -6,10 +6,10 @@ use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashMap;
 
-use super::maps::EncodeInputFromRef;
 use super::maps::encode_map_entry_component;
 use super::maps::map_entry_field_len;
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;

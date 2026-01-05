@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use chrono::DateTime;
@@ -12,11 +13,62 @@ use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
-// #[proto_message(transparent, proto_path = "protos/showcase_proto/show.proto")]
-// #[derive(Debug)]
-// pub struct Lru<K, V, const CAP: usize> {
-//     items: VecDeque<(K, V)>, // MRU..LRU
-// }
+#[proto_message(transparent)]
+#[derive(Debug)]
+pub struct TinyLruTransparent<T, const CAP: usize> {
+    items: VecDeque<T>, // MRU..LRU
+}
+#[proto_message(transparent)]
+#[derive(Debug)]
+pub struct TinyLruVecTransparent<T, const CAP: usize> {
+    items: Vec<T>, // MRU..LRU
+}
+
+#[proto_message(transparent)]
+#[derive(Debug)]
+pub struct GenericMapTransparent<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP: usize> {
+    kv: HashMap<K, V, S>,
+}
+
+#[proto_message]
+#[derive(Debug)]
+pub struct TinyLru<T, const CAP: usize> {
+    items: VecDeque<T>, // MRU..LRU
+}
+#[proto_message]
+#[derive(Debug)]
+pub struct TinyLruVec<T, const CAP: usize> {
+    items: Vec<T>, // MRU..LRU
+}
+
+#[proto_message]
+#[derive(Debug)]
+pub struct GenericStruct<K: std::hash::Hash + Eq, V, S, const CAP: usize> {
+    k: K,
+    v: V,
+    s: S,
+    vec_k: Vec<K>,
+    vec_v: VecDeque<V>,
+    kv: HashMap<K, V>,
+    //TODO! tuples not yet supported, but I think they should be, especially when new build system with auto import resolving lands
+    // kvs: (K, V, S),
+    // vec_kv: Vec<(K, V)>,
+}
+
+#[proto_message]
+#[derive(Debug)]
+pub struct GenericMap<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP: usize> {
+    kv: HashMap<K, V, S>,
+}
+impl<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP: usize> GenericMap<K, V, S, CAP> {
+    #[allow(clippy::new_without_default)]
+    #[allow(clippy::must_use_candidate)]
+    pub fn new() -> Self {
+        Self {
+            kv: HashMap::with_capacity_and_hasher(CAP, S::default()),
+        }
+    }
+}
 
 pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
 pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;

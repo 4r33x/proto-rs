@@ -1,7 +1,12 @@
 use proc_macro2::TokenStream as TokenStream2;
+use std::collections::BTreeSet;
 use quote::quote;
 use syn::DeriveInput;
+use syn::GenericArgument;
 use syn::ItemStruct;
+use syn::PathArguments;
+use syn::Type;
+use syn::parse_quote;
 
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
@@ -18,6 +23,7 @@ use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
 use super::build_validate_with_ext_impl;
+use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
@@ -28,7 +34,6 @@ use crate::utils::resolved_field_type;
 pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream2 {
     let name = &input.ident;
     let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let struct_item = sanitize_struct(item_struct.clone());
 
@@ -84,7 +89,10 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         assert!(fields.len() == 1, "#[proto_message(transparent)] requires a single-field struct");
 
         let field = fields.remove(0);
-        let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+        let bounded_generics = add_proto_wire_bounds(generics, std::iter::once(&field));
+        let bounded_generics = add_transparent_bounds(&bounded_generics, &field.field.ty);
+        let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
+        let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
         let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
 
         return quote! {
@@ -94,9 +102,12 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         };
     }
 
+    let bounded_generics = add_proto_wire_bounds(generics, fields.iter());
+    let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
+
     let fields = assign_tags(fields);
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
 
     let proto_ext_impl = generate_proto_ext_impl(name, &impl_generics, &ty_generics, where_clause, &fields, config);
     let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields, config);
@@ -106,6 +117,123 @@ pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct
         #proto_shadow_impl
         #proto_ext_impl
         #proto_wire_impl
+    }
+}
+
+fn add_transparent_bounds(generics: &syn::Generics, inner_ty: &Type) -> syn::Generics {
+    let mut generics = generics.clone();
+    let type_params: BTreeSet<_> = generics.type_params().map(|param| param.ident.clone()).collect();
+    let where_clause = generics.make_where_clause();
+    where_clause.predicates.push(parse_quote!(#inner_ty: ::proto_rs::ProtoWire));
+    where_clause.predicates.push(parse_quote!(for<'a> #inner_ty: ::proto_rs::ProtoExt<Shadow<'a> = #inner_ty>));
+    where_clause.predicates.push(parse_quote!(for<'a> #inner_ty: ::proto_rs::EncodeInputFromRef<'a>));
+    if !type_params.is_empty() {
+        let mut used = BTreeSet::new();
+        collect_type_params(inner_ty, &type_params, &mut used);
+        for ident in used {
+            where_clause.predicates.push(parse_quote!(#ident: ::proto_rs::ProtoShadow<#ident>));
+        }
+    }
+    generics
+}
+
+fn collect_type_params(ty: &Type, params: &BTreeSet<syn::Ident>, used: &mut BTreeSet<syn::Ident>) {
+    match ty {
+        Type::Path(type_path) => {
+            if type_path.qself.is_none() && type_path.path.segments.len() == 1 {
+                let ident = &type_path.path.segments[0].ident;
+                if params.contains(ident) {
+                    used.insert(ident.clone());
+                }
+            }
+            for segment in &type_path.path.segments {
+                match &segment.arguments {
+                    PathArguments::None => {}
+                    PathArguments::AngleBracketed(args) => {
+                        for arg in &args.args {
+                            match arg {
+                                GenericArgument::Type(inner_ty) => collect_type_params(inner_ty, params, used),
+                                GenericArgument::AssocType(assoc) => collect_type_params(&assoc.ty, params, used),
+                                GenericArgument::Constraint(constraint) => {
+                                    for bound in &constraint.bounds {
+                                        if let syn::TypeParamBound::Trait(trait_bound) = bound {
+                                            for segment in &trait_bound.path.segments {
+                                                if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                                                    for arg in &args.args {
+                                                        if let GenericArgument::Type(inner_ty) = arg {
+                                                            collect_type_params(inner_ty, params, used);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                GenericArgument::Lifetime(_) | GenericArgument::Const(_) | GenericArgument::AssocConst(_) | _ => {}
+                            }
+                        }
+                    }
+                    PathArguments::Parenthesized(args) => {
+                        for input in &args.inputs {
+                            collect_type_params(input, params, used);
+                        }
+                        if let syn::ReturnType::Type(_, output) = &args.output {
+                            collect_type_params(output, params, used);
+                        }
+                    }
+                }
+            }
+        }
+        Type::Reference(reference) => collect_type_params(&reference.elem, params, used),
+        Type::Array(array) => collect_type_params(&array.elem, params, used),
+        Type::Slice(slice) => collect_type_params(&slice.elem, params, used),
+        Type::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_type_params(elem, params, used);
+            }
+        }
+        Type::Paren(paren) => collect_type_params(&paren.elem, params, used),
+        Type::Group(group) => collect_type_params(&group.elem, params, used),
+        Type::Ptr(ptr) => collect_type_params(&ptr.elem, params, used),
+        Type::BareFn(bare_fn) => {
+            for input in &bare_fn.inputs {
+                collect_type_params(&input.ty, params, used);
+            }
+            if let syn::ReturnType::Type(_, output) = &bare_fn.output {
+                collect_type_params(output, params, used);
+            }
+        }
+        Type::ImplTrait(impl_trait) => {
+            for bound in &impl_trait.bounds {
+                if let syn::TypeParamBound::Trait(trait_bound) = bound {
+                    for segment in &trait_bound.path.segments {
+                        if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                            for arg in &args.args {
+                                if let GenericArgument::Type(inner_ty) = arg {
+                                    collect_type_params(inner_ty, params, used);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Type::TraitObject(trait_object) => {
+            for bound in &trait_object.bounds {
+                if let syn::TypeParamBound::Trait(trait_bound) = bound {
+                    for segment in &trait_bound.path.segments {
+                        if let PathArguments::AngleBracketed(args) = &segment.arguments {
+                            for arg in &args.args {
+                                if let GenericArgument::Type(inner_ty) = arg {
+                                    collect_type_params(inner_ty, params, used);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -153,7 +281,7 @@ fn generate_transparent_struct_impl(
 
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-            type Shadow<'b> = #name #ty_generics where Self: 'b;
+            type Shadow<'b> = #name #ty_generics;
 
             #[inline(always)]
             fn merge_field(
@@ -356,7 +484,7 @@ fn generate_proto_ext_impl(
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty where Self: 'b;
+                type Shadow<'b> = #shadow_ty;
 
                 #[inline(always)]
                 fn merge_field(
