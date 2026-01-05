@@ -111,6 +111,17 @@ where
     }
 }
 
+impl<'a, T, S> EncodeInputFromRef<'a> for HashSet<T, S>
+where
+    for<'b> T: ProtoWire + EncodeInputFromRef<'b> + Eq + Hash + 'b,
+    for<'b> S: BuildHasher + Default + 'b,
+{
+    #[inline]
+    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
+        PapayaSetShadow::new(value)
+    }
+}
+
 impl<T, S> ProtoWire for HashSet<T, S>
 where
     for<'a> T: ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,

@@ -205,28 +205,6 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         }
     };
 
-    if is_papaya_hash_map_type(&field.field.ty) {
-        let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_papaya", field.index), field.field.span());
-        let prelude = quote! {
-            let #tmp_ident = ::proto_rs::papaya_map_encode_input(&#access_expr);
-        };
-        return EncodeBinding {
-            prelude: Some(prelude),
-            value: quote! { #tmp_ident },
-        };
-    }
-
-    if is_papaya_hash_set_type(&field.field.ty) {
-        let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_papaya", field.index), field.field.span());
-        let prelude = quote! {
-            let #tmp_ident = ::proto_rs::papaya_set_encode_input(&#access_expr);
-        };
-        return EncodeBinding {
-            prelude: Some(prelude),
-            value: quote! { #tmp_ident },
-        };
-    }
-
     if needs_encode_conversion(&field.config, &field.parsed) {
         let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_converted", field.index), field.field.span());
         let converted = encode_conversion_expr(field, &access_expr);
@@ -279,38 +257,6 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         };
         EncodeBinding { prelude: None, value: init_expr }
     }
-}
-
-fn is_papaya_hash_map_type(ty: &Type) -> bool {
-    let Type::Path(type_path) = ty else {
-        return false;
-    };
-
-    let mut segments = type_path.path.segments.iter();
-    let Some(last) = segments.next_back() else {
-        return false;
-    };
-
-    if last.ident != "HashMap" {
-        return false;
-    }
-
-    segments.any(|seg| seg.ident == "papaya")
-}
-
-fn is_papaya_hash_set_type(ty: &Type) -> bool {
-    let Type::Path(type_path) = ty else {
-        return false;
-    };
-
-    let mut segments = type_path.path.segments.iter();
-    let Some(last) = segments.next_back() else { return false };
-
-    if last.ident != "HashSet" {
-        return false;
-    }
-
-    segments.any(|seg| seg.ident == "papaya")
 }
 
 pub fn is_value_encode_type(ty: &Type) -> bool {
