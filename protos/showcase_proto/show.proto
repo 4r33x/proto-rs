@@ -120,6 +120,11 @@ message Invoice {
   Status status = 4;
 }
 
+message LruPairStringU8 {
+  string k = 1;
+  uint32 v = 2;
+}
+
 message MixedAnnotations {
   uint64 id = 1;
   int64 created_at = 2;
@@ -206,6 +211,14 @@ message StructU816 {
   uint32 inner = 1;
   uint64 inner2 = 2;
   uint32 inner3 = 3;
+}
+
+message TinyLruKeydStringU8 {
+  LruPairStringU8 items = 1;
+}
+
+message TinyLruU8 {
+  bytes items = 1;
 }
 
 message Transaction {

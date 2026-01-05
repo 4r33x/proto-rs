@@ -37,10 +37,23 @@ pub enum GenericEnum<T, K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + 
     Vec { inner: Vec<T> },
 }
 
-#[proto_message]
-#[derive(Debug)]
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[proto(generic_types = [T = [u8]])]
 pub struct TinyLru<T, const CAP: usize> {
     items: VecDeque<T>, // MRU..LRU
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[proto(generic_types = [K = [String], V = [u8]])]
+pub struct LruPair<K, V> {
+    k: K,
+    v: V,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+#[proto(generic_types = [K = [String], V = [u8]])]
+pub struct TinyLruKeyd<K, V, const CAP: usize> {
+    items: VecDeque<LruPair<K, V>>, // MRU..LRU
 }
 
 #[proto_message]
@@ -109,7 +122,7 @@ pub struct ConcreteMap {
 }
 
 #[proto_message]
-pub struct GenericMapInMap<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP: usize>  {
+pub struct GenericMapInMap<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP: usize> {
     inner: GenericMap<K, V, S, CAP>,
 }
 
