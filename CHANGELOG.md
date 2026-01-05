@@ -1,31 +1,35 @@
 # Changelog
 
+## [0.6.20]
+- Added support for Vec<T> and VecDeque<T> as top-level message
+- Added initial support for generics. Types with generics can now be used with proto_message, and concrete generic types can be used in proto_rpc, but types with generics do not emit .proto definitions yet.
+
 ## [0.6.19]
-- Remove #[cfg(feature = "tonic")] gate on validate_with_ext method
+- Removed #[cfg(feature = "tonic")] gate on validate_with_ext method
 
 ## [0.6.18]
-- Add #[proto(validator_with_ext = ...)] attribute
+- Added #[proto(validator_with_ext = ...)] attribute
 
 ## [0.6.17]
-- Fix multiple streams duplicate assoc. type error
+- Fixed multiple streams duplicate assoc. type error
 
 ## [0.6.16]
-- Add sync methods optimisation
-- Add #[proto_import_all_from(package_name)] attribute
-- Add VecDeque
+- Added sync methods optimisation
+- Added #[proto_import_all_from(package_name)] attribute
+- Added VecDeque
 
 ## [0.6.15]
-- Add std Mutex and parking_lot Mutex 
-- Add #[proto(getter = &*$.field)] attrubute (view tests/getter_reference.rs)
+- Added std Mutex and parking_lot Mutex 
+- Added #[proto(getter = &*$.field)] attrubute (view tests/getter_reference.rs)
 
 ## [0.6.14]
-- Add chrono::TimeDelta
+- Added chrono::TimeDelta
 
 ## [0.6.13]
-- Change validators signature to &mut value
+- Changed validators signature to &mut value
 
 ## [0.6.12]
-- Fix maps with Copy values
+- Fixed maps with Copy values
 
 ## [0.6.11]
 - Removed SmallVec buffers from zero-copy wrappers and corrected zero-copy encoding/decoding for enums.
