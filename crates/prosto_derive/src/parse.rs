@@ -249,10 +249,10 @@ impl UnifiedProtoConfig {
 
         for param in type_params {
             let Some(types) = generic_map.get(&param.to_string()) else {
-                return Err(syn::Error::new_spanned(&param, format!("missing generic_types entry for `{}`", param)));
+                return Err(syn::Error::new_spanned(&param, format!("missing generic_types entry for `{param}`")));
             };
             if types.is_empty() {
-                return Err(syn::Error::new_spanned(&param, format!("generic_types entry for `{}` is empty", param)));
+                return Err(syn::Error::new_spanned(&param, format!("generic_types entry for `{param}` is empty")));
             }
 
             let mut next_variants = Vec::new();
@@ -408,10 +408,7 @@ pub fn extract_item_generic_types(item_attrs: &[Attribute]) -> Vec<GenericTypeEn
                     types.push(ty);
                 }
 
-                entries.push(GenericTypeEntry {
-                    param: param_ident.clone(),
-                    types,
-                });
+                entries.push(GenericTypeEntry { param: param_ident.clone(), types });
             }
 
             Ok(())

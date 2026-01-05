@@ -3,7 +3,7 @@ syntax = "proto3";
 package chrono_test;
 
 message ChronoWrapper {
-  DateTime inner = 1;
+  DateTimeUtc inner = 1;
 }
 
 message DeltaWrapper {

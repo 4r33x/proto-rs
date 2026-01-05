@@ -11,6 +11,6 @@ service SigmaRpc {
   rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
   rpc RizzUni2(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
   rpc RizzUniOther(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
-  rpc WithGeneric(IdGeneric) returns (IdGeneric) {}
-  rpc WithGenericTransparent(IdGenericTransparent) returns (IdGenericTransparent) {}
+  rpc WithGeneric(IdGenericU64) returns (IdGenericU32) {}
+  rpc WithGenericTransparent(IdGenericTransparentU64) returns (IdGenericTransparentU32) {}
 }

@@ -48,48 +48,40 @@ pub fn apply_generic_substitutions_enum(data: &syn::DataEnum, substitutions: &BT
 }
 
 fn apply_generic_substitutions_type(ty: &Type, substitutions: &BTreeMap<String, Type>) -> Type {
-    if let Type::Path(path) = ty {
-        if path.qself.is_none()
-            && path.path.segments.len() == 1
-            && path.path.segments[0].arguments.is_empty()
-        {
-            let ident = path.path.segments[0].ident.to_string();
-            if let Some(replacement) = substitutions.get(&ident) {
-                return replacement.clone();
-            }
+    if let Type::Path(path) = ty
+        && path.qself.is_none()
+        && path.path.segments.len() == 1
+        && path.path.segments[0].arguments.is_empty()
+    {
+        let ident = path.path.segments[0].ident.to_string();
+        if let Some(replacement) = substitutions.get(&ident) {
+            return replacement.clone();
         }
     }
 
     let mut updated = ty.clone();
     match &mut updated {
         Type::Path(path) => {
-            if let Some(segment) = path.path.segments.last_mut() {
-                if let PathArguments::AngleBracketed(args) = &mut segment.arguments {
-                    for arg in &mut args.args {
-                        if let GenericArgument::Type(ty) = arg {
-                            *ty = apply_generic_substitutions_type(ty, substitutions);
-                        }
+            if let Some(segment) = path.path.segments.last_mut()
+                && let PathArguments::AngleBracketed(args) = &mut segment.arguments
+            {
+                for arg in &mut args.args {
+                    if let GenericArgument::Type(ty) = arg {
+                        *ty = apply_generic_substitutions_type(ty, substitutions);
                     }
                 }
             }
         }
-        Type::Reference(TypeReference { elem, .. }) => {
-            *elem = Box::new(apply_generic_substitutions_type(elem, substitutions));
-        }
-        Type::Array(TypeArray { elem, .. }) => {
-            *elem = Box::new(apply_generic_substitutions_type(elem, substitutions));
+
+        Type::Paren(TypeParen { elem, .. }) | Type::Group(TypeGroup { elem, .. }) | Type::Reference(TypeReference { elem, .. }) | Type::Array(TypeArray { elem, .. }) => {
+            **elem = apply_generic_substitutions_type(elem, substitutions);
         }
         Type::Tuple(TypeTuple { elems, .. }) => {
             for elem in elems {
                 *elem = apply_generic_substitutions_type(elem, substitutions);
             }
         }
-        Type::Group(TypeGroup { elem, .. }) => {
-            *elem = Box::new(apply_generic_substitutions_type(elem, substitutions));
-        }
-        Type::Paren(TypeParen { elem, .. }) => {
-            *elem = Box::new(apply_generic_substitutions_type(elem, substitutions));
-        }
+
         _ => {}
     }
 

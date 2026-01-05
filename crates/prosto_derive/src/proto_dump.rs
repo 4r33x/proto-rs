@@ -70,7 +70,7 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
             }
         }
         Data::Union(_) => panic!("proto_dump can only be used on structs and enums, make PR/issue if you want unions"),
-    };
+    }
     strip_proto_attributes(&mut input.data);
     let proto = config.imports_mat;
     quote! {
@@ -84,12 +84,7 @@ fn trait_service(mut input: ItemTrait, mut config: UnifiedProtoConfig) -> TokenS
     let proto_name = input.ident.to_string();
     let clean_name = proto_name.strip_suffix("Proto").unwrap_or(&proto_name);
     let (methods, _) = extract_methods_and_types(&input);
-    let proto_def = generate_service_content(
-        &input.ident,
-        &methods,
-        &config.type_imports,
-        config.import_all_from.as_deref(),
-    );
+    let proto_def = generate_service_content(&input.ident, &methods, &config.type_imports, config.import_all_from.as_deref());
     config.register_and_emit_proto(clean_name, &proto_def);
     strip_proto_attributes_from_trait(&mut input);
     let proto = config.imports_mat;
