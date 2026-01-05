@@ -248,7 +248,9 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
                     *borrowed
                 }}
             } else {
-                access_expr.clone()
+                quote! {
+                    <#proto_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(&(#access_expr))
+                }
             }
         } else {
             quote! {
