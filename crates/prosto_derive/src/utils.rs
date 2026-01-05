@@ -330,6 +330,59 @@ pub fn rust_type_path_ident(ty: &Type) -> syn::Ident {
     }
 }
 
+pub fn type_name_with_generics(ty: &Type) -> String {
+    format_type_name(ty, false, false)
+}
+
+pub fn type_name_with_generics_for_path(ty: &Type) -> String {
+    format_type_name(ty, true, true)
+}
+
+pub fn proto_type_name(ty: &Type) -> String {
+    format_type_name(ty, false, true)
+}
+
+fn format_type_name(ty: &Type, include_path: bool, strip_proto: bool) -> String {
+    match ty {
+        Type::Path(path) => format_type_path_name(path, include_path, strip_proto),
+        Type::Array(array) => format_type_name(&array.elem, include_path, strip_proto),
+        Type::Reference(reference) => format_type_name(&reference.elem, include_path, strip_proto),
+        Type::Group(group) => format_type_name(&group.elem, include_path, strip_proto),
+        Type::Paren(paren) => format_type_name(&paren.elem, include_path, strip_proto),
+        _ => "Unknown".to_string(),
+    }
+}
+
+fn format_type_path_name(path: &TypePath, include_path: bool, strip_proto: bool) -> String {
+    let mut name = String::new();
+    let segments: Vec<_> = if include_path {
+        path.path.segments.iter().collect()
+    } else {
+        path.path.segments.last().into_iter().collect()
+    };
+
+    for (idx, segment) in segments.iter().enumerate() {
+        let is_last = idx + 1 == segments.len();
+        let mut segment_name = segment.ident.to_string();
+        if is_last && strip_proto {
+            segment_name = strip_proto_suffix(&segment_name);
+        }
+        name.push_str(&to_pascal_case(&segment_name));
+    }
+
+    if let Some(last) = path.path.segments.last()
+        && let PathArguments::AngleBracketed(args) = &last.arguments
+    {
+        for arg in &args.args {
+            if let GenericArgument::Type(ty) = arg {
+                name.push_str(&format_type_name(ty, true, strip_proto));
+            }
+        }
+    }
+
+    name
+}
+
 pub fn is_option_type(ty: &Type) -> bool {
     matches!(last_path_segment(ty), Some(seg) if seg.ident == "Option")
 }

@@ -11,8 +11,7 @@ use syn::TypeArray;
 use syn::TypePath;
 use syn::parse_quote;
 
-use super::rust_type_path_ident;
-use super::string_helpers::strip_proto_suffix;
+use super::proto_type_name;
 
 /// Parsed metadata about a field's Rust type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -335,8 +334,7 @@ fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType 
 
     let key_proto = key_info.proto_type.clone();
     let value_proto = if value_info.is_message_like {
-        let rust_name = rust_type_path_ident(&value_info.proto_rust_type).to_string();
-        strip_proto_suffix(&rust_name)
+        proto_type_name(&value_info.proto_rust_type)
     } else {
         value_info.proto_type.clone()
     };
