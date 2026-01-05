@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.6.21]
+- Relaxed generic bounds in generated code
+- Fixed Copy generic types
+
 ## [0.6.20]
 - Added support for Vec<T> and VecDeque<T> as top-level message
 - Added initial support for generics. Types with generics can now be used with proto_message, and concrete generic types can be used in proto_rpc, but types with generics do not emit .proto definitions yet.
