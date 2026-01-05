@@ -88,10 +88,10 @@ impl<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP:
     }
 }
 
-// #[proto_message]
-// pub struct ConcreteMap {
-//     inner: GenericMap<u64, String, std::hash::RandomState, 32>,
-// }
+#[proto_message]
+pub struct ConcreteMap {
+    inner: GenericMap<u64, String, std::hash::RandomState, 32>,
+}
 
 pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
 pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;
