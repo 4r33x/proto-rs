@@ -89,9 +89,19 @@ impl<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP:
 }
 
 #[proto_message]
-pub struct ConcreteMap {
-    inner: GenericMap<u64, String, std::hash::RandomState, 32>,
+pub struct GenericPapayaMap<K: std::hash::Hash + Eq, V> {
+    inner: papaya::HashMap<K, V>,
 }
+
+#[proto_message]
+pub struct GenericPapayaSet<K: std::hash::Hash + Eq> {
+    inner: papaya::HashSet<K>,
+}
+
+// #[proto_message]
+// pub struct ConcreteMap {
+//     inner: GenericMap<u64, String, std::hash::RandomState, 32>,
+// }
 
 pub type ComplexType = proto_rs::alloc::collections::BTreeMap<u64, u64>;
 pub type ComplexType2 = std::collections::HashMap<u64, u64, std::hash::RandomState>;
