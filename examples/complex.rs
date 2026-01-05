@@ -33,7 +33,8 @@ pub struct Id {
     pub id: u64,
 }
 
-#[proto_message]
+#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto(generic_types = [T = [u64, u32]])]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct IdGeneric<T> {
     pub id: T,

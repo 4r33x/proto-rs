@@ -6,8 +6,22 @@ message Id {
   uint32 id = 1;
 }
 
+message MessageWithBothValidators {
+  Id id = 1;
+  repeated int32 scores = 2;
+}
+
 message MessageWithFieldValidator {
   Id id = 1;
   repeated int32 scores = 2;
+}
+
+message PositiveCount {
+  int32 count = 1;
+}
+
+message User {
+  string name = 1;
+  int32 age = 2;
 }
 

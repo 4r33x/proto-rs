@@ -620,6 +620,12 @@ mod tests {
     #[test]
     fn generic_type_variants_builds_combinations() {
         let mut config = UnifiedProtoConfig::default();
+
+        let input: syn::ItemStruct = parse_quote! {
+            struct GenericMap<K, V, S, const CAP: usize> {
+                kv: std::collections::HashMap<K, V, S>,
+            }
+        };
         config.generic_types = vec![
             GenericTypeEntry {
                 param: parse_quote!(K),
@@ -635,23 +641,12 @@ mod tests {
             },
         ];
 
-        let input: syn::ItemStruct = parse_quote! {
-            struct GenericMap<K, V, S, const CAP: usize> {
-                kv: std::collections::HashMap<K, V, S>,
-            }
-        };
-
         let variants = config.generic_type_variants(&input.generics).expect("variants");
         let suffixes: Vec<_> = variants.into_iter().map(|variant| variant.suffix).collect();
 
         assert_eq!(
             suffixes,
-            vec![
-                "U64StringStdHashRandomState",
-                "U64U16StdHashRandomState",
-                "U32StringStdHashRandomState",
-                "U32U16StdHashRandomState",
-            ]
+            vec!["U64StringStdHashRandomState", "U64U16StdHashRandomState", "U32StringStdHashRandomState", "U32U16StdHashRandomState",]
         );
     }
 }

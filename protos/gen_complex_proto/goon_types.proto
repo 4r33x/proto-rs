@@ -9,6 +9,11 @@ enum ServiceStatus {
   COMPLETED = 3;
 }
 
+message GoonPong {
+  Id id = 1;
+  ServiceStatus status = 2;
+}
+
 message Id {
   uint64 id = 1;
 }
