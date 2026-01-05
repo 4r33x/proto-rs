@@ -380,6 +380,10 @@ pub fn extract_item_generic_types(item_attrs: &[Attribute]) -> Vec<GenericTypeEn
 
         let result = attr.parse_nested_meta(|meta| {
             if !meta.path.is_ident("generic_types") {
+                if meta.input.peek(syn::Token![=]) {
+                    let value = meta.value()?;
+                    let _: Expr = value.parse()?;
+                }
                 return Ok(());
             }
 
@@ -611,5 +615,43 @@ mod tests {
         });
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn generic_type_variants_builds_combinations() {
+        let mut config = UnifiedProtoConfig::default();
+        config.generic_types = vec![
+            GenericTypeEntry {
+                param: parse_quote!(K),
+                types: vec![parse_quote!(u64), parse_quote!(u32)],
+            },
+            GenericTypeEntry {
+                param: parse_quote!(V),
+                types: vec![parse_quote!(String), parse_quote!(u16)],
+            },
+            GenericTypeEntry {
+                param: parse_quote!(S),
+                types: vec![parse_quote!(std::hash::RandomState)],
+            },
+        ];
+
+        let input: syn::ItemStruct = parse_quote! {
+            struct GenericMap<K, V, S, const CAP: usize> {
+                kv: std::collections::HashMap<K, V, S>,
+            }
+        };
+
+        let variants = config.generic_type_variants(&input.generics).expect("variants");
+        let suffixes: Vec<_> = variants.into_iter().map(|variant| variant.suffix).collect();
+
+        assert_eq!(
+            suffixes,
+            vec![
+                "U64StringStdHashRandomState",
+                "U64U16StdHashRandomState",
+                "U32StringStdHashRandomState",
+                "U32U16StdHashRandomState",
+            ]
+        );
     }
 }

@@ -20,6 +20,7 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::proto_type_name;
 use crate::utils::resolved_field_type;
+use crate::utils::strip_proto_suffix;
 use crate::utils::rust_type_path_ident;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
@@ -342,7 +343,11 @@ fn extract_type_name(ty: &Type) -> String {
 
 fn extract_base_type_name(ty: &Type) -> Option<String> {
     if let Type::Path(type_path) = ty {
-        return type_path.path.segments.last().map(|segment| segment.ident.to_string());
+        return type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| strip_proto_suffix(&segment.ident.to_string()));
     }
     None
 }
@@ -448,6 +453,29 @@ mod tests {
         assert!(is_option);
         assert!(!is_repeated);
         assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
+    }
+
+    #[test]
+    fn service_content_handles_generic_types() {
+        let trait_name: syn::Ident = parse_quote! { SigmaRpc };
+        let methods = vec![MethodInfo {
+            name: syn::Ident::new("with_generic", proc_macro2::Span::call_site()),
+            request_type: parse_quote!(IdGeneric<u64>),
+            response_type: parse_quote!(IdGeneric<u32>),
+            response_return_type: parse_quote!(IdGeneric<u32>),
+            response_is_result: true,
+            is_async: true,
+            is_streaming: false,
+            stream_type_name: None,
+            inner_response_type: None,
+            stream_item_type: None,
+            user_method_signature: quote! {},
+        }];
+
+        let proto_imports = BTreeMap::new();
+        let service = generate_service_content(&trait_name, &methods, &proto_imports, None);
+
+        assert!(service.contains("rpc WithGeneric(IdGenericU64) returns (IdGenericU32) {}"));
     }
 
     #[test]
