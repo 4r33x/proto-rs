@@ -359,6 +359,8 @@ pub fn extract_item_validators(item_attrs: &[Attribute]) -> ItemValidators {
             }
 
             if meta.path.is_ident("generic_types") {
+                let value_parser = meta.value()?;
+                let _: Expr = value_parser.parse()?;
                 return Ok(());
             }
 
@@ -648,5 +650,19 @@ mod tests {
             suffixes,
             vec!["U64StringStdHashRandomState", "U64U16StdHashRandomState", "U32StringStdHashRandomState", "U32U16StdHashRandomState",]
         );
+    }
+
+    #[test]
+    fn parses_generic_types_attribute_values() {
+        let attrs: Vec<syn::Attribute> = vec![parse_quote! {
+            #[proto(generic_types = [T = [u64, u32], U = [String]])]
+        }];
+
+        let entries = extract_item_generic_types(&attrs);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].param.to_string(), "T");
+        assert_eq!(entries[0].types.len(), 2);
+        assert_eq!(entries[1].param.to_string(), "U");
+        assert_eq!(entries[1].types.len(), 1);
     }
 }
