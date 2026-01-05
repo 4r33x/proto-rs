@@ -251,7 +251,7 @@ mod tests {
     #[tokio::test]
     async fn test_proto_client_unary_generic_transparent_impl() {
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
-        let res = client.with_generic(IdGenericTransparent { id: 5 }).await.unwrap();
+        let res = client.with_generic_transparent(IdGenericTransparent { id: 5 }).await.unwrap();
         println!("{:?}", res)
     }
 
