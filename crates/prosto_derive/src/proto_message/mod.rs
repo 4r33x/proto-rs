@@ -11,6 +11,8 @@ use syn::ItemStruct;
 use crate::emit_proto::generate_complex_enum_proto;
 use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
+use crate::generic_substitutions::apply_generic_substitutions_enum;
+use crate::generic_substitutions::apply_generic_substitutions_fields;
 use crate::parse::UnifiedProtoConfig;
 
 pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
@@ -48,6 +50,10 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let type_ident = input.ident.to_string();
     let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
     let proto_names = config.proto_message_names(&type_ident);
+    let generic_variants = match config.generic_type_variants(&input.generics) {
+        Ok(variants) => variants,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     if config.transparent && config.proto_path().is_some() {
         return Error::new_spanned(&input.ident, "transparent proto_message types must not be written to .proto files")
@@ -58,8 +64,16 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let tokens = match input.data {
         Data::Struct(ref data) => {
             for proto_name in &proto_names {
-                let proto = generate_struct_proto(proto_name, &data.fields);
-                config.register_and_emit_proto(proto_name, &proto);
+                for variant in &generic_variants {
+                    let message_name = if variant.suffix.is_empty() {
+                        proto_name.clone()
+                    } else {
+                        format!("{proto_name}{}", variant.suffix)
+                    };
+                    let substituted_fields = apply_generic_substitutions_fields(&data.fields, &variant.substitutions);
+                    let proto = generate_struct_proto(&message_name, &substituted_fields);
+                    config.register_and_emit_proto(&message_name, &proto);
+                }
             }
 
             let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
@@ -68,12 +82,20 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Enum(ref data) => {
             let is_simple_enum = data.variants.iter().all(|variant| matches!(variant.fields, Fields::Unit));
             for proto_name in &proto_names {
-                let proto = if is_simple_enum {
-                    generate_simple_enum_proto(proto_name, data)
-                } else {
-                    generate_complex_enum_proto(proto_name, data)
-                };
-                config.register_and_emit_proto(proto_name, &proto);
+                for variant in &generic_variants {
+                    let message_name = if variant.suffix.is_empty() {
+                        proto_name.clone()
+                    } else {
+                        format!("{proto_name}{}", variant.suffix)
+                    };
+                    let data = apply_generic_substitutions_enum(data, &variant.substitutions);
+                    let proto = if is_simple_enum {
+                        generate_simple_enum_proto(&message_name, &data)
+                    } else {
+                        generate_complex_enum_proto(&message_name, &data)
+                    };
+                    config.register_and_emit_proto(&message_name, &proto);
+                }
             }
 
             let item_enum: ItemEnum = syn::parse2(item_ts).expect("failed to parse enum");

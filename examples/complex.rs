@@ -33,7 +33,8 @@ pub struct Id {
     pub id: u64,
 }
 
-#[proto_message]
+#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto(generic_types = [T = [u64, u32]])]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct IdGeneric<T> {
     pub id: T,
@@ -100,10 +101,12 @@ pub struct BarSub;
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
     type RizzUniStream2: Stream<Item = Result<FooResponse, Status>> + Send;
+    type GenericUniStream: Stream<Item = Result<IdGeneric<u64>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn goon_pong(&self, request: Request<GoonPong>) -> Result<Response<RizzPing>, Status>;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
     async fn rizz_uni2(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream2>, Status>;
+    async fn generic_uni(&self, request: Request<BarSub>) -> Result<Response<Self::GenericUniStream>, Status>;
     async fn rizz_uni_other(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
     async fn with_generic(&self, request: Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, Status>;
     async fn with_generic_transparent(&self, request: Request<IdGenericTransparent<u64>>) -> Result<Response<IdGenericTransparent<u32>>, Status>;
@@ -137,6 +140,11 @@ impl SigmaRpc for S {
     type RizzUniStream2 = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
     #[cfg(not(feature = "stable"))]
     type RizzUniStream2 = impl Stream<Item = Result<FooResponse, Status>> + Send;
+
+    #[cfg(feature = "stable")]
+    type GenericUniStream = Pin<Box<dyn Stream<Item = Result<IdGeneric<u64>, Status>> + Send>>;
+    #[cfg(not(feature = "stable"))]
+    type GenericUniStream = impl Stream<Item = Result<IdGeneric<u64>, Status>> + Send;
 
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
@@ -180,6 +188,23 @@ impl SigmaRpc for S {
         Ok(Response::new(stream))
     }
 
+    async fn generic_uni(&self, _request: Request<BarSub>) -> Result<Response<Self::GenericUniStream>, Status> {
+        let (tx, rx) = tokio::sync::mpsc::channel(128);
+        tokio::spawn(async move {
+            for _ in 0..5 {
+                if tx.send(Ok(IdGeneric { id: 0 })).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+        #[cfg(feature = "stable")]
+        let stream: Self::GenericUniStream = Box::pin(stream);
+
+        Ok(Response::new(stream))
+    }
     async fn rizz_uni_other(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {

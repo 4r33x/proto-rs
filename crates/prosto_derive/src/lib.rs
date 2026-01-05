@@ -5,6 +5,7 @@ extern crate alloc;
 use proc_macro::TokenStream;
 
 mod emit_proto;
+mod generic_substitutions;
 mod parse;
 mod proto_dump;
 mod proto_import;

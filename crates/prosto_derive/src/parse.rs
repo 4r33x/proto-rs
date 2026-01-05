@@ -6,8 +6,10 @@ use std::collections::HashMap;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
+use quote::ToTokens;
 use syn::Attribute;
 use syn::Data;
+use syn::Expr;
 use syn::ItemTrait;
 use syn::Lit;
 use syn::LitStr;
@@ -16,6 +18,7 @@ use syn::parse::Parse;
 
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
+use crate::utils::type_name_with_generics_for_path;
 use crate::write_file::register_and_emit_proto_inner;
 use crate::write_file::register_imports;
 
@@ -67,6 +70,7 @@ pub struct UnifiedProtoConfig {
     pub transparent: bool,
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
+    pub generic_types: Vec<GenericTypeEntry>,
 }
 
 #[derive(Clone)]
@@ -74,6 +78,18 @@ pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
     pub by_ref: bool,
+}
+
+#[derive(Clone)]
+pub struct GenericTypeEntry {
+    pub param: syn::Ident,
+    pub types: Vec<Type>,
+}
+
+#[derive(Clone)]
+pub struct GenericTypeVariant {
+    pub suffix: String,
+    pub substitutions: BTreeMap<String, Type>,
 }
 
 impl UnifiedProtoConfig {
@@ -99,6 +115,7 @@ impl UnifiedProtoConfig {
         let item_validators = extract_item_validators(item_attrs);
         config.validator = item_validators.validator;
         config.validator_with_ext = item_validators.validator_with_ext;
+        config.generic_types = extract_item_generic_types(item_attrs);
 
         // Extract imports from item-level attributes
         let mut all_imports = extract_item_imports(item_attrs);
@@ -207,6 +224,53 @@ impl UnifiedProtoConfig {
         }
     }
 
+    pub fn generic_type_variants(&self, generics: &syn::Generics) -> Result<Vec<GenericTypeVariant>, syn::Error> {
+        if self.generic_types.is_empty() {
+            return Ok(vec![GenericTypeVariant {
+                suffix: String::new(),
+                substitutions: BTreeMap::new(),
+            }]);
+        }
+
+        let type_params: Vec<_> = generics.type_params().map(|param| param.ident.clone()).collect();
+        if type_params.is_empty() {
+            return Err(syn::Error::new_spanned(generics, "generic_types specified for non-generic type"));
+        }
+
+        let mut generic_map = BTreeMap::new();
+        for entry in &self.generic_types {
+            generic_map.insert(entry.param.to_string(), entry.types.clone());
+        }
+
+        let mut variants = vec![GenericTypeVariant {
+            suffix: String::new(),
+            substitutions: BTreeMap::new(),
+        }];
+
+        for param in type_params {
+            let Some(types) = generic_map.get(&param.to_string()) else {
+                return Err(syn::Error::new_spanned(&param, format!("missing generic_types entry for `{param}`")));
+            };
+            if types.is_empty() {
+                return Err(syn::Error::new_spanned(&param, format!("generic_types entry for `{param}` is empty")));
+            }
+
+            let mut next_variants = Vec::new();
+            for existing in &variants {
+                for ty in types {
+                    let mut substitutions = existing.substitutions.clone();
+                    substitutions.insert(param.to_string(), ty.clone());
+                    let mut suffix = existing.suffix.clone();
+                    suffix.push_str(&type_name_with_generics_for_path(ty));
+                    next_variants.push(GenericTypeVariant { suffix, substitutions });
+                }
+            }
+            variants = next_variants;
+        }
+
+        Ok(variants)
+    }
+
     fn push_sun(&mut self, ty: Type) {
         let by_ref = is_reference_sun(&ty);
         let ty = normalize_sun_type(ty);
@@ -294,12 +358,74 @@ pub fn extract_item_validators(item_attrs: &[Attribute]) -> ItemValidators {
                 return Ok(());
             }
 
+            if meta.path.is_ident("generic_types") {
+                let value_parser = meta.value()?;
+                let _: Expr = value_parser.parse()?;
+                return Ok(());
+            }
+
             Err(meta.error("unknown #[proto(...)] attribute"))
         })
         .expect("failed to parse #[proto(...)] attributes");
     }
 
     validators
+}
+
+pub fn extract_item_generic_types(item_attrs: &[Attribute]) -> Vec<GenericTypeEntry> {
+    let mut entries = Vec::new();
+
+    for attr in item_attrs {
+        if !attr.path().is_ident("proto") {
+            continue;
+        }
+
+        let result = attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("generic_types") {
+                if meta.input.peek(syn::Token![=]) {
+                    let value = meta.value()?;
+                    let _: Expr = value.parse()?;
+                }
+                return Ok(());
+            }
+
+            let expr: Expr = meta.value()?.parse()?;
+            let Expr::Array(array) = expr else {
+                return Err(meta.error("generic_types expects an array"));
+            };
+
+            for elem in array.elems {
+                let Expr::Assign(assign) = elem else {
+                    return Err(meta.error("generic_types entries must be assignments"));
+                };
+                let Expr::Path(param_path) = *assign.left else {
+                    return Err(meta.error("generic_types entry must start with a type parameter"));
+                };
+                let Some(param_ident) = param_path.path.get_ident() else {
+                    return Err(meta.error("generic_types entry must use a single identifier"));
+                };
+                let Expr::Array(values) = *assign.right else {
+                    return Err(meta.error("generic_types entry must assign an array of types"));
+                };
+
+                let mut types = Vec::new();
+                for value in values.elems {
+                    let ty: Type = syn::parse2(value.to_token_stream()).map_err(|_| meta.error("generic_types values must be types"))?;
+                    types.push(ty);
+                }
+
+                entries.push(GenericTypeEntry { param: param_ident.clone(), types });
+            }
+
+            Ok(())
+        });
+
+        if let Err(err) = result {
+            panic!("failed to parse generic_types: {err}");
+        }
+    }
+
+    entries
 }
 
 /// Extract `proto_imports` from item attributes
@@ -491,5 +617,52 @@ mod tests {
         });
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn generic_type_variants_builds_combinations() {
+        let mut config = UnifiedProtoConfig::default();
+
+        let input: syn::ItemStruct = parse_quote! {
+            struct GenericMap<K, V, S, const CAP: usize> {
+                kv: std::collections::HashMap<K, V, S>,
+            }
+        };
+        config.generic_types = vec![
+            GenericTypeEntry {
+                param: parse_quote!(K),
+                types: vec![parse_quote!(u64), parse_quote!(u32)],
+            },
+            GenericTypeEntry {
+                param: parse_quote!(V),
+                types: vec![parse_quote!(String), parse_quote!(u16)],
+            },
+            GenericTypeEntry {
+                param: parse_quote!(S),
+                types: vec![parse_quote!(std::hash::RandomState)],
+            },
+        ];
+
+        let variants = config.generic_type_variants(&input.generics).expect("variants");
+        let suffixes: Vec<_> = variants.into_iter().map(|variant| variant.suffix).collect();
+
+        assert_eq!(
+            suffixes,
+            vec!["U64StringStdHashRandomState", "U64U16StdHashRandomState", "U32StringStdHashRandomState", "U32U16StdHashRandomState",]
+        );
+    }
+
+    #[test]
+    fn parses_generic_types_attribute_values() {
+        let attrs: Vec<syn::Attribute> = vec![parse_quote! {
+            #[proto(generic_types = [T = [u64, u32], U = [String]])]
+        }];
+
+        let entries = extract_item_generic_types(&attrs);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].param.to_string(), "T");
+        assert_eq!(entries[0].types.len(), 2);
+        assert_eq!(entries[1].param.to_string(), "U");
+        assert_eq!(entries[1].types.len(), 1);
     }
 }

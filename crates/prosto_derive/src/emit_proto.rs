@@ -18,9 +18,10 @@ use crate::utils::is_bytes_array;
 use crate::utils::is_bytes_vec;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::proto_type_name;
 use crate::utils::resolved_field_type;
-use crate::utils::rust_type_path_ident;
 use crate::utils::strip_proto_suffix;
+use crate::utils::rust_type_path_ident;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
@@ -232,8 +233,7 @@ fn get_field_proto_type(field: &Field) -> String {
         let parsed = parse_field_type(elem_ty);
 
         return if parsed.is_message_like {
-            let rust_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
-            strip_proto_suffix(&rust_name)
+            proto_type_name(&parsed.proto_rust_type)
         } else {
             parsed.proto_type
         };
@@ -250,8 +250,7 @@ fn get_field_proto_type(field: &Field) -> String {
     }
 
     if parsed.is_message_like {
-        let rust_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
-        strip_proto_suffix(&rust_name)
+        proto_type_name(&parsed.proto_rust_type)
     } else {
         parsed.proto_type
     }
@@ -264,7 +263,7 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     }
 
     if let Some(ref import_path) = config.import_path {
-        let base_name = rust_type_path_ident(inner_type).to_string();
+        let base_name = proto_type_name(inner_type);
         return format!("{import_path}.{base_name}");
     }
 
@@ -274,13 +273,16 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
         return parsed.proto_type;
     }
 
-    if config.is_rust_enum || config.is_proto_enum || config.is_message {
+    if config.is_rust_enum || config.is_proto_enum {
         return rust_type_path_ident(inner_type).to_string();
     }
 
+    if config.is_message {
+        return proto_type_name(inner_type);
+    }
+
     if parsed.is_message_like {
-        let base_name = rust_type_path_ident(&parsed.proto_rust_type).to_string();
-        return strip_proto_suffix(&base_name);
+        return proto_type_name(&parsed.proto_rust_type);
     }
 
     parsed.proto_type
@@ -319,10 +321,11 @@ fn qualify_type_name(
     import_all_from: Option<&str>,
 ) -> String {
     let type_name = extract_type_name(ty);
+    let base_name = extract_base_type_name(ty);
 
     // Check if type is in any import
     for (package, types) in proto_imports {
-        if types.contains(&type_name) {
+        if types.contains(&type_name) || base_name.as_ref().is_some_and(|base| types.contains(base)) {
             return format!("{package}.{type_name}");
         }
     }
@@ -335,11 +338,18 @@ fn qualify_type_name(
 }
 
 fn extract_type_name(ty: &Type) -> String {
+    proto_type_name(ty)
+}
+
+fn extract_base_type_name(ty: &Type) -> Option<String> {
     if let Type::Path(type_path) = ty {
-        type_path.path.segments.last().map_or_else(|| "Unknown".to_string(), |s| s.ident.to_string())
-    } else {
-        "Unknown".to_string()
+        return type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| strip_proto_suffix(&segment.ident.to_string()));
     }
+    None
 }
 
 #[cfg(test)]
@@ -443,6 +453,29 @@ mod tests {
         assert!(is_option);
         assert!(!is_repeated);
         assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
+    }
+
+    #[test]
+    fn service_content_handles_generic_types() {
+        let trait_name: syn::Ident = parse_quote! { SigmaRpc };
+        let methods = vec![MethodInfo {
+            name: syn::Ident::new("with_generic", proc_macro2::Span::call_site()),
+            request_type: parse_quote!(IdGeneric<u64>),
+            response_type: parse_quote!(IdGeneric<u32>),
+            response_return_type: parse_quote!(IdGeneric<u32>),
+            response_is_result: true,
+            is_async: true,
+            is_streaming: false,
+            stream_type_name: None,
+            inner_response_type: None,
+            stream_item_type: None,
+            user_method_signature: quote! {},
+        }];
+
+        let proto_imports = BTreeMap::new();
+        let service = generate_service_content(&trait_name, &methods, &proto_imports, None);
+
+        assert!(service.contains("rpc WithGeneric(IdGenericU64) returns (IdGenericU32) {}"));
     }
 
     #[test]

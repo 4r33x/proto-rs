@@ -3,6 +3,8 @@
 ## [0.6.21]
 - Relaxed generic bounds in generated code
 - Fixed Copy generic types
+- Added #[proto(generic_types = [T = [u64, u32]])] attribute for in place .proto generation for types with generics
+- Added proper parsing for types with generics for .proto generation 
 
 ## [0.6.20]
 - Added support for Vec<T> and VecDeque<T> as top-level message
