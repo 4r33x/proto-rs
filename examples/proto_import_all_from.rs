@@ -18,7 +18,7 @@ pub struct UserType;
 pub trait ImportAllFromRpc {
     async fn get_user(&self, request: tonic::Request<UserType>) -> Result<UserType, tonic::Status>;
 }
-
+fn main() {}
 #[cfg(test)]
 mod tests {
     #[test]

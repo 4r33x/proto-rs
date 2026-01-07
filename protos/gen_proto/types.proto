@@ -3,3 +3,4 @@ syntax = "proto3";
 package types;
 
 message UserType {}
+
