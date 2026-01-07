@@ -211,8 +211,13 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                     config.import_all_from = Some(import_path);
                 }
             } else if meta.input.peek(syn::Token![=]) {
-                if let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>() {
+                let value = meta.value()?;
+                if let Ok(lit_str) = value.parse::<syn::LitStr>() {
                     config.import_all_from = Some(lit_str.value());
+                } else if let Ok(path) = value.parse::<syn::Path>() {
+                    config.import_all_from = Some(path_to_proto_package(&path));
+                } else {
+                    return Err(meta.error("proto_import_all_from expects a string literal or path"));
                 }
             } else if let Ok(path) = meta.input.parse::<syn::Path>() {
                 config.import_all_from = Some(path_to_proto_package(&path));
