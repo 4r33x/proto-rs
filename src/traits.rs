@@ -293,8 +293,6 @@ where
     }
 }
 
- 
-
 // Helper alias to shorten signatures:
 pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
 pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::Sun<'a>;
@@ -414,6 +412,7 @@ pub trait ProtoExt: Sized {
 
     const VALIDATE_WITH_EXT: bool = false;
 
+    #[cfg(feature = "tonic")]
     #[inline(always)]
     fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {
         Ok(())
