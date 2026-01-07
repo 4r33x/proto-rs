@@ -119,7 +119,9 @@ impl UnifiedProtoConfig {
 
         // Extract imports from item-level attributes
         let mut all_imports = extract_item_imports(item_attrs);
-        config.import_all_from = extract_import_all_from(item_attrs);
+        if config.import_all_from.is_none() {
+            config.import_all_from = extract_import_all_from(item_attrs);
+        }
 
         // Extract field-level imports
         fields.extract_field_imports(&mut all_imports);
@@ -192,6 +194,34 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
+        } else if meta.path.is_ident("proto_import_all_from") {
+            if meta.input.peek(syn::token::Paren) {
+                let mut import_path = None;
+                meta.parse_nested_meta(|nested| {
+                    if let Some(ident) = nested.path.get_ident() {
+                        import_path = Some(ident.to_string());
+                        return Ok(());
+                    }
+
+                    import_path = Some(path_to_proto_package(&nested.path));
+                    Ok(())
+                })?;
+
+                if let Some(import_path) = import_path {
+                    config.import_all_from = Some(import_path);
+                }
+            } else if meta.input.peek(syn::Token![=]) {
+                let value = meta.value()?;
+                if let Ok(lit_str) = value.parse::<syn::LitStr>() {
+                    config.import_all_from = Some(lit_str.value());
+                } else if let Ok(path) = value.parse::<syn::Path>() {
+                    config.import_all_from = Some(path_to_proto_package(&path));
+                } else {
+                    return Err(meta.error("proto_import_all_from expects a string literal or path"));
+                }
+            } else if let Ok(path) = meta.input.parse::<syn::Path>() {
+                config.import_all_from = Some(path_to_proto_package(&path));
+            }
         } else {
             return Err(meta.error("unknown #[proto(...)] attribute"));
         }
@@ -464,6 +494,10 @@ pub fn extract_import_all_from(item_attrs: &[Attribute]) -> Option<String> {
         if let Ok(path) = attr.parse_args::<LitStr>() {
             return Some(path.value());
         }
+
+        if let Ok(path) = attr.parse_args::<syn::Path>() {
+            return Some(path_to_proto_package(&path));
+        }
     }
 
     None
@@ -497,6 +531,10 @@ pub fn extract_field_imports(fields: &syn::Fields) -> HashMap<String, Vec<String
     }
 
     imports
+}
+
+fn path_to_proto_package(path: &syn::Path) -> String {
+    path.segments.iter().map(|segment| segment.ident.to_string()).collect::<Vec<_>>().join(".")
 }
 
 fn extract_field_type_name(ty: &syn::Type) -> String {
