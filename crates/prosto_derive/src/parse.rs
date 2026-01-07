@@ -214,7 +214,7 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 if let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>() {
                     config.import_all_from = Some(lit_str.value());
                 }
-            } else if let Ok(path) = meta.parse::<syn::Path>() {
+            } else if let Ok(path) = meta.input.parse::<syn::Path>() {
                 config.import_all_from = Some(path_to_proto_package(&path));
             }
         } else {
