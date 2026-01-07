@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.6.23]
+- Fix proto_import_all_from attribute
+
 ## [0.6.22]
 - Fixed VecDeque .proto definitions
 

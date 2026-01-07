@@ -100,20 +100,23 @@ impl<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP:
         }
     }
 }
+#[cfg(feature = "papaya")]
+pub mod papaya_test {
+    use proto_rs::proto_message;
 
-#[proto_message]
-pub struct GenericPapayaMap<K: std::hash::Hash + Eq, V> {
-    inner: papaya::HashMap<K, V>,
-}
+    #[proto_message]
+    pub struct GenericPapayaMap<K: std::hash::Hash + Eq, V> {
+        inner: papaya::HashMap<K, V>,
+    }
 
-#[proto_message]
-pub struct GenericPapayaSet<K: std::hash::Hash + Eq> {
-    inner: papaya::HashSet<K>,
-}
-
-#[proto_message]
-pub struct ConcretePapayaSet {
-    inner: GenericPapayaSet<u8>,
+    #[proto_message]
+    pub struct GenericPapayaSet<K: std::hash::Hash + Eq> {
+        inner: papaya::HashSet<K>,
+    }
+    #[proto_message]
+    pub struct ConcretePapayaSet {
+        inner: GenericPapayaSet<u8>,
+    }
 }
 
 #[proto_message]
