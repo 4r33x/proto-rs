@@ -8,6 +8,8 @@ use syn::ItemEnum;
 use syn::Lit;
 use syn::spanned::Spanned;
 
+use super::build_validate_with_ext_impl;
+use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
@@ -20,8 +22,6 @@ use super::unified_field_handler::encode_input_binding;
 use super::unified_field_handler::field_proto_default_expr;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
-use super::build_validate_with_ext_impl;
-use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::needs_decode_conversion;
 use super::unified_field_handler::parse_path_string;

@@ -14,12 +14,13 @@ use utils::extract_methods_and_types; // Add this import
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
+use crate::schema::schema_tokens_for_service;
 
 pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let input: ItemTrait = syn::parse(item).expect("Failed to parse trait");
     let trait_name = &input.ident;
     let ty_ident = trait_name.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input);
+    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input, input.generics.clone());
     let vis = &input.vis;
     let package_name = config.get_rpc_package().to_owned();
 
@@ -27,13 +28,9 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let (methods, user_associated_types) = extract_methods_and_types(&input);
 
     // Generate .proto file if requested
-    let service_content = generate_service_content(
-        trait_name,
-        &methods,
-        &config.type_imports,
-        config.import_all_from.as_deref(),
-    );
-    config.register_and_emit_proto(&ty_ident, &service_content);
+    let service_content = generate_service_content(trait_name, &methods, &config.type_imports, config.import_all_from.as_deref());
+    let schema_tokens = schema_tokens_for_service(&input.ident, &ty_ident, &methods, &config, &ty_ident);
+    config.register_and_emit_proto(&service_content, schema_tokens);
     let proto = config.imports_mat.clone();
 
     // Generate user-facing trait

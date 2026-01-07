@@ -20,8 +20,8 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::proto_type_name;
 use crate::utils::resolved_field_type;
-use crate::utils::strip_proto_suffix;
 use crate::utils::rust_type_path_ident;
+use crate::utils::strip_proto_suffix;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
@@ -232,11 +232,7 @@ fn get_field_proto_type(field: &Field) -> String {
         let elem_ty = &*type_array.elem;
         let parsed = parse_field_type(elem_ty);
 
-        return if parsed.is_message_like {
-            proto_type_name(&parsed.proto_rust_type)
-        } else {
-            parsed.proto_type
-        };
+        return if parsed.is_message_like { proto_type_name(&parsed.proto_rust_type) } else { parsed.proto_type };
     }
 
     let parsed = parse_field_type(&ty);
@@ -249,11 +245,7 @@ fn get_field_proto_type(field: &Field) -> String {
         return rust_type_path_ident(&ty).to_string();
     }
 
-    if parsed.is_message_like {
-        proto_type_name(&parsed.proto_rust_type)
-    } else {
-        parsed.proto_type
-    }
+    if parsed.is_message_like { proto_type_name(&parsed.proto_rust_type) } else { parsed.proto_type }
 }
 
 /// Determine proto type string based on field config
@@ -288,12 +280,7 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     parsed.proto_type
 }
 
-pub fn generate_service_content(
-    trait_name: &syn::Ident,
-    methods: &[MethodInfo],
-    proto_imports: &BTreeMap<String, BTreeSet<String>>,
-    import_all_from: Option<&str>,
-) -> String {
+pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo], proto_imports: &BTreeMap<String, BTreeSet<String>>, import_all_from: Option<&str>) -> String {
     let mut lines = vec![format!("service {} {{", trait_name)];
 
     for method in methods {
@@ -315,11 +302,7 @@ pub fn generate_service_content(
     lines.join("\n")
 }
 
-fn qualify_type_name(
-    ty: &Type,
-    proto_imports: &BTreeMap<String, BTreeSet<String>>,
-    import_all_from: Option<&str>,
-) -> String {
+fn qualify_type_name(ty: &Type, proto_imports: &BTreeMap<String, BTreeSet<String>>, import_all_from: Option<&str>) -> String {
     let type_name = extract_type_name(ty);
     let base_name = extract_base_type_name(ty);
 
@@ -343,11 +326,7 @@ fn extract_type_name(ty: &Type) -> String {
 
 fn extract_base_type_name(ty: &Type) -> Option<String> {
     if let Type::Path(type_path) = ty {
-        return type_path
-            .path
-            .segments
-            .last()
-            .map(|segment| strip_proto_suffix(&segment.ident.to_string()));
+        return type_path.path.segments.last().map(|segment| strip_proto_suffix(&segment.ident.to_string()));
     }
     None
 }

@@ -11,6 +11,7 @@ mod proto_dump;
 mod proto_import;
 mod proto_message;
 mod proto_rpc;
+mod schema;
 mod utils;
 mod write_file;
 

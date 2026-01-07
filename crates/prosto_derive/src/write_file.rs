@@ -34,32 +34,9 @@ pub fn should_emit_file() -> bool {
     }
 }
 
-/// Generate proto emission code (const + inventory registration)
-pub fn generate_proto_emission(file_name: &str, type_ident: &str, content: &str) -> TokenStream {
-    let const_name = format_const_name(file_name, type_ident);
-    let const_ident = syn::Ident::new(&const_name, proc_macro2::Span::call_site());
-
-    quote! {
-        #[cfg(feature = "build-schemas")]
-        const #const_ident: &str = #content;
-
-        #[cfg(feature = "build-schemas")]
-        inventory::submit! {
-            proto_rs::schemas::ProtoSchema {
-                name: #file_name,
-                content: #const_ident,
-            }
-        }
-    }
-}
-
-fn format_const_name(file_name: &str, type_ident: &str) -> String {
-    format!("PROTO_SCHEMA_{}_{}", file_name.to_uppercase().replace(['.', '/', '-'], "_"), type_ident.to_uppercase())
-}
-
 /// Register proto content and optionally write to file
-pub fn register_and_emit_proto_inner(file_name: &str, type_ident: &str, content: &str) -> TokenStream {
-    let emission_code = generate_proto_emission(file_name, type_ident, content);
+pub fn register_and_emit_proto_inner(file_name: &str, content: &str, schema_tokens: TokenStream) -> TokenStream {
+    let emission_code = schema_tokens;
 
     if should_emit_file() {
         write_proto_file(file_name, content);
@@ -82,9 +59,8 @@ pub fn register_imports(type_ident: &str, imports: &BTreeMap<String, BTreeSet<St
         }
 
         // Generate emission code
-        let imports_content = import_set.iter().map(|imp| format_import(imp)).collect::<String>();
-
-        let emission = generate_proto_emission(file, &format!("{type_ident}_ImportInject"), &imports_content);
+        let import_list: Vec<String> = import_set.iter().cloned().collect();
+        let emission = crate::schema::schema_tokens_for_imports(type_ident, file, &import_list);
 
         code = quote! { #code #emission };
     }
@@ -104,20 +80,17 @@ fn register_imports_in_registry(file: &str, imports: &BTreeSet<String>) {
 
 /// Register single import
 pub fn register_import(file: &str, imports: &[String]) -> TokenStream {
-    let mut content = String::new();
-
     {
         let mut registry = REGISTRY.lock().unwrap();
         let defs = registry.entry(file.to_string()).or_default();
 
         for import in imports {
-            content.push_str(&format_import(import));
             let import_entry = format!("{IMPORT_PREFIX}:{import}");
             defs.insert(import_entry);
         }
     }
 
-    let emission_code = generate_proto_emission(file, "ImportInject", &content);
+    let emission_code = crate::schema::schema_tokens_for_imports("ImportInject", file, imports);
 
     if should_emit_file() {
         write_proto_file_internal(file);
@@ -226,12 +199,6 @@ fn mark_file_initialized(file_name_path: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_const_name() {
-        let name = format_const_name("path/to/file.proto", "MyStruct");
-        assert_eq!(name, "PROTO_SCHEMA_PATH_TO_FILE_PROTO_MYSTRUCT");
-    }
 
     #[test]
     fn test_separate_imports_and_content() {

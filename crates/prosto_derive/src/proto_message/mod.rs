@@ -14,6 +14,10 @@ use crate::emit_proto::generate_struct_proto;
 use crate::generic_substitutions::apply_generic_substitutions_enum;
 use crate::generic_substitutions::apply_generic_substitutions_fields;
 use crate::parse::UnifiedProtoConfig;
+use crate::schema::assoc_proto_ident_const;
+use crate::schema::schema_tokens_for_complex_enum;
+use crate::schema::schema_tokens_for_simple_enum;
+use crate::schema::schema_tokens_for_struct;
 
 pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
     let Some(validator_fn) = &config.validator_with_ext else {
@@ -49,7 +53,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse2(item_ts.clone()).expect("proto_message expects a type definition");
 
     let type_ident = input.ident.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data);
+    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data, input.generics.clone());
     let proto_names = config.proto_message_names(&type_ident);
     let generic_variants = match config.generic_type_variants(&input.generics) {
         Ok(variants) => variants,
@@ -73,7 +77,8 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     };
                     let substituted_fields = apply_generic_substitutions_fields(&data.fields, &variant.substitutions);
                     let proto = generate_struct_proto(&message_name, &substituted_fields);
-                    config.register_and_emit_proto(&message_name, &proto);
+                    let schema_tokens = schema_tokens_for_struct(&input.ident, &message_name, &substituted_fields, &config, &message_name);
+                    config.register_and_emit_proto(&proto, schema_tokens);
                 }
             }
 
@@ -95,7 +100,12 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     } else {
                         generate_complex_enum_proto(&message_name, &data)
                     };
-                    config.register_and_emit_proto(&message_name, &proto);
+                    let schema_tokens = if is_simple_enum {
+                        schema_tokens_for_simple_enum(&input.ident, &message_name, &data, &config, &message_name)
+                    } else {
+                        schema_tokens_for_complex_enum(&input.ident, &message_name, &data, &config, &message_name)
+                    };
+                    config.register_and_emit_proto(&proto, schema_tokens);
                 }
             }
 
@@ -112,10 +122,12 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Union(_) => Error::new_spanned(&input.ident, "proto_message cannot be used on unions").to_compile_error(),
     };
 
+    let proto_ident_const = assoc_proto_ident_const(&config, &input.ident, &input.generics, &proto_names);
     let proto_imports = config.imports_mat;
     quote! {
         #proto_imports
         #tokens
+        #proto_ident_const
     }
     .into()
 }
