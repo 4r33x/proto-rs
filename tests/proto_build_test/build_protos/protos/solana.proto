@@ -6,6 +6,13 @@ message Address {
   bytes inner = 1;
 }
 
+message Keypair {
+  bytes inner = 1;
+}
+
+message Signature {
+  bytes inner = 1;
+}
 
 message InstructionErrorGenericError {}
 
@@ -171,17 +178,6 @@ message InstructionError {
   }
 }
 
-
-message Keypair {
-  bytes inner = 1;
-}
-
-
-message Signature {
-  bytes inner = 1;
-}
-
-
 message TransactionErrorAccountInUse {}
 
 message TransactionErrorAccountLoadedTwice {}
@@ -307,5 +303,4 @@ message TransactionError {
     TransactionErrorCommitCancelled commit_cancelled = 39;
   }
 }
-
 

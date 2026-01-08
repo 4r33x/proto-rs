@@ -60,6 +60,6 @@ fn main() {
     proto_rs::schemas::write_all("build_protos").expect("Failed to write proto files");
 
     for schema in inventory::iter::<ProtoSchema> {
-        println!("Collected: {}", schema.name);
+        println!("Collected: {}", schema.id.name);
     }
 }
