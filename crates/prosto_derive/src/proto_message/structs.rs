@@ -1,5 +1,6 @@
-use proc_macro2::TokenStream as TokenStream2;
 use std::collections::BTreeSet;
+
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 use syn::GenericArgument;
@@ -8,6 +9,8 @@ use syn::PathArguments;
 use syn::Type;
 use syn::parse_quote;
 
+use super::build_validate_with_ext_impl;
+use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
@@ -22,8 +25,6 @@ use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
-use super::build_validate_with_ext_impl;
-use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;

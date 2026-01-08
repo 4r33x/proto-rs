@@ -6,9 +6,9 @@ use syn::ItemEnum;
 use syn::parse_quote;
 use syn::spanned::Spanned;
 
+use super::build_validate_with_ext_impl;
 use super::unified_field_handler::generate_delegating_proto_wire_impl;
 use super::unified_field_handler::generate_proto_shadow_impl;
-use super::build_validate_with_ext_impl;
 use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;

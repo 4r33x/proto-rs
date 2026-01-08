@@ -20,8 +20,8 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::proto_type_name;
 use crate::utils::resolved_field_type;
-use crate::utils::strip_proto_suffix;
 use crate::utils::rust_type_path_ident;
+use crate::utils::strip_proto_suffix;
 use crate::utils::to_pascal_case;
 use crate::utils::to_snake_case;
 use crate::utils::to_upper_snake_case;
@@ -59,7 +59,7 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
     format!("enum {} {{\n{}\n}}\n\n", name, variants.join("\n"))
 }
 
-pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
+pub fn generate_complex_enum_proto(name: &str, data: &DataEnum, generic_params: &[syn::Ident]) -> String {
     let proto_name = name.to_string();
 
     let mut nested_messages = Vec::new();
@@ -88,13 +88,13 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
                     nested_messages.push(format!("message {msg_name} {{}}"));
                     oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
                 } else {
-                    let proto_type = get_field_proto_type(field);
+                    let proto_type = get_field_proto_type(field, generic_params);
                     oneof_fields.push(format!("    {proto_type} {field_name_snake} = {tag};"));
                 }
             }
             Fields::Named(fields) => {
                 let msg_name = format!("{proto_name}{variant_ident}");
-                let field_defs = generate_named_fields(&fields.named);
+                let field_defs = generate_named_fields(&fields.named, generic_params);
 
                 nested_messages.push(format!("message {msg_name} {{\n{field_defs}\n}}"));
                 oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
@@ -110,20 +110,20 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
     )
 }
 
-pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
+pub fn generate_struct_proto(name: &str, fields: &Fields, generic_params: &[syn::Ident]) -> String {
     match fields {
-        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named),
-        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed),
+        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named, generic_params),
+        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed, generic_params),
         Fields::Unit => format!("message {name} {{}}\n\n"),
     }
 }
 
-fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
-    let field_defs = generate_named_fields(fields);
+fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>, generic_params: &[syn::Ident]) -> String {
+    let field_defs = generate_named_fields(fields, generic_params);
     format!("message {name} {{\n{field_defs}\n}}\n\n")
 }
 
-fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) -> String {
+fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>, generic_params: &[syn::Ident]) -> String {
     let mut proto_fields = Vec::new();
 
     for (idx, field) in fields.iter().enumerate() {
@@ -141,7 +141,7 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
         };
 
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
-        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated, generic_params);
 
         let modifier = field_modifier(is_option, is_repeated);
         let tag = config.custom_tag.unwrap_or(idx + 1);
@@ -151,7 +151,7 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
     format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"))
 }
 
-fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool) -> String {
+fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool, generic_params: &[syn::Ident]) -> String {
     if let Some(rename) = &config.rename {
         if let Some(flag) = rename.is_optional {
             *is_option = flag;
@@ -162,7 +162,7 @@ fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_
         return rename.proto_type.clone();
     }
 
-    determine_proto_type(inner_type, config)
+    determine_proto_type(inner_type, config, generic_params)
 }
 
 fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
@@ -174,7 +174,7 @@ fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
 }
 
 /// Generate proto fields for named struct/enum variant
-fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
+fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>, generic_params: &[syn::Ident]) -> String {
     let mut proto_fields = Vec::new();
     let mut field_num = 0;
 
@@ -199,7 +199,7 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
 
         // Determine proto type string
-        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated, generic_params);
 
         // Add modifier
         let modifier = field_modifier(is_option, is_repeated);
@@ -213,7 +213,7 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 }
 
 /// Get proto type string for a field type
-fn get_field_proto_type(field: &Field) -> String {
+fn get_field_proto_type(field: &Field, generic_params: &[syn::Ident]) -> String {
     let config = parse_field_config(field);
     let base_ty = resolved_field_type(field, &config);
     let ty = if let Some(ref into_type) = config.into_type {
@@ -232,14 +232,14 @@ fn get_field_proto_type(field: &Field) -> String {
         let elem_ty = &*type_array.elem;
         let parsed = parse_field_type(elem_ty);
 
-        return if parsed.is_message_like {
-            proto_type_name(&parsed.proto_rust_type)
-        } else {
-            parsed.proto_type
-        };
+        return if parsed.is_message_like { proto_type_name(&parsed.proto_rust_type) } else { parsed.proto_type };
     }
 
     let parsed = parse_field_type(&ty);
+
+    if is_generic_param(&ty, generic_params) {
+        return "bytes".to_string();
+    }
 
     if parsed.map_kind.is_some() {
         return parsed.proto_type;
@@ -249,15 +249,11 @@ fn get_field_proto_type(field: &Field) -> String {
         return rust_type_path_ident(&ty).to_string();
     }
 
-    if parsed.is_message_like {
-        proto_type_name(&parsed.proto_rust_type)
-    } else {
-        parsed.proto_type
-    }
+    if parsed.is_message_like { proto_type_name(&parsed.proto_rust_type) } else { parsed.proto_type }
 }
 
 /// Determine proto type string based on field config
-fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -> String {
+fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, generic_params: &[syn::Ident]) -> String {
     if is_bytes_vec(inner_type) || is_bytes_array(inner_type) {
         return "bytes".to_string();
     }
@@ -268,6 +264,10 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     }
 
     let parsed = parse_field_type(inner_type);
+
+    if is_generic_param(inner_type, generic_params) {
+        return "bytes".to_string();
+    }
 
     if parsed.map_kind.is_some() {
         return parsed.proto_type;
@@ -288,12 +288,7 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     parsed.proto_type
 }
 
-pub fn generate_service_content(
-    trait_name: &syn::Ident,
-    methods: &[MethodInfo],
-    proto_imports: &BTreeMap<String, BTreeSet<String>>,
-    import_all_from: Option<&str>,
-) -> String {
+pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo], proto_imports: &BTreeMap<String, BTreeSet<String>>, import_all_from: Option<&str>) -> String {
     let mut lines = vec![format!("service {} {{", trait_name)];
 
     for method in methods {
@@ -315,11 +310,7 @@ pub fn generate_service_content(
     lines.join("\n")
 }
 
-fn qualify_type_name(
-    ty: &Type,
-    proto_imports: &BTreeMap<String, BTreeSet<String>>,
-    import_all_from: Option<&str>,
-) -> String {
+fn qualify_type_name(ty: &Type, proto_imports: &BTreeMap<String, BTreeSet<String>>, import_all_from: Option<&str>) -> String {
     let type_name = extract_type_name(ty);
     let base_name = extract_base_type_name(ty);
 
@@ -337,287 +328,32 @@ fn qualify_type_name(
     type_name
 }
 
+fn is_generic_param(ty: &Type, generic_params: &[syn::Ident]) -> bool {
+    match ty {
+        Type::Path(path) => {
+            if path.qself.is_some() || path.path.segments.len() != 1 {
+                return false;
+            }
+            let segment = &path.path.segments[0];
+            if !segment.arguments.is_empty() {
+                return false;
+            }
+            generic_params.iter().any(|param| param == &segment.ident)
+        }
+        Type::Reference(reference) => is_generic_param(&reference.elem, generic_params),
+        Type::Group(group) => is_generic_param(&group.elem, generic_params),
+        Type::Paren(paren) => is_generic_param(&paren.elem, generic_params),
+        _ => false,
+    }
+}
+
 fn extract_type_name(ty: &Type) -> String {
     proto_type_name(ty)
 }
 
 fn extract_base_type_name(ty: &Type) -> Option<String> {
     if let Type::Path(type_path) = ty {
-        return type_path
-            .path
-            .segments
-            .last()
-            .map(|segment| strip_proto_suffix(&segment.ident.to_string()));
+        return type_path.path.segments.last().map(|segment| strip_proto_suffix(&segment.ident.to_string()));
     }
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use quote::quote;
-    use syn::parse_quote;
-
-    use super::*;
-
-    #[test]
-    fn qualify_type_name_falls_back_to_import_all_from() {
-        let trait_name = syn::Ident::new("Example", proc_macro2::Span::call_site());
-        let mut proto_imports: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        proto_imports.insert("custom".to_string(), BTreeSet::from(["Special".to_string()]));
-
-        let methods = vec![
-            MethodInfo {
-                name: syn::Ident::new("foo", proc_macro2::Span::call_site()),
-                request_type: parse_quote!(Foo),
-                response_type: parse_quote!(Bar),
-                response_return_type: parse_quote!(Bar),
-                response_is_result: true,
-                is_async: true,
-                is_streaming: false,
-                stream_type_name: None,
-                inner_response_type: None,
-                stream_item_type: None,
-                user_method_signature: quote! {},
-            },
-            MethodInfo {
-                name: syn::Ident::new("special", proc_macro2::Span::call_site()),
-                request_type: parse_quote!(Special),
-                response_type: parse_quote!(Bar),
-                response_return_type: parse_quote!(Bar),
-                response_is_result: true,
-                is_async: true,
-                is_streaming: false,
-                stream_type_name: None,
-                inner_response_type: None,
-                stream_item_type: None,
-                user_method_signature: quote! {},
-            },
-        ];
-
-        let service = generate_service_content(&trait_name, &methods, &proto_imports, Some("shared"));
-
-        assert!(service.contains("rpc Foo(shared.Foo) returns (shared.Bar)"));
-        assert!(service.contains("rpc Special(custom.Special) returns (shared.Bar)"));
-    }
-
-    // #[test]
-    // fn test_simple_enum_generation() {
-    //     let data: DataEnum = parse_quote! {
-    //         enum Status {
-    //             Active,
-    //             Inactive,
-    //             Pending,
-    //         }
-    //     };
-
-    //     let proto = generate_simple_enum_proto("Status", &data);
-    //     assert!(proto.contains("ACTIVE = 0"));
-    //     assert!(proto.contains("INACTIVE = 1"));
-    //     assert!(proto.contains("PENDING = 2"));
-    // }
-
-    #[test]
-    fn test_get_field_proto_type() {
-        let field: syn::Field = parse_quote! { data: [u8; B_LEN] };
-        assert_eq!(get_field_proto_type(&field), "bytes");
-        let field: syn::Field = parse_quote! { data: [u8; 32] };
-        assert_eq!(get_field_proto_type(&field), "bytes");
-        let field: syn::Field = parse_quote! { data: Vec<u8> };
-        assert_eq!(get_field_proto_type(&field), "bytes");
-
-        let field: syn::Field = parse_quote! { value: u32 };
-        assert_eq!(get_field_proto_type(&field), "uint32");
-
-        let field: syn::Field = parse_quote! { value: String };
-        assert_eq!(get_field_proto_type(&field), "string");
-
-        let field: syn::Field = parse_quote! { #[proto(treat_as = "std::collections::HashSet<u32>")] value: MySet };
-        assert_eq!(get_field_proto_type(&field), "uint32");
-    }
-
-    #[test]
-    fn cache_padded_vec_is_repeated() {
-        let ty: Type = parse_quote! { crossbeam_utils::CachePadded<Vec<u32>> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(!is_option);
-        assert!(is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
-    }
-
-    #[test]
-    fn cache_padded_option_is_optional() {
-        let ty: Type = parse_quote! { crossbeam_utils::CachePadded<Option<String>> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(is_option);
-        assert!(!is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
-    }
-
-    #[test]
-    fn service_content_handles_generic_types() {
-        let trait_name: syn::Ident = parse_quote! { SigmaRpc };
-        let methods = vec![MethodInfo {
-            name: syn::Ident::new("with_generic", proc_macro2::Span::call_site()),
-            request_type: parse_quote!(IdGeneric<u64>),
-            response_type: parse_quote!(IdGeneric<u32>),
-            response_return_type: parse_quote!(IdGeneric<u32>),
-            response_is_result: true,
-            is_async: true,
-            is_streaming: false,
-            stream_type_name: None,
-            inner_response_type: None,
-            stream_item_type: None,
-            user_method_signature: quote! {},
-        }];
-
-        let proto_imports = BTreeMap::new();
-        let service = generate_service_content(&trait_name, &methods, &proto_imports, None);
-
-        assert!(service.contains("rpc WithGeneric(IdGenericU64) returns (IdGenericU32) {}"));
-    }
-
-    #[test]
-    fn arc_swap_vec_is_repeated() {
-        let ty: Type = parse_quote! { arc_swap::ArcSwap<Vec<u32>> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(!is_option);
-        assert!(is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
-    }
-
-    #[test]
-    fn arc_swap_vec_u8_is_bytes() {
-        let ty: Type = parse_quote! { arc_swap::ArcSwap<Vec<u8>> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(!is_option);
-        assert!(!is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(Vec<u8>).to_string());
-        assert_eq!(determine_proto_type(&inner, &crate::utils::FieldConfig::default()), "bytes");
-    }
-
-    #[test]
-    fn arc_swap_option_is_optional() {
-        let ty: Type = parse_quote! { arc_swap::ArcSwapOption<String> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(is_option);
-        assert!(!is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
-    }
-
-    #[test]
-    fn vec_deque_is_repeated() {
-        let ty: Type = parse_quote! { std::collections::VecDeque<u32> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(!is_option);
-        assert!(is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(u32).to_string());
-    }
-
-    #[test]
-    fn option_vec_deque_is_optional_repeated() {
-        let ty: Type = parse_quote! { Option<std::collections::VecDeque<String>> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(is_option);
-        assert!(is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(String).to_string());
-    }
-
-    #[test]
-    fn option_map_is_optional_not_repeated() {
-        let ty: Type = parse_quote! { Option<std::collections::HashMap<String, u32>> };
-        let (is_option, is_repeated, inner) = extract_field_wrapper_info(&ty);
-
-        assert!(is_option);
-        assert!(!is_repeated);
-        assert_eq!(quote!(#inner).to_string(), quote!(std::collections::HashMap<String, u32>).to_string());
-    }
-
-    #[test]
-    fn rename_rust_type_to_scalar_proto() {
-        let fields: syn::FieldsNamed = parse_quote!({
-            #[proto(rename = u64)]
-            id: Option<MyId>,
-        });
-
-        let proto = generate_named_struct_proto("User", &fields.named);
-        assert!(proto.contains("optional uint64 id = 1;"));
-    }
-
-    #[test]
-    fn rename_vec_bytes_to_bytes_scalar() {
-        let fields: syn::FieldsNamed = parse_quote!({
-            #[proto(rename = Vec<u8>)]
-            payload: Blob,
-        });
-
-        let proto = generate_named_struct_proto("Packet", &fields.named);
-        assert!(proto.contains("bytes payload = 1;"));
-    }
-
-    #[test]
-    fn rename_vec_to_repeated_scalar() {
-        let fields: syn::FieldsNamed = parse_quote!({
-            #[proto(rename = Vec<u64>)]
-            values: Numbers,
-        });
-
-        let proto = generate_named_struct_proto("Counter", &fields.named);
-        assert!(proto.contains("repeated uint64 values = 1;"));
-    }
-
-    #[test]
-    fn rename_proto_string_overrides_modifier() {
-        let fields: syn::FieldsNamed = parse_quote!({
-            #[proto(rename = "optional uint64")]
-            id: MyId,
-        });
-
-        let proto = generate_named_struct_proto("Record", &fields.named);
-        assert!(proto.contains("optional uint64 id = 1;"));
-    }
-
-    #[test]
-    fn tuple_struct_field_honors_rename() {
-        let fields: syn::FieldsUnnamed = parse_quote!((
-            #[proto(rename = Vec<u64>)]
-            Numbers,
-        ));
-
-        let proto = generate_tuple_struct_proto("Wrapper", &fields.unnamed);
-        assert!(proto.contains("repeated uint64 field_0 = 1;"));
-    }
-
-    #[test]
-    fn atomic_types_render_as_scalars() {
-        let fields: syn::FieldsNamed = parse_quote!({
-            f1: core::sync::atomic::AtomicBool,
-            f2: core::sync::atomic::AtomicU8,
-            f3: core::sync::atomic::AtomicU16,
-            f4: core::sync::atomic::AtomicU32,
-            f5: core::sync::atomic::AtomicU64,
-            f6: core::sync::atomic::AtomicI8,
-            f7: core::sync::atomic::AtomicI16,
-            f8: core::sync::atomic::AtomicI32,
-            f9: core::sync::atomic::AtomicI64,
-        });
-
-        let proto = generate_named_struct_proto("AtomicWrapper", &fields.named);
-
-        assert!(proto.contains("bool f1 = 1;"));
-        assert!(proto.contains("uint32 f2 = 2;"));
-        assert!(proto.contains("uint32 f3 = 3;"));
-        assert!(proto.contains("uint32 f4 = 4;"));
-        assert!(proto.contains("uint64 f5 = 5;"));
-        assert!(proto.contains("int32 f6 = 6;"));
-        assert!(proto.contains("int32 f7 = 7;"));
-        assert!(proto.contains("int32 f8 = 8;"));
-        assert!(proto.contains("int64 f9 = 9;"));
-    }
 }

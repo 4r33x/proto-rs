@@ -11,6 +11,7 @@ tokio = { version = "1.47.1", features = ["full"] }
 tokio-stream = "0.1.17"
 proto_rs = { workspace = true, features = ["build-schemas", "fastnum", "solana"] }
 inventory = "0.3.21"
+fastnum  = { version = "0.7.4" }
 
 
 [features]

@@ -71,6 +71,8 @@ pub struct UnifiedProtoConfig {
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
     pub generic_types: Vec<GenericTypeEntry>,
+    pub item_generics: syn::Generics,
+    pub item_attrs: Vec<Attribute>,
 }
 
 #[derive(Clone)]
@@ -94,16 +96,19 @@ pub struct GenericTypeVariant {
 
 impl UnifiedProtoConfig {
     /// Register and emit proto content (only if `proto_path` is specified)
-    pub fn register_and_emit_proto(&mut self, type_ident: &str, content: &str) {
+    pub fn register_and_emit_proto(&mut self, content: &str, schema_tokens: TokenStream2) {
         if let Some(proto_path) = self.proto_path() {
-            let mat = register_and_emit_proto_inner(proto_path, type_ident, content);
+            let mat = register_and_emit_proto_inner(proto_path, content, schema_tokens);
             let imports = &self.imports_mat;
             self.imports_mat = quote::quote! { #imports #mat };
+        } else if self.transparent {
+            let imports = &self.imports_mat;
+            self.imports_mat = quote::quote! { #imports #schema_tokens };
         }
     }
 
     /// Parse configuration from attributes and extract all imports
-    pub fn from_attributes(attr: TokenStream, type_ident: &str, item_attrs: &[Attribute], fields: impl ParseFieldAttr) -> Self {
+    pub fn from_attributes(attr: TokenStream, type_ident: &str, item_attrs: &[Attribute], fields: impl ParseFieldAttr, generics: syn::Generics) -> Self {
         let mut config = Self::default();
 
         // Parse attribute parameters
@@ -112,6 +117,9 @@ impl UnifiedProtoConfig {
         }
 
         // Extract validators from item-level #[proto(...)] attributes
+        config.item_generics = generics;
+        config.item_attrs = item_attrs.to_vec();
+
         let item_validators = extract_item_validators(item_attrs);
         config.validator = item_validators.validator;
         config.validator_with_ext = item_validators.validator_with_ext;
