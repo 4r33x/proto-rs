@@ -261,13 +261,15 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
     build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, variant_consts)
 }
 
-pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
+pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], rpc_package_name: &str, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
     let methods_tokens = build_service_method_tokens(type_ident, const_suffix, methods);
     let method_consts = methods_tokens.consts;
     let method_refs = methods_tokens.refs;
+    let rpc_package_literal = rpc_package_name.to_string();
     let entry_tokens = quote! {
         ::proto_rs::schemas::ProtoEntry::Service {
             methods: #method_refs,
+            rpc_package_name: #rpc_package_literal,
         }
     };
 

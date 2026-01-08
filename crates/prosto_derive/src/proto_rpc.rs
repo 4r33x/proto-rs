@@ -29,7 +29,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 
     // Generate .proto file if requested
     let service_content = generate_service_content(trait_name, &methods, &config.type_imports, config.import_all_from.as_deref());
-    let schema_tokens = schema_tokens_for_service(&input.ident, &ty_ident, &methods, &config, &ty_ident);
+    let schema_tokens = schema_tokens_for_service(&input.ident, &ty_ident, &methods, &package_name, &config, &ty_ident);
     config.register_and_emit_proto(&service_content, schema_tokens);
     let proto = config.imports_mat.clone();
 

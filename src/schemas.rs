@@ -15,6 +15,20 @@ pub struct ProtoSchema {
     pub content: ProtoEntry,
 }
 
+pub struct RustClientCtx<'a> {
+    pub output_path: Option<&'a str>,
+}
+
+impl<'a> RustClientCtx<'a> {
+    pub fn disabled() -> Self {
+        Self { output_path: None }
+    }
+
+    pub fn enabled(output_path: &'a str) -> Self {
+        Self { output_path: Some(output_path) }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ProtoIdent {
     pub module_path: &'static str,
@@ -55,11 +69,22 @@ pub struct Lifetime {
 
 #[derive(Clone, Copy)]
 pub enum ProtoEntry {
-    SimpleEnum { variants: &'static [&'static Variant] },
-    Struct { fields: &'static [&'static Field] },
-    ComplexEnum { variants: &'static [&'static Variant] },
-    Import { paths: &'static [&'static str] },
-    Service { methods: &'static [&'static ServiceMethod] },
+    SimpleEnum {
+        variants: &'static [&'static Variant],
+    },
+    Struct {
+        fields: &'static [&'static Field],
+    },
+    ComplexEnum {
+        variants: &'static [&'static Variant],
+    },
+    Import {
+        paths: &'static [&'static str],
+    },
+    Service {
+        methods: &'static [&'static ServiceMethod],
+        rpc_package_name: &'static str,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,6 +140,7 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 ///
 /// # Arguments
 /// * `output_dir` - The directory to write .proto files to
+/// * `rust_client_output` - Controls whether a Rust client module is generated
 ///
 /// # Returns
 /// The number of proto files written
@@ -124,7 +150,7 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 /// // In main.rs or build.rs (all protos should be declared in other_crates)
 /// fn your_main() {
 ///     if std::env::var("GENERATE_PROTOS").is_ok() {
-///         let count = proto_rs::schemas::write_all("protos")
+///         let count = proto_rs::schemas::write_all("protos", proto_rs::schemas::RustClientCtx::disabled())
 ///             .expect("Failed to write proto files");
 ///         println!("Generated {} proto files", count);
 ///     }
@@ -134,7 +160,7 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 /// # Errors
 ///
 /// Will return `Err` if fs throws error
-pub fn write_all(output_dir: &str) -> io::Result<usize> {
+pub fn write_all(output_dir: &str, rust_client_output: RustClientCtx<'_>) -> io::Result<usize> {
     use std::fmt::Write;
     match fs::remove_dir_all(output_dir) {
         Ok(()) => {}
@@ -145,7 +171,7 @@ pub fn write_all(output_dir: &str) -> io::Result<usize> {
     let mut count = 0;
     let (registry, ident_index) = build_registry();
 
-    for (file_name, entries) in registry {
+    for (file_name, entries) in &registry {
         let output_path = format!("{output_dir}/{file_name}");
 
         if let Some(parent) = std::path::Path::new(&output_path).parent() {
@@ -167,7 +193,7 @@ pub fn write_all(output_dir: &str) -> io::Result<usize> {
 
         output.push('\n');
 
-        let imports = collect_imports(entries.as_slice(), &ident_index, &file_name, &package_name)?;
+        let imports = collect_imports(entries.as_slice(), &ident_index, file_name, &package_name)?;
         if !imports.is_empty() {
             let mut import_stems = BTreeSet::new();
             for import in &imports {
@@ -182,7 +208,7 @@ pub fn write_all(output_dir: &str) -> io::Result<usize> {
             output.push('\n');
         }
 
-        let mut ordered_entries: Vec<&ProtoSchema> = entries.clone();
+        let mut ordered_entries: Vec<&ProtoSchema> = entries.to_vec();
 
         ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
 
@@ -197,7 +223,568 @@ pub fn write_all(output_dir: &str) -> io::Result<usize> {
         count += 1;
     }
 
+    if let Some(output_path) = rust_client_output.output_path {
+        write_rust_client_module(output_path, &registry, &ident_index)?;
+    }
+
     Ok(count)
+}
+
+fn write_rust_client_module(output_path: &str, registry: &BTreeMap<String, Vec<&'static ProtoSchema>>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> io::Result<()> {
+    let mut package_by_ident = BTreeMap::new();
+    let mut root = ModuleNode::default();
+    let proto_type_index = build_proto_type_index(registry);
+
+    for (file_name, entries) in registry {
+        let package_name = package_name_for_entries(file_name, entries);
+        let module_segments = module_path_segments(&package_name);
+        for entry in entries {
+            package_by_ident.insert(entry.id, package_name.clone());
+            if matches!(entry.content, ProtoEntry::Import { .. }) {
+                continue;
+            }
+            insert_module_entry(&mut root, &module_segments, &package_name, entry);
+        }
+    }
+
+    let mut output = String::new();
+    output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
+
+    if !root.entries.is_empty() {
+        output.push_str("#[allow(unused_imports)]\n");
+        output.push_str("use proto_rs::{proto_message, proto_rpc};\n\n");
+        render_entries(
+            &mut output,
+            &root.entries,
+            root.package_name.as_deref().unwrap_or(""),
+            ident_index,
+            &package_by_ident,
+            &proto_type_index,
+            0,
+        );
+        output.push('\n');
+    }
+
+    for (name, child) in &root.children {
+        render_named_module(&mut output, name, child, 0, ident_index, &package_by_ident, &proto_type_index);
+    }
+
+    if let Some(parent) = Path::new(output_path).parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(output_path, output)?;
+    Ok(())
+}
+
+#[derive(Default)]
+struct ModuleNode {
+    package_name: Option<String>,
+    entries: Vec<&'static ProtoSchema>,
+    children: BTreeMap<String, ModuleNode>,
+}
+
+fn insert_module_entry(node: &mut ModuleNode, segments: &[String], package_name: &str, entry: &'static ProtoSchema) {
+    if segments.is_empty() {
+        node.package_name = Some(package_name.to_string());
+        node.entries.push(entry);
+        return;
+    }
+    let child = node.children.entry(segments[0].clone()).or_default();
+    insert_module_entry(child, &segments[1..], package_name, entry);
+}
+
+fn render_named_module(
+    output: &mut String,
+    name: &str,
+    node: &ModuleNode,
+    indent: usize,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+) {
+    indent_line(output, indent);
+    output.push_str("pub mod ");
+    output.push_str(name);
+    output.push_str(" {\n");
+
+    let inner_indent = indent + 4;
+    if !node.entries.is_empty() {
+        indent_line(output, inner_indent);
+        output.push_str("#[allow(unused_imports)]\n");
+        indent_line(output, inner_indent);
+        output.push_str("use proto_rs::{proto_message, proto_rpc};\n\n");
+    }
+
+    render_entries(
+        output,
+        &node.entries,
+        node.package_name.as_deref().unwrap_or(""),
+        ident_index,
+        package_by_ident,
+        proto_type_index,
+        inner_indent,
+    );
+
+    for (child_name, child) in &node.children {
+        render_named_module(output, child_name, child, inner_indent, ident_index, package_by_ident, proto_type_index);
+    }
+
+    indent_line(output, indent);
+    output.push_str("}\n");
+}
+
+fn render_entries(
+    output: &mut String,
+    entries: &[&'static ProtoSchema],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    indent: usize,
+) {
+    if entries.is_empty() {
+        return;
+    }
+    let mut ordered_entries = entries.to_vec();
+    ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
+    for entry in ordered_entries {
+        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, indent) {
+            output.push_str(&definition);
+            output.push('\n');
+        }
+    }
+}
+
+fn render_rust_entry(
+    entry: &ProtoSchema,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    indent: usize,
+) -> Option<String> {
+    match entry.content {
+        ProtoEntry::Struct { fields } => Some(render_rust_struct(entry, fields, package_name, ident_index, package_by_ident, proto_type_index, indent)),
+        ProtoEntry::SimpleEnum { variants } => Some(render_rust_simple_enum(entry, variants, indent)),
+        ProtoEntry::ComplexEnum { variants } => Some(render_rust_complex_enum(entry, variants, package_name, ident_index, package_by_ident, proto_type_index, indent)),
+        ProtoEntry::Import { .. } => None,
+        ProtoEntry::Service { methods, rpc_package_name } => Some(render_rust_service(
+            entry,
+            methods,
+            rpc_package_name,
+            package_name,
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            indent,
+        )),
+    }
+}
+
+fn render_rust_struct(
+    entry: &ProtoSchema,
+    fields: &[&Field],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    indent: usize,
+) -> String {
+    let mut output = String::new();
+    let type_name = entry.id.name;
+    let generics = render_generics(entry);
+    let is_tuple = fields.iter().all(|field| field.name.is_none());
+
+    render_top_level_attributes(&mut output, entry, indent);
+
+    indent_line(&mut output, indent);
+    if fields.is_empty() {
+        output.push_str(&format!("pub struct {type_name}{generics};\n"));
+        return output;
+    }
+
+    if is_tuple {
+        output.push_str(&format!("pub struct {type_name}{generics}(\n"));
+        for field in fields {
+            render_field_attributes(&mut output, field, indent + 4);
+            indent_line(&mut output, indent + 4);
+            output.push_str("pub ");
+            output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+            output.push_str(",\n");
+        }
+        indent_line(&mut output, indent);
+        output.push_str(");\n");
+        return output;
+    }
+
+    output.push_str(&format!("pub struct {type_name}{generics} {{\n"));
+    for field in fields {
+        render_field_attributes(&mut output, field, indent + 4);
+        indent_line(&mut output, indent + 4);
+        let name = field.name.unwrap_or("field");
+        output.push_str("pub ");
+        output.push_str(name);
+        output.push_str(": ");
+        output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+        output.push_str(",\n");
+    }
+    indent_line(&mut output, indent);
+    output.push_str("}\n");
+    output
+}
+
+fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], indent: usize) -> String {
+    let mut output = String::new();
+    let type_name = entry.id.name;
+    let generics = render_generics(entry);
+
+    render_top_level_attributes(&mut output, entry, indent);
+    indent_line(&mut output, indent);
+    output.push_str(&format!("pub enum {type_name}{generics} {{\n"));
+    for variant in variants {
+        indent_line(&mut output, indent + 4);
+        output.push_str(variant.name);
+        if let Some(discriminant) = variant.discriminant {
+            output.push_str(&format!(" = {discriminant}"));
+        }
+        output.push_str(",\n");
+    }
+    indent_line(&mut output, indent);
+    output.push_str("}\n");
+    output
+}
+
+fn render_rust_complex_enum(
+    entry: &ProtoSchema,
+    variants: &[&Variant],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    indent: usize,
+) -> String {
+    let mut output = String::new();
+    let type_name = entry.id.name;
+    let generics = render_generics(entry);
+
+    render_top_level_attributes(&mut output, entry, indent);
+    indent_line(&mut output, indent);
+    output.push_str(&format!("pub enum {type_name}{generics} {{\n"));
+    for variant in variants {
+        indent_line(&mut output, indent + 4);
+        output.push_str(variant.name);
+        if variant.fields.is_empty() {
+            output.push_str(",\n");
+            continue;
+        }
+
+        let has_named = variant.fields.iter().any(|field| field.name.is_some());
+        if has_named {
+            output.push_str(" {\n");
+            for field in variant.fields {
+                render_field_attributes(&mut output, field, indent + 8);
+                indent_line(&mut output, indent + 8);
+                let name = field.name.unwrap_or("field");
+                output.push_str(name);
+                output.push_str(": ");
+                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+                output.push_str(",\n");
+            }
+            indent_line(&mut output, indent + 4);
+            output.push_str("},\n");
+        } else {
+            output.push_str("(\n");
+            for field in variant.fields {
+                render_field_attributes(&mut output, field, indent + 8);
+                indent_line(&mut output, indent + 8);
+                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+                output.push_str(",\n");
+            }
+            indent_line(&mut output, indent + 4);
+            output.push_str("),\n");
+        }
+    }
+    indent_line(&mut output, indent);
+    output.push_str("}\n");
+    output
+}
+
+fn render_rust_service(
+    entry: &ProtoSchema,
+    methods: &[&ServiceMethod],
+    rpc_package_name: &str,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    indent: usize,
+) -> String {
+    let mut output = String::new();
+    let trait_name = entry.id.name;
+    let generics = render_generics(entry);
+
+    indent_line(&mut output, indent);
+    output.push_str("#[proto_rpc(rpc_package = \"");
+    output.push_str(rpc_package_name);
+    output.push_str("\", rpc_server = false, rpc_client = true)]\n");
+    indent_line(&mut output, indent);
+    output.push_str(&format!("pub trait {trait_name}{generics} {{\n"));
+
+    let mut stream_types = Vec::new();
+    for method in methods {
+        if method.server_streaming {
+            let stream_name = format!("{}Stream", method.name);
+            let response_ident = resolve_transparent_ident(method.response, ident_index);
+            let item_type = render_proto_type(response_ident, package_name, package_by_ident, proto_type_index);
+            stream_types.push(stream_name.clone());
+            indent_line(&mut output, indent + 4);
+            output.push_str(&format!(
+                "type {stream_name}: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<{item_type}, ::tonic::Status>> + ::core::marker::Send + 'static;\n"
+            ));
+        }
+    }
+
+    if !stream_types.is_empty() {
+        output.push('\n');
+    }
+
+    for method in methods {
+        let request_ident = resolve_transparent_ident(method.request, ident_index);
+        let request_type = render_proto_type(request_ident, package_name, package_by_ident, proto_type_index);
+        let response_type = if method.server_streaming {
+            format!("Self::{}Stream", method.name)
+        } else {
+            let response_ident = resolve_transparent_ident(method.response, ident_index);
+            render_proto_type(response_ident, package_name, package_by_ident, proto_type_index)
+        };
+
+        indent_line(&mut output, indent + 4);
+        output.push_str(&format!("async fn {}(\n", to_snake_case(method.name)));
+        indent_line(&mut output, indent + 8);
+        output.push_str(&format!("&self,\n"));
+        indent_line(&mut output, indent + 8);
+        output.push_str(&format!("request: ::tonic::Request<{request_type}>,\n"));
+        indent_line(&mut output, indent + 4);
+        output.push_str(") -> ::core::result::Result<::tonic::Response<");
+        output.push_str(&response_type);
+        output.push_str(">, ::tonic::Status>\n");
+        indent_line(&mut output, indent + 4);
+        output.push_str("where\n");
+        indent_line(&mut output, indent + 8);
+        output.push_str("Self: ::core::marker::Send + ::core::marker::Sync;\n\n");
+    }
+
+    indent_line(&mut output, indent);
+    output.push_str("}\n");
+    output
+}
+
+fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, indent: usize) {
+    let mut has_proto_message = false;
+    for attr in entry.top_level_attributes {
+        if attr.path == "proto_message" {
+            has_proto_message = true;
+            indent_line(output, indent);
+            output.push_str(attr.tokens);
+            output.push('\n');
+        }
+    }
+    if !has_proto_message {
+        indent_line(output, indent);
+        output.push_str("#[proto_message]\n");
+    }
+}
+
+fn render_field_attributes(output: &mut String, field: &Field, indent: usize) {
+    let mut has_proto_attr = false;
+    for attr in field.attributes {
+        if attr.path == "proto" {
+            has_proto_attr = true;
+            indent_line(output, indent);
+            output.push_str(attr.tokens);
+            output.push('\n');
+        }
+    }
+    if !has_proto_attr && field.tag > 0 {
+        indent_line(output, indent);
+        output.push_str(&format!("#[proto(tag = {})]\n", field.tag));
+    }
+}
+
+fn render_field_type(
+    field: &Field,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+) -> String {
+    let ident = resolve_transparent_ident(field.proto_ident, ident_index);
+    let base = render_proto_type(ident, package_name, package_by_ident, proto_type_index);
+    match field.proto_label {
+        ProtoLabel::None => base,
+        ProtoLabel::Optional => format!("::core::option::Option<{base}>"),
+        ProtoLabel::Repeated => format!("::proto_rs::alloc::vec::Vec<{base}>"),
+    }
+}
+
+fn render_proto_type(ident: ProtoIdent, current_package: &str, package_by_ident: &BTreeMap<ProtoIdent, String>, proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>) -> String {
+    if ident.proto_type.starts_with("map<") {
+        return render_map_type(&ident.proto_type, current_package, package_by_ident, proto_type_index);
+    }
+    if ident.module_path.is_empty() && ident.proto_file_path.is_empty() && ident.proto_package_name.is_empty() {
+        if let Some(scalar) = proto_scalar_type(&ident.proto_type) {
+            return scalar.to_string();
+        }
+    }
+
+    let type_name = ident.name;
+    let package = package_by_ident
+        .get(&ident)
+        .map(String::as_str)
+        .or_else(|| if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
+
+    match package {
+        Some(package) if package == current_package => type_name.to_string(),
+        Some(package) if !package.is_empty() => format!("crate::{}::{}", module_path_for_package(package), type_name),
+        _ => type_name.to_string(),
+    }
+}
+
+fn render_map_type(proto_type: &str, current_package: &str, package_by_ident: &BTreeMap<ProtoIdent, String>, proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>) -> String {
+    let Some((key, value)) = parse_map_types(proto_type) else {
+        return "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string();
+    };
+    let key_type = proto_name_to_rust_type(key, current_package, package_by_ident, proto_type_index);
+    let value_type = proto_name_to_rust_type(value, current_package, package_by_ident, proto_type_index);
+    format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>")
+}
+
+fn proto_name_to_rust_type(proto_name: &str, current_package: &str, package_by_ident: &BTreeMap<ProtoIdent, String>, proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>) -> String {
+    if let Some(scalar) = proto_scalar_type(proto_name) {
+        return scalar.to_string();
+    }
+    if proto_name.starts_with("map<") {
+        return render_map_type(proto_name, current_package, package_by_ident, proto_type_index);
+    }
+
+    if let Some(candidates) = proto_type_index.get(proto_name) {
+        if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == current_package)) {
+            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index);
+        }
+        if let Some(candidate) = candidates.first() {
+            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index);
+        }
+    }
+
+    proto_name.to_string()
+}
+
+fn proto_scalar_type(proto_type: &str) -> Option<&'static str> {
+    match proto_type {
+        "double" => Some("f64"),
+        "float" => Some("f32"),
+        "int32" | "sint32" | "sfixed32" => Some("i32"),
+        "int64" | "sint64" | "sfixed64" => Some("i64"),
+        "uint32" | "fixed32" => Some("u32"),
+        "uint64" | "fixed64" => Some("u64"),
+        "bool" => Some("bool"),
+        "string" => Some("::proto_rs::alloc::string::String"),
+        "bytes" => Some("::proto_rs::alloc::vec::Vec<u8>"),
+        _ => None,
+    }
+}
+
+fn parse_map_types(proto_type: &str) -> Option<(&str, &str)> {
+    let inner = proto_type.strip_prefix("map<")?.strip_suffix('>')?;
+    let mut parts = inner.splitn(2, ',');
+    let key = parts.next()?.trim();
+    let value = parts.next()?.trim();
+    Some((key, value))
+}
+
+fn render_generics(entry: &ProtoSchema) -> String {
+    if entry.generics.is_empty() && entry.lifetimes.is_empty() {
+        return String::new();
+    }
+
+    let mut params = Vec::new();
+
+    for lifetime in entry.lifetimes {
+        let mut lifetime_param = format!("'{}", lifetime.name);
+        if !lifetime.bounds.is_empty() {
+            lifetime_param.push_str(": ");
+            lifetime_param.push_str(&lifetime.bounds.join(" + "));
+        }
+        params.push(lifetime_param);
+    }
+
+    for generic in entry.generics {
+        match generic.kind {
+            GenericKind::Type => {
+                let mut param = generic.name.to_string();
+                if !generic.constraints.is_empty() {
+                    param.push_str(": ");
+                    param.push_str(&generic.constraints.join(" + "));
+                }
+                params.push(param);
+            }
+            GenericKind::Const => {
+                let const_type = generic.const_type.unwrap_or("usize");
+                params.push(format!("const {}: {const_type}", generic.name));
+            }
+        }
+    }
+
+    format!("<{}>", params.join(", "))
+}
+
+fn build_proto_type_index(registry: &BTreeMap<String, Vec<&'static ProtoSchema>>) -> BTreeMap<String, Vec<ProtoIdent>> {
+    let mut index = BTreeMap::new();
+    for entries in registry.values() {
+        for entry in entries {
+            index.entry(entry.id.proto_type.to_string()).or_insert_with(Vec::new).push(entry.id);
+        }
+    }
+    index
+}
+
+fn package_name_for_entries(file_name: &str, entries: &[&ProtoSchema]) -> String {
+    let path = Path::new(file_name);
+    let file_name_last = path.file_name().and_then(|name| name.to_str()).unwrap_or(file_name);
+    entries
+        .first()
+        .map(|schema| schema.id.proto_package_name)
+        .filter(|name| !name.is_empty())
+        .map_or_else(|| derive_package_name(file_name_last), ToString::to_string)
+}
+
+fn module_path_segments(package_name: &str) -> Vec<String> {
+    package_name.split('.').filter(|segment| !segment.is_empty()).map(sanitize_module_segment).collect()
+}
+
+fn module_path_for_package(package_name: &str) -> String {
+    module_path_segments(package_name).join("::")
+}
+
+fn sanitize_module_segment(segment: &str) -> String {
+    let mut out = String::new();
+    for ch in segment.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    if out.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    if out.is_empty() { "_".to_string() } else { out }
+}
+
+fn indent_line(output: &mut String, indent: usize) {
+    for _ in 0..indent {
+        output.push(' ');
+    }
 }
 
 /// Get the total number of registered files
@@ -311,7 +898,7 @@ fn render_entry(entry: &ProtoSchema, package_name: &str, ident_index: &BTreeMap<
         ProtoEntry::SimpleEnum { variants } => Some(render_simple_enum(entry.id.proto_type, variants)),
         ProtoEntry::ComplexEnum { variants } => Some(render_complex_enum(entry.id.proto_type, variants, package_name, ident_index)),
         ProtoEntry::Import { .. } => None,
-        ProtoEntry::Service { methods } => Some(render_service(entry.id.proto_type, methods, package_name, ident_index)),
+        ProtoEntry::Service { methods, .. } => Some(render_service(entry.id.proto_type, methods, package_name, ident_index)),
     }
 }
 
