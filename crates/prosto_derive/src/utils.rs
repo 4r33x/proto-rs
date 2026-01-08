@@ -75,6 +75,19 @@ pub fn arc_swap_inner_type(ty: &Type) -> Option<Type> {
     None
 }
 
+pub fn box_like_inner_type(ty: &Type) -> Option<Type> {
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && matches!(segment.ident.to_string().as_str(), "Box" | "Arc" | "Mutex" | "ZeroCopy")
+        && let PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(GenericArgument::Type(inner)) = args.args.first()
+    {
+        return Some(inner.clone());
+    }
+
+    None
+}
+
 #[derive(Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct FieldConfig {
@@ -449,6 +462,11 @@ pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     }
 
     if let Some(inner) = arc_swap_inner_type(ty) {
+        let (is_option, is_repeated, inner_ty) = extract_field_wrapper_info(&inner);
+        return (is_option, is_repeated, inner_ty);
+    }
+
+    if let Some(inner) = box_like_inner_type(ty) {
         let (is_option, is_repeated, inner_ty) = extract_field_wrapper_info(&inner);
         return (is_option, is_repeated, inner_ty);
     }

@@ -120,6 +120,10 @@ pub mod schemas {
         pub proto_type: &'static str,
     }
 
+    pub trait ProtoIdentifiable {
+        const PROTO_IDENT: ProtoIdent;
+    }
+
     #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
     pub struct Attribute {
         pub path: &'static str,

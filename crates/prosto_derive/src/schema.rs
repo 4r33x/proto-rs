@@ -41,21 +41,49 @@ pub fn assoc_proto_ident_const(
     let proto_package = proto_package.clone();
     let proto_file_path = proto_file_path.clone();
     let type_name_literal = type_ident.to_string();
+    let proto_ident_literal = |proto_name_literal: &String| {
+        quote! {
+            ::proto_rs::schemas::ProtoIdent {
+                module_path: ::core::module_path!(),
+                name: #type_name_literal,
+                proto_package_name: #proto_package,
+                proto_file_path: #proto_file_path,
+                proto_type: #proto_name_literal,
+            }
+        }
+    };
+    let trait_impl = |impl_generics: &TokenStream2, type_tokens: &TokenStream2, where_clause: &TokenStream2, proto_name_literal: &String| {
+        let proto_ident = proto_ident_literal(proto_name_literal);
+        quote! {
+            #[cfg(feature = "build-schemas")]
+            impl #impl_generics ::proto_rs::schemas::ProtoIdentifiable for #type_tokens #where_clause {
+                const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+            }
+        }
+    };
+    let inherent_impl = |impl_generics: &TokenStream2, type_tokens: &TokenStream2, where_clause: &TokenStream2, proto_name_literal: &String| {
+        let proto_ident = proto_ident_literal(proto_name_literal);
+        quote! {
+            #[cfg(feature = "build-schemas")]
+            impl #impl_generics #type_tokens #where_clause {
+                pub const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+            }
+        }
+    };
 
     if config.generic_types.is_empty() {
         let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        let impl_generics_tokens = quote! { #impl_generics };
+        let where_clause_tokens = where_clause.map_or_else(TokenStream2::new, |clause| quote! { #clause });
         let proto_name_literal = proto_name_base.clone();
+        let type_tokens = quote! { #type_ident #ty_generics };
+        let proto_traits = trait_impl(&impl_generics_tokens, &type_tokens, &where_clause_tokens, &proto_name_literal);
+        let proto_inherent = inherent_impl(&impl_generics_tokens, &type_tokens, &where_clause_tokens, &proto_name_literal);
+        let sun_trait_impls = build_sun_trait_impls(config, &impl_generics_tokens, &where_clause_tokens, &proto_name_literal, &proto_ident_literal);
         return quote! {
-            #[cfg(feature = "build-schemas")]
-            impl #impl_generics #type_ident #ty_generics #where_clause {
-                pub const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = ::proto_rs::schemas::ProtoIdent {
-                    module_path: ::core::module_path!(),
-                    name: #type_name_literal,
-                    proto_package_name: #proto_package,
-                    proto_file_path: #proto_file_path,
-                    proto_type: #proto_name_literal,
-                };
-            }
+            #proto_inherent
+            #proto_traits
+            #sun_trait_impls
         };
     }
 
@@ -98,23 +126,50 @@ pub fn assoc_proto_ident_const(
             quote! { #type_ident <#(#type_args),*> }
         };
 
+        let empty_where_clause = TokenStream2::new();
+        let proto_inherent = inherent_impl(&impl_generics, &type_tokens, &empty_where_clause, &proto_name_literal);
+        let proto_traits = trait_impl(&impl_generics, &type_tokens, &empty_where_clause, &proto_name_literal);
         variant_tokens.push(quote! {
-            #[cfg(feature = "build-schemas")]
-            impl #impl_generics #type_tokens {
-                pub const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = ::proto_rs::schemas::ProtoIdent {
-                    module_path: ::core::module_path!(),
-                    name: #type_name_literal,
-                    proto_package_name: #proto_package,
-                    proto_file_path: #proto_file_path,
-                    proto_type: #proto_name_literal,
-                };
-            }
+            #proto_inherent
+            #proto_traits
         });
     }
 
+    let empty_where_clause = TokenStream2::new();
+    let sun_trait_impls = build_sun_trait_impls(config, &impl_generics, &empty_where_clause, &proto_name_base, &proto_ident_literal);
     quote! {
         #(#variant_tokens)*
+        #sun_trait_impls
     }
+}
+
+fn build_sun_trait_impls(
+    config: &UnifiedProtoConfig,
+    impl_generics: &TokenStream2,
+    where_clause: &TokenStream2,
+    proto_name_literal: &String,
+    proto_ident_literal: &impl Fn(&String) -> TokenStream2,
+) -> TokenStream2 {
+    if !config.has_suns() {
+        return quote! {};
+    }
+
+    let proto_ident = proto_ident_literal(proto_name_literal);
+    let sun_impls: Vec<_> = config
+        .suns
+        .iter()
+        .map(|sun| {
+            let sun_ty = &sun.ty;
+            quote! {
+                #[cfg(feature = "build-schemas")]
+                impl #impl_generics ::proto_rs::schemas::ProtoIdentifiable for #sun_ty #where_clause {
+                    const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+                }
+            }
+        })
+        .collect();
+
+    quote! { #(#sun_impls)* }
 }
 
 pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fields: &Fields, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
@@ -593,7 +648,7 @@ fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, par
     }
 
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
-        return quote! { #inner_type::PROTO_IDENT };
+        return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
     }
 
     proto_ident_literal(&parsed.proto_type, "", "")
@@ -634,7 +689,7 @@ fn build_field_const_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, f
 fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
     let parsed = parse_field_type(ty);
     if parsed.is_message_like {
-        quote! { #ty::PROTO_IDENT }
+        quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT }
     } else {
         proto_ident_literal(&parsed.proto_type, "", "")
     }
