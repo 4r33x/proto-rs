@@ -98,7 +98,7 @@ pub fn is_bytes_vec(ty: &Type) -> bool {
                 if (id == "Vec" || id == "VecDeque")
                     && let Some(inner) = single_generic(path)
                 {
-                    return matches!(inner, Type::Path(inner_path) if last_ident(inner_path).is_some_and(|i| i == "u8"));
+                    return is_byte_like(inner);
                 }
             }
             false
@@ -183,7 +183,7 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         panic!("Vec must have a single generic argument");
     };
 
-    if matches!(inner_ty, Type::Path(p) if last_ident(p).is_some_and(|id| id == "u8")) {
+    if is_byte_like(inner_ty) {
         return ParsedFieldType::new(
             ty.clone(),
             "bytes",
@@ -217,7 +217,7 @@ fn parse_vec_deque_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         panic!("VecDeque must have a single generic argument");
     };
 
-    if matches!(inner_ty, Type::Path(p) if last_ident(p).is_some_and(|id| id == "u8")) {
+    if is_byte_like(inner_ty) {
         return ParsedFieldType::new(
             ty.clone(),
             "bytes",
@@ -411,6 +411,14 @@ fn parse_array_proto_suffix(ty: &Type) -> Type {
 fn parse_custom_type(ty: &Type) -> ParsedFieldType {
     let proto_ty = parse_array_proto_suffix(ty);
     ParsedFieldType::new(ty.clone(), "message", quote! { message }, true, false, proto_ty, ty.clone(), false)
+}
+
+fn is_byte_like(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Path(inner_path)
+            if last_ident(inner_path).is_some_and(|id| id == "u8" || id == "AtomicU8")
+    )
 }
 
 fn last_ident(path: &TypePath) -> Option<&syn::Ident> {
