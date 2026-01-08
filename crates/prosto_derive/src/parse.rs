@@ -101,6 +101,9 @@ impl UnifiedProtoConfig {
             let mat = register_and_emit_proto_inner(proto_path, content, schema_tokens);
             let imports = &self.imports_mat;
             self.imports_mat = quote::quote! { #imports #mat };
+        } else if self.transparent {
+            let imports = &self.imports_mat;
+            self.imports_mat = quote::quote! { #imports #schema_tokens };
         }
     }
 
