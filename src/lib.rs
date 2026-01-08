@@ -266,7 +266,10 @@ pub mod schemas {
             let imports = collect_imports(entries.as_slice(), &ident_index, &file_name, &package_name)?;
             if !imports.is_empty() {
                 for import in &imports {
-                    writeln!(&mut output, "import \"{import}.proto\";").unwrap();
+                    let import_path = Path::new(import);
+                    let import_file = import_path.file_name().and_then(|name| name.to_str()).unwrap_or(import);
+                    let import_stem = import_file.strip_suffix(".proto").unwrap_or(import_file);
+                    writeln!(&mut output, "import \"{import_stem}.proto\";").unwrap();
                 }
                 output.push('\n');
             }
