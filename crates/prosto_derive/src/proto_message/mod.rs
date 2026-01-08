@@ -122,7 +122,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Union(_) => Error::new_spanned(&input.ident, "proto_message cannot be used on unions").to_compile_error(),
     };
 
-    let proto_ident_const = assoc_proto_ident_const(&config, &input.ident, &input.generics, &proto_names);
+    let proto_ident_const = assoc_proto_ident_const(&config, &input.ident, &input.generics, &proto_names, &generic_variants);
     let proto_imports = config.imports_mat;
     quote! {
         #proto_imports
