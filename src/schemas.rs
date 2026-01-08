@@ -17,16 +17,70 @@ pub struct ProtoSchema {
 
 pub struct RustClientCtx<'a> {
     pub output_path: Option<&'a str>,
+    pub imports: &'a [&'a str],
 }
 
 impl<'a> RustClientCtx<'a> {
     pub fn disabled() -> Self {
-        Self { output_path: None }
+        Self { output_path: None, imports: &[] }
     }
 
     pub fn enabled(output_path: &'a str) -> Self {
-        Self { output_path: Some(output_path) }
+        Self {
+            output_path: Some(output_path),
+            imports: &[],
+        }
     }
+
+    pub fn with_imports(mut self, imports: &'a [&'a str]) -> Self {
+        self.imports = imports;
+        self
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ClientImport {
+    path: String,
+    type_name: String,
+    alias: Option<String>,
+}
+
+impl ClientImport {
+    fn render_use(&self) -> String {
+        match &self.alias {
+            Some(alias) => format!("{} as {}", self.path, alias),
+            None => self.path.clone(),
+        }
+    }
+
+    fn render_type(&self) -> String {
+        self.alias.as_deref().unwrap_or(&self.type_name).to_string()
+    }
+}
+
+fn parse_client_imports(imports: &[&str]) -> Vec<ClientImport> {
+    imports.iter().filter_map(|import| parse_client_import(import)).collect()
+}
+
+fn parse_client_import(import: &str) -> Option<ClientImport> {
+    let mut trimmed = import.trim().trim_end_matches(';').trim();
+    if let Some(stripped) = trimmed.strip_prefix("use ") {
+        trimmed = stripped.trim();
+    }
+    if trimmed.is_empty() {
+        return None;
+    }
+    let (path, alias) = if let Some((left, right)) = trimmed.split_once(" as ") {
+        (left.trim(), Some(right.trim()))
+    } else {
+        (trimmed, None)
+    };
+    let type_name = alias.map(str::to_string).or_else(|| path.split("::").last().map(ToString::to_string))?;
+    Some(ClientImport {
+        path: path.to_string(),
+        type_name,
+        alias: alias.map(ToString::to_string),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -224,13 +278,15 @@ pub fn write_all(output_dir: &str, rust_client_output: RustClientCtx<'_>) -> io:
     }
 
     if let Some(output_path) = rust_client_output.output_path {
-        write_rust_client_module(output_path, &registry, &ident_index)?;
+        write_rust_client_module(output_path, rust_client_output.imports, &registry, &ident_index)?;
     }
 
     Ok(count)
 }
 
-fn write_rust_client_module(output_path: &str, registry: &BTreeMap<String, Vec<&'static ProtoSchema>>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> io::Result<()> {
+fn write_rust_client_module(output_path: &str, imports: &[&str], registry: &BTreeMap<String, Vec<&'static ProtoSchema>>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> io::Result<()> {
+    let client_imports = parse_client_imports(imports);
+    let client_imports_by_type = client_imports.iter().map(|import| (import.type_name.clone(), import.clone())).collect::<BTreeMap<_, _>>();
     let mut package_by_ident = BTreeMap::new();
     let mut root = ModuleNode::default();
     let proto_type_index = build_proto_type_index(registry);
@@ -240,6 +296,9 @@ fn write_rust_client_module(output_path: &str, registry: &BTreeMap<String, Vec<&
         let module_segments = module_path_segments(&package_name);
         for entry in entries {
             package_by_ident.insert(entry.id, package_name.clone());
+            if client_imports_by_type.contains_key(entry.id.name) {
+                continue;
+            }
             if matches!(entry.content, ProtoEntry::Import { .. }) {
                 continue;
             }
@@ -252,7 +311,18 @@ fn write_rust_client_module(output_path: &str, registry: &BTreeMap<String, Vec<&
 
     if !root.entries.is_empty() {
         output.push_str("#[allow(unused_imports)]\n");
-        output.push_str("use proto_rs::{proto_message, proto_rpc};\n\n");
+        output.push_str("use proto_rs::{proto_message, proto_rpc};\n");
+        render_module_imports(
+            &mut output,
+            &root.entries,
+            root.package_name.as_deref().unwrap_or(""),
+            ident_index,
+            &package_by_ident,
+            &proto_type_index,
+            &client_imports_by_type,
+            0,
+        );
+        output.push('\n');
         render_entries(
             &mut output,
             &root.entries,
@@ -260,13 +330,14 @@ fn write_rust_client_module(output_path: &str, registry: &BTreeMap<String, Vec<&
             ident_index,
             &package_by_ident,
             &proto_type_index,
+            &client_imports_by_type,
             0,
         );
         output.push('\n');
     }
 
     for (name, child) in &root.children {
-        render_named_module(&mut output, name, child, 0, ident_index, &package_by_ident, &proto_type_index);
+        render_named_module(&mut output, name, child, 0, ident_index, &package_by_ident, &proto_type_index, &client_imports_by_type);
     }
 
     if let Some(parent) = Path::new(output_path).parent() {
@@ -301,6 +372,7 @@ fn render_named_module(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
 ) {
     indent_line(output, indent);
     output.push_str("pub mod ");
@@ -312,7 +384,18 @@ fn render_named_module(
         indent_line(output, inner_indent);
         output.push_str("#[allow(unused_imports)]\n");
         indent_line(output, inner_indent);
-        output.push_str("use proto_rs::{proto_message, proto_rpc};\n\n");
+        output.push_str("use proto_rs::{proto_message, proto_rpc};\n");
+        render_module_imports(
+            output,
+            &node.entries,
+            node.package_name.as_deref().unwrap_or(""),
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+            inner_indent,
+        );
+        output.push('\n');
     }
 
     render_entries(
@@ -322,15 +405,148 @@ fn render_named_module(
         ident_index,
         package_by_ident,
         proto_type_index,
+        client_imports,
         inner_indent,
     );
 
     for (child_name, child) in &node.children {
-        render_named_module(output, child_name, child, inner_indent, ident_index, package_by_ident, proto_type_index);
+        render_named_module(output, child_name, child, inner_indent, ident_index, package_by_ident, proto_type_index, client_imports);
     }
 
     indent_line(output, indent);
     output.push_str("}\n");
+}
+
+fn render_module_imports(
+    output: &mut String,
+    entries: &[&'static ProtoSchema],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+    indent: usize,
+) {
+    let imports = collect_module_imports(entries, package_name, ident_index, package_by_ident, proto_type_index, client_imports);
+    for import in imports {
+        indent_line(output, indent);
+        output.push_str("use ");
+        output.push_str(&import);
+        output.push_str(";\n");
+    }
+}
+
+fn collect_module_imports(
+    entries: &[&'static ProtoSchema],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> BTreeSet<String> {
+    let mut imports = BTreeSet::new();
+    for entry in entries {
+        match entry.content {
+            ProtoEntry::Struct { fields } => {
+                for field in fields {
+                    collect_rust_field_imports(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &mut imports);
+                }
+            }
+            ProtoEntry::ComplexEnum { variants } => {
+                for variant in variants {
+                    for field in variant.fields {
+                        collect_rust_field_imports(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &mut imports);
+                    }
+                }
+            }
+            ProtoEntry::Service { methods, .. } => {
+                for method in methods {
+                    let request = resolve_transparent_ident(method.request, ident_index);
+                    let response = resolve_transparent_ident(method.response, ident_index);
+                    collect_rust_proto_ident_imports(request, package_name, package_by_ident, proto_type_index, client_imports, &mut imports);
+                    collect_rust_proto_ident_imports(response, package_name, package_by_ident, proto_type_index, client_imports, &mut imports);
+                }
+            }
+            ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } => {}
+        }
+    }
+    imports
+}
+
+fn collect_rust_field_imports(
+    field: &Field,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+    imports: &mut BTreeSet<String>,
+) {
+    let ident = resolve_transparent_ident(field.proto_ident, ident_index);
+    collect_rust_proto_ident_imports(ident, package_name, package_by_ident, proto_type_index, client_imports, imports);
+}
+
+fn collect_rust_proto_ident_imports(
+    ident: ProtoIdent,
+    package_name: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+    imports: &mut BTreeSet<String>,
+) {
+    if ident.proto_type.starts_with("map<") {
+        if let Some((key, value)) = parse_map_types(ident.proto_type) {
+            collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
+            collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
+        }
+        return;
+    }
+
+    if let Some(import) = client_imports.get(ident.name) {
+        imports.insert(import.render_use());
+        return;
+    }
+
+    let package = package_by_ident
+        .get(&ident)
+        .map(String::as_str)
+        .or_else(|| if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
+
+    if let Some(package) = package
+        && !package.is_empty()
+        && package != package_name
+    {
+        imports.insert(format!("crate::{}::{}", module_path_for_package(package), ident.name));
+    }
+}
+
+fn collect_rust_proto_name_imports(
+    proto_name: &str,
+    package_name: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+    imports: &mut BTreeSet<String>,
+) {
+    if proto_scalar_type(proto_name).is_some() {
+        return;
+    }
+    if proto_name.starts_with("map<") {
+        if let Some((key, value)) = parse_map_types(proto_name) {
+            collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
+            collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
+        }
+        return;
+    }
+    if let Some(candidates) = proto_type_index.get(proto_name) {
+        if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == package_name)) {
+            collect_rust_proto_ident_imports(*candidate, package_name, package_by_ident, proto_type_index, client_imports, imports);
+            return;
+        }
+        if let Some(candidate) = candidates.first() {
+            collect_rust_proto_ident_imports(*candidate, package_name, package_by_ident, proto_type_index, client_imports, imports);
+        }
+    }
 }
 
 fn render_entries(
@@ -340,6 +556,7 @@ fn render_entries(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
     indent: usize,
 ) {
     if entries.is_empty() {
@@ -348,7 +565,7 @@ fn render_entries(
     let mut ordered_entries = entries.to_vec();
     ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
     for entry in ordered_entries {
-        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, indent) {
+        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent) {
             output.push_str(&definition);
             output.push('\n');
         }
@@ -361,12 +578,22 @@ fn render_rust_entry(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
     indent: usize,
 ) -> Option<String> {
     match entry.content {
-        ProtoEntry::Struct { fields } => Some(render_rust_struct(entry, fields, package_name, ident_index, package_by_ident, proto_type_index, indent)),
+        ProtoEntry::Struct { fields } => Some(render_rust_struct(entry, fields, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent)),
         ProtoEntry::SimpleEnum { variants } => Some(render_rust_simple_enum(entry, variants, indent)),
-        ProtoEntry::ComplexEnum { variants } => Some(render_rust_complex_enum(entry, variants, package_name, ident_index, package_by_ident, proto_type_index, indent)),
+        ProtoEntry::ComplexEnum { variants } => Some(render_rust_complex_enum(
+            entry,
+            variants,
+            package_name,
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+            indent,
+        )),
         ProtoEntry::Import { .. } => None,
         ProtoEntry::Service { methods, rpc_package_name } => Some(render_rust_service(
             entry,
@@ -376,6 +603,7 @@ fn render_rust_entry(
             ident_index,
             package_by_ident,
             proto_type_index,
+            client_imports,
             indent,
         )),
     }
@@ -388,6 +616,7 @@ fn render_rust_struct(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
     indent: usize,
 ) -> String {
     let mut output = String::new();
@@ -409,7 +638,7 @@ fn render_rust_struct(
             render_field_attributes(&mut output, field, indent + 4);
             indent_line(&mut output, indent + 4);
             output.push_str("pub ");
-            output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+            output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
             output.push_str(",\n");
         }
         indent_line(&mut output, indent);
@@ -425,7 +654,7 @@ fn render_rust_struct(
         output.push_str("pub ");
         output.push_str(name);
         output.push_str(": ");
-        output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+        output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
         output.push_str(",\n");
     }
     indent_line(&mut output, indent);
@@ -461,6 +690,7 @@ fn render_rust_complex_enum(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
     indent: usize,
 ) -> String {
     let mut output = String::new();
@@ -487,7 +717,7 @@ fn render_rust_complex_enum(
                 let name = field.name.unwrap_or("field");
                 output.push_str(name);
                 output.push_str(": ");
-                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
                 output.push_str(",\n");
             }
             indent_line(&mut output, indent + 4);
@@ -497,7 +727,7 @@ fn render_rust_complex_enum(
             for field in variant.fields {
                 render_field_attributes(&mut output, field, indent + 8);
                 indent_line(&mut output, indent + 8);
-                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index));
+                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
                 output.push_str(",\n");
             }
             indent_line(&mut output, indent + 4);
@@ -517,6 +747,7 @@ fn render_rust_service(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
     indent: usize,
 ) -> String {
     let mut output = String::new();
@@ -535,7 +766,7 @@ fn render_rust_service(
         if method.server_streaming {
             let stream_name = format!("{}Stream", method.name);
             let response_ident = resolve_transparent_ident(method.response, ident_index);
-            let item_type = render_proto_type(response_ident, package_name, package_by_ident, proto_type_index);
+            let item_type = render_proto_type(response_ident, package_name, package_by_ident, proto_type_index, client_imports);
             stream_types.push(stream_name.clone());
             indent_line(&mut output, indent + 4);
             output.push_str(&format!(
@@ -550,12 +781,12 @@ fn render_rust_service(
 
     for method in methods {
         let request_ident = resolve_transparent_ident(method.request, ident_index);
-        let request_type = render_proto_type(request_ident, package_name, package_by_ident, proto_type_index);
+        let request_type = render_proto_type(request_ident, package_name, package_by_ident, proto_type_index, client_imports);
         let response_type = if method.server_streaming {
             format!("Self::{}Stream", method.name)
         } else {
             let response_ident = resolve_transparent_ident(method.response, ident_index);
-            render_proto_type(response_ident, package_name, package_by_ident, proto_type_index)
+            render_proto_type(response_ident, package_name, package_by_ident, proto_type_index, client_imports)
         };
 
         indent_line(&mut output, indent + 4);
@@ -617,9 +848,10 @@ fn render_field_type(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
     let ident = resolve_transparent_ident(field.proto_ident, ident_index);
-    let base = render_proto_type(ident, package_name, package_by_ident, proto_type_index);
+    let base = render_proto_type(ident, package_name, package_by_ident, proto_type_index, client_imports);
     match field.proto_label {
         ProtoLabel::None => base,
         ProtoLabel::Optional => format!("::core::option::Option<{base}>"),
@@ -627,9 +859,15 @@ fn render_field_type(
     }
 }
 
-fn render_proto_type(ident: ProtoIdent, current_package: &str, package_by_ident: &BTreeMap<ProtoIdent, String>, proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>) -> String {
+fn render_proto_type(
+    ident: ProtoIdent,
+    current_package: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> String {
     if ident.proto_type.starts_with("map<") {
-        return render_map_type(&ident.proto_type, current_package, package_by_ident, proto_type_index);
+        return render_map_type(&ident.proto_type, current_package, package_by_ident, proto_type_index, client_imports);
     }
     if ident.module_path.is_empty() && ident.proto_file_path.is_empty() && ident.proto_package_name.is_empty() {
         if let Some(scalar) = proto_scalar_type(&ident.proto_type) {
@@ -638,6 +876,9 @@ fn render_proto_type(ident: ProtoIdent, current_package: &str, package_by_ident:
     }
 
     let type_name = ident.name;
+    if let Some(import) = client_imports.get(type_name) {
+        return import.render_type();
+    }
     let package = package_by_ident
         .get(&ident)
         .map(String::as_str)
@@ -645,34 +886,46 @@ fn render_proto_type(ident: ProtoIdent, current_package: &str, package_by_ident:
 
     match package {
         Some(package) if package == current_package => type_name.to_string(),
-        Some(package) if !package.is_empty() => format!("crate::{}::{}", module_path_for_package(package), type_name),
+        Some(package) if !package.is_empty() => type_name.to_string(),
         _ => type_name.to_string(),
     }
 }
 
-fn render_map_type(proto_type: &str, current_package: &str, package_by_ident: &BTreeMap<ProtoIdent, String>, proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>) -> String {
+fn render_map_type(
+    proto_type: &str,
+    current_package: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> String {
     let Some((key, value)) = parse_map_types(proto_type) else {
         return "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string();
     };
-    let key_type = proto_name_to_rust_type(key, current_package, package_by_ident, proto_type_index);
-    let value_type = proto_name_to_rust_type(value, current_package, package_by_ident, proto_type_index);
+    let key_type = proto_name_to_rust_type(key, current_package, package_by_ident, proto_type_index, client_imports);
+    let value_type = proto_name_to_rust_type(value, current_package, package_by_ident, proto_type_index, client_imports);
     format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>")
 }
 
-fn proto_name_to_rust_type(proto_name: &str, current_package: &str, package_by_ident: &BTreeMap<ProtoIdent, String>, proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>) -> String {
+fn proto_name_to_rust_type(
+    proto_name: &str,
+    current_package: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> String {
     if let Some(scalar) = proto_scalar_type(proto_name) {
         return scalar.to_string();
     }
     if proto_name.starts_with("map<") {
-        return render_map_type(proto_name, current_package, package_by_ident, proto_type_index);
+        return render_map_type(proto_name, current_package, package_by_ident, proto_type_index, client_imports);
     }
 
     if let Some(candidates) = proto_type_index.get(proto_name) {
         if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == current_package)) {
-            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index);
+            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index, client_imports);
         }
         if let Some(candidate) = candidates.first() {
-            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index);
+            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index, client_imports);
         }
     }
 
