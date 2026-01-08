@@ -21,8 +21,8 @@ message AtomicWrapper {
   bool f13 = 16;
   uint32 f23 = 17;
   repeated bool f14 = 18;
-  repeated uint32 f24 = 19;
+  bytes f24 = 19;
   repeated bool f15 = 20;
-  repeated uint32 f25 = 21;
+  bytes f25 = 21;
 }
 

@@ -276,7 +276,7 @@ pub mod schemas {
             ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
 
             for entry in ordered_entries {
-                if let Some(definition) = render_entry(entry, &package_name) {
+                if let Some(definition) = render_entry(entry, &package_name, &ident_index) {
                     output.push_str(&definition);
                     output.push('\n');
                 }
@@ -346,7 +346,8 @@ pub mod schemas {
 
     fn collect_field_imports(imports: &mut BTreeSet<String>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, fields: &[&Field], file_name: &str, package_name: &str) -> io::Result<()> {
         for field in fields {
-            collect_proto_ident_imports(imports, ident_index, &field.proto_ident, file_name, package_name)?;
+            let ident = resolve_transparent_ident(field.proto_ident, ident_index);
+            collect_proto_ident_imports(imports, ident_index, &ident, file_name, package_name)?;
         }
         Ok(())
     }
@@ -359,8 +360,10 @@ pub mod schemas {
         package_name: &str,
     ) -> io::Result<()> {
         for method in methods {
-            collect_proto_ident_imports(imports, ident_index, &method.request, file_name, package_name)?;
-            collect_proto_ident_imports(imports, ident_index, &method.response, file_name, package_name)?;
+            let request = resolve_transparent_ident(method.request, ident_index);
+            let response = resolve_transparent_ident(method.response, ident_index);
+            collect_proto_ident_imports(imports, ident_index, &request, file_name, package_name)?;
+            collect_proto_ident_imports(imports, ident_index, &response, file_name, package_name)?;
         }
         Ok(())
     }
@@ -397,24 +400,24 @@ pub mod schemas {
         Ok(())
     }
 
-    fn render_entry(entry: &ProtoSchema, package_name: &str) -> Option<String> {
+    fn render_entry(entry: &ProtoSchema, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> Option<String> {
         match entry.content {
-            ProtoEntry::Struct { fields } => Some(render_struct(entry.id.proto_type, fields, package_name)),
+            ProtoEntry::Struct { fields } => Some(render_struct(entry.id.proto_type, fields, package_name, ident_index)),
             ProtoEntry::SimpleEnum { variants } => Some(render_simple_enum(entry.id.proto_type, variants)),
-            ProtoEntry::ComplexEnum { variants } => Some(render_complex_enum(entry.id.proto_type, variants, package_name)),
+            ProtoEntry::ComplexEnum { variants } => Some(render_complex_enum(entry.id.proto_type, variants, package_name, ident_index)),
             ProtoEntry::Import { .. } => None,
-            ProtoEntry::Service { methods } => Some(render_service(entry.id.proto_type, methods, package_name)),
+            ProtoEntry::Service { methods } => Some(render_service(entry.id.proto_type, methods, package_name, ident_index)),
         }
     }
 
-    fn render_struct(name: &str, fields: &[&Field], package_name: &str) -> String {
+    fn render_struct(name: &str, fields: &[&Field], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
         if fields.is_empty() {
             return format!("message {name} {{}}\n");
         }
 
         let mut lines = Vec::new();
         for (idx, field) in fields.iter().enumerate() {
-            lines.push(render_field(field, idx, package_name));
+            lines.push(render_field(field, idx, package_name, ident_index));
         }
 
         format!("message {name} {{\n{}\n}}\n", lines.join("\n"))
@@ -429,7 +432,7 @@ pub mod schemas {
         format!("enum {name} {{\n{}\n}}\n", lines.join("\n"))
     }
 
-    fn render_complex_enum(name: &str, variants: &[&Variant], package_name: &str) -> String {
+    fn render_complex_enum(name: &str, variants: &[&Variant], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
         let mut nested_messages = Vec::new();
         let mut oneof_fields = Vec::new();
 
@@ -446,13 +449,13 @@ pub mod schemas {
             }
 
             if variant.fields.len() == 1 && variant.fields[0].name.is_none() {
-                let proto_type = field_type_name(variant.fields[0], package_name);
+                let proto_type = field_type_name(variant.fields[0], package_name, ident_index);
                 oneof_fields.push(format!("    {proto_type} {field_name} = {tag};"));
                 continue;
             }
 
             let msg_name = format!("{name}{variant_name}");
-            let field_defs = render_named_fields(variant.fields, package_name);
+            let field_defs = render_named_fields(variant.fields, package_name, ident_index);
             nested_messages.push(format!("message {msg_name} {{\n{field_defs}\n}}"));
             oneof_fields.push(format!("    {msg_name} {field_name} = {tag};"));
         }
@@ -460,32 +463,32 @@ pub mod schemas {
         format!("{}\nmessage {} {{\n  oneof value {{\n{}\n  }}\n}}\n", nested_messages.join("\n\n"), name, oneof_fields.join("\n"))
     }
 
-    fn render_named_fields(fields: &[&Field], package_name: &str) -> String {
+    fn render_named_fields(fields: &[&Field], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
         let mut lines = Vec::new();
         for (idx, field) in fields.iter().enumerate() {
-            lines.push(render_field(field, idx, package_name));
+            lines.push(render_field(field, idx, package_name, ident_index));
         }
         lines.join("\n")
     }
 
-    fn render_field(field: &Field, idx: usize, package_name: &str) -> String {
+    fn render_field(field: &Field, idx: usize, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
         let name = field.name.map_or_else(|| format!("field_{idx}"), ToString::to_string);
         let label = match field.proto_label {
             ProtoLabel::None => "",
             ProtoLabel::Optional => "optional ",
             ProtoLabel::Repeated => "repeated ",
         };
-        let proto_type = field_type_name(field, package_name);
+        let proto_type = field_type_name(field, package_name, ident_index);
         format!("  {label}{proto_type} {name} = {};", field.tag)
     }
 
-    fn render_service(name: &str, methods: &[&ServiceMethod], package_name: &str) -> String {
+    fn render_service(name: &str, methods: &[&ServiceMethod], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
         let mut lines = Vec::new();
         lines.push(format!("service {name} {{"));
 
         for method in methods {
-            let request_type = proto_ident_type_name(&method.request, package_name);
-            let response_type = proto_ident_type_name(&method.response, package_name);
+            let request_type = proto_ident_type_name(method.request, package_name, ident_index);
+            let response_type = proto_ident_type_name(method.response, package_name, ident_index);
             let response_type = if method.server_streaming { format!("stream {response_type}") } else { response_type };
             lines.push(format!("  rpc {}({}) returns ({});", method.name, request_type, response_type));
         }
@@ -494,15 +497,16 @@ pub mod schemas {
         lines.join("\n")
     }
 
-    fn field_type_name(field: &Field, package_name: &str) -> String {
-        let ident = &field.proto_ident;
+    fn field_type_name(field: &Field, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
+        let ident = resolve_transparent_ident(field.proto_ident, ident_index);
         if ident.proto_type.starts_with("map<") {
             return ident.proto_type.to_string();
         }
-        proto_ident_type_name(ident, package_name)
+        proto_ident_type_name(ident, package_name, ident_index)
     }
 
-    fn proto_ident_type_name(ident: &ProtoIdent, package_name: &str) -> String {
+    fn proto_ident_type_name(ident: ProtoIdent, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
+        let ident = resolve_transparent_ident(ident, ident_index);
         if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
             ident.proto_type.to_string()
         } else {
@@ -519,6 +523,29 @@ pub mod schemas {
             ProtoEntry::Service { .. } => 4,
         };
         (kind, entry.id.proto_type)
+    }
+
+    fn resolve_transparent_ident(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> ProtoIdent {
+        transparent_inner_ident(&ident, ident_index).unwrap_or(ident)
+    }
+
+    fn transparent_inner_ident(ident: &ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> Option<ProtoIdent> {
+        let schema = ident_index.get(ident)?;
+        if !is_transparent_schema(schema) {
+            return None;
+        }
+
+        match schema.content {
+            ProtoEntry::Struct { fields } if fields.len() == 1 => Some(fields[0].proto_ident),
+            _ => None,
+        }
+    }
+
+    fn is_transparent_schema(schema: &ProtoSchema) -> bool {
+        schema
+            .top_level_attributes
+            .iter()
+            .any(|attr| attr.path == "proto_message" && attr.tokens.contains("transparent"))
     }
 
     fn to_snake_case(s: &str) -> String {
