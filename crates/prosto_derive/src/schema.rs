@@ -5,7 +5,6 @@ use quote::quote;
 use syn::DataEnum;
 use syn::Field;
 use syn::Fields;
-use syn::GenericParam;
 use syn::Type;
 
 use crate::parse::UnifiedProtoConfig;
@@ -22,13 +21,7 @@ use crate::utils::resolved_field_type;
 use crate::utils::to_pascal_case;
 use crate::utils::to_upper_snake_case;
 
-pub fn assoc_proto_ident_const(
-    config: &UnifiedProtoConfig,
-    type_ident: &syn::Ident,
-    generics: &syn::Generics,
-    proto_names: &[String],
-    generic_variants: &[crate::parse::GenericTypeVariant],
-) -> TokenStream2 {
+pub fn assoc_proto_ident_const(config: &UnifiedProtoConfig, type_ident: &syn::Ident, generics: &syn::Generics, proto_names: &[String]) -> TokenStream2 {
     let proto_name_base = proto_names.first().map_or_else(|| type_ident.to_string(), ToString::to_string);
     let (proto_package, proto_file_path) = config.proto_path().map_or_else(
         || (String::new(), String::new()),
@@ -71,74 +64,17 @@ pub fn assoc_proto_ident_const(
         }
     };
 
-    if config.generic_types.is_empty() {
-        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-        let impl_generics_tokens = quote! { #impl_generics };
-        let where_clause_tokens = where_clause.map_or_else(TokenStream2::new, |clause| quote! { #clause });
-        let proto_name_literal = proto_name_base.clone();
-        let type_tokens = quote! { #type_ident #ty_generics };
-        let proto_traits = trait_impl(&impl_generics_tokens, &type_tokens, &where_clause_tokens, &proto_name_literal);
-        let proto_inherent = inherent_impl(&impl_generics_tokens, &type_tokens, &where_clause_tokens, &proto_name_literal);
-        let sun_trait_impls = build_sun_trait_impls(config, &impl_generics_tokens, &where_clause_tokens, &proto_name_literal, &proto_ident_literal);
-        return quote! {
-            #proto_inherent
-            #proto_traits
-            #sun_trait_impls
-        };
-    }
-
-    let impl_params: Vec<_> = generics.params.iter().filter(|param| !matches!(param, GenericParam::Type(_))).collect();
-    let impl_generics = if impl_params.is_empty() {
-        quote! {}
-    } else {
-        quote! { <#(#impl_params),*> }
-    };
-
-    let mut variant_tokens = Vec::new();
-    for variant in generic_variants {
-        let proto_name_literal = if variant.suffix.is_empty() {
-            proto_name_base.clone()
-        } else {
-            format!("{proto_name_base}{}", variant.suffix)
-        };
-
-        let mut type_args = Vec::new();
-        for param in &generics.params {
-            match param {
-                GenericParam::Type(type_param) => {
-                    let ty = variant.substitutions.get(&type_param.ident.to_string()).expect("missing generic type substitution");
-                    type_args.push(quote! { #ty });
-                }
-                GenericParam::Lifetime(lifetime_def) => {
-                    let lifetime = &lifetime_def.lifetime;
-                    type_args.push(quote! { #lifetime });
-                }
-                GenericParam::Const(const_param) => {
-                    let ident = &const_param.ident;
-                    type_args.push(quote! { #ident });
-                }
-            }
-        }
-
-        let type_tokens = if type_args.is_empty() {
-            quote! { #type_ident }
-        } else {
-            quote! { #type_ident <#(#type_args),*> }
-        };
-
-        let empty_where_clause = TokenStream2::new();
-        let proto_inherent = inherent_impl(&impl_generics, &type_tokens, &empty_where_clause, &proto_name_literal);
-        let proto_traits = trait_impl(&impl_generics, &type_tokens, &empty_where_clause, &proto_name_literal);
-        variant_tokens.push(quote! {
-            #proto_inherent
-            #proto_traits
-        });
-    }
-
-    let empty_where_clause = TokenStream2::new();
-    let sun_trait_impls = build_sun_trait_impls(config, &impl_generics, &empty_where_clause, &proto_name_base, &proto_ident_literal);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let impl_generics_tokens = quote! { #impl_generics };
+    let where_clause_tokens = where_clause.map_or_else(TokenStream2::new, |clause| quote! { #clause });
+    let proto_name_literal = proto_name_base.clone();
+    let type_tokens = quote! { #type_ident #ty_generics };
+    let proto_traits = trait_impl(&impl_generics_tokens, &type_tokens, &where_clause_tokens, &proto_name_literal);
+    let proto_inherent = inherent_impl(&impl_generics_tokens, &type_tokens, &where_clause_tokens, &proto_name_literal);
+    let sun_trait_impls = build_sun_trait_impls(config, &impl_generics_tokens, &where_clause_tokens, &proto_name_literal, &proto_ident_literal);
     quote! {
-        #(#variant_tokens)*
+        #proto_inherent
+        #proto_traits
         #sun_trait_impls
     }
 }
@@ -405,8 +341,10 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
         let method_ident = service_method_const_ident(type_ident, suffix, idx);
         let method_name = to_pascal_case(&method.name.to_string());
         let request_ident = proto_ident_tokens_from_type(&method.request_type);
+        let (request_generic_consts, request_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type);
         let response_type = method.inner_response_type.as_ref().unwrap_or(&method.response_type);
         let response_ident = proto_ident_tokens_from_type(response_type);
+        let (response_generic_consts, response_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type);
         let server_streaming = method.is_streaming;
 
         method_consts.push(quote! {
@@ -414,10 +352,14 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
             const #method_ident: ::proto_rs::schemas::ServiceMethod = ::proto_rs::schemas::ServiceMethod {
                 name: #method_name,
                 request: #request_ident,
+                request_generic_args: #request_generic_args,
                 response: #response_ident,
+                response_generic_args: #response_generic_args,
                 client_streaming: false,
                 server_streaming: #server_streaming,
             };
+            #request_generic_consts
+            #response_generic_consts
         });
         method_refs.push(quote! { &#method_ident });
     }
@@ -616,7 +558,18 @@ fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_id
     }
 }
 
-fn field_proto_ident_and_label(field: &Field, config: &crate::utils::FieldConfig, item_generics: &syn::Generics) -> (TokenStream2, TokenStream2) {
+struct FieldInfoTokens {
+    proto_ident: TokenStream2,
+    rust_proto_ident: TokenStream2,
+    generic_args: TokenStream2,
+    label: TokenStream2,
+    array_len: TokenStream2,
+    array_is_bytes: TokenStream2,
+    array_elem: TokenStream2,
+    extra_consts: TokenStream2,
+}
+
+fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &Field, config: &crate::utils::FieldConfig, item_generics: &syn::Generics) -> FieldInfoTokens {
     let base_ty = resolved_field_type(field, config);
     let ty = if let Some(ref into_type) = config.into_type {
         syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
@@ -643,9 +596,22 @@ fn field_proto_ident_and_label(field: &Field, config: &crate::utils::FieldConfig
     };
 
     let parsed = parse_field_type(&inner_type);
-    let ident_tokens = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
+    let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
+    let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type);
+    let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty);
+    let extra_consts = quote! { #generic_consts #array_consts };
 
-    (ident_tokens, label)
+    FieldInfoTokens {
+        proto_ident,
+        rust_proto_ident,
+        generic_args,
+        label,
+        array_len,
+        array_is_bytes,
+        array_elem,
+        extra_consts,
+    }
 }
 
 fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType, item_generics: &syn::Generics) -> TokenStream2 {
@@ -662,8 +628,33 @@ fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, par
         return proto_ident_literal(&parsed.proto_type, "", "");
     }
 
-    if is_generic_param(inner_type, item_generics) {
-        return proto_ident_literal("bytes", "", "");
+    if let Some(param_name) = generic_param_name(inner_type, item_generics) {
+        return proto_ident_literal(&param_name, "", "");
+    }
+
+    if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
+        return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
+    }
+
+    proto_ident_literal(&parsed.proto_type, "", "")
+}
+
+fn rust_proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType, item_generics: &syn::Generics) -> TokenStream2 {
+    if let Some(ref import_path) = config.import_path {
+        let base_name = proto_type_name(inner_type);
+        return proto_ident_literal(&base_name, import_path, import_path);
+    }
+
+    if let Some(rename) = &config.rename {
+        return proto_ident_literal(&rename.proto_type, "", "");
+    }
+
+    if parsed.map_kind.is_some() {
+        return proto_ident_literal(&parsed.proto_type, "", "");
+    }
+
+    if let Some(param_name) = generic_param_name(inner_type, item_generics) {
+        return proto_ident_literal(&param_name, "", "");
     }
 
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
@@ -693,7 +684,16 @@ fn build_field_const_tokens(
     let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false);
     let attr_consts = attrs_tokens.consts;
     let attr_refs = attrs_tokens.refs;
-    let (proto_ident, label) = field_proto_ident_and_label(field, config, &item_config.item_generics);
+    let FieldInfoTokens {
+        proto_ident,
+        rust_proto_ident,
+        generic_args,
+        label,
+        array_len,
+        array_is_bytes,
+        array_elem,
+        extra_consts,
+    } = field_info_tokens(type_ident, suffix, idx, field, config, &item_config.item_generics);
     let name_tokens = match name {
         FieldName::Named(name) => quote! { ::core::option::Option::Some(#name) },
         FieldName::Unnamed => quote! { ::core::option::Option::None },
@@ -705,11 +705,17 @@ fn build_field_const_tokens(
             const #field_ident: ::proto_rs::schemas::Field = ::proto_rs::schemas::Field {
                 name: #name_tokens,
                 proto_ident: #proto_ident,
+                rust_proto_ident: #rust_proto_ident,
+                generic_args: #generic_args,
                 proto_label: #label,
                 tag: #tag,
                 attributes: #attr_refs,
+                array_len: #array_len,
+                array_is_bytes: #array_is_bytes,
+                array_elem: #array_elem,
             };
             #attr_consts
+            #extra_consts
         },
         refs: quote! { &#field_ident },
     }
@@ -724,22 +730,96 @@ fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
     }
 }
 
-fn is_generic_param(ty: &Type, generics: &syn::Generics) -> bool {
+fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usize, context: &str, ty: &Type) -> (TokenStream2, TokenStream2) {
+    let Type::Path(path) = ty else {
+        return (quote! {}, quote! { &[] });
+    };
+    let Some(last) = path.path.segments.last() else {
+        return (quote! {}, quote! { &[] });
+    };
+    let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
+        return (quote! {}, quote! { &[] });
+    };
+
+    let mut arg_consts = Vec::new();
+    let mut arg_refs = Vec::new();
+    let mut arg_idx = 0usize;
+
+    for arg in &args.args {
+        let syn::GenericArgument::Type(arg_ty) = arg else {
+            continue;
+        };
+        let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
+        let proto_ident = proto_ident_tokens_from_type(arg_ty);
+        arg_consts.push(quote! {
+            #[cfg(feature = "build-schemas")]
+            const #arg_ident: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+        });
+        arg_refs.push(quote! { &#arg_ident });
+        arg_idx += 1;
+    }
+
+    if arg_refs.is_empty() {
+        return (quote! {}, quote! { &[] });
+    }
+
+    (
+        quote! { #(#arg_consts)* },
+        quote! {
+            &[
+                #(#arg_refs),*
+            ]
+        },
+    )
+}
+
+fn array_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, ty: &Type) -> (TokenStream2, TokenStream2, TokenStream2, TokenStream2) {
+    let Type::Array(array) = ty else {
+        return (quote! {}, quote! { ::core::option::Option::None }, quote! { false }, quote! { ::core::option::Option::None });
+    };
+
+    let len = &array.len;
+    let len_ident = array_len_const_ident(type_ident, suffix, idx);
+    let elem_ty = &array.elem;
+    let elem_ident = array_elem_const_ident(type_ident, suffix, idx);
+    let elem_proto_ident = proto_ident_tokens_from_type(elem_ty);
+
+    let array_len = quote! { ::core::option::Option::Some(#len_ident) };
+    let is_bytes = crate::utils::is_bytes_array(ty);
+    let array_is_bytes = quote! { #is_bytes };
+    let array_elem = quote! { ::core::option::Option::Some(#elem_ident) };
+
+    let array_len_const = quote! {
+        #[cfg(feature = "build-schemas")]
+        const #len_ident: &str = stringify!(#len);
+    };
+    let array_elem_const = quote! {
+        #[cfg(feature = "build-schemas")]
+        const #elem_ident: ::proto_rs::schemas::ProtoIdent = #elem_proto_ident;
+    };
+
+    (quote! { #array_len_const #array_elem_const }, array_len, array_is_bytes, array_elem)
+}
+
+fn generic_param_name(ty: &Type, generics: &syn::Generics) -> Option<String> {
     match ty {
         Type::Path(path) => {
             if path.qself.is_some() || path.path.segments.len() != 1 {
-                return false;
+                return None;
             }
             let segment = &path.path.segments[0];
             if !segment.arguments.is_empty() {
-                return false;
+                return None;
             }
-            generics.type_params().any(|param| param.ident == segment.ident)
+            if generics.type_params().any(|param| param.ident == segment.ident) {
+                return Some(segment.ident.to_string());
+            }
+            None
         }
-        Type::Reference(reference) => is_generic_param(&reference.elem, generics),
-        Type::Group(group) => is_generic_param(&group.elem, generics),
-        Type::Paren(paren) => is_generic_param(&paren.elem, generics),
-        _ => false,
+        Type::Reference(reference) => generic_param_name(&reference.elem, generics),
+        Type::Group(group) => generic_param_name(&group.elem, generics),
+        Type::Paren(paren) => generic_param_name(&paren.elem, generics),
+        _ => None,
     }
 }
 
@@ -781,6 +861,28 @@ fn variant_const_ident(type_ident: &syn::Ident, suffix: &str, idx: usize) -> syn
 
 fn field_const_ident(type_ident: &syn::Ident, suffix: &str, idx: usize) -> syn::Ident {
     let name = format!("PROTO_SCHEMA_FIELD_{}_{}_{}", sanitize_ident(&type_ident.to_string()), sanitize_ident(suffix), idx);
+    syn::Ident::new(&name, Span::call_site())
+}
+
+fn generic_arg_const_ident(type_ident: &syn::Ident, suffix: &str, idx: usize, context: &str, arg_idx: usize) -> syn::Ident {
+    let name = format!(
+        "PROTO_SCHEMA_GENERIC_ARG_{}_{}_{}_{}_{}",
+        sanitize_ident(&type_ident.to_string()),
+        sanitize_ident(suffix),
+        sanitize_ident(context),
+        idx,
+        arg_idx
+    );
+    syn::Ident::new(&name, Span::call_site())
+}
+
+fn array_len_const_ident(type_ident: &syn::Ident, suffix: &str, idx: usize) -> syn::Ident {
+    let name = format!("PROTO_SCHEMA_ARRAY_LEN_{}_{}_{}", sanitize_ident(&type_ident.to_string()), sanitize_ident(suffix), idx);
+    syn::Ident::new(&name, Span::call_site())
+}
+
+fn array_elem_const_ident(type_ident: &syn::Ident, suffix: &str, idx: usize) -> syn::Ident {
+    let name = format!("PROTO_SCHEMA_ARRAY_ELEM_{}_{}_{}", sanitize_ident(&type_ident.to_string()), sanitize_ident(suffix), idx);
     syn::Ident::new(&name, Span::call_site())
 }
 

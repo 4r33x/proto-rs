@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::fmt::Write;
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::LazyLock;
+
+mod proto_output;
+mod rust_client;
+mod utils;
 
 /// Represents a proto schema collected at compile time
 #[derive(Clone, Copy)]
@@ -37,51 +40,6 @@ impl<'a> RustClientCtx<'a> {
         self.imports = imports;
         self
     }
-}
-
-#[derive(Clone, Debug)]
-struct ClientImport {
-    path: String,
-    type_name: String,
-    alias: Option<String>,
-}
-
-impl ClientImport {
-    fn render_use(&self) -> String {
-        match &self.alias {
-            Some(alias) => format!("{} as {}", self.path, alias),
-            None => self.path.clone(),
-        }
-    }
-
-    fn render_type(&self) -> String {
-        self.alias.as_deref().unwrap_or(&self.type_name).to_string()
-    }
-}
-
-fn parse_client_imports(imports: &[&str]) -> Vec<ClientImport> {
-    imports.iter().filter_map(|import| parse_client_import(import)).collect()
-}
-
-fn parse_client_import(import: &str) -> Option<ClientImport> {
-    let mut trimmed = import.trim().trim_end_matches(';').trim();
-    if let Some(stripped) = trimmed.strip_prefix("use ") {
-        trimmed = stripped.trim();
-    }
-    if trimmed.is_empty() {
-        return None;
-    }
-    let (path, alias) = if let Some((left, right)) = trimmed.split_once(" as ") {
-        (left.trim(), Some(right.trim()))
-    } else {
-        (trimmed, None)
-    };
-    let type_name = alias.map(str::to_string).or_else(|| path.split("::").last().map(ToString::to_string))?;
-    Some(ClientImport {
-        path: path.to_string(),
-        type_name,
-        alias: alias.map(ToString::to_string),
-    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -153,16 +111,23 @@ pub struct Variant {
 pub struct Field {
     pub name: Option<&'static str>,
     pub proto_ident: ProtoIdent,
+    pub rust_proto_ident: ProtoIdent,
+    pub generic_args: &'static [&'static ProtoIdent],
     pub proto_label: ProtoLabel,
     pub tag: u32,
     pub attributes: &'static [Attribute],
+    pub array_len: Option<&'static str>,
+    pub array_is_bytes: bool,
+    pub array_elem: Option<ProtoIdent>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ServiceMethod {
     pub name: &'static str,
     pub request: ProtoIdent,
+    pub request_generic_args: &'static [&'static ProtoIdent],
     pub response: ProtoIdent,
+    pub response_generic_args: &'static [&'static ProtoIdent],
     pub client_streaming: bool,
     pub server_streaming: bool,
 }
@@ -177,9 +142,6 @@ pub enum ProtoLabel {
 // Auto-collect all schemas via inventory
 inventory::collect!(ProtoSchema);
 
-fn derive_package_name(file_path: &str) -> String {
-    file_path.trim_end_matches(".proto").replace(['/', '\\', '-', '.'], "_").to_lowercase()
-}
 static REGISTRY: LazyLock<BTreeMap<String, Vec<&'static ProtoSchema>>> = LazyLock::new(|| build_registry().0);
 
 /// Get an iterator over all registered proto schemas
@@ -216,7 +178,6 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 ///
 /// Will return `Err` if fs throws error
 pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io::Result<usize> {
-    use std::fmt::Write;
     match fs::remove_dir_all(output_dir) {
         Ok(()) => {}
         Err(err) if err.kind() == io::ErrorKind::NotFound => {}
@@ -225,11 +186,13 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
     fs::create_dir_all(output_dir)?;
     let mut count = 0;
     let (registry, ident_index) = build_registry();
+    let all_entries: Vec<&ProtoSchema> = registry.values().flat_map(|entries| entries.iter().copied()).collect();
+    let specializations = proto_output::collect_generic_specializations(&all_entries, &ident_index);
 
     for (file_name, entries) in &registry {
         let output_path = format!("{output_dir}/{file_name}");
 
-        if let Some(parent) = std::path::Path::new(&output_path).parent() {
+        if let Some(parent) = Path::new(&output_path).parent() {
             fs::create_dir_all(parent)?;
         }
 
@@ -239,16 +202,16 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             .first()
             .map(|schema| schema.id.proto_package_name)
             .filter(|name| !name.is_empty())
-            .map_or(derive_package_name(file_name_last), ToString::to_string);
+            .map_or(utils::derive_package_name(file_name_last), ToString::to_string);
         let mut output = String::new();
 
         output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
         output.push_str("syntax = \"proto3\";\n");
-        writeln!(&mut output, "package {package_name};").unwrap();
+        output.push_str(&format!("package {package_name};\n"));
 
         output.push('\n');
 
-        let imports = collect_imports(entries.as_slice(), &ident_index, file_name, &package_name)?;
+        let imports = proto_output::collect_imports(entries.as_slice(), &ident_index, file_name, &package_name)?;
         if !imports.is_empty() {
             let mut import_stems = BTreeSet::new();
             for import in &imports {
@@ -258,20 +221,15 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
                 import_stems.insert(import_stem.to_string());
             }
             for import_stem in import_stems {
-                writeln!(&mut output, "import \"{import_stem}.proto\";").unwrap();
+                output.push_str(&format!("import \"{import_stem}.proto\";\n"));
             }
             output.push('\n');
         }
 
-        let mut ordered_entries: Vec<&ProtoSchema> = entries.clone();
-
-        ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
-
-        for entry in ordered_entries {
-            if let Some(definition) = render_entry(entry, &package_name, &ident_index) {
-                output.push_str(&definition);
-                output.push('\n');
-            }
+        let definitions = proto_output::render_entries(entries, &package_name, &ident_index, &specializations);
+        for definition in definitions {
+            output.push_str(&definition);
+            output.push('\n');
         }
 
         fs::write(&output_path, output)?;
@@ -279,778 +237,10 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
     }
 
     if let Some(output_path) = rust_client_output.output_path {
-        write_rust_client_module(output_path, rust_client_output.imports, &registry, &ident_index)?;
+        rust_client::write_rust_client_module(output_path, rust_client_output.imports, &registry, &ident_index)?;
     }
 
     Ok(count)
-}
-
-fn write_rust_client_module(output_path: &str, imports: &[&str], registry: &BTreeMap<String, Vec<&'static ProtoSchema>>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> io::Result<()> {
-    let client_imports = parse_client_imports(imports);
-    let client_imports_by_type = client_imports.iter().map(|import| (import.type_name.clone(), import.clone())).collect::<BTreeMap<_, _>>();
-    let mut package_by_ident = BTreeMap::new();
-    let mut root = ModuleNode::default();
-    let proto_type_index = build_proto_type_index(registry);
-
-    for (file_name, entries) in registry {
-        let package_name = package_name_for_entries(file_name, entries);
-        let module_segments = module_path_segments(&package_name);
-        for entry in entries {
-            package_by_ident.insert(entry.id, package_name.clone());
-            if client_imports_by_type.contains_key(entry.id.name) {
-                continue;
-            }
-            if matches!(entry.content, ProtoEntry::Import { .. }) {
-                continue;
-            }
-            insert_module_entry(&mut root, &module_segments, &package_name, entry);
-        }
-    }
-
-    let mut output = String::new();
-    output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
-
-    if !root.entries.is_empty() {
-        output.push_str("#[allow(unused_imports)]\n");
-        output.push_str("use proto_rs::{proto_message, proto_rpc};\n");
-        render_module_imports(
-            &mut output,
-            &root.entries,
-            root.package_name.as_deref().unwrap_or(""),
-            ident_index,
-            &package_by_ident,
-            &proto_type_index,
-            &client_imports_by_type,
-            0,
-        );
-        output.push('\n');
-        render_entries(
-            &mut output,
-            &root.entries,
-            root.package_name.as_deref().unwrap_or(""),
-            ident_index,
-            &package_by_ident,
-            &proto_type_index,
-            &client_imports_by_type,
-            0,
-        );
-        output.push('\n');
-    }
-
-    for (name, child) in &root.children {
-        render_named_module(&mut output, name, child, 0, ident_index, &package_by_ident, &proto_type_index, &client_imports_by_type);
-    }
-
-    if let Some(parent) = Path::new(output_path).parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(output_path, output)?;
-    Ok(())
-}
-
-#[derive(Default)]
-struct ModuleNode {
-    package_name: Option<String>,
-    entries: Vec<&'static ProtoSchema>,
-    children: BTreeMap<String, ModuleNode>,
-}
-
-fn insert_module_entry(node: &mut ModuleNode, segments: &[String], package_name: &str, entry: &'static ProtoSchema) {
-    if segments.is_empty() {
-        node.package_name = Some(package_name.to_string());
-        node.entries.push(entry);
-        return;
-    }
-    let child = node.children.entry(segments[0].clone()).or_default();
-    insert_module_entry(child, &segments[1..], package_name, entry);
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_named_module(
-    output: &mut String,
-    name: &str,
-    node: &ModuleNode,
-    indent: usize,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-) {
-    indent_line(output, indent);
-    output.push_str("pub mod ");
-    output.push_str(name);
-    output.push_str(" {\n");
-
-    let inner_indent = indent + 4;
-    if !node.entries.is_empty() {
-        indent_line(output, inner_indent);
-        output.push_str("#[allow(unused_imports)]\n");
-        indent_line(output, inner_indent);
-        output.push_str("use proto_rs::{proto_message, proto_rpc};\n");
-        render_module_imports(
-            output,
-            &node.entries,
-            node.package_name.as_deref().unwrap_or(""),
-            ident_index,
-            package_by_ident,
-            proto_type_index,
-            client_imports,
-            inner_indent,
-        );
-        output.push('\n');
-    }
-
-    render_entries(
-        output,
-        &node.entries,
-        node.package_name.as_deref().unwrap_or(""),
-        ident_index,
-        package_by_ident,
-        proto_type_index,
-        client_imports,
-        inner_indent,
-    );
-
-    for (child_name, child) in &node.children {
-        render_named_module(output, child_name, child, inner_indent, ident_index, package_by_ident, proto_type_index, client_imports);
-    }
-
-    indent_line(output, indent);
-    output.push_str("}\n");
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_module_imports(
-    output: &mut String,
-    entries: &[&'static ProtoSchema],
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    indent: usize,
-) {
-    let imports = collect_module_imports(entries, package_name, ident_index, package_by_ident, proto_type_index, client_imports);
-    for import in imports {
-        indent_line(output, indent);
-        output.push_str("use ");
-        output.push_str(&import);
-        output.push_str(";\n");
-    }
-}
-
-fn collect_module_imports(
-    entries: &[&'static ProtoSchema],
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-) -> BTreeSet<String> {
-    let mut imports = BTreeSet::new();
-    for entry in entries {
-        match entry.content {
-            ProtoEntry::Struct { fields } => {
-                for field in fields {
-                    collect_rust_field_imports(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &mut imports);
-                }
-            }
-            ProtoEntry::ComplexEnum { variants } => {
-                for variant in variants {
-                    for field in variant.fields {
-                        collect_rust_field_imports(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &mut imports);
-                    }
-                }
-            }
-            ProtoEntry::Service { methods, .. } => {
-                for method in methods {
-                    let request = resolve_transparent_ident(method.request, ident_index);
-                    let response = resolve_transparent_ident(method.response, ident_index);
-                    collect_rust_proto_ident_imports(request, package_name, package_by_ident, proto_type_index, client_imports, &mut imports);
-                    collect_rust_proto_ident_imports(response, package_name, package_by_ident, proto_type_index, client_imports, &mut imports);
-                }
-            }
-            ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } => {}
-        }
-    }
-    imports
-}
-
-fn collect_rust_field_imports(
-    field: &Field,
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    imports: &mut BTreeSet<String>,
-) {
-    let ident = resolve_transparent_ident(field.proto_ident, ident_index);
-    collect_rust_proto_ident_imports(ident, package_name, package_by_ident, proto_type_index, client_imports, imports);
-}
-
-fn collect_rust_proto_ident_imports(
-    ident: ProtoIdent,
-    package_name: &str,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    imports: &mut BTreeSet<String>,
-) {
-    if ident.proto_type.starts_with("map<") {
-        if let Some((key, value)) = parse_map_types(ident.proto_type) {
-            collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
-            collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
-        }
-        return;
-    }
-
-    if let Some(import) = client_imports.get(ident.name) {
-        imports.insert(import.render_use());
-        return;
-    }
-
-    let package = package_by_ident
-        .get(&ident)
-        .map(String::as_str)
-        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
-
-    if let Some(package) = package
-        && !package.is_empty()
-        && package != package_name
-    {
-        imports.insert(format!("crate::{}::{}", module_path_for_package(package), ident.name));
-    }
-}
-
-fn collect_rust_proto_name_imports(
-    proto_name: &str,
-    package_name: &str,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    imports: &mut BTreeSet<String>,
-) {
-    if proto_scalar_type(proto_name).is_some() {
-        return;
-    }
-    if proto_name.starts_with("map<") {
-        if let Some((key, value)) = parse_map_types(proto_name) {
-            collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
-            collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
-        }
-        return;
-    }
-    if let Some(candidates) = proto_type_index.get(proto_name) {
-        if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == package_name)) {
-            collect_rust_proto_ident_imports(*candidate, package_name, package_by_ident, proto_type_index, client_imports, imports);
-            return;
-        }
-        if let Some(candidate) = candidates.first() {
-            collect_rust_proto_ident_imports(*candidate, package_name, package_by_ident, proto_type_index, client_imports, imports);
-        }
-    }
-}
-#[allow(clippy::too_many_arguments)]
-fn render_entries(
-    output: &mut String,
-    entries: &[&'static ProtoSchema],
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    indent: usize,
-) {
-    if entries.is_empty() {
-        return;
-    }
-    let mut ordered_entries = entries.to_vec();
-    ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
-    for entry in ordered_entries {
-        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent) {
-            output.push_str(&definition);
-            output.push('\n');
-        }
-    }
-}
-
-fn render_rust_entry(
-    entry: &ProtoSchema,
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    indent: usize,
-) -> Option<String> {
-    match entry.content {
-        ProtoEntry::Struct { fields } => Some(render_rust_struct(entry, fields, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent)),
-        ProtoEntry::SimpleEnum { variants } => Some(render_rust_simple_enum(entry, variants, indent)),
-        ProtoEntry::ComplexEnum { variants } => Some(render_rust_complex_enum(
-            entry,
-            variants,
-            package_name,
-            ident_index,
-            package_by_ident,
-            proto_type_index,
-            client_imports,
-            indent,
-        )),
-        ProtoEntry::Import { .. } => None,
-        ProtoEntry::Service { methods, rpc_package_name } => Some(render_rust_service(
-            entry,
-            methods,
-            rpc_package_name,
-            package_name,
-            ident_index,
-            package_by_ident,
-            proto_type_index,
-            client_imports,
-            indent,
-        )),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_rust_struct(
-    entry: &ProtoSchema,
-    fields: &[&Field],
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    indent: usize,
-) -> String {
-    let mut output = String::new();
-    let type_name = entry.id.name;
-    let generics = render_generics(entry);
-    let is_tuple = fields.iter().all(|field| field.name.is_none());
-
-    render_top_level_attributes(&mut output, entry, indent);
-
-    indent_line(&mut output, indent);
-    if fields.is_empty() {
-        output.write_fmt(format_args!("pub struct {type_name}{generics};\n")).unwrap();
-        return output;
-    }
-
-    if is_tuple {
-        output.write_fmt(format_args!("pub struct {type_name}{generics}(\n")).unwrap();
-
-        for field in fields {
-            render_field_attributes(&mut output, field, indent + 4);
-            indent_line(&mut output, indent + 4);
-            output.push_str("pub ");
-            output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
-            output.push_str(",\n");
-        }
-        indent_line(&mut output, indent);
-        output.push_str(");\n");
-        return output;
-    }
-    output.write_fmt(format_args!("pub struct {type_name}{generics} {{\n")).unwrap();
-
-    for field in fields {
-        render_field_attributes(&mut output, field, indent + 4);
-        indent_line(&mut output, indent + 4);
-        let name = field.name.unwrap_or("field");
-        output.push_str("pub ");
-        output.push_str(name);
-        output.push_str(": ");
-        output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
-        output.push_str(",\n");
-    }
-    indent_line(&mut output, indent);
-    output.push_str("}\n");
-    output
-}
-
-fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], indent: usize) -> String {
-    let mut output = String::new();
-    let type_name = entry.id.name;
-    let generics = render_generics(entry);
-
-    render_top_level_attributes(&mut output, entry, indent);
-    indent_line(&mut output, indent);
-    output.write_fmt(format_args!("pub enum {type_name}{generics} {{\n")).unwrap();
-
-    for variant in variants {
-        indent_line(&mut output, indent + 4);
-        output.push_str(variant.name);
-        if let Some(discriminant) = variant.discriminant {
-            output.write_fmt(format_args!(" = {discriminant}")).unwrap();
-        }
-        output.push_str(",\n");
-    }
-    indent_line(&mut output, indent);
-    output.push_str("}\n");
-    output
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_rust_complex_enum(
-    entry: &ProtoSchema,
-    variants: &[&Variant],
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    indent: usize,
-) -> String {
-    let mut output = String::new();
-    let type_name = entry.id.name;
-    let generics = render_generics(entry);
-
-    render_top_level_attributes(&mut output, entry, indent);
-    indent_line(&mut output, indent);
-    output.write_fmt(format_args!("pub enum {type_name}{generics} {{\n")).unwrap();
-
-    for variant in variants {
-        indent_line(&mut output, indent + 4);
-        output.push_str(variant.name);
-        if variant.fields.is_empty() {
-            output.push_str(",\n");
-            continue;
-        }
-
-        let has_named = variant.fields.iter().any(|field| field.name.is_some());
-        if has_named {
-            output.push_str(" {\n");
-            for field in variant.fields {
-                render_field_attributes(&mut output, field, indent + 8);
-                indent_line(&mut output, indent + 8);
-                let name = field.name.unwrap_or("field");
-                output.push_str(name);
-                output.push_str(": ");
-                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
-                output.push_str(",\n");
-            }
-            indent_line(&mut output, indent + 4);
-            output.push_str("},\n");
-        } else {
-            output.push_str("(\n");
-            for field in variant.fields {
-                render_field_attributes(&mut output, field, indent + 8);
-                indent_line(&mut output, indent + 8);
-                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
-                output.push_str(",\n");
-            }
-            indent_line(&mut output, indent + 4);
-            output.push_str("),\n");
-        }
-    }
-    indent_line(&mut output, indent);
-    output.push_str("}\n");
-    output
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_rust_service(
-    entry: &ProtoSchema,
-    methods: &[&ServiceMethod],
-    rpc_package_name: &str,
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-    indent: usize,
-) -> String {
-    let mut output = String::new();
-    let trait_name = entry.id.name;
-    let generics = render_generics(entry);
-
-    indent_line(&mut output, indent);
-    output.push_str("#[proto_rpc(rpc_package = \"");
-    output.push_str(rpc_package_name);
-    output.push_str("\", rpc_server = false, rpc_client = true)]\n");
-    indent_line(&mut output, indent);
-    writeln!(output, "pub trait {trait_name}{generics} {{").unwrap();
-
-    let mut stream_types = Vec::new();
-    for method in methods {
-        if method.server_streaming {
-            let stream_name = format!("{}Stream", method.name);
-            let response_ident = resolve_transparent_ident(method.response, ident_index);
-            let item_type = render_proto_type(response_ident, package_name, package_by_ident, proto_type_index, client_imports);
-            stream_types.push(stream_name.clone());
-            indent_line(&mut output, indent + 4);
-            writeln!(
-                output,
-                "type {stream_name}: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<{item_type}, ::tonic::Status>> + ::core::marker::Send + 'static;"
-            )
-            .unwrap();
-        }
-    }
-
-    if !stream_types.is_empty() {
-        output.push('\n');
-    }
-
-    for method in methods {
-        let request_ident = resolve_transparent_ident(method.request, ident_index);
-        let request_type = render_proto_type(request_ident, package_name, package_by_ident, proto_type_index, client_imports);
-        let response_type = if method.server_streaming {
-            format!("Self::{}Stream", method.name)
-        } else {
-            let response_ident = resolve_transparent_ident(method.response, ident_index);
-            render_proto_type(response_ident, package_name, package_by_ident, proto_type_index, client_imports)
-        };
-
-        indent_line(&mut output, indent + 4);
-        writeln!(output, "async fn {}(", to_snake_case(method.name)).unwrap();
-        indent_line(&mut output, indent + 8);
-        writeln!(output, "&self,").unwrap();
-        indent_line(&mut output, indent + 8);
-        writeln!(output, "request: ::tonic::Request<{request_type}>,").unwrap();
-        indent_line(&mut output, indent + 4);
-        output.push_str(") -> ::core::result::Result<::tonic::Response<");
-        output.push_str(&response_type);
-        output.push_str(">, ::tonic::Status>\n");
-        indent_line(&mut output, indent + 4);
-        output.push_str("where\n");
-        indent_line(&mut output, indent + 8);
-        output.push_str("Self: ::core::marker::Send + ::core::marker::Sync;\n\n");
-    }
-
-    indent_line(&mut output, indent);
-    output.push_str("}\n");
-    output
-}
-
-fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, indent: usize) {
-    let mut has_proto_message = false;
-    for attr in entry.top_level_attributes {
-        if attr.path == "proto_message" {
-            has_proto_message = true;
-            indent_line(output, indent);
-            output.push_str(attr.tokens);
-            output.push('\n');
-        }
-    }
-    if !has_proto_message {
-        indent_line(output, indent);
-        output.push_str("#[proto_message]\n");
-    }
-}
-
-fn render_field_attributes(output: &mut String, field: &Field, indent: usize) {
-    let mut has_proto_attr = false;
-    for attr in field.attributes {
-        if attr.path == "proto" {
-            has_proto_attr = true;
-            indent_line(output, indent);
-            output.push_str(attr.tokens);
-            output.push('\n');
-        }
-    }
-    if !has_proto_attr && field.tag > 0 {
-        indent_line(output, indent);
-        output.write_fmt(format_args!("#[proto(tag = {})]\n", field.tag)).unwrap();
-    }
-}
-
-fn render_field_type(
-    field: &Field,
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-) -> String {
-    let ident = resolve_transparent_ident(field.proto_ident, ident_index);
-    let base = render_proto_type(ident, package_name, package_by_ident, proto_type_index, client_imports);
-    match field.proto_label {
-        ProtoLabel::None => base,
-        ProtoLabel::Optional => format!("::core::option::Option<{base}>"),
-        ProtoLabel::Repeated => format!("::proto_rs::alloc::vec::Vec<{base}>"),
-    }
-}
-
-fn render_proto_type(
-    ident: ProtoIdent,
-    current_package: &str,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-) -> String {
-    if ident.proto_type.starts_with("map<") {
-        return render_map_type(ident.proto_type, current_package, package_by_ident, proto_type_index, client_imports);
-    }
-    if ident.module_path.is_empty()
-        && ident.proto_file_path.is_empty()
-        && ident.proto_package_name.is_empty()
-        && let Some(scalar) = proto_scalar_type(ident.proto_type)
-    {
-        return scalar.to_string();
-    }
-
-    let type_name = ident.name;
-    if let Some(import) = client_imports.get(type_name) {
-        return import.render_type();
-    }
-    let package = package_by_ident
-        .get(&ident)
-        .map(String::as_str)
-        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
-
-    match package {
-        Some(package) if package == current_package => type_name.to_string(),
-        Some(package) if !package.is_empty() => type_name.to_string(),
-        _ => type_name.to_string(),
-    }
-}
-
-fn render_map_type(
-    proto_type: &str,
-    current_package: &str,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-) -> String {
-    let Some((key, value)) = parse_map_types(proto_type) else {
-        return "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string();
-    };
-    let key_type = proto_name_to_rust_type(key, current_package, package_by_ident, proto_type_index, client_imports);
-    let value_type = proto_name_to_rust_type(value, current_package, package_by_ident, proto_type_index, client_imports);
-    format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>")
-}
-
-fn proto_name_to_rust_type(
-    proto_name: &str,
-    current_package: &str,
-    package_by_ident: &BTreeMap<ProtoIdent, String>,
-    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
-    client_imports: &BTreeMap<String, ClientImport>,
-) -> String {
-    if let Some(scalar) = proto_scalar_type(proto_name) {
-        return scalar.to_string();
-    }
-    if proto_name.starts_with("map<") {
-        return render_map_type(proto_name, current_package, package_by_ident, proto_type_index, client_imports);
-    }
-
-    if let Some(candidates) = proto_type_index.get(proto_name) {
-        if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == current_package)) {
-            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index, client_imports);
-        }
-        if let Some(candidate) = candidates.first() {
-            return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index, client_imports);
-        }
-    }
-
-    proto_name.to_string()
-}
-
-fn proto_scalar_type(proto_type: &str) -> Option<&'static str> {
-    match proto_type {
-        "double" => Some("f64"),
-        "float" => Some("f32"),
-        "int32" | "sint32" | "sfixed32" => Some("i32"),
-        "int64" | "sint64" | "sfixed64" => Some("i64"),
-        "uint32" | "fixed32" => Some("u32"),
-        "uint64" | "fixed64" => Some("u64"),
-        "bool" => Some("bool"),
-        "string" => Some("::proto_rs::alloc::string::String"),
-        "bytes" => Some("::proto_rs::alloc::vec::Vec<u8>"),
-        _ => None,
-    }
-}
-
-fn parse_map_types(proto_type: &str) -> Option<(&str, &str)> {
-    let inner = proto_type.strip_prefix("map<")?.strip_suffix('>')?;
-    let mut parts = inner.splitn(2, ',');
-    let key = parts.next()?.trim();
-    let value = parts.next()?.trim();
-    Some((key, value))
-}
-
-fn render_generics(entry: &ProtoSchema) -> String {
-    if entry.generics.is_empty() && entry.lifetimes.is_empty() {
-        return String::new();
-    }
-
-    let mut params = Vec::new();
-
-    for lifetime in entry.lifetimes {
-        let mut lifetime_param = format!("'{}", lifetime.name);
-        if !lifetime.bounds.is_empty() {
-            lifetime_param.push_str(": ");
-            lifetime_param.push_str(&lifetime.bounds.join(" + "));
-        }
-        params.push(lifetime_param);
-    }
-
-    for generic in entry.generics {
-        match generic.kind {
-            GenericKind::Type => {
-                let mut param = generic.name.to_string();
-                if !generic.constraints.is_empty() {
-                    param.push_str(": ");
-                    param.push_str(&generic.constraints.join(" + "));
-                }
-                params.push(param);
-            }
-            GenericKind::Const => {
-                let const_type = generic.const_type.unwrap_or("usize");
-                params.push(format!("const {}: {const_type}", generic.name));
-            }
-        }
-    }
-
-    format!("<{}>", params.join(", "))
-}
-
-fn build_proto_type_index(registry: &BTreeMap<String, Vec<&'static ProtoSchema>>) -> BTreeMap<String, Vec<ProtoIdent>> {
-    let mut index = BTreeMap::new();
-    for entries in registry.values() {
-        for entry in entries {
-            index.entry(entry.id.proto_type.to_string()).or_insert_with(Vec::new).push(entry.id);
-        }
-    }
-    index
-}
-
-fn package_name_for_entries(file_name: &str, entries: &[&ProtoSchema]) -> String {
-    let path = Path::new(file_name);
-    let file_name_last = path.file_name().and_then(|name| name.to_str()).unwrap_or(file_name);
-    entries
-        .first()
-        .map(|schema| schema.id.proto_package_name)
-        .filter(|name| !name.is_empty())
-        .map_or_else(|| derive_package_name(file_name_last), ToString::to_string)
-}
-
-fn module_path_segments(package_name: &str) -> Vec<String> {
-    package_name.split('.').filter(|segment| !segment.is_empty()).map(sanitize_module_segment).collect()
-}
-
-fn module_path_for_package(package_name: &str) -> String {
-    module_path_segments(package_name).join("::")
-}
-
-fn sanitize_module_segment(segment: &str) -> String {
-    let mut out = String::new();
-    for ch in segment.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else {
-            out.push('_');
-        }
-    }
-    if out.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
-        out.insert(0, '_');
-    }
-    if out.is_empty() { "_".to_string() } else { out }
-}
-
-fn indent_line(output: &mut String, indent: usize) {
-    for _ in 0..indent {
-        output.push(' ');
-    }
 }
 
 /// Get the total number of registered files
@@ -1078,249 +268,4 @@ fn build_registry() -> (BTreeMap<String, Vec<&'static ProtoSchema>>, BTreeMap<Pr
     }
 
     (registry, ident_index)
-}
-
-fn collect_imports(entries: &[&ProtoSchema], ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, file_name: &str, package_name: &str) -> io::Result<BTreeSet<String>> {
-    let mut imports = BTreeSet::new();
-
-    for entry in entries {
-        match entry.content {
-            ProtoEntry::Import { paths } => {
-                for path in paths {
-                    imports.insert(path.to_string());
-                }
-            }
-            ProtoEntry::Struct { fields } => {
-                collect_field_imports(&mut imports, ident_index, fields, file_name, package_name)?;
-            }
-            ProtoEntry::SimpleEnum { .. } => {}
-            ProtoEntry::ComplexEnum { variants } => {
-                for variant in variants {
-                    collect_field_imports(&mut imports, ident_index, variant.fields, file_name, package_name)?;
-                }
-            }
-            ProtoEntry::Service { methods, rpc_package_name } => {
-                collect_service_imports(&mut imports, ident_index, methods, file_name, package_name)?;
-            }
-        }
-    }
-
-    Ok(imports)
-}
-
-fn collect_field_imports(imports: &mut BTreeSet<String>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, fields: &[&Field], file_name: &str, package_name: &str) -> io::Result<()> {
-    for field in fields {
-        let ident = resolve_transparent_ident(field.proto_ident, ident_index);
-        collect_proto_ident_imports(imports, ident_index, &ident, file_name, package_name)?;
-    }
-    Ok(())
-}
-
-fn collect_service_imports(
-    imports: &mut BTreeSet<String>,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    methods: &[&ServiceMethod],
-    file_name: &str,
-    package_name: &str,
-) -> io::Result<()> {
-    for method in methods {
-        let request = resolve_transparent_ident(method.request, ident_index);
-        let response = resolve_transparent_ident(method.response, ident_index);
-        collect_proto_ident_imports(imports, ident_index, &request, file_name, package_name)?;
-        collect_proto_ident_imports(imports, ident_index, &response, file_name, package_name)?;
-    }
-    Ok(())
-}
-
-fn collect_proto_ident_imports(imports: &mut BTreeSet<String>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, ident: &ProtoIdent, file_name: &str, package_name: &str) -> io::Result<()> {
-    if ident.proto_file_path.is_empty() {
-        return Ok(());
-    }
-
-    if ident.proto_file_path == file_name {
-        return Ok(());
-    }
-
-    if ident.proto_package_name.is_empty() && ident.proto_file_path.is_empty() {
-        return Ok(());
-    }
-
-    if ident.proto_package_name != package_name || ident.proto_file_path != file_name {
-        if !ident.module_path.is_empty() && !ident_index.contains_key(ident) {
-            return Err(io::Error::other(format!(
-                "unresolved ProtoIdent for {} (file: {}, package: {})",
-                ident.proto_type, ident.proto_file_path, ident.proto_package_name
-            )));
-        }
-        imports.insert(ident.proto_file_path.to_string());
-    }
-
-    Ok(())
-}
-
-fn render_entry(entry: &ProtoSchema, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> Option<String> {
-    match entry.content {
-        ProtoEntry::Struct { fields } => Some(render_struct(entry.id.proto_type, fields, package_name, ident_index)),
-        ProtoEntry::SimpleEnum { variants } => Some(render_simple_enum(entry.id.proto_type, variants)),
-        ProtoEntry::ComplexEnum { variants } => Some(render_complex_enum(entry.id.proto_type, variants, package_name, ident_index)),
-        ProtoEntry::Import { .. } => None,
-        ProtoEntry::Service { methods, .. } => Some(render_service(entry.id.proto_type, methods, package_name, ident_index)),
-    }
-}
-
-fn render_struct(name: &str, fields: &[&Field], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    if fields.is_empty() {
-        return format!("message {name} {{}}\n");
-    }
-
-    let mut lines = Vec::new();
-    for (idx, field) in fields.iter().enumerate() {
-        lines.push(render_field(field, idx, package_name, ident_index));
-    }
-
-    format!("message {name} {{\n{}\n}}\n", lines.join("\n"))
-}
-
-fn render_simple_enum(name: &str, variants: &[&Variant]) -> String {
-    let mut lines = Vec::new();
-    for variant in variants {
-        let value = variant.discriminant.unwrap_or_default();
-        lines.push(format!("  {} = {};", variant.name, value));
-    }
-    format!("enum {name} {{\n{}\n}}\n", lines.join("\n"))
-}
-
-fn render_complex_enum(name: &str, variants: &[&Variant], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let mut nested_messages = Vec::new();
-    let mut oneof_fields = Vec::new();
-
-    for (idx, variant) in variants.iter().enumerate() {
-        let tag = idx + 1;
-        let variant_name = variant.name;
-        let field_name = to_snake_case(variant_name);
-
-        if variant.fields.is_empty() {
-            let msg_name = format!("{name}{variant_name}");
-            nested_messages.push(format!("message {msg_name} {{}}"));
-            oneof_fields.push(format!("    {msg_name} {field_name} = {tag};"));
-            continue;
-        }
-
-        if variant.fields.len() == 1 && variant.fields[0].name.is_none() {
-            let proto_type = field_type_name(variant.fields[0], package_name, ident_index);
-            oneof_fields.push(format!("    {proto_type} {field_name} = {tag};"));
-            continue;
-        }
-
-        let msg_name = format!("{name}{variant_name}");
-        let field_defs = render_named_fields(variant.fields, package_name, ident_index);
-        nested_messages.push(format!("message {msg_name} {{\n{field_defs}\n}}"));
-        oneof_fields.push(format!("    {msg_name} {field_name} = {tag};"));
-    }
-
-    format!("{}\nmessage {} {{\n  oneof value {{\n{}\n  }}\n}}\n", nested_messages.join("\n\n"), name, oneof_fields.join("\n"))
-}
-
-fn render_named_fields(fields: &[&Field], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let mut lines = Vec::new();
-    for (idx, field) in fields.iter().enumerate() {
-        lines.push(render_field(field, idx, package_name, ident_index));
-    }
-    lines.join("\n")
-}
-
-fn render_field(field: &Field, idx: usize, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let name = field.name.map_or_else(|| format!("field_{idx}"), ToString::to_string);
-    let label = match field.proto_label {
-        ProtoLabel::None => "",
-        ProtoLabel::Optional => "optional ",
-        ProtoLabel::Repeated => "repeated ",
-    };
-    let proto_type = field_type_name(field, package_name, ident_index);
-    format!("  {label}{proto_type} {name} = {};", field.tag)
-}
-
-fn render_service(name: &str, methods: &[&ServiceMethod], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let mut lines = Vec::new();
-    lines.push(format!("service {name} {{"));
-
-    for method in methods {
-        let request_type = proto_ident_type_name(method.request, package_name, ident_index);
-        let response_type = proto_ident_type_name(method.response, package_name, ident_index);
-        let response_type = if method.server_streaming { format!("stream {response_type}") } else { response_type };
-        lines.push(format!("  rpc {}({}) returns ({});", method.name, request_type, response_type));
-    }
-
-    lines.push("}".to_string());
-    lines.join("\n")
-}
-
-fn field_type_name(field: &Field, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let ident = resolve_transparent_ident(field.proto_ident, ident_index);
-    if ident.proto_type.starts_with("map<") {
-        return ident.proto_type.to_string();
-    }
-    proto_ident_type_name(ident, package_name, ident_index)
-}
-
-fn proto_ident_type_name(ident: ProtoIdent, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let ident = resolve_transparent_ident(ident, ident_index);
-    if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
-        ident.proto_type.to_string()
-    } else {
-        format!("{}.{}", ident.proto_package_name, ident.proto_type)
-    }
-}
-
-fn entry_sort_key(entry: &ProtoSchema) -> (u8, &'static str) {
-    let kind = match entry.content {
-        ProtoEntry::Import { .. } => 0,
-        ProtoEntry::SimpleEnum { .. } => 1,
-        ProtoEntry::Struct { .. } => 2,
-        ProtoEntry::ComplexEnum { .. } => 3,
-        ProtoEntry::Service { .. } => 4,
-    };
-    (kind, entry.id.proto_type)
-}
-
-fn resolve_transparent_ident(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> ProtoIdent {
-    transparent_inner_ident(&ident, ident_index).unwrap_or(ident)
-}
-
-fn transparent_inner_ident(ident: &ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> Option<ProtoIdent> {
-    let schema = ident_index.get(ident)?;
-    if !is_transparent_schema(schema) {
-        return None;
-    }
-
-    match schema.content {
-        ProtoEntry::Struct { fields } if fields.len() == 1 => Some(fields[0].proto_ident),
-        _ => None,
-    }
-}
-
-fn is_transparent_schema(schema: &ProtoSchema) -> bool {
-    schema.top_level_attributes.iter().any(|attr| attr.path == "proto_message" && attr.tokens.contains("transparent"))
-}
-
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    let mut prev_is_lower = false;
-    let mut prev_is_upper = false;
-
-    while let Some(c) = chars.next() {
-        let next_is_upper = chars.peek().is_some_and(|ch| ch.is_uppercase());
-        let next_is_lower = chars.peek().is_some_and(|ch| ch.is_lowercase());
-
-        if c.is_uppercase() && !result.is_empty() && (prev_is_lower || prev_is_upper && (next_is_upper || next_is_lower)) {
-            result.push('_');
-        }
-
-        result.push(c.to_ascii_lowercase());
-        prev_is_lower = c.is_lowercase();
-        prev_is_upper = c.is_uppercase();
-    }
-
-    result
 }
