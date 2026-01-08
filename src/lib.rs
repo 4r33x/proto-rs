@@ -102,6 +102,7 @@ pub mod schemas {
     use std::sync::LazyLock;
 
     /// Represents a proto schema collected at compile time
+    #[derive(Clone, Copy)]
     pub struct ProtoSchema {
         pub id: ProtoIdent,
         pub generics: &'static [Generic],
