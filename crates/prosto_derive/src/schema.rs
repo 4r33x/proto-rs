@@ -235,7 +235,7 @@ pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[S
         const #const_name: &[&str] = &[#(#import_literals),*];
 
         #[cfg(feature = "build-schemas")]
-        static #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
+        pub const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
             id: ::proto_rs::schemas::ProtoIdent {
                 module_path: ::core::module_path!(),
                 name: #type_ident,
@@ -304,7 +304,7 @@ fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &Unifi
 
     quote! {
         #[cfg(feature = "build-schemas")]
-        static #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
+        pub const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
             id: ::proto_rs::schemas::ProtoIdent {
                 module_path: ::core::module_path!(),
                 name: stringify!(#type_ident),

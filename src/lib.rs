@@ -237,7 +237,7 @@ pub mod schemas {
         let mut count = 0;
         let (registry, ident_index) = build_registry();
 
-        for (file_name, entries) in registry.iter() {
+        for (file_name, entries) in registry {
             let output_path = format!("{output_dir}/{file_name}");
 
             if let Some(parent) = std::path::Path::new(&output_path).parent() {
@@ -250,8 +250,7 @@ pub mod schemas {
                 .first()
                 .map(|schema| schema.id.proto_package_name)
                 .filter(|name| !name.is_empty())
-                .map(ToString::to_string)
-                .unwrap_or_else(|| derive_package_name(file_name_last));
+                .map_or(derive_package_name(file_name_last), ToString::to_string);
             let mut output = String::new();
 
             output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
@@ -260,7 +259,7 @@ pub mod schemas {
 
             output.push('\n');
 
-            let imports = collect_imports(entries, &ident_index, file_name, &package_name)?;
+            let imports = collect_imports(entries.as_slice(), &ident_index, &file_name, &package_name)?;
             if !imports.is_empty() {
                 for import in &imports {
                     writeln!(&mut output, "import \"{import}.proto\";").unwrap();
@@ -268,7 +267,8 @@ pub mod schemas {
                 output.push('\n');
             }
 
-            let mut ordered_entries: Vec<&ProtoSchema> = entries.iter().copied().collect();
+            let mut ordered_entries: Vec<&ProtoSchema> = entries.clone();
+
             ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
 
             for entry in ordered_entries {
@@ -382,13 +382,10 @@ pub mod schemas {
 
         if ident.proto_package_name != package_name || ident.proto_file_path != file_name {
             if !ident.module_path.is_empty() && !ident_index.contains_key(ident) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "unresolved ProtoIdent for {} (file: {}, package: {})",
-                        ident.proto_type, ident.proto_file_path, ident.proto_package_name
-                    ),
-                ));
+                return Err(io::Error::other(format!(
+                    "unresolved ProtoIdent for {} (file: {}, package: {})",
+                    ident.proto_type, ident.proto_file_path, ident.proto_package_name
+                )));
             }
             imports.insert(ident.proto_file_path.to_string());
         }
