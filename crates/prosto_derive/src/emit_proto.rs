@@ -59,7 +59,7 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
     format!("enum {} {{\n{}\n}}\n\n", name, variants.join("\n"))
 }
 
-pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
+pub fn generate_complex_enum_proto(name: &str, data: &DataEnum, generic_params: &[syn::Ident]) -> String {
     let proto_name = name.to_string();
 
     let mut nested_messages = Vec::new();
@@ -88,13 +88,13 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
                     nested_messages.push(format!("message {msg_name} {{}}"));
                     oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
                 } else {
-                    let proto_type = get_field_proto_type(field);
+                    let proto_type = get_field_proto_type(field, generic_params);
                     oneof_fields.push(format!("    {proto_type} {field_name_snake} = {tag};"));
                 }
             }
             Fields::Named(fields) => {
                 let msg_name = format!("{proto_name}{variant_ident}");
-                let field_defs = generate_named_fields(&fields.named);
+                let field_defs = generate_named_fields(&fields.named, generic_params);
 
                 nested_messages.push(format!("message {msg_name} {{\n{field_defs}\n}}"));
                 oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
@@ -110,20 +110,20 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum) -> String {
     )
 }
 
-pub fn generate_struct_proto(name: &str, fields: &Fields) -> String {
+pub fn generate_struct_proto(name: &str, fields: &Fields, generic_params: &[syn::Ident]) -> String {
     match fields {
-        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named),
-        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed),
+        Fields::Named(fields) => generate_named_struct_proto(name, &fields.named, generic_params),
+        Fields::Unnamed(fields) => generate_tuple_struct_proto(name, &fields.unnamed, generic_params),
         Fields::Unit => format!("message {name} {{}}\n\n"),
     }
 }
 
-fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
-    let field_defs = generate_named_fields(fields);
+fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>, generic_params: &[syn::Ident]) -> String {
+    let field_defs = generate_named_fields(fields, generic_params);
     format!("message {name} {{\n{field_defs}\n}}\n\n")
 }
 
-fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) -> String {
+fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>, generic_params: &[syn::Ident]) -> String {
     let mut proto_fields = Vec::new();
 
     for (idx, field) in fields.iter().enumerate() {
@@ -141,7 +141,7 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
         };
 
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
-        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated, generic_params);
 
         let modifier = field_modifier(is_option, is_repeated);
         let tag = config.custom_tag.unwrap_or(idx + 1);
@@ -151,7 +151,13 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>) ->
     format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"))
 }
 
-fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool) -> String {
+fn resolve_proto_type(
+    inner_type: &Type,
+    config: &crate::utils::FieldConfig,
+    is_option: &mut bool,
+    is_repeated: &mut bool,
+    generic_params: &[syn::Ident],
+) -> String {
     if let Some(rename) = &config.rename {
         if let Some(flag) = rename.is_optional {
             *is_option = flag;
@@ -162,7 +168,7 @@ fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_
         return rename.proto_type.clone();
     }
 
-    determine_proto_type(inner_type, config)
+    determine_proto_type(inner_type, config, generic_params)
 }
 
 fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
@@ -174,7 +180,7 @@ fn field_modifier(is_option: bool, is_repeated: bool) -> &'static str {
 }
 
 /// Generate proto fields for named struct/enum variant
-fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>) -> String {
+fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>, generic_params: &[syn::Ident]) -> String {
     let mut proto_fields = Vec::new();
     let mut field_num = 0;
 
@@ -199,7 +205,7 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
         let (mut is_option, mut is_repeated, inner_type) = extract_field_wrapper_info(&ty);
 
         // Determine proto type string
-        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated);
+        let proto_type = resolve_proto_type(&inner_type, &config, &mut is_option, &mut is_repeated, generic_params);
 
         // Add modifier
         let modifier = field_modifier(is_option, is_repeated);
@@ -213,7 +219,7 @@ fn generate_named_fields(fields: &syn::punctuated::Punctuated<syn::Field, syn::t
 }
 
 /// Get proto type string for a field type
-fn get_field_proto_type(field: &Field) -> String {
+fn get_field_proto_type(field: &Field, generic_params: &[syn::Ident]) -> String {
     let config = parse_field_config(field);
     let base_ty = resolved_field_type(field, &config);
     let ty = if let Some(ref into_type) = config.into_type {
@@ -237,6 +243,10 @@ fn get_field_proto_type(field: &Field) -> String {
 
     let parsed = parse_field_type(&ty);
 
+    if is_generic_param(&ty, generic_params) {
+        return "bytes".to_string();
+    }
+
     if parsed.map_kind.is_some() {
         return parsed.proto_type;
     }
@@ -249,7 +259,7 @@ fn get_field_proto_type(field: &Field) -> String {
 }
 
 /// Determine proto type string based on field config
-fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -> String {
+fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, generic_params: &[syn::Ident]) -> String {
     if is_bytes_vec(inner_type) || is_bytes_array(inner_type) {
         return "bytes".to_string();
     }
@@ -260,6 +270,10 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig) -
     }
 
     let parsed = parse_field_type(inner_type);
+
+    if is_generic_param(inner_type, generic_params) {
+        return "bytes".to_string();
+    }
 
     if parsed.map_kind.is_some() {
         return parsed.proto_type;
@@ -318,6 +332,25 @@ fn qualify_type_name(ty: &Type, proto_imports: &BTreeMap<String, BTreeSet<String
     }
 
     type_name
+}
+
+fn is_generic_param(ty: &Type, generic_params: &[syn::Ident]) -> bool {
+    match ty {
+        Type::Path(path) => {
+            if path.qself.is_some() || path.path.segments.len() != 1 {
+                return false;
+            }
+            let segment = &path.path.segments[0];
+            if !segment.arguments.is_empty() {
+                return false;
+            }
+            generic_params.iter().any(|param| param == &segment.ident)
+        }
+        Type::Reference(reference) => is_generic_param(&reference.elem, generic_params),
+        Type::Group(group) => is_generic_param(&group.elem, generic_params),
+        Type::Paren(paren) => is_generic_param(&paren.elem, generic_params),
+        _ => false,
+    }
 }
 
 fn extract_type_name(ty: &Type) -> String {
@@ -398,20 +431,20 @@ mod tests {
     #[test]
     fn test_get_field_proto_type() {
         let field: syn::Field = parse_quote! { data: [u8; B_LEN] };
-        assert_eq!(get_field_proto_type(&field), "bytes");
+        assert_eq!(get_field_proto_type(&field, &[]), "bytes");
         let field: syn::Field = parse_quote! { data: [u8; 32] };
-        assert_eq!(get_field_proto_type(&field), "bytes");
+        assert_eq!(get_field_proto_type(&field, &[]), "bytes");
         let field: syn::Field = parse_quote! { data: Vec<u8> };
-        assert_eq!(get_field_proto_type(&field), "bytes");
+        assert_eq!(get_field_proto_type(&field, &[]), "bytes");
 
         let field: syn::Field = parse_quote! { value: u32 };
-        assert_eq!(get_field_proto_type(&field), "uint32");
+        assert_eq!(get_field_proto_type(&field, &[]), "uint32");
 
         let field: syn::Field = parse_quote! { value: String };
-        assert_eq!(get_field_proto_type(&field), "string");
+        assert_eq!(get_field_proto_type(&field, &[]), "string");
 
         let field: syn::Field = parse_quote! { #[proto(treat_as = "std::collections::HashSet<u32>")] value: MySet };
-        assert_eq!(get_field_proto_type(&field), "uint32");
+        assert_eq!(get_field_proto_type(&field, &[]), "uint32");
     }
 
     #[test]
@@ -475,7 +508,7 @@ mod tests {
         assert!(!is_option);
         assert!(!is_repeated);
         assert_eq!(quote!(#inner).to_string(), quote!(Vec<u8>).to_string());
-        assert_eq!(determine_proto_type(&inner, &crate::utils::FieldConfig::default()), "bytes");
+        assert_eq!(determine_proto_type(&inner, &crate::utils::FieldConfig::default(), &[]), "bytes");
     }
 
     #[test]

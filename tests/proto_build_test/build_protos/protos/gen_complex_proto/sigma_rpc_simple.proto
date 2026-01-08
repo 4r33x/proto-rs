@@ -2,12 +2,13 @@
 syntax = "proto3";
 package sigma_rpc_simple;
 
+import "extra_types.proto";
 import "goon_types.proto";
-import "protos/gen_complex_proto/goon_types.proto.proto";
-import "protos/gen_complex_proto/rizz_types.proto.proto";
 import "rizz_types.proto";
 
 service SigmaRpc {
   rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong);
   rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse);
+  rpc Build(extra_types.Envelope) returns (extra_types.Envelope);
+  rpc OwnerLookup(TransparentId) returns (extra_types.BuildResponse);
 }
