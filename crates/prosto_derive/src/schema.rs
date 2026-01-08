@@ -173,7 +173,7 @@ fn build_sun_trait_impls(
 }
 
 pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fields: &Fields, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let fields_tokens = build_fields_tokens(type_ident, const_suffix, fields);
+    let fields_tokens = build_fields_tokens(type_ident, const_suffix, fields, config);
     let field_consts = fields_tokens.consts;
     let field_refs = fields_tokens.refs;
     let entry_tokens = quote! {
@@ -234,7 +234,7 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
     for (idx, variant) in data.variants.iter().enumerate() {
         let variant_const = variant_const_ident(type_ident, const_suffix, idx);
         let variant_name = variant.ident.to_string();
-        let fields_tokens = build_variant_fields_tokens(type_ident, const_suffix, idx, &variant.fields);
+        let fields_tokens = build_variant_fields_tokens(type_ident, const_suffix, idx, &variant.fields, config);
         let field_consts = fields_tokens.consts;
         let field_refs = fields_tokens.refs;
 
@@ -384,10 +384,10 @@ fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &Unifi
         #extra_consts
     }
 }
-fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields) -> FieldTokens {
+fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields, config: &UnifiedProtoConfig) -> FieldTokens {
     match fields {
-        Fields::Named(named) => build_named_fields_tokens(type_ident, suffix, &named.named),
-        Fields::Unnamed(unnamed) => build_unnamed_fields_tokens(type_ident, suffix, &unnamed.unnamed),
+        Fields::Named(named) => build_named_fields_tokens(type_ident, suffix, &named.named, config),
+        Fields::Unnamed(unnamed) => build_unnamed_fields_tokens(type_ident, suffix, &unnamed.unnamed, config),
         Fields::Unit => FieldTokens {
             consts: quote! {},
             refs: quote! { &[] },
@@ -527,20 +527,21 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
     }
 }
 
-fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>) -> FieldTokens {
+fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
     let mut field_num = 0;
 
     for (idx, field) in fields.iter().enumerate() {
-        let config = parse_field_config(field);
-        if config.skip {
+        let field_config = parse_field_config(field);
+        if field_config.skip {
             continue;
         }
         field_num += 1;
         let name = field.ident.as_ref().unwrap().to_string();
-        let tag: u32 = config.custom_tag.unwrap_or(field_num).try_into().unwrap();
-        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &config, tag, FieldName::Named(name));
+        let tag: u32 = field_config.custom_tag.unwrap_or(field_num).try_into().unwrap();
+        let FieldConstTokens { consts, refs } =
+            build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config);
         field_consts.push(consts);
         field_refs.push(refs);
     }
@@ -551,17 +552,17 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
     }
 }
 
-fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>) -> FieldTokens {
+fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
 
     for (idx, field) in fields.iter().enumerate() {
-        let config = parse_field_config(field);
-        if config.skip {
+        let field_config = parse_field_config(field);
+        if field_config.skip {
             continue;
         }
-        let tag: u32 = config.custom_tag.unwrap_or(idx + 1).try_into().unwrap();
-        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &config, tag, FieldName::Unnamed);
+        let tag: u32 = field_config.custom_tag.unwrap_or(idx + 1).try_into().unwrap();
+        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Unnamed, config);
         field_consts.push(consts);
         field_refs.push(refs);
     }
@@ -572,21 +573,22 @@ fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &s
     }
 }
 
-fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_idx: usize, fields: &Fields) -> FieldTokens {
+fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_idx: usize, fields: &Fields, config: &UnifiedProtoConfig) -> FieldTokens {
     match fields {
-        Fields::Named(named) => build_named_fields_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), &named.named),
+        Fields::Named(named) => build_named_fields_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), &named.named, config),
         Fields::Unnamed(unnamed) => {
             if unnamed.unnamed.len() == 1 {
                 let field = &unnamed.unnamed[0];
-                let config = parse_field_config(field);
-                if config.skip {
+                let field_config = parse_field_config(field);
+                if field_config.skip {
                     return FieldTokens {
                         consts: quote! {},
                         refs: quote! { &[] },
                     };
                 }
 
-                let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &config, 0, FieldName::Unnamed);
+                let FieldConstTokens { consts, refs } =
+                    build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config);
                 return FieldTokens { consts, refs: quote! { &[#refs] } };
             }
             FieldTokens {
@@ -601,7 +603,7 @@ fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_id
     }
 }
 
-fn field_proto_ident_and_label(field: &Field, config: &crate::utils::FieldConfig) -> (TokenStream2, TokenStream2) {
+fn field_proto_ident_and_label(field: &Field, config: &crate::utils::FieldConfig, item_generics: &syn::Generics) -> (TokenStream2, TokenStream2) {
     let base_ty = resolved_field_type(field, config);
     let ty = if let Some(ref into_type) = config.into_type {
         syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())
@@ -628,12 +630,12 @@ fn field_proto_ident_and_label(field: &Field, config: &crate::utils::FieldConfig
     };
 
     let parsed = parse_field_type(&inner_type);
-    let ident_tokens = proto_ident_tokens(&inner_type, config, &parsed);
+    let ident_tokens = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
 
     (ident_tokens, label)
 }
 
-fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType) -> TokenStream2 {
+fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType, item_generics: &syn::Generics) -> TokenStream2 {
     if let Some(ref import_path) = config.import_path {
         let base_name = proto_type_name(inner_type);
         return proto_ident_literal(&base_name, import_path, import_path);
@@ -645,6 +647,10 @@ fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, par
 
     if parsed.map_kind.is_some() {
         return proto_ident_literal(&parsed.proto_type, "", "");
+    }
+
+    if is_generic_param(inner_type, item_generics) {
+        return proto_ident_literal("bytes", "", "");
     }
 
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
@@ -659,12 +665,21 @@ enum FieldName {
     Unnamed,
 }
 
-fn build_field_const_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &Field, config: &crate::utils::FieldConfig, tag: u32, name: FieldName) -> FieldConstTokens {
+fn build_field_const_tokens(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    idx: usize,
+    field: &Field,
+    config: &crate::utils::FieldConfig,
+    tag: u32,
+    name: FieldName,
+    item_config: &UnifiedProtoConfig,
+) -> FieldConstTokens {
     let field_ident = field_const_ident(type_ident, suffix, idx);
     let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs);
     let attr_consts = attrs_tokens.consts;
     let attr_refs = attrs_tokens.refs;
-    let (proto_ident, label) = field_proto_ident_and_label(field, config);
+    let (proto_ident, label) = field_proto_ident_and_label(field, config, &item_config.item_generics);
     let name_tokens = match name {
         FieldName::Named(name) => quote! { ::core::option::Option::Some(#name) },
         FieldName::Unnamed => quote! { ::core::option::Option::None },
@@ -692,6 +707,25 @@ fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
         quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT }
     } else {
         proto_ident_literal(&parsed.proto_type, "", "")
+    }
+}
+
+fn is_generic_param(ty: &Type, generics: &syn::Generics) -> bool {
+    match ty {
+        Type::Path(path) => {
+            if path.qself.is_some() || path.path.segments.len() != 1 {
+                return false;
+            }
+            let segment = &path.path.segments[0];
+            if !segment.arguments.is_empty() {
+                return false;
+            }
+            generics.type_params().any(|param| param.ident == segment.ident)
+        }
+        Type::Reference(reference) => is_generic_param(&reference.elem, generics),
+        Type::Group(group) => is_generic_param(&group.elem, generics),
+        Type::Paren(paren) => is_generic_param(&paren.elem, generics),
+        _ => false,
     }
 }
 

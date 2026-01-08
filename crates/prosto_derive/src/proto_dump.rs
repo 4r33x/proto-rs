@@ -38,6 +38,7 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
     let proto_name = input.ident.to_string();
     let clean_name = proto_name.strip_suffix("Proto").unwrap_or(&proto_name);
 
+    let generic_params: Vec<syn::Ident> = input.generics.type_params().map(|param| param.ident.clone()).collect();
     let generic_variants = match config.generic_type_variants(&input.generics) {
         Ok(variants) => variants,
         Err(err) => return err.to_compile_error().into(),
@@ -52,7 +53,7 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                     format!("{clean_name}{}", variant.suffix)
                 };
                 let fields = apply_generic_substitutions_fields(&data.fields, &variant.substitutions);
-                let proto_def = generate_struct_proto(&message_name, &fields);
+                let proto_def = generate_struct_proto(&message_name, &fields, &generic_params);
                 let schema_tokens = schema_tokens_for_struct(&input.ident, &message_name, &fields, &config, &message_name);
                 config.register_and_emit_proto(&proto_def, schema_tokens);
             }
@@ -69,7 +70,7 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                 let proto_def = if is_simple_enum {
                     generate_simple_enum_proto(&message_name, &data)
                 } else {
-                    generate_complex_enum_proto(&message_name, &data)
+                    generate_complex_enum_proto(&message_name, &data, &generic_params)
                 };
                 let schema_tokens = if is_simple_enum {
                     schema_tokens_for_simple_enum(&input.ident, &message_name, &data, &config, &message_name)

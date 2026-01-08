@@ -265,10 +265,14 @@ pub mod schemas {
 
             let imports = collect_imports(entries.as_slice(), &ident_index, &file_name, &package_name)?;
             if !imports.is_empty() {
+                let mut import_stems = BTreeSet::new();
                 for import in &imports {
                     let import_path = Path::new(import);
                     let import_file = import_path.file_name().and_then(|name| name.to_str()).unwrap_or(import);
                     let import_stem = import_file.strip_suffix(".proto").unwrap_or(import_file);
+                    import_stems.insert(import_stem.to_string());
+                }
+                for import_stem in import_stems {
                     writeln!(&mut output, "import \"{import_stem}.proto\";").unwrap();
                 }
                 output.push('\n');
