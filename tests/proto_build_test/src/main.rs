@@ -107,6 +107,7 @@ pub struct BuildResponse {
 
 // Define trait with the proto_rpc macro
 #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/build_system_test/sigma_rpc_simple.proto")]
+//unnecessary for build system, this imports would be auto-resolved
 #[proto_imports(
     rizz_types = ["BarSub", "FooResponse"],
     goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"],
