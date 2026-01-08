@@ -128,9 +128,9 @@ pub trait SigmaRpc {
 
 use proto_rs::schemas::ProtoSchema;
 fn main() {
-    let rust_client_path = "build_protos/client.rs";
+    let rust_client_path = "src/lib.rs";
     let rust_ctx = proto_rs::schemas::RustClientCtx::enabled(rust_client_path).with_imports(&["fastnum::UD128"]);
-    proto_rs::schemas::write_all("build_protos", rust_ctx).expect("Failed to write proto files");
+    proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
 
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
     assert!(client_contents.contains("use fastnum::UD128;"));

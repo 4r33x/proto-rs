@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fmt::Write;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -31,7 +32,7 @@ impl<'a> RustClientCtx<'a> {
             imports: &[],
         }
     }
-
+    #[must_use]
     pub fn with_imports(mut self, imports: &'a [&'a str]) -> Self {
         self.imports = imports;
         self
@@ -214,7 +215,7 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 /// # Errors
 ///
 /// Will return `Err` if fs throws error
-pub fn write_all(output_dir: &str, rust_client_output: RustClientCtx<'_>) -> io::Result<usize> {
+pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io::Result<usize> {
     use std::fmt::Write;
     match fs::remove_dir_all(output_dir) {
         Ok(()) => {}
@@ -262,7 +263,7 @@ pub fn write_all(output_dir: &str, rust_client_output: RustClientCtx<'_>) -> io:
             output.push('\n');
         }
 
-        let mut ordered_entries: Vec<&ProtoSchema> = entries.to_vec();
+        let mut ordered_entries: Vec<&ProtoSchema> = entries.clone();
 
         ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
 
@@ -364,6 +365,7 @@ fn insert_module_entry(node: &mut ModuleNode, segments: &[String], package_name:
     insert_module_entry(child, &segments[1..], package_name, entry);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_named_module(
     output: &mut String,
     name: &str,
@@ -417,6 +419,7 @@ fn render_named_module(
     output.push_str("}\n");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_module_imports(
     output: &mut String,
     entries: &[&'static ProtoSchema],
@@ -510,7 +513,7 @@ fn collect_rust_proto_ident_imports(
     let package = package_by_ident
         .get(&ident)
         .map(String::as_str)
-        .or_else(|| if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
+        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
 
     if let Some(package) = package
         && !package.is_empty()
@@ -548,7 +551,7 @@ fn collect_rust_proto_name_imports(
         }
     }
 }
-
+#[allow(clippy::too_many_arguments)]
 fn render_entries(
     output: &mut String,
     entries: &[&'static ProtoSchema],
@@ -609,6 +612,7 @@ fn render_rust_entry(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_rust_struct(
     entry: &ProtoSchema,
     fields: &[&Field],
@@ -628,12 +632,13 @@ fn render_rust_struct(
 
     indent_line(&mut output, indent);
     if fields.is_empty() {
-        output.push_str(&format!("pub struct {type_name}{generics};\n"));
+        output.write_fmt(format_args!("pub struct {type_name}{generics};\n")).unwrap();
         return output;
     }
 
     if is_tuple {
-        output.push_str(&format!("pub struct {type_name}{generics}(\n"));
+        output.write_fmt(format_args!("pub struct {type_name}{generics}(\n")).unwrap();
+
         for field in fields {
             render_field_attributes(&mut output, field, indent + 4);
             indent_line(&mut output, indent + 4);
@@ -645,8 +650,8 @@ fn render_rust_struct(
         output.push_str(");\n");
         return output;
     }
+    output.write_fmt(format_args!("pub struct {type_name}{generics} {{\n")).unwrap();
 
-    output.push_str(&format!("pub struct {type_name}{generics} {{\n"));
     for field in fields {
         render_field_attributes(&mut output, field, indent + 4);
         indent_line(&mut output, indent + 4);
@@ -669,12 +674,13 @@ fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], indent: u
 
     render_top_level_attributes(&mut output, entry, indent);
     indent_line(&mut output, indent);
-    output.push_str(&format!("pub enum {type_name}{generics} {{\n"));
+    output.write_fmt(format_args!("pub enum {type_name}{generics} {{\n")).unwrap();
+
     for variant in variants {
         indent_line(&mut output, indent + 4);
         output.push_str(variant.name);
         if let Some(discriminant) = variant.discriminant {
-            output.push_str(&format!(" = {discriminant}"));
+            output.write_fmt(format_args!(" = {discriminant}")).unwrap();
         }
         output.push_str(",\n");
     }
@@ -683,6 +689,7 @@ fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], indent: u
     output
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_rust_complex_enum(
     entry: &ProtoSchema,
     variants: &[&Variant],
@@ -699,7 +706,8 @@ fn render_rust_complex_enum(
 
     render_top_level_attributes(&mut output, entry, indent);
     indent_line(&mut output, indent);
-    output.push_str(&format!("pub enum {type_name}{generics} {{\n"));
+    output.write_fmt(format_args!("pub enum {type_name}{generics} {{\n")).unwrap();
+
     for variant in variants {
         indent_line(&mut output, indent + 4);
         output.push_str(variant.name);
@@ -739,6 +747,7 @@ fn render_rust_complex_enum(
     output
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_rust_service(
     entry: &ProtoSchema,
     methods: &[&ServiceMethod],
@@ -759,7 +768,7 @@ fn render_rust_service(
     output.push_str(rpc_package_name);
     output.push_str("\", rpc_server = false, rpc_client = true)]\n");
     indent_line(&mut output, indent);
-    output.push_str(&format!("pub trait {trait_name}{generics} {{\n"));
+    writeln!(output, "pub trait {trait_name}{generics} {{").unwrap();
 
     let mut stream_types = Vec::new();
     for method in methods {
@@ -769,9 +778,11 @@ fn render_rust_service(
             let item_type = render_proto_type(response_ident, package_name, package_by_ident, proto_type_index, client_imports);
             stream_types.push(stream_name.clone());
             indent_line(&mut output, indent + 4);
-            output.push_str(&format!(
-                "type {stream_name}: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<{item_type}, ::tonic::Status>> + ::core::marker::Send + 'static;\n"
-            ));
+            writeln!(
+                output,
+                "type {stream_name}: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<{item_type}, ::tonic::Status>> + ::core::marker::Send + 'static;"
+            )
+            .unwrap();
         }
     }
 
@@ -790,11 +801,11 @@ fn render_rust_service(
         };
 
         indent_line(&mut output, indent + 4);
-        output.push_str(&format!("async fn {}(\n", to_snake_case(method.name)));
+        writeln!(output, "async fn {}(", to_snake_case(method.name)).unwrap();
         indent_line(&mut output, indent + 8);
-        output.push_str(&format!("&self,\n"));
+        writeln!(output, "&self,").unwrap();
         indent_line(&mut output, indent + 8);
-        output.push_str(&format!("request: ::tonic::Request<{request_type}>,\n"));
+        writeln!(output, "request: ::tonic::Request<{request_type}>,").unwrap();
         indent_line(&mut output, indent + 4);
         output.push_str(") -> ::core::result::Result<::tonic::Response<");
         output.push_str(&response_type);
@@ -838,7 +849,7 @@ fn render_field_attributes(output: &mut String, field: &Field, indent: usize) {
     }
     if !has_proto_attr && field.tag > 0 {
         indent_line(output, indent);
-        output.push_str(&format!("#[proto(tag = {})]\n", field.tag));
+        output.write_fmt(format_args!("#[proto(tag = {})]\n", field.tag)).unwrap();
     }
 }
 
@@ -867,12 +878,14 @@ fn render_proto_type(
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
     if ident.proto_type.starts_with("map<") {
-        return render_map_type(&ident.proto_type, current_package, package_by_ident, proto_type_index, client_imports);
+        return render_map_type(ident.proto_type, current_package, package_by_ident, proto_type_index, client_imports);
     }
-    if ident.module_path.is_empty() && ident.proto_file_path.is_empty() && ident.proto_package_name.is_empty() {
-        if let Some(scalar) = proto_scalar_type(&ident.proto_type) {
-            return scalar.to_string();
-        }
+    if ident.module_path.is_empty()
+        && ident.proto_file_path.is_empty()
+        && ident.proto_package_name.is_empty()
+        && let Some(scalar) = proto_scalar_type(ident.proto_type)
+    {
+        return scalar.to_string();
     }
 
     let type_name = ident.name;
@@ -882,7 +895,7 @@ fn render_proto_type(
     let package = package_by_ident
         .get(&ident)
         .map(String::as_str)
-        .or_else(|| if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
+        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
 
     match package {
         Some(package) if package == current_package => type_name.to_string(),
@@ -1086,7 +1099,7 @@ fn collect_imports(entries: &[&ProtoSchema], ident_index: &BTreeMap<ProtoIdent, 
                     collect_field_imports(&mut imports, ident_index, variant.fields, file_name, package_name)?;
                 }
             }
-            ProtoEntry::Service { methods } => {
+            ProtoEntry::Service { methods, rpc_package_name } => {
                 collect_service_imports(&mut imports, ident_index, methods, file_name, package_name)?;
             }
         }
