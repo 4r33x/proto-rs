@@ -235,7 +235,7 @@ pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[S
         const #const_name: &[&str] = &[#(#import_literals),*];
 
         #[cfg(feature = "build-schemas")]
-        const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
+        static #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
             id: ::proto_rs::schemas::ProtoIdent {
                 module_path: ::core::module_path!(),
                 name: #type_ident,
@@ -304,7 +304,7 @@ fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &Unifi
 
     quote! {
         #[cfg(feature = "build-schemas")]
-        const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
+        static #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
             id: ::proto_rs::schemas::ProtoIdent {
                 module_path: ::core::module_path!(),
                 name: stringify!(#type_ident),
@@ -393,7 +393,7 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
                         const_type: ::core::option::Option::None,
                     };
                 });
-                generic_refs.push(quote! { &#generic_ident });
+                generic_refs.push(quote! { #generic_ident });
             }
             syn::GenericParam::Const(const_param) => {
                 let name = const_param.ident.to_string();
@@ -407,7 +407,7 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
                         const_type: ::core::option::Option::Some(stringify!(#const_ty)),
                     };
                 });
-                generic_refs.push(quote! { &#generic_ident });
+                generic_refs.push(quote! { #generic_ident });
             }
             syn::GenericParam::Lifetime(_) => {}
         }
@@ -438,7 +438,7 @@ fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
                     bounds: #bounds_ident,
                 };
             });
-            lifetime_refs.push(quote! { &#lifetime_ident });
+            lifetime_refs.push(quote! { #lifetime_ident });
         }
     }
 
@@ -463,7 +463,7 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
                 tokens: stringify!(#tokens),
             };
         });
-        attr_refs.push(quote! { &#attr_ident });
+        attr_refs.push(quote! { #attr_ident });
     }
 
     AttributeTokens {
