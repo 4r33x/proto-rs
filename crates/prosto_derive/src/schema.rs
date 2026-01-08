@@ -147,19 +147,19 @@ fn build_sun_trait_impls(
     config: &UnifiedProtoConfig,
     impl_generics: &TokenStream2,
     where_clause: &TokenStream2,
-    proto_name_literal: &String,
+    _proto_name_literal: &String,
     proto_ident_literal: &impl Fn(&String) -> TokenStream2,
 ) -> TokenStream2 {
     if !config.has_suns() {
         return quote! {};
     }
 
-    let proto_ident = proto_ident_literal(proto_name_literal);
     let sun_impls: Vec<_> = config
         .suns
         .iter()
         .map(|sun| {
             let sun_ty = &sun.ty;
+            let proto_ident = proto_ident_literal(&sun.message_ident);
             quote! {
                 #[cfg(feature = "build-schemas")]
                 impl #impl_generics ::proto_rs::schemas::ProtoIdentifiable for #sun_ty #where_clause {
