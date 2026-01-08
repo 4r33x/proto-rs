@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.0]
+- Added proper build system with imports, transparent types and generic types resolver
+
 ## [0.6.24]
 - Gate validate_with_ext 
 
