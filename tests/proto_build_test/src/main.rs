@@ -121,6 +121,8 @@ pub trait SigmaRpc {
     async fn build(&self, request: Request<Envelope<BuildRequest>>) -> Result<Response<Envelope<BuildResponse>>, Status>;
 
     async fn owner_lookup(&self, request: Request<TransparentId>) -> Result<Response<BuildResponse>, Status>;
+
+    async fn test_decimals(&self, request: Request<fastnum::UD128>) -> Result<Response<fastnum::D64>, Status>;
 }
 
 use proto_rs::schemas::ProtoSchema;

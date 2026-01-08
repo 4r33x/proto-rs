@@ -1208,6 +1208,7 @@ dependencies = [
 name = "proto_build_test"
 version = "0.1.0"
 dependencies = [
+ "fastnum",
  "inventory",
  "prost",
  "proto_rs",

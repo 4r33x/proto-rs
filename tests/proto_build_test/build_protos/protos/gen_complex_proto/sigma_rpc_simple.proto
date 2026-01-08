@@ -3,6 +3,7 @@ syntax = "proto3";
 package sigma_rpc_simple;
 
 import "extra_types.proto";
+import "fastnum.proto";
 import "goon_types.proto";
 import "rizz_types.proto";
 
@@ -11,4 +12,5 @@ service SigmaRpc {
   rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse);
   rpc Build(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse);
   rpc OwnerLookup(goon_types.Id) returns (extra_types.BuildResponse);
+  rpc TestDecimals(fastnum.UD128) returns (fastnum.D128);
 }
