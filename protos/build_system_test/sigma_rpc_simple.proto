@@ -1,0 +1,15 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package sigma_rpc_simple;
+
+import "extra_types.proto";
+import "goon_types.proto";
+import "rizz_types.proto";
+
+service SigmaRpc {
+  rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
+  rpc Build(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse) {}
+  rpc OwnerLookup(TransparentId) returns (extra_types.BuildResponse) {}
+  rpc TestDecimals(UD128) returns (D64) {}
+}

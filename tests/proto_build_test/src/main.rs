@@ -7,7 +7,7 @@ use tokio_stream::Stream;
 use tonic::Response;
 use tonic::Status;
 
-#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq, Copy)]
 pub enum ServiceStatus {
     Pending,
@@ -17,31 +17,31 @@ pub enum ServiceStatus {
     Completed,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Id {
     pub id: u64,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RizzPing {
     id: Id,
     status: ServiceStatus,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoonPong {
     id: Id,
     status: ServiceStatus,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct FooResponse;
 
-#[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/rizz_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarSub;
 
@@ -64,7 +64,7 @@ impl From<i64> for MilliSeconds {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TransparentId(pub Id);
 
-#[proto_message(proto_path = "protos/gen_complex_proto/extra_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[proto(generic_types = [T = [BuildRequest, BuildResponse, GoonPong]])]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Envelope<T> {
@@ -74,7 +74,7 @@ pub struct Envelope<T> {
     pub trace_id: String,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/extra_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildConfig {
     #[proto(tag = 1, into = "i64")]
@@ -85,7 +85,7 @@ pub struct BuildConfig {
     pub owner: TransparentId,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/extra_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildRequest {
     #[proto(tag = 1)]
@@ -96,7 +96,7 @@ pub struct BuildRequest {
     pub owner: TransparentId,
 }
 
-#[proto_message(proto_path = "protos/gen_complex_proto/extra_types.proto")]
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildResponse {
     #[proto(tag = 1)]
@@ -106,7 +106,7 @@ pub struct BuildResponse {
 }
 
 // Define trait with the proto_rpc macro
-#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc_simple.proto")]
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/build_system_test/sigma_rpc_simple.proto")]
 #[proto_imports(
     rizz_types = ["BarSub", "FooResponse"],
     goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"],

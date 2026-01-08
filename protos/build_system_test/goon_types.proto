@@ -18,14 +18,6 @@ message Id {
   uint64 id = 1;
 }
 
-message IdGenericU32 {
-  uint32 id = 1;
-}
-
-message IdGenericU64 {
-  uint64 id = 1;
-}
-
 message RizzPing {
   Id id = 1;
   ServiceStatus status = 2;
