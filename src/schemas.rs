@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fmt::Write;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -207,7 +208,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
 
         output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
         output.push_str("syntax = \"proto3\";\n");
-        output.push_str(&format!("package {package_name};\n"));
+        writeln!(output, "package {package_name};").unwrap();
 
         output.push('\n');
 
@@ -221,7 +222,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
                 import_stems.insert(import_stem.to_string());
             }
             for import_stem in import_stems {
-                output.push_str(&format!("import \"{import_stem}.proto\";\n"));
+                writeln!(output, "import \"{import_stem}.proto\";").unwrap();
             }
             output.push('\n');
         }

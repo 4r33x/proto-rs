@@ -120,9 +120,9 @@ message Invoice {
   Status status = 4;
 }
 
-message LruPairStringU8 {
-  string k = 1;
-  uint32 v = 2;
+message LruPair {
+  bytes k = 1;
+  bytes v = 2;
 }
 
 message MixedAnnotations {
@@ -213,12 +213,12 @@ message StructU816 {
   uint32 inner3 = 3;
 }
 
-message TinyLruKeydStringU8 {
-  repeated LruPairStringU8 items = 1;
+message TinyLru {
+  repeated bytes items = 1;
 }
 
-message TinyLruU8 {
-  bytes items = 1;
+message TinyLruKeyd {
+  repeated LruPairKV items = 1;
 }
 
 message Transaction {

@@ -111,7 +111,7 @@ pub(crate) fn write_rust_client_module(
 }
 
 fn parse_client_imports(imports: &[&str]) -> Vec<ClientImport> {
-    imports.iter().filter_map(|import| parse_client_import(*import)).collect()
+    imports.iter().filter_map(|import| parse_client_import(import)).collect()
 }
 
 fn parse_client_import(import: &str) -> Option<ClientImport> {
