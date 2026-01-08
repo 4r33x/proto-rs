@@ -1,10 +1,7 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
 pub mod extra_types {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
-
+    use proto_rs::{proto_message, proto_rpc};
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
@@ -59,12 +56,11 @@ pub mod extra_types {
         #[proto(tag = 2)]
         pub trace_id: ::proto_rs::alloc::string::String,
     }
+
 }
 pub mod fastnum {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub struct D128Proto {
@@ -99,12 +95,11 @@ pub mod fastnum {
         #[proto(tag = 3)]
         pub fractional_digits_count: i32,
     }
+
 }
 pub mod goon_types {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub enum ServiceStatus {
@@ -135,25 +130,22 @@ pub mod goon_types {
         #[proto(tag = 2)]
         pub status: ServiceStatus,
     }
+
 }
 pub mod rizz_types {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub struct BarSub;
 
     #[proto_message]
     pub struct FooResponse;
+
 }
 pub mod sigma_rpc_simple {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
-
+    use proto_rs::{proto_message, proto_rpc};
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
     use crate::fastnum::D128Proto;
@@ -166,22 +158,49 @@ pub mod sigma_rpc_simple {
 
     #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = false, rpc_client = true)]
     pub trait SigmaRpc {
-        type RizzUniStream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>> + Send;
+        type RizzUniStream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>> + ::core::marker::Send + 'static;
 
-        async fn rizz_ping(&self, request: ::tonic::Request<RizzPing>) -> ::core::result::Result<::tonic::Response<GoonPong>, ::tonic::Status>;
+        async fn rizz_ping(
+            &self,
+            request: ::tonic::Request<RizzPing>,
+        ) -> ::core::result::Result<::tonic::Response<GoonPong>, ::tonic::Status>
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
 
-        async fn rizz_uni(&self, request: ::tonic::Request<BarSub>) -> ::core::result::Result<::tonic::Response<Self::RizzUniStream>, ::tonic::Status>;
+        async fn rizz_uni(
+            &self,
+            request: ::tonic::Request<BarSub>,
+        ) -> ::core::result::Result<::tonic::Response<Self::RizzUniStream>, ::tonic::Status>
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
 
-        async fn owner_lookup(&self, request: ::tonic::Request<Id>) -> ::core::result::Result<::tonic::Response<BuildResponse>, ::tonic::Status>;
+        async fn build(
+            &self,
+            request: ::tonic::Request<Envelope>,
+        ) -> ::core::result::Result<::tonic::Response<Envelope>, ::tonic::Status>
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
 
-        async fn test_decimals(&self, request: ::tonic::Request<UD128Proto>) -> ::core::result::Result<::tonic::Response<D128Proto>, ::tonic::Status>;
+        async fn owner_lookup(
+            &self,
+            request: ::tonic::Request<Id>,
+        ) -> ::core::result::Result<::tonic::Response<BuildResponse>, ::tonic::Status>
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
+
+        async fn test_decimals(
+            &self,
+            request: ::tonic::Request<UD128Proto>,
+        ) -> ::core::result::Result<::tonic::Response<D128Proto>, ::tonic::Status>
+        where
+            Self: ::core::marker::Send + ::core::marker::Sync;
+
     }
+
 }
 pub mod solana {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub struct AddressProto {
@@ -228,7 +247,10 @@ pub mod solana {
         AccountBorrowFailed,
         AccountBorrowOutstanding,
         DuplicateAccountOutOfSync,
-        Custom(#[proto(tag = 1)] u32),
+        Custom(
+            #[proto(tag = 1)]
+            u32,
+        ),
         InvalidError,
         ExecutableDataModified,
         ExecutableLamportChange,
@@ -296,7 +318,10 @@ pub mod solana {
         InvalidRentPayingAccount,
         WouldExceedMaxVoteCostLimit,
         WouldExceedAccountDataTotalLimit,
-        DuplicateInstruction(#[proto(tag = 1)] u32),
+        DuplicateInstruction(
+            #[proto(tag = 1)]
+            u32,
+        ),
         InsufficientFundsForRent {
             #[proto(tag = 1)]
             account_index: u32,
@@ -312,4 +337,5 @@ pub mod solana {
         ProgramCacheHitMaxLimit,
         CommitCancelled,
     }
+
 }

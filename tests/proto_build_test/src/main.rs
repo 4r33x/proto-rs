@@ -128,7 +128,7 @@ pub trait SigmaRpc {
 
 use proto_rs::schemas::ProtoSchema;
 fn main() {
-    let rust_client_path = "src/lib.rs";
+    let rust_client_path = "src/client.rs";
     let rust_ctx = proto_rs::schemas::RustClientCtx::enabled(rust_client_path).with_imports(&["fastnum::UD128"]);
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
 
