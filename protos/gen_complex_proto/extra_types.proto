@@ -1,0 +1,25 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package extra_types;
+
+message BuildConfig {
+  int64 timeout = 1;
+  TransparentId owner = 3;
+}
+
+message BuildRequest {
+  BuildConfig config = 1;
+  RizzPing ping = 2;
+  TransparentId owner = 3;
+}
+
+message BuildResponse {
+  ServiceStatus status = 1;
+  EnvelopeGoonPong envelope = 2;
+}
+
+message Envelope {
+  T payload = 1;
+  string trace_id = 2;
+}
+

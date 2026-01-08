@@ -117,10 +117,7 @@ pub trait SigmaRpc {
 
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 
-    async fn build(
-        &self,
-        request: Request<Envelope<BuildRequest>>,
-    ) -> Result<Response<Envelope<BuildResponse>>, Status>;
+    async fn build(&self, request: Request<Envelope<BuildRequest>>) -> Result<Response<Envelope<BuildResponse>>, Status>;
 
     async fn owner_lookup(&self, request: Request<TransparentId>) -> Result<Response<BuildResponse>, Status>;
 }
