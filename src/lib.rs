@@ -227,7 +227,11 @@ pub mod schemas {
     /// Will return `Err` if fs throws error
     pub fn write_all(output_dir: &str) -> io::Result<usize> {
         use std::fmt::Write;
-        fs::remove_dir_all(output_dir)?;
+        match fs::remove_dir_all(output_dir) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err),
+        }
         fs::create_dir_all(output_dir)?;
         let mut count = 0;
         let (registry, ident_index) = build_registry();

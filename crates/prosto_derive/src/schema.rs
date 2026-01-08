@@ -5,6 +5,7 @@ use quote::quote;
 use syn::DataEnum;
 use syn::Field;
 use syn::Fields;
+use syn::GenericParam;
 use syn::Type;
 
 use crate::parse::UnifiedProtoConfig;
@@ -21,8 +22,14 @@ use crate::utils::resolved_field_type;
 use crate::utils::to_pascal_case;
 use crate::utils::to_upper_snake_case;
 
-pub fn assoc_proto_ident_const(config: &UnifiedProtoConfig, type_ident: &syn::Ident, generics: &syn::Generics, proto_names: &[String]) -> TokenStream2 {
-    let proto_name = proto_names.first().map_or_else(|| type_ident.to_string(), ToString::to_string);
+pub fn assoc_proto_ident_const(
+    config: &UnifiedProtoConfig,
+    type_ident: &syn::Ident,
+    generics: &syn::Generics,
+    proto_names: &[String],
+    generic_variants: &[crate::parse::GenericTypeVariant],
+) -> TokenStream2 {
+    let proto_name_base = proto_names.first().map_or_else(|| type_ident.to_string(), ToString::to_string);
     let (proto_package, proto_file_path) = config.proto_path().map_or_else(
         || ("".to_string(), "".to_string()),
         |path| {
@@ -31,23 +38,89 @@ pub fn assoc_proto_ident_const(config: &UnifiedProtoConfig, type_ident: &syn::Id
         },
     );
 
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let proto_package = proto_package.clone();
     let proto_file_path = proto_file_path.clone();
-    let proto_name_literal = proto_name.clone();
     let type_name_literal = type_ident.to_string();
 
-    quote! {
-        #[cfg(feature = "build-schemas")]
-        impl #impl_generics #type_ident #ty_generics #where_clause {
-            pub const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = ::proto_rs::schemas::ProtoIdent {
-                module_path: ::core::module_path!(),
-                name: #type_name_literal,
-                proto_package_name: #proto_package,
-                proto_file_path: #proto_file_path,
-                proto_type: #proto_name_literal,
-            };
+    if config.generic_types.is_empty() {
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        let proto_name_literal = proto_name_base.clone();
+        return quote! {
+            #[cfg(feature = "build-schemas")]
+            impl #impl_generics #type_ident #ty_generics #where_clause {
+                pub const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = ::proto_rs::schemas::ProtoIdent {
+                    module_path: ::core::module_path!(),
+                    name: #type_name_literal,
+                    proto_package_name: #proto_package,
+                    proto_file_path: #proto_file_path,
+                    proto_type: #proto_name_literal,
+                };
+            }
+        };
+    }
+
+    let impl_params: Vec<_> = generics
+        .params
+        .iter()
+        .filter(|param| !matches!(param, GenericParam::Type(_)))
+        .collect();
+    let impl_generics = if impl_params.is_empty() {
+        quote! {}
+    } else {
+        quote! { <#(#impl_params),*> }
+    };
+
+    let mut variant_tokens = Vec::new();
+    for variant in generic_variants {
+        let proto_name_literal = if variant.suffix.is_empty() {
+            proto_name_base.clone()
+        } else {
+            format!("{proto_name_base}{}", variant.suffix)
+        };
+
+        let mut type_args = Vec::new();
+        for param in &generics.params {
+            match param {
+                GenericParam::Type(type_param) => {
+                    let ty = variant
+                        .substitutions
+                        .get(&type_param.ident.to_string())
+                        .expect("missing generic type substitution");
+                    type_args.push(quote! { #ty });
+                }
+                GenericParam::Lifetime(lifetime_def) => {
+                    let lifetime = &lifetime_def.lifetime;
+                    type_args.push(quote! { #lifetime });
+                }
+                GenericParam::Const(const_param) => {
+                    let ident = &const_param.ident;
+                    type_args.push(quote! { #ident });
+                }
+            }
         }
+
+        let type_tokens = if type_args.is_empty() {
+            quote! { #type_ident }
+        } else {
+            quote! { #type_ident <#(#type_args),*> }
+        };
+
+        variant_tokens.push(quote! {
+            #[cfg(feature = "build-schemas")]
+            impl #impl_generics #type_tokens {
+                pub const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = ::proto_rs::schemas::ProtoIdent {
+                    module_path: ::core::module_path!(),
+                    name: #type_name_literal,
+                    proto_package_name: #proto_package,
+                    proto_file_path: #proto_file_path,
+                    proto_type: #proto_name_literal,
+                };
+            }
+        });
+    }
+
+    quote! {
+        #(#variant_tokens)*
     }
 }
 
