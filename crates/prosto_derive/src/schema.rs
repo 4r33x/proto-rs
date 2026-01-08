@@ -31,7 +31,7 @@ pub fn assoc_proto_ident_const(
 ) -> TokenStream2 {
     let proto_name_base = proto_names.first().map_or_else(|| type_ident.to_string(), ToString::to_string);
     let (proto_package, proto_file_path) = config.proto_path().map_or_else(
-        || ("".to_string(), "".to_string()),
+        || (String::new(), String::new()),
         |path| {
             let file_name = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
             (derive_package_name(file_name), path.to_string())
@@ -59,11 +59,7 @@ pub fn assoc_proto_ident_const(
         };
     }
 
-    let impl_params: Vec<_> = generics
-        .params
-        .iter()
-        .filter(|param| !matches!(param, GenericParam::Type(_)))
-        .collect();
+    let impl_params: Vec<_> = generics.params.iter().filter(|param| !matches!(param, GenericParam::Type(_))).collect();
     let impl_generics = if impl_params.is_empty() {
         quote! {}
     } else {
@@ -82,10 +78,7 @@ pub fn assoc_proto_ident_const(
         for param in &generics.params {
             match param {
                 GenericParam::Type(type_param) => {
-                    let ty = variant
-                        .substitutions
-                        .get(&type_param.ident.to_string())
-                        .expect("missing generic type substitution");
+                    let ty = variant.substitutions.get(&type_param.ident.to_string()).expect("missing generic type substitution");
                     type_args.push(quote! { #ty });
                 }
                 GenericParam::Lifetime(lifetime_def) => {
@@ -155,7 +148,7 @@ pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str
     for (idx, (variant, value)) in ordered_variants.iter().zip(ordered_discriminants.iter()).enumerate() {
         let variant_const = variant_const_ident(type_ident, const_suffix, idx);
         let name = to_upper_snake_case(&variant.ident.to_string());
-        let value = *value as i32;
+        let value = *value;
         variant_consts.push(quote! {
             #[cfg(feature = "build-schemas")]
             const #variant_const: ::proto_rs::schemas::Variant = ::proto_rs::schemas::Variant {
@@ -228,15 +221,14 @@ pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, me
 
 pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[String]) -> TokenStream2 {
     let suffix = format!("{}_{}", sanitize_ident(type_ident), sanitize_ident(file_name));
-    let schema_ident = format_ident(&format!("PROTO_SCHEMA_IMPORTS_{}", suffix));
-    let const_name = format_ident(&format!("PROTO_SCHEMA_IMPORT_PATHS_{}", suffix));
+    let schema_ident = format_ident(&format!("PROTO_SCHEMA_IMPORTS_{suffix}"));
+    let const_name = format_ident(&format!("PROTO_SCHEMA_IMPORT_PATHS_{suffix}"));
     let import_literals: Vec<_> = imports.iter().map(|imp| quote! { #imp }).collect();
     let file_name_literal = file_name;
     let package_name = std::path::Path::new(file_name)
         .file_name()
         .and_then(|name| name.to_str())
-        .map(derive_package_name)
-        .unwrap_or_else(|| derive_package_name(file_name));
+        .map_or(derive_package_name(file_name), derive_package_name);
 
     quote! {
         #[cfg(feature = "build-schemas")]
@@ -492,7 +484,7 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
         }
         field_num += 1;
         let name = field.ident.as_ref().unwrap().to_string();
-        let tag = config.custom_tag.unwrap_or(field_num) as u32;
+        let tag: u32 = config.custom_tag.unwrap_or(field_num).try_into().unwrap();
         let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &config, tag, FieldName::Named(name));
         field_consts.push(consts);
         field_refs.push(refs);
@@ -513,7 +505,7 @@ fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &s
         if config.skip {
             continue;
         }
-        let tag = config.custom_tag.unwrap_or(idx + 1) as u32;
+        let tag: u32 = config.custom_tag.unwrap_or(idx + 1).try_into().unwrap();
         let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &config, tag, FieldName::Unnamed);
         field_consts.push(consts);
         field_refs.push(refs);
@@ -666,7 +658,7 @@ fn proto_ident_literal(proto_type: &str, package: &str, file_path: &str) -> Toke
 
 fn proto_path_info(config: &UnifiedProtoConfig) -> (String, String) {
     config.proto_path().map_or_else(
-        || ("".to_string(), "".to_string()),
+        || (String::new(), String::new()),
         |path| {
             let file_name = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
             (derive_package_name(file_name), path.to_string())
