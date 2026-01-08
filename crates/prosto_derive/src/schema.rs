@@ -540,8 +540,7 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
         field_num += 1;
         let name = field.ident.as_ref().unwrap().to_string();
         let tag: u32 = field_config.custom_tag.unwrap_or(field_num).try_into().unwrap();
-        let FieldConstTokens { consts, refs } =
-            build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config);
+        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config);
         field_consts.push(consts);
         field_refs.push(refs);
     }
@@ -587,8 +586,7 @@ fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_id
                     };
                 }
 
-                let FieldConstTokens { consts, refs } =
-                    build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config);
+                let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config);
                 return FieldTokens { consts, refs: quote! { &[#refs] } };
             }
             FieldTokens {
@@ -665,6 +663,7 @@ enum FieldName {
     Unnamed,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_field_const_tokens(
     type_ident: &syn::Ident,
     suffix: &str,
