@@ -348,7 +348,7 @@ fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &Unifi
     let schema_ident = schema_ident(type_ident, const_suffix);
     let generics_tokens = build_generics_tokens(type_ident, const_suffix, config);
     let lifetimes_tokens = build_lifetime_tokens(type_ident, const_suffix, config);
-    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs);
+    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs, config.transparent);
 
     let generics_consts = generics_tokens.consts;
     let generics_refs = generics_tokens.refs;
@@ -503,7 +503,7 @@ fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
     }
 }
 
-fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute]) -> AttributeTokens {
+fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool) -> AttributeTokens {
     let mut attr_consts = Vec::new();
     let mut attr_refs = Vec::new();
 
@@ -516,6 +516,19 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
             const #attr_ident: ::proto_rs::schemas::Attribute = ::proto_rs::schemas::Attribute {
                 path: stringify!(#path),
                 tokens: stringify!(#tokens),
+            };
+        });
+        attr_refs.push(quote! { #attr_ident });
+    }
+
+    if include_transparent {
+        let idx = attr_refs.len();
+        let attr_ident = attribute_const_ident(type_ident, suffix, idx);
+        attr_consts.push(quote! {
+            #[cfg(feature = "build-schemas")]
+            const #attr_ident: ::proto_rs::schemas::Attribute = ::proto_rs::schemas::Attribute {
+                path: "proto_message",
+                tokens: "transparent",
             };
         });
         attr_refs.push(quote! { #attr_ident });
@@ -675,7 +688,7 @@ fn build_field_const_tokens(
     item_config: &UnifiedProtoConfig,
 ) -> FieldConstTokens {
     let field_ident = field_const_ident(type_ident, suffix, idx);
-    let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs);
+    let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false);
     let attr_consts = attrs_tokens.consts;
     let attr_refs = attrs_tokens.refs;
     let (proto_ident, label) = field_proto_ident_and_label(field, config, &item_config.item_generics);

@@ -311,10 +311,10 @@ pub mod schemas {
         let mut ident_index = BTreeMap::new();
 
         for schema in inventory::iter::<ProtoSchema>() {
-            if schema.id.proto_file_path.is_empty() {
+            if ident_index.insert(schema.id, schema).is_some() {
                 continue;
             }
-            if ident_index.insert(schema.id, schema).is_some() {
+            if schema.id.proto_file_path.is_empty() {
                 continue;
             }
             registry.entry(schema.id.proto_file_path.to_string()).or_insert_with(Vec::new).push(schema);

@@ -65,6 +65,7 @@ impl From<i64> for MilliSeconds {
 pub struct TransparentId(pub Id);
 
 #[proto_message(proto_path = "protos/gen_complex_proto/extra_types.proto")]
+#[proto(generic_types = [T = [BuildRequest, BuildResponse, GoonPong]])]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Envelope<T> {
     #[proto(tag = 1)]
@@ -109,7 +110,7 @@ pub struct BuildResponse {
 #[proto_imports(
     rizz_types = ["BarSub", "FooResponse"],
     goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"],
-    extra_types = ["Envelope", "BuildConfig", "BuildRequest", "BuildResponse"]
+    extra_types = ["EnvelopeBuildRequest", "EnvelopeBuildResponse", "BuildConfig", "BuildRequest", "BuildResponse"]
 )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
