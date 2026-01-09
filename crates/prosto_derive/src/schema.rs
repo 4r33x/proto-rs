@@ -120,10 +120,9 @@ fn build_sun_trait_impls(
 }
 
 pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fields: &Fields, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    // Only use impl block for truly generic types (not concrete substitutions via generic_types)
-    // If generic_types is specified, we generate multiple concrete schemas at module level
-    // If not specified but type has generics, we generate one schema in impl block
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    // Use impl block whenever the type has generic parameters (unless generating SUNs)
+    // This ensures generic type parameters are in scope for field constants
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns();
     let fields_tokens = build_fields_tokens(type_ident, const_suffix, fields, config, has_unsubstituted_generics);
     let field_consts = fields_tokens.consts;
     let field_refs = fields_tokens.refs;
@@ -146,7 +145,7 @@ pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fie
 }
 
 pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns();
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{err}"));
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
     if let Some(idx) = marked_default
@@ -202,7 +201,7 @@ pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str
 }
 
 pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns();
     let mut variant_consts = Vec::new();
     let mut variant_refs = Vec::new();
 
@@ -252,7 +251,7 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
 }
 
 pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], rpc_package_name: &str, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns();
     let methods_tokens = build_service_method_tokens(type_ident, const_suffix, methods, &config.item_generics);
     let method_consts = methods_tokens.consts;
     let method_refs = methods_tokens.refs;
