@@ -95,6 +95,35 @@ pub use crate::zero_copy::ZeroCopy;
 #[cfg(all(feature = "build-schemas", feature = "std"))]
 pub mod schemas;
 
+/// Macro to implement `ProtoIdentifiable` for types that don't have it
+///
+/// This is useful for third-party types like `chrono::Utc` that need to be used in proto messages
+/// but don't implement the `ProtoIdentifiable` trait.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use proto_rs::impl_proto_ident;
+///
+/// impl_proto_ident!(chrono::Utc);
+/// ```
+#[cfg(feature = "build-schemas")]
+#[macro_export]
+macro_rules! impl_proto_ident {
+    ($ty:ty) => {
+        #[cfg(feature = "build-schemas")]
+        impl $crate::schemas::ProtoIdentifiable for $ty {
+            const PROTO_IDENT: $crate::schemas::ProtoIdent = $crate::schemas::ProtoIdent {
+                module_path: "",
+                name: stringify!($ty),
+                proto_package_name: "",
+                proto_file_path: "",
+                proto_type: stringify!($ty),
+            };
+        }
+    };
+}
+
 // Example build.rs that users can copy:
 #[cfg(all(feature = "build-schemas", feature = "std", doc))]
 /// Example build.rs for consuming projects
