@@ -251,34 +251,24 @@ pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[S
     }
 }
 
-struct FieldTokens {
+/// Unified token pair for const definitions and references.
+/// Consolidates the previously separate FieldTokens, GenericTokens, LifetimeTokens, etc.
+struct TokenPair {
     consts: TokenStream2,
     refs: TokenStream2,
 }
 
-struct ServiceMethodTokens {
-    consts: TokenStream2,
-    refs: TokenStream2,
-}
+impl TokenPair {
+    fn empty() -> Self {
+        Self { consts: quote! {}, refs: quote! { &[] } }
+    }
 
-struct GenericTokens {
-    consts: TokenStream2,
-    refs: TokenStream2,
-}
-
-struct LifetimeTokens {
-    consts: TokenStream2,
-    refs: TokenStream2,
-}
-
-struct AttributeTokens {
-    consts: TokenStream2,
-    refs: TokenStream2,
-}
-
-struct FieldConstTokens {
-    consts: TokenStream2,
-    refs: TokenStream2,
+    fn from_vecs(consts: Vec<TokenStream2>, refs: Vec<TokenStream2>) -> Self {
+        Self {
+            consts: quote! { #(#consts)* },
+            refs: quote! { &[#(#refs),*] },
+        }
+    }
 }
 
 fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &UnifiedProtoConfig, const_suffix: &str, entry_tokens: TokenStream2, extra_consts: TokenStream2) -> TokenStream2 {
@@ -322,18 +312,15 @@ fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &Unifi
         #extra_consts
     }
 }
-fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields, config: &UnifiedProtoConfig) -> TokenPair {
     match fields {
         Fields::Named(named) => build_named_fields_tokens(type_ident, suffix, &named.named, config),
         Fields::Unnamed(unnamed) => build_unnamed_fields_tokens(type_ident, suffix, &unnamed.unnamed, config),
-        Fields::Unit => FieldTokens {
-            consts: quote! {},
-            refs: quote! { &[] },
-        },
+        Fields::Unit => TokenPair::empty(),
     }
 }
 
-fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &[MethodInfo]) -> ServiceMethodTokens {
+fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &[MethodInfo]) -> TokenPair {
     let mut method_consts = Vec::new();
     let mut method_refs = Vec::new();
 
@@ -364,13 +351,10 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
         method_refs.push(quote! { &#method_ident });
     }
 
-    ServiceMethodTokens {
-        consts: quote! { #(#method_consts)* },
-        refs: quote! { &[#(#method_refs),*] },
-    }
+    TokenPair::from_vecs(method_consts, method_refs)
 }
 
-fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig) -> GenericTokens {
+fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig) -> TokenPair {
     let mut generic_consts = Vec::new();
     let mut generic_refs = Vec::new();
 
@@ -412,13 +396,10 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
         }
     }
 
-    GenericTokens {
-        consts: quote! { #(#generic_consts)* },
-        refs: quote! { &[#(#generic_refs),*] },
-    }
+    TokenPair::from_vecs(generic_consts, generic_refs)
 }
 
-fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig) -> LifetimeTokens {
+fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig) -> TokenPair {
     let mut lifetime_consts = Vec::new();
     let mut lifetime_refs = Vec::new();
 
@@ -441,13 +422,10 @@ fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
         }
     }
 
-    LifetimeTokens {
-        consts: quote! { #(#lifetime_consts)* },
-        refs: quote! { &[#(#lifetime_refs),*] },
-    }
+    TokenPair::from_vecs(lifetime_consts, lifetime_refs)
 }
 
-fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool) -> AttributeTokens {
+fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool) -> TokenPair {
     let mut attr_consts = Vec::new();
     let mut attr_refs = Vec::new();
 
@@ -478,13 +456,10 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
         attr_refs.push(quote! { #attr_ident });
     }
 
-    AttributeTokens {
-        consts: quote! { #(#attr_consts)* },
-        refs: quote! { &[#(#attr_refs),*] },
-    }
+    TokenPair::from_vecs(attr_consts, attr_refs)
 }
 
-fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> TokenPair {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
     let mut field_num = 0;
@@ -497,18 +472,15 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
         field_num += 1;
         let name = field.ident.as_ref().unwrap().to_string();
         let tag: u32 = field_config.custom_tag.unwrap_or(field_num).try_into().unwrap();
-        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config);
+        let (consts, refs) = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config);
         field_consts.push(consts);
         field_refs.push(refs);
     }
 
-    FieldTokens {
-        consts: quote! { #(#field_consts)* },
-        refs: quote! { &[#(#field_refs),*] },
-    }
+    TokenPair::from_vecs(field_consts, field_refs)
 }
 
-fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> TokenPair {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
 
@@ -518,18 +490,15 @@ fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &s
             continue;
         }
         let tag: u32 = field_config.custom_tag.unwrap_or(idx + 1).try_into().unwrap();
-        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Unnamed, config);
+        let (consts, refs) = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Unnamed, config);
         field_consts.push(consts);
         field_refs.push(refs);
     }
 
-    FieldTokens {
-        consts: quote! { #(#field_consts)* },
-        refs: quote! { &[#(#field_refs),*] },
-    }
+    TokenPair::from_vecs(field_consts, field_refs)
 }
 
-fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_idx: usize, fields: &Fields, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_idx: usize, fields: &Fields, config: &UnifiedProtoConfig) -> TokenPair {
     match fields {
         Fields::Named(named) => build_named_fields_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), &named.named, config),
         Fields::Unnamed(unnamed) => {
@@ -537,24 +506,15 @@ fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_id
                 let field = &unnamed.unnamed[0];
                 let field_config = parse_field_config(field);
                 if field_config.skip {
-                    return FieldTokens {
-                        consts: quote! {},
-                        refs: quote! { &[] },
-                    };
+                    return TokenPair::empty();
                 }
 
-                let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config);
-                return FieldTokens { consts, refs: quote! { &[#refs] } };
+                let (consts, refs) = build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config);
+                return TokenPair { consts, refs: quote! { &[#refs] } };
             }
-            FieldTokens {
-                consts: quote! {},
-                refs: quote! { &[] },
-            }
+            TokenPair::empty()
         }
-        Fields::Unit => FieldTokens {
-            consts: quote! {},
-            refs: quote! { &[] },
-        },
+        Fields::Unit => TokenPair::empty(),
     }
 }
 
@@ -594,8 +554,10 @@ fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &
     };
 
     let parsed = parse_field_type(&inner_type);
-    let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
-    let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
+    // proto_ident and rust_proto_ident use the same logic
+    let ident_tokens = build_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
+    let proto_ident = ident_tokens.clone();
+    let rust_proto_ident = ident_tokens;
     let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type);
     let (array_consts, rust_kind) = rust_kind_tokens(type_ident, suffix, idx, &ty);
     let extra_consts = quote! { #generic_consts #array_consts };
@@ -610,32 +572,9 @@ fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &
     }
 }
 
-fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType, item_generics: &syn::Generics) -> TokenStream2 {
-    if let Some(ref import_path) = config.import_path {
-        let base_name = proto_type_name(inner_type);
-        return proto_ident_literal(&base_name, import_path, import_path);
-    }
-
-    if let Some(rename) = &config.rename {
-        return proto_ident_literal(&rename.proto_type, "", "");
-    }
-
-    if parsed.map_kind.is_some() {
-        return proto_ident_literal(&parsed.proto_type, "", "");
-    }
-
-    if let Some(param_name) = generic_param_name(inner_type, item_generics) {
-        return proto_ident_literal(&param_name, "", "");
-    }
-
-    if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
-        return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
-    }
-
-    proto_ident_literal(&parsed.proto_type, "", "")
-}
-
-fn rust_proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType, item_generics: &syn::Generics) -> TokenStream2 {
+/// Builds proto ident tokens for a field type.
+/// Used for both proto_ident and rust_proto_ident (they are identical).
+fn build_proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, parsed: &ParsedFieldType, item_generics: &syn::Generics) -> TokenStream2 {
     if let Some(ref import_path) = config.import_path {
         let base_name = proto_type_name(inner_type);
         return proto_ident_literal(&base_name, import_path, import_path);
@@ -665,6 +604,7 @@ enum FieldName {
     Unnamed,
 }
 
+/// Returns (consts, refs) tuple for a field
 #[allow(clippy::too_many_arguments)]
 fn build_field_const_tokens(
     type_ident: &syn::Ident,
@@ -675,7 +615,7 @@ fn build_field_const_tokens(
     tag: u32,
     name: FieldName,
     item_config: &UnifiedProtoConfig,
-) -> FieldConstTokens {
+) -> (TokenStream2, TokenStream2) {
     let field_ident = field_const_ident(type_ident, suffix, idx);
     let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false);
     let attr_consts = attrs_tokens.consts;
@@ -693,24 +633,23 @@ fn build_field_const_tokens(
         FieldName::Unnamed => quote! { ::core::option::Option::None },
     };
 
-    FieldConstTokens {
-        consts: quote! {
-            #[cfg(feature = "build-schemas")]
-            const #field_ident: ::proto_rs::schemas::Field = ::proto_rs::schemas::Field {
-                name: #name_tokens,
-                proto_ident: #proto_ident,
-                rust_proto_ident: #rust_proto_ident,
-                generic_args: #generic_args,
-                proto_label: #label,
-                tag: #tag,
-                attributes: #attr_refs,
-                rust_kind: #rust_kind,
-            };
-            #attr_consts
-            #extra_consts
-        },
-        refs: quote! { &#field_ident },
-    }
+    let consts = quote! {
+        #[cfg(feature = "build-schemas")]
+        const #field_ident: ::proto_rs::schemas::Field = ::proto_rs::schemas::Field {
+            name: #name_tokens,
+            proto_ident: #proto_ident,
+            rust_proto_ident: #rust_proto_ident,
+            generic_args: #generic_args,
+            proto_label: #label,
+            tag: #tag,
+            attributes: #attr_refs,
+            rust_kind: #rust_kind,
+        };
+        #attr_consts
+        #extra_consts
+    };
+    let refs = quote! { &#field_ident };
+    (consts, refs)
 }
 
 fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
