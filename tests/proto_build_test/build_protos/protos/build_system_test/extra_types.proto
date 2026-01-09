@@ -3,6 +3,7 @@ syntax = "proto3";
 package extra_types;
 
 import "goon_types.proto";
+import "solana.proto";
 
 message BuildConfig {
   int64 timeout = 1;
@@ -13,6 +14,7 @@ message BuildRequest {
   BuildConfig config = 1;
   goon_types.RizzPing ping = 2;
   goon_types.Id owner = 3;
+  solana.Signature signature = 4;
 }
 
 message BuildResponse {

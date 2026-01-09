@@ -6,6 +6,7 @@ pub mod extra_types {
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
     use crate::goon_types::ServiceStatus;
+    use solana_signature::Signature;
 
     #[proto_message]
     pub struct BuildConfig {
@@ -20,6 +21,7 @@ pub mod extra_types {
         pub config: BuildConfig,
         pub ping: RizzPing,
         pub owner: Id,
+        pub signature: Signature,
     }
 
     #[proto_message]
@@ -138,21 +140,6 @@ pub mod sigma_rpc_simple {
 pub mod solana {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
-
-    #[proto_message]
-    pub struct Address {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
-    pub struct Keypair {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
-    pub struct Signature {
-        pub inner: [u8; BYTES],
-    }
 
     #[proto_message]
     pub enum InstructionError {

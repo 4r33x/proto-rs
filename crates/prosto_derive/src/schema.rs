@@ -765,7 +765,7 @@ fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usi
     )
 }
 
-/// Returns (extra_consts, rust_kind_tokens) for the field type
+/// Returns `(extra_consts, rust_kind_tokens)` for the field type
 fn rust_kind_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, ty: &Type) -> (TokenStream2, TokenStream2) {
     let Type::Array(array) = ty else {
         return (quote! {}, quote! { ::proto_rs::schemas::RustFieldKind::Simple });

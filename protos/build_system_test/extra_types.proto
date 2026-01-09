@@ -11,6 +11,7 @@ message BuildRequest {
   BuildConfig config = 1;
   RizzPing ping = 2;
   TransparentId owner = 3;
+  Signature signature = 4;
 }
 
 message BuildResponse {

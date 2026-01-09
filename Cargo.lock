@@ -1212,6 +1212,7 @@ dependencies = [
  "inventory",
  "prost",
  "proto_rs",
+ "solana-signature",
  "tokio",
  "tokio-stream",
  "tonic",

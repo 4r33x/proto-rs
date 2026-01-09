@@ -2,5 +2,3 @@
 complex_expanded_prost.rs
 complex_expanded_proto.rs
 /proptest-regressions
-/build_protos
-/src/client.rs
