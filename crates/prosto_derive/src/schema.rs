@@ -7,6 +7,17 @@ use syn::Field;
 use syn::Fields;
 use syn::Type;
 
+/// Classifies the kind of generic argument
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GenericArgKind {
+    /// A generic type parameter (e.g., T, K, V)
+    Generic,
+    /// A concrete type (e.g., String, Vec<u32>)
+    ConcreteType,
+    /// A const generic parameter (e.g., const N: usize)
+    Const,
+}
+
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::MethodInfo;
 use crate::utils::ParsedFieldType;
@@ -198,7 +209,7 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
 }
 
 pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], rpc_package_name: &str, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let methods_tokens = build_service_method_tokens(type_ident, const_suffix, methods);
+    let methods_tokens = build_service_method_tokens(type_ident, const_suffix, methods, &config.item_generics);
     let method_consts = methods_tokens.consts;
     let method_refs = methods_tokens.refs;
     let rpc_package_literal = rpc_package_name.to_string();
@@ -333,7 +344,7 @@ fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields, c
     }
 }
 
-fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &[MethodInfo]) -> ServiceMethodTokens {
+fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &[MethodInfo], generics: &syn::Generics) -> ServiceMethodTokens {
     let mut method_consts = Vec::new();
     let mut method_refs = Vec::new();
 
@@ -341,10 +352,10 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
         let method_ident = service_method_const_ident(type_ident, suffix, idx);
         let method_name = to_pascal_case(&method.name.to_string());
         let request_ident = proto_ident_tokens_from_type(&method.request_type);
-        let (request_generic_consts, request_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type);
+        let (request_generic_consts, request_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type, generics);
         let response_type = method.inner_response_type.as_ref().unwrap_or(&method.response_type);
         let response_ident = proto_ident_tokens_from_type(response_type);
-        let (response_generic_consts, response_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type);
+        let (response_generic_consts, response_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type, generics);
         let server_streaming = method.is_streaming;
 
         method_consts.push(quote! {
@@ -598,7 +609,7 @@ fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &
     let parsed = parse_field_type(&inner_type);
     let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type);
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty);
     let extra_consts = quote! { #generic_consts #array_consts };
 
@@ -730,7 +741,32 @@ fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
     }
 }
 
-fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usize, context: &str, ty: &Type) -> (TokenStream2, TokenStream2) {
+/// Determines the kind of a generic argument (Generic parameter, Concrete type, or Const)
+fn classify_generic_arg(arg: &syn::GenericArgument, generics: &syn::Generics) -> GenericArgKind {
+    match arg {
+        syn::GenericArgument::Type(ty) => {
+            // Check if this type is a bare generic parameter
+            if let Type::Path(path) = ty
+                && path.qself.is_none()
+                && path.path.segments.len() == 1
+            {
+                let segment = &path.path.segments[0];
+                if segment.arguments.is_empty() {
+                    // Check if it matches any type parameter
+                    if generics.type_params().any(|param| param.ident == segment.ident) {
+                        return GenericArgKind::Generic;
+                    }
+                }
+            }
+            // Otherwise, it's a concrete type
+            GenericArgKind::ConcreteType
+        }
+        syn::GenericArgument::Const(_) => GenericArgKind::Const,
+        _ => GenericArgKind::ConcreteType, // Lifetimes and other arguments treated as concrete
+    }
+}
+
+fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usize, context: &str, ty: &Type, generics: &syn::Generics) -> (TokenStream2, TokenStream2) {
     let Type::Path(path) = ty else {
         return (quote! {}, quote! { &[] });
     };
@@ -749,13 +785,22 @@ fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usi
         let syn::GenericArgument::Type(arg_ty) = arg else {
             continue;
         };
-        let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
-        let proto_ident = proto_ident_tokens_from_type(arg_ty);
-        arg_consts.push(quote! {
-            #[cfg(feature = "build-schemas")]
-            const #arg_ident: ::proto_rs::schemas::ProtoIdent = #proto_ident;
-        });
-        arg_refs.push(quote! { &#arg_ident });
+
+        // Classify the generic argument
+        let kind = classify_generic_arg(arg, generics);
+
+        // Only generate PROTO_SCHEMA_GENERIC_ARG constants for concrete types
+        // Skip generic parameters and const generics
+        if kind == GenericArgKind::ConcreteType {
+            let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
+            let proto_ident = proto_ident_tokens_from_type(arg_ty);
+            arg_consts.push(quote! {
+                #[cfg(feature = "build-schemas")]
+                const #arg_ident: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+            });
+            arg_refs.push(quote! { &#arg_ident });
+        }
+
         arg_idx += 1;
     }
 

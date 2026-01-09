@@ -6,3 +6,5 @@ pub mod solana;
 
 #[cfg(feature = "chrono")]
 pub mod chrono;
+
+mod hashers;

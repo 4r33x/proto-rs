@@ -6,6 +6,7 @@ use proc_macro::TokenStream;
 
 mod emit_proto;
 mod generic_substitutions;
+mod impl_proto_ident;
 mod parse;
 mod proto_dump;
 mod proto_import;
@@ -70,4 +71,9 @@ pub fn proto_rpc(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn proto_dump(attr: TokenStream, item: TokenStream) -> TokenStream {
     proto_dump::proto_dump_impl(attr, item)
+}
+
+#[proc_macro]
+pub fn impl_proto_ident(input: TokenStream) -> TokenStream {
+    impl_proto_ident::impl_proto_ident(input)
 }

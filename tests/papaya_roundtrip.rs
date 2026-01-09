@@ -4,6 +4,7 @@ use std::hash::BuildHasherDefault;
 use std::hash::Hasher;
 
 use proto_rs::ProtoExt;
+use proto_rs::impl_proto_ident;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/papaya.proto")]

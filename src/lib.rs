@@ -13,6 +13,7 @@
 
 extern crate self as proto_rs;
 
+pub use prosto_derive::impl_proto_ident;
 pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
