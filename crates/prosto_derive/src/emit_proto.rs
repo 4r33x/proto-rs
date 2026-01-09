@@ -311,7 +311,7 @@ pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo],
 }
 
 fn qualify_type_name(ty: &Type, proto_imports: &BTreeMap<String, BTreeSet<String>>, import_all_from: Option<&str>) -> String {
-    let type_name = extract_type_name(ty);
+    let type_name = proto_type_name(ty);
     let base_name = extract_base_type_name(ty);
 
     // Check if type is in any import
@@ -345,10 +345,6 @@ fn is_generic_param(ty: &Type, generic_params: &[syn::Ident]) -> bool {
         Type::Paren(paren) => is_generic_param(&paren.elem, generic_params),
         _ => false,
     }
-}
-
-fn extract_type_name(ty: &Type) -> String {
-    proto_type_name(ty)
 }
 
 fn extract_base_type_name(ty: &Type) -> Option<String> {
