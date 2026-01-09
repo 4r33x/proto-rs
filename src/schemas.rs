@@ -108,6 +108,22 @@ pub struct Variant {
     pub discriminant: Option<i32>,
 }
 
+/// Represents the Rust type category for a field
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RustFieldKind {
+    /// A simple scalar or message type
+    Simple,
+    /// A fixed-size array like `[T; N]`
+    Array {
+        len: &'static str,
+        elem: ProtoIdent,
+    },
+    /// A byte array `[u8; N]` which gets special handling
+    ByteArray {
+        len: &'static str,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Field {
     pub name: Option<&'static str>,
@@ -117,9 +133,7 @@ pub struct Field {
     pub proto_label: ProtoLabel,
     pub tag: u32,
     pub attributes: &'static [Attribute],
-    pub array_len: Option<&'static str>,
-    pub array_is_bytes: bool,
-    pub array_elem: Option<ProtoIdent>,
+    pub rust_kind: RustFieldKind,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

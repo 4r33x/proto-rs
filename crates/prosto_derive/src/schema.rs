@@ -563,9 +563,7 @@ struct FieldInfoTokens {
     rust_proto_ident: TokenStream2,
     generic_args: TokenStream2,
     label: TokenStream2,
-    array_len: TokenStream2,
-    array_is_bytes: TokenStream2,
-    array_elem: TokenStream2,
+    rust_kind: TokenStream2,
     extra_consts: TokenStream2,
 }
 
@@ -599,7 +597,7 @@ fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &
     let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type);
-    let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty);
+    let (array_consts, rust_kind) = rust_kind_tokens(type_ident, suffix, idx, &ty);
     let extra_consts = quote! { #generic_consts #array_consts };
 
     FieldInfoTokens {
@@ -607,9 +605,7 @@ fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &
         rust_proto_ident,
         generic_args,
         label,
-        array_len,
-        array_is_bytes,
-        array_elem,
+        rust_kind,
         extra_consts,
     }
 }
@@ -689,9 +685,7 @@ fn build_field_const_tokens(
         rust_proto_ident,
         generic_args,
         label,
-        array_len,
-        array_is_bytes,
-        array_elem,
+        rust_kind,
         extra_consts,
     } = field_info_tokens(type_ident, suffix, idx, field, config, &item_config.item_generics);
     let name_tokens = match name {
@@ -710,9 +704,7 @@ fn build_field_const_tokens(
                 proto_label: #label,
                 tag: #tag,
                 attributes: #attr_refs,
-                array_len: #array_len,
-                array_is_bytes: #array_is_bytes,
-                array_elem: #array_elem,
+                rust_kind: #rust_kind,
             };
             #attr_consts
             #extra_consts
@@ -773,32 +765,47 @@ fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usi
     )
 }
 
-fn array_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, ty: &Type) -> (TokenStream2, TokenStream2, TokenStream2, TokenStream2) {
+/// Returns (extra_consts, rust_kind_tokens) for the field type
+fn rust_kind_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, ty: &Type) -> (TokenStream2, TokenStream2) {
     let Type::Array(array) = ty else {
-        return (quote! {}, quote! { ::core::option::Option::None }, quote! { false }, quote! { ::core::option::Option::None });
+        return (quote! {}, quote! { ::proto_rs::schemas::RustFieldKind::Simple });
     };
 
     let len = &array.len;
     let len_ident = array_len_const_ident(type_ident, suffix, idx);
-    let elem_ty = &array.elem;
-    let elem_ident = array_elem_const_ident(type_ident, suffix, idx);
-    let elem_proto_ident = proto_ident_tokens_from_type(elem_ty);
-
-    let array_len = quote! { ::core::option::Option::Some(#len_ident) };
     let is_bytes = crate::utils::is_bytes_array(ty);
-    let array_is_bytes = quote! { #is_bytes };
-    let array_elem = quote! { ::core::option::Option::Some(#elem_ident) };
 
     let array_len_const = quote! {
         #[cfg(feature = "build-schemas")]
         const #len_ident: &str = stringify!(#len);
     };
+
+    if is_bytes {
+        let rust_kind = quote! {
+            ::proto_rs::schemas::RustFieldKind::ByteArray {
+                len: #len_ident,
+            }
+        };
+        return (array_len_const, rust_kind);
+    }
+
+    let elem_ty = &array.elem;
+    let elem_ident = array_elem_const_ident(type_ident, suffix, idx);
+    let elem_proto_ident = proto_ident_tokens_from_type(elem_ty);
+
     let array_elem_const = quote! {
         #[cfg(feature = "build-schemas")]
         const #elem_ident: ::proto_rs::schemas::ProtoIdent = #elem_proto_ident;
     };
 
-    (quote! { #array_len_const #array_elem_const }, array_len, array_is_bytes, array_elem)
+    let rust_kind = quote! {
+        ::proto_rs::schemas::RustFieldKind::Array {
+            len: #len_ident,
+            elem: #elem_ident,
+        }
+    };
+
+    (quote! { #array_len_const #array_elem_const }, rust_kind)
 }
 
 fn generic_param_name(ty: &Type, generics: &syn::Generics) -> Option<String> {

@@ -699,14 +699,17 @@ fn render_field_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    if let Some(array_len) = field.array_len {
-        let elem_ident = field.array_elem.unwrap_or(field.proto_ident);
-        let elem_type = if field.array_is_bytes {
-            "u8".to_string()
-        } else {
-            render_proto_type(elem_ident, package_name, package_by_ident, proto_type_index, client_imports)
-        };
-        return format!("[{elem_type}; {array_len}]");
+    use super::RustFieldKind;
+
+    match field.rust_kind {
+        RustFieldKind::ByteArray { len } => {
+            return format!("[u8; {len}]");
+        }
+        RustFieldKind::Array { len, elem } => {
+            let elem_type = render_proto_type(elem, package_name, package_by_ident, proto_type_index, client_imports);
+            return format!("[{elem_type}; {len}]");
+        }
+        RustFieldKind::Simple => {}
     }
 
     let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
@@ -740,16 +743,7 @@ fn render_proto_type(
     if let Some(import) = client_imports.get(&type_name) {
         return import.render_type();
     }
-    let package = package_by_ident
-        .get(&ident)
-        .map(String::as_str)
-        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
-
-    match package {
-        Some(package) if package == current_package => type_name,
-        Some(package) if !package.is_empty() => type_name,
-        _ => type_name,
-    }
+    type_name
 }
 
 fn render_proto_type_with_generics(
