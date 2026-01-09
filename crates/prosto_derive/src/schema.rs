@@ -592,6 +592,13 @@ fn build_proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfi
         return proto_ident_literal(&param_name, "", "");
     }
 
+    // Check if this type contains generic parameters in its arguments
+    // If so, we can't use ProtoIdentifiable because those parameters won't be in scope
+    if type_contains_generic_params(inner_type, item_generics) {
+        let base_name = proto_type_name(inner_type);
+        return proto_ident_literal(&base_name, "", "");
+    }
+
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
     }
@@ -653,6 +660,19 @@ fn build_field_const_tokens(
 }
 
 fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
+    // Check if this is a simple path (likely a generic type parameter)
+    if let Type::Path(path) = ty {
+        if path.qself.is_none() && path.path.segments.len() == 1 {
+            let segment = &path.path.segments[0];
+            if segment.arguments.is_empty() {
+                // This is likely a generic type parameter like K, V, S
+                // Use a literal ProtoIdent with the parameter name
+                let name = segment.ident.to_string();
+                return proto_ident_literal(&name, "", "");
+            }
+        }
+    }
+
     let parsed = parse_field_type(ty);
     if parsed.is_message_like {
         quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT }
@@ -766,6 +786,44 @@ fn generic_param_name(ty: &Type, generics: &syn::Generics) -> Option<String> {
         Type::Group(group) => generic_param_name(&group.elem, generics),
         Type::Paren(paren) => generic_param_name(&paren.elem, generics),
         _ => None,
+    }
+}
+
+/// Check if a type contains any generic type parameters from the given generics list.
+/// This includes checking nested generic arguments like LruPair<K, V> where K and V are parameters.
+fn type_contains_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
+    match ty {
+        Type::Path(path) => {
+            // Check if this is itself a generic parameter
+            if path.qself.is_none() && path.path.segments.len() == 1 {
+                let segment = &path.path.segments[0];
+                if segment.arguments.is_empty() {
+                    if generics.type_params().any(|param| param.ident == segment.ident) {
+                        return true;
+                    }
+                }
+            }
+
+            // Check generic arguments recursively
+            for segment in &path.path.segments {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    for arg in &args.args {
+                        if let syn::GenericArgument::Type(arg_ty) = arg {
+                            if type_contains_generic_params(arg_ty, generics) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            false
+        }
+        Type::Reference(reference) => type_contains_generic_params(&reference.elem, generics),
+        Type::Group(group) => type_contains_generic_params(&group.elem, generics),
+        Type::Paren(paren) => type_contains_generic_params(&paren.elem, generics),
+        Type::Array(array) => type_contains_generic_params(&array.elem, generics),
+        Type::Tuple(tuple) => tuple.elems.iter().any(|elem| type_contains_generic_params(elem, generics)),
+        _ => false,
     }
 }
 
