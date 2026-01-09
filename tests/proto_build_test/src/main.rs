@@ -128,7 +128,15 @@ pub trait SigmaRpc {
 
 use proto_rs::schemas::ProtoSchema;
 fn main() {
-    proto_rs::schemas::write_all("build_protos").expect("Failed to write proto files");
+    let rust_client_path = "src/client.rs";
+    let rust_ctx = proto_rs::schemas::RustClientCtx::enabled(rust_client_path).with_imports(&["fastnum::UD128"]);
+    proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
+
+    let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
+    assert!(client_contents.contains("use fastnum::UD128;"));
+    assert!(!client_contents.contains("pub struct UD128"));
+    assert!(client_contents.contains("pub mod"));
+    assert!(client_contents.contains("pub trait"));
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);

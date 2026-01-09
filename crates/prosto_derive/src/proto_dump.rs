@@ -96,7 +96,8 @@ fn trait_service(mut input: ItemTrait, mut config: UnifiedProtoConfig) -> TokenS
     let clean_name = proto_name.strip_suffix("Proto").unwrap_or(&proto_name);
     let (methods, _) = extract_methods_and_types(&input);
     let proto_def = generate_service_content(&input.ident, &methods, &config.type_imports, config.import_all_from.as_deref());
-    let schema_tokens = schema_tokens_for_service(&input.ident, clean_name, &methods, &config, clean_name);
+    let rpc_package = config.get_rpc_package();
+    let schema_tokens = schema_tokens_for_service(&input.ident, clean_name, &methods, rpc_package, &config, clean_name);
     config.register_and_emit_proto(&proto_def, schema_tokens);
     strip_proto_attributes_from_trait(&mut input);
     let proto = config.imports_mat;

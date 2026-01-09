@@ -104,7 +104,7 @@ pub mod schemas;
 /// fn main() {
 ///     // Only generate protos when explicitly requested
 ///     if std::env::var("GENERATE_PROTOS").is_ok() {
-///         match proto_rs::schemas::write_all("protos") {
+///         match proto_rs::schemas::write_all("protos", proto_rs::schemas::RustClientCtx::disabled()) {
 ///             Ok(count) => println!("Generated {} proto files", count),
 ///             Err(e) => panic!("Failed to generate protos: {}", e),
 ///         }

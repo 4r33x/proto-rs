@@ -386,7 +386,7 @@ Enable the `build-schemas` feature for the crate that should aggregate `.proto` 
 ```rust
 fn main() {
     // Typically gated by an env flag to avoid touching disk unnecessarily.
-    proto_rs::schemas::write_all("./protos")
+    proto_rs::schemas::write_all("./protos", proto_rs::schemas::RustClientCtx::disabled())
         .expect("failed to write generated protos");
 
     for schema in proto_rs::schemas::all() {
