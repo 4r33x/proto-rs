@@ -839,7 +839,7 @@ fn render_generics(entry: &ProtoSchema) -> String {
                 params.push(param);
             }
             GenericKind::Const => {
-                let const_type = generic.const_type.unwrap_or("usize");
+                let const_type = generic.const_type.unwrap();
                 params.push(format!("const {}: {const_type}", generic.name));
             }
         }
