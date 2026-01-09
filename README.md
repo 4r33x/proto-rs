@@ -373,7 +373,7 @@ If you already have a configured `tonic::Request<&T>`, call `request.to_zero_cop
 
 ### Performance trade-offs vs. Prost
 
-The runtime exposes both zero-copy and owned-code paths so you can pick the trade-off that matches your workload. Wrapping payloads in `ZeroCopyRequest`/`ZeroCopyResponse` means the encoder works with borrowed data (`SunByRef`) and never materializes owned clones before writing bytes to the socket, which is why the benchmark suite records 70% higher throughput than `prost::Message` when measuring identical service implementations (`bench_zero_copy_vs_clone`).
+The runtime exposes both zero-copy and owned-code paths so you can pick the trade-off that matches your workload. Wrapping payloads in `ZeroCopyRequest`/`ZeroCopyResponse` means the encoder works with borrowed data (`SunByRef`) and never materializes owned clones before writing bytes to the transport buffer, which is why the benchmark suite records 70% higher throughput than `prost::Message` when measuring identical service implementations (`bench_zero_copy_vs_clone`).
 
 Owned encoding\decoding is somewhat slower or faster in somecases - see bench section
 

@@ -1,3 +1,7 @@
-Add multible suns in proto_message_macro
-Improve encode\decode codegen for performance 
 Fix readme
+Add rust client build system
+Refactor of macro code to remove AI shitcode
+Refactor of 'schemas::write_all' code to remove AI shitcode
+Correct #[proto(generic_types)] behaviour in build
+Add type alias resolver to build system
+Add ctx to client service methods ("advanced interceptors")
