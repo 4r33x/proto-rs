@@ -102,16 +102,14 @@ pub(crate) fn collect_generic_specializations(entries: &[&ProtoSchema], ident_in
         entry.sort_by(|left, right| left.name.cmp(&right.name));
     }
 
-    let mut ordered = specializations;
-    for (base, specs) in &mut ordered {
-        let base_entry = ident_index.get(base);
-        if let Some(base_entry) = base_entry {
+    for (base, specs) in &mut specializations {
+        if let Some(base_entry) = ident_index.get(base) {
             let param_count = base_entry.generics.iter().filter(|generic| matches!(generic.kind, super::GenericKind::Type)).count();
             specs.retain(|spec| spec.args.len() == param_count);
         }
     }
 
-    ordered
+    specializations
 }
 
 pub(crate) fn render_entries(
@@ -370,18 +368,12 @@ fn collect_proto_ident_imports(
     file_name: &str,
     package_name: &str,
 ) -> std::io::Result<()> {
-    if ident.proto_file_path.is_empty() {
+    // Skip if no file path or same file
+    if ident.proto_file_path.is_empty() || ident.proto_file_path == file_name {
         return Ok(());
     }
 
-    if ident.proto_file_path == file_name {
-        return Ok(());
-    }
-
-    if ident.proto_package_name.is_empty() && ident.proto_file_path.is_empty() {
-        return Ok(());
-    }
-
+    // Different file or package - needs import
     if ident.proto_package_name != package_name || ident.proto_file_path != file_name {
         if !ident.module_path.is_empty() && !ident_index.contains_key(ident) {
             return Err(std::io::Error::other(format!(
