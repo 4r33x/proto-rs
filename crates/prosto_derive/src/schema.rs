@@ -120,7 +120,11 @@ fn build_sun_trait_impls(
 }
 
 pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fields: &Fields, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let fields_tokens = build_fields_tokens(type_ident, const_suffix, fields, config);
+    // Only use impl block for truly generic types (not concrete substitutions via generic_types)
+    // If generic_types is specified, we generate multiple concrete schemas at module level
+    // If not specified but type has generics, we generate one schema in impl block
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let fields_tokens = build_fields_tokens(type_ident, const_suffix, fields, config, has_unsubstituted_generics);
     let field_consts = fields_tokens.consts;
     let field_refs = fields_tokens.refs;
     let entry_tokens = quote! {
@@ -129,10 +133,20 @@ pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fie
         }
     };
 
-    build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, field_consts)
+    build_schema_tokens(
+        type_ident,
+        message_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        field_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{err}"));
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
     if let Some(idx) = marked_default
@@ -159,7 +173,11 @@ pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str
                 discriminant: Some(#value),
             };
         });
-        variant_refs.push(quote! { &#variant_const });
+        if has_unsubstituted_generics {
+            variant_refs.push(quote! { &Self::#variant_const });
+        } else {
+            variant_refs.push(quote! { &#variant_const });
+        }
     }
 
     let variant_refs = quote! { &[#(#variant_refs),*] };
@@ -171,19 +189,35 @@ pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str
         }
     };
 
-    build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, variant_consts)
+    build_schema_tokens(
+        type_ident,
+        message_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        variant_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
     let mut variant_consts = Vec::new();
     let mut variant_refs = Vec::new();
 
     for (idx, variant) in data.variants.iter().enumerate() {
         let variant_const = variant_const_ident(type_ident, const_suffix, idx);
         let variant_name = variant.ident.to_string();
-        let fields_tokens = build_variant_fields_tokens(type_ident, const_suffix, idx, &variant.fields, config);
+        let fields_tokens = build_variant_fields_tokens(type_ident, const_suffix, idx, &variant.fields, config, has_unsubstituted_generics);
         let field_consts = fields_tokens.consts;
         let field_refs = fields_tokens.refs;
+
+        let variant_ref = if has_unsubstituted_generics {
+            quote! { &Self::#variant_const }
+        } else {
+            quote! { &#variant_const }
+        };
 
         variant_consts.push(quote! {
             #[cfg(feature = "build-schemas")]
@@ -194,7 +228,7 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
             };
             #field_consts
         });
-        variant_refs.push(quote! { &#variant_const });
+        variant_refs.push(variant_ref);
     }
 
     let variant_consts = quote! { #(#variant_consts)* };
@@ -205,10 +239,20 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
         }
     };
 
-    build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, variant_consts)
+    build_schema_tokens(
+        type_ident,
+        message_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        variant_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], rpc_package_name: &str, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
+    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
     let methods_tokens = build_service_method_tokens(type_ident, const_suffix, methods, &config.item_generics);
     let method_consts = methods_tokens.consts;
     let method_refs = methods_tokens.refs;
@@ -220,7 +264,16 @@ pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, me
         }
     };
 
-    build_schema_tokens(type_ident, service_name, config, const_suffix, entry_tokens, method_consts)
+    build_schema_tokens(
+        type_ident,
+        service_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        method_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[String]) -> TokenStream2 {
@@ -292,12 +345,26 @@ struct FieldConstTokens {
     refs: TokenStream2,
 }
 
-fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &UnifiedProtoConfig, const_suffix: &str, entry_tokens: TokenStream2, extra_consts: TokenStream2) -> TokenStream2 {
+#[allow(clippy::too_many_arguments)]
+fn build_schema_tokens(
+    type_ident: &syn::Ident,
+    proto_type: &str,
+    config: &UnifiedProtoConfig,
+    const_suffix: &str,
+    entry_tokens: TokenStream2,
+    extra_consts: TokenStream2,
+    generics: &syn::Generics,
+    has_unsubstituted_generics: bool,
+) -> TokenStream2 {
     let (proto_package, proto_file_path) = proto_path_info(config);
     let schema_ident = schema_ident(type_ident, const_suffix);
-    let generics_tokens = build_generics_tokens(type_ident, const_suffix, config);
-    let lifetimes_tokens = build_lifetime_tokens(type_ident, const_suffix, config);
-    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs, config.transparent);
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    // Build tokens with or without Self:: prefix depending on whether we're in an impl block
+    let generics_tokens = build_generics_tokens(type_ident, const_suffix, config, has_unsubstituted_generics);
+    let lifetimes_tokens = build_lifetime_tokens(type_ident, const_suffix, config, has_unsubstituted_generics);
+    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs, config.transparent, has_unsubstituted_generics);
 
     let generics_consts = generics_tokens.consts;
     let generics_refs = generics_tokens.refs;
@@ -306,37 +373,66 @@ fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &Unifi
     let attrs_consts = attrs_tokens.consts;
     let attrs_refs = attrs_tokens.refs;
 
-    quote! {
-        #[cfg(feature = "build-schemas")]
-        pub const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
-            id: ::proto_rs::schemas::ProtoIdent {
-                module_path: ::core::module_path!(),
-                name: stringify!(#type_ident),
-                proto_package_name: #proto_package,
-                proto_file_path: #proto_file_path,
-                proto_type: #proto_type,
-            },
-            generics: #generics_refs,
-            lifetimes: #lifetime_refs,
-            top_level_attributes: #attrs_refs,
-            content: #entry_tokens,
-        };
+    // If the type has unsubstituted generics, we need to put everything in an impl block
+    // to ensure generic type parameters are in scope
+    if has_unsubstituted_generics {
+        quote! {
+            #[cfg(feature = "build-schemas")]
+            impl #impl_generics #type_ident #ty_generics #where_clause {
+                #generics_consts
+                #lifetime_consts
+                #attrs_consts
+                #extra_consts
 
-        #[cfg(feature = "build-schemas")]
-        inventory::submit! {
-            #schema_ident
+                pub const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
+                    id: ::proto_rs::schemas::ProtoIdent {
+                        module_path: ::core::module_path!(),
+                        name: stringify!(#type_ident),
+                        proto_package_name: #proto_package,
+                        proto_file_path: #proto_file_path,
+                        proto_type: #proto_type,
+                    },
+                    generics: #generics_refs,
+                    lifetimes: #lifetime_refs,
+                    top_level_attributes: #attrs_refs,
+                    content: #entry_tokens,
+                };
+            }
         }
+    } else {
+        // For non-generic types or concrete substitutions, keep the old behavior with inventory submission
+        quote! {
+            #[cfg(feature = "build-schemas")]
+            pub const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
+                id: ::proto_rs::schemas::ProtoIdent {
+                    module_path: ::core::module_path!(),
+                    name: stringify!(#type_ident),
+                    proto_package_name: #proto_package,
+                    proto_file_path: #proto_file_path,
+                    proto_type: #proto_type,
+                },
+                generics: #generics_refs,
+                lifetimes: #lifetime_refs,
+                top_level_attributes: #attrs_refs,
+                content: #entry_tokens,
+            };
 
-        #generics_consts
-        #lifetime_consts
-        #attrs_consts
-        #extra_consts
+            #[cfg(feature = "build-schemas")]
+            inventory::submit! {
+                #schema_ident
+            }
+
+            #generics_consts
+            #lifetime_consts
+            #attrs_consts
+            #extra_consts
+        }
     }
 }
-fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &Fields, config: &UnifiedProtoConfig, use_self_prefix: bool) -> FieldTokens {
     match fields {
-        Fields::Named(named) => build_named_fields_tokens(type_ident, suffix, &named.named, config),
-        Fields::Unnamed(unnamed) => build_unnamed_fields_tokens(type_ident, suffix, &unnamed.unnamed, config),
+        Fields::Named(named) => build_named_fields_tokens(type_ident, suffix, &named.named, config, use_self_prefix),
+        Fields::Unnamed(unnamed) => build_unnamed_fields_tokens(type_ident, suffix, &unnamed.unnamed, config, use_self_prefix),
         Fields::Unit => FieldTokens {
             consts: quote! {},
             refs: quote! { &[] },
@@ -381,7 +477,7 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
     }
 }
 
-fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig) -> GenericTokens {
+fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig, use_self_prefix: bool) -> GenericTokens {
     let mut generic_consts = Vec::new();
     let mut generic_refs = Vec::new();
 
@@ -392,6 +488,11 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
                 let name = type_param.ident.to_string();
                 let bounds = bounds_to_literals(&type_param.bounds);
                 let bounds_ident = generic_bound_const_ident(type_ident, suffix, idx);
+                let bounds_ref = if use_self_prefix {
+                    quote! { Self::#bounds_ident }
+                } else {
+                    quote! { #bounds_ident }
+                };
                 generic_consts.push(quote! {
                     #[cfg(feature = "build-schemas")]
                     const #bounds_ident: &[&str] = &[#(#bounds),*];
@@ -399,11 +500,15 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
                     const #generic_ident: ::proto_rs::schemas::Generic = ::proto_rs::schemas::Generic {
                         name: #name,
                         kind: ::proto_rs::schemas::GenericKind::Type,
-                        constraints: #bounds_ident,
+                        constraints: #bounds_ref,
                         const_type: ::core::option::Option::None,
                     };
                 });
-                generic_refs.push(quote! { #generic_ident });
+                if use_self_prefix {
+                    generic_refs.push(quote! { Self::#generic_ident });
+                } else {
+                    generic_refs.push(quote! { #generic_ident });
+                }
             }
             syn::GenericParam::Const(const_param) => {
                 let name = const_param.ident.to_string();
@@ -417,7 +522,11 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
                         const_type: ::core::option::Option::Some(stringify!(#const_ty)),
                     };
                 });
-                generic_refs.push(quote! { #generic_ident });
+                if use_self_prefix {
+                    generic_refs.push(quote! { Self::#generic_ident });
+                } else {
+                    generic_refs.push(quote! { #generic_ident });
+                }
             }
             syn::GenericParam::Lifetime(_) => {}
         }
@@ -429,7 +538,7 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
     }
 }
 
-fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig) -> LifetimeTokens {
+fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &UnifiedProtoConfig, use_self_prefix: bool) -> LifetimeTokens {
     let mut lifetime_consts = Vec::new();
     let mut lifetime_refs = Vec::new();
 
@@ -439,16 +548,25 @@ fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
             let bounds = lifetime_bounds_to_literals(&lifetime_param.bounds);
             let bounds_ident = lifetime_bound_const_ident(type_ident, suffix, idx);
             let lifetime_ident = lifetime_const_ident(type_ident, suffix, idx);
+            let bounds_ref = if use_self_prefix {
+                quote! { Self::#bounds_ident }
+            } else {
+                quote! { #bounds_ident }
+            };
             lifetime_consts.push(quote! {
                 #[cfg(feature = "build-schemas")]
                 const #bounds_ident: &[&str] = &[#(#bounds),*];
                 #[cfg(feature = "build-schemas")]
                 const #lifetime_ident: ::proto_rs::schemas::Lifetime = ::proto_rs::schemas::Lifetime {
                     name: #name,
-                    bounds: #bounds_ident,
+                    bounds: #bounds_ref,
                 };
             });
-            lifetime_refs.push(quote! { #lifetime_ident });
+            if use_self_prefix {
+                lifetime_refs.push(quote! { Self::#lifetime_ident });
+            } else {
+                lifetime_refs.push(quote! { #lifetime_ident });
+            }
         }
     }
 
@@ -458,7 +576,7 @@ fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
     }
 }
 
-fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool) -> AttributeTokens {
+fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool, use_self_prefix: bool) -> AttributeTokens {
     let mut attr_consts = Vec::new();
     let mut attr_refs = Vec::new();
 
@@ -473,7 +591,11 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
                 tokens: stringify!(#tokens),
             };
         });
-        attr_refs.push(quote! { #attr_ident });
+        if use_self_prefix {
+            attr_refs.push(quote! { Self::#attr_ident });
+        } else {
+            attr_refs.push(quote! { #attr_ident });
+        }
     }
 
     if include_transparent {
@@ -486,7 +608,11 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
                 tokens: "transparent",
             };
         });
-        attr_refs.push(quote! { #attr_ident });
+        if use_self_prefix {
+            attr_refs.push(quote! { Self::#attr_ident });
+        } else {
+            attr_refs.push(quote! { #attr_ident });
+        }
     }
 
     AttributeTokens {
@@ -495,7 +621,7 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
     }
 }
 
-fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig, use_self_prefix: bool) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
     let mut field_num = 0;
@@ -508,7 +634,7 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
         field_num += 1;
         let name = field.ident.as_ref().unwrap().to_string();
         let tag: u32 = field_config.custom_tag.unwrap_or(field_num).try_into().unwrap();
-        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config);
+        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Named(name), config, use_self_prefix);
         field_consts.push(consts);
         field_refs.push(refs);
     }
@@ -519,7 +645,13 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
     }
 }
 
-fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_unnamed_fields_tokens(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>,
+    config: &UnifiedProtoConfig,
+    use_self_prefix: bool,
+) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
 
@@ -529,7 +661,7 @@ fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &s
             continue;
         }
         let tag: u32 = field_config.custom_tag.unwrap_or(idx + 1).try_into().unwrap();
-        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Unnamed, config);
+        let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, suffix, idx, field, &field_config, tag, FieldName::Unnamed, config, use_self_prefix);
         field_consts.push(consts);
         field_refs.push(refs);
     }
@@ -540,9 +672,9 @@ fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &s
     }
 }
 
-fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_idx: usize, fields: &Fields, config: &UnifiedProtoConfig) -> FieldTokens {
+fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_idx: usize, fields: &Fields, config: &UnifiedProtoConfig, use_self_prefix: bool) -> FieldTokens {
     match fields {
-        Fields::Named(named) => build_named_fields_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), &named.named, config),
+        Fields::Named(named) => build_named_fields_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), &named.named, config, use_self_prefix),
         Fields::Unnamed(unnamed) => {
             if unnamed.unnamed.len() == 1 {
                 let field = &unnamed.unnamed[0];
@@ -554,7 +686,17 @@ fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_id
                     };
                 }
 
-                let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config);
+                let FieldConstTokens { consts, refs } = build_field_const_tokens(
+                    type_ident,
+                    &format!("{suffix}_VARIANT_{variant_idx}"),
+                    0,
+                    field,
+                    &field_config,
+                    0,
+                    FieldName::Unnamed,
+                    config,
+                    use_self_prefix,
+                );
                 return FieldTokens { consts, refs: quote! { &[#refs] } };
             }
             FieldTokens {
@@ -690,9 +832,10 @@ fn build_field_const_tokens(
     tag: u32,
     name: FieldName,
     item_config: &UnifiedProtoConfig,
+    use_self_prefix: bool,
 ) -> FieldConstTokens {
     let field_ident = field_const_ident(type_ident, suffix, idx);
-    let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false);
+    let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false, use_self_prefix);
     let attr_consts = attrs_tokens.consts;
     let attr_refs = attrs_tokens.refs;
     let FieldInfoTokens {
@@ -708,6 +851,12 @@ fn build_field_const_tokens(
     let name_tokens = match name {
         FieldName::Named(name) => quote! { ::core::option::Option::Some(#name) },
         FieldName::Unnamed => quote! { ::core::option::Option::None },
+    };
+
+    let field_ref = if use_self_prefix {
+        quote! { &Self::#field_ident }
+    } else {
+        quote! { &#field_ident }
     };
 
     FieldConstTokens {
@@ -728,7 +877,7 @@ fn build_field_const_tokens(
             #attr_consts
             #extra_consts
         },
-        refs: quote! { &#field_ident },
+        refs: field_ref,
     }
 }
 
