@@ -746,14 +746,15 @@ fn classify_generic_arg(arg: &syn::GenericArgument, generics: &syn::Generics) ->
     match arg {
         syn::GenericArgument::Type(ty) => {
             // Check if this type is a bare generic parameter
-            if let Type::Path(path) = ty {
-                if path.qself.is_none() && path.path.segments.len() == 1 {
-                    let segment = &path.path.segments[0];
-                    if segment.arguments.is_empty() {
-                        // Check if it matches any type parameter
-                        if generics.type_params().any(|param| param.ident == segment.ident) {
-                            return GenericArgKind::Generic;
-                        }
+            if let Type::Path(path) = ty
+                && path.qself.is_none()
+                && path.path.segments.len() == 1
+            {
+                let segment = &path.path.segments[0];
+                if segment.arguments.is_empty() {
+                    // Check if it matches any type parameter
+                    if generics.type_params().any(|param| param.ident == segment.ident) {
+                        return GenericArgKind::Generic;
                     }
                 }
             }

@@ -4,7 +4,10 @@ use chrono::Utc;
 
 use crate::DecodeError;
 use crate::ProtoShadow;
+use crate::impl_proto_ident;
 use crate::proto_message;
+
+impl_proto_ident!(Utc);
 
 #[proto_message(proto_path = "protos/chrono.proto", sun = [DateTime<Utc>])]
 pub struct DateTimeProto {
