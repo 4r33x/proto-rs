@@ -168,7 +168,7 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 /// // In main.rs or build.rs (all protos should be declared in other_crates)
 /// fn your_main() {
 ///     if std::env::var("GENERATE_PROTOS").is_ok() {
-///         let count = proto_rs::schemas::write_all("protos", proto_rs::schemas::RustClientCtx::disabled())
+///         let count = proto_rs::schemas::write_all("protos", &proto_rs::schemas::RustClientCtx::disabled())
 ///             .expect("Failed to write proto files");
 ///         println!("Generated {} proto files", count);
 ///     }

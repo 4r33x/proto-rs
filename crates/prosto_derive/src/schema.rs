@@ -133,7 +133,16 @@ pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fie
         }
     };
 
-    build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, field_consts, &config.item_generics, has_unsubstituted_generics)
+    build_schema_tokens(
+        type_ident,
+        message_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        field_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
@@ -180,7 +189,16 @@ pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str
         }
     };
 
-    build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, variant_consts, &config.item_generics, has_unsubstituted_generics)
+    build_schema_tokens(
+        type_ident,
+        message_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        variant_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
@@ -221,7 +239,16 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
         }
     };
 
-    build_schema_tokens(type_ident, message_name, config, const_suffix, entry_tokens, variant_consts, &config.item_generics, has_unsubstituted_generics)
+    build_schema_tokens(
+        type_ident,
+        message_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        variant_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], rpc_package_name: &str, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
@@ -237,7 +264,16 @@ pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, me
         }
     };
 
-    build_schema_tokens(type_ident, service_name, config, const_suffix, entry_tokens, method_consts, &config.item_generics, has_unsubstituted_generics)
+    build_schema_tokens(
+        type_ident,
+        service_name,
+        config,
+        const_suffix,
+        entry_tokens,
+        method_consts,
+        &config.item_generics,
+        has_unsubstituted_generics,
+    )
 }
 
 pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[String]) -> TokenStream2 {
@@ -309,7 +345,17 @@ struct FieldConstTokens {
     refs: TokenStream2,
 }
 
-fn build_schema_tokens(type_ident: &syn::Ident, proto_type: &str, config: &UnifiedProtoConfig, const_suffix: &str, entry_tokens: TokenStream2, extra_consts: TokenStream2, generics: &syn::Generics, has_unsubstituted_generics: bool) -> TokenStream2 {
+#[allow(clippy::too_many_arguments)]
+fn build_schema_tokens(
+    type_ident: &syn::Ident,
+    proto_type: &str,
+    config: &UnifiedProtoConfig,
+    const_suffix: &str,
+    entry_tokens: TokenStream2,
+    extra_consts: TokenStream2,
+    generics: &syn::Generics,
+    has_unsubstituted_generics: bool,
+) -> TokenStream2 {
     let (proto_package, proto_file_path) = proto_path_info(config);
     let schema_ident = schema_ident(type_ident, const_suffix);
 
@@ -599,7 +645,13 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
     }
 }
 
-fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig, use_self_prefix: bool) -> FieldTokens {
+fn build_unnamed_fields_tokens(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>,
+    config: &UnifiedProtoConfig,
+    use_self_prefix: bool,
+) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
 
@@ -634,7 +686,17 @@ fn build_variant_fields_tokens(type_ident: &syn::Ident, suffix: &str, variant_id
                     };
                 }
 
-                let FieldConstTokens { consts, refs } = build_field_const_tokens(type_ident, &format!("{suffix}_VARIANT_{variant_idx}"), 0, field, &field_config, 0, FieldName::Unnamed, config, use_self_prefix);
+                let FieldConstTokens { consts, refs } = build_field_const_tokens(
+                    type_ident,
+                    &format!("{suffix}_VARIANT_{variant_idx}"),
+                    0,
+                    field,
+                    &field_config,
+                    0,
+                    FieldName::Unnamed,
+                    config,
+                    use_self_prefix,
+                );
                 return FieldTokens { consts, refs: quote! { &[#refs] } };
             }
             FieldTokens {

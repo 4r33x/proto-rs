@@ -64,11 +64,11 @@ pub struct LruPair<K, V> {
 //     array_elem: ::core::option::Option::None,
 // };
 
-#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
-#[proto(generic_types = [K = [String], V = [u8]])]
-pub struct TinyLruKeyd<K, V, const CAP: usize> {
-    items: VecDeque<LruPair<K, V>>, // MRU..LRU
-}
+// #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+// #[proto(generic_types = [K = [String], V = [u8]])]
+// pub struct TinyLruKeyd<K, V, const CAP: usize> {
+//     items: VecDeque<LruPair<K, V>>, // MRU..LRU
+// }
 
 #[proto_message]
 pub struct ConcreteLru {
