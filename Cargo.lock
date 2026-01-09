@@ -1247,7 +1247,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-prost",
- "tonic_prost_test",
 ]
 
 [[package]]
@@ -1912,18 +1911,6 @@ dependencies = [
  "syn",
  "tempfile",
  "tonic-build",
-]
-
-[[package]]
-name = "tonic_prost_test"
-version = "0.1.0"
-dependencies = [
- "prost",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
 ]
 
 [[package]]
