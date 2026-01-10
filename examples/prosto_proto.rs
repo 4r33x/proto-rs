@@ -50,20 +50,6 @@ pub struct LruPair<K, V> {
     v: V,
 }
 
-// error in generated code here
-// const PROTO_SCHEMA_FIELD_TINYLRUKEYD_TINYLRUKEYD_0: ::proto_rs::schemas::Field = ::proto_rs::schemas::Field {
-//     name: ::core::option::Option::Some("items"),
-//     proto_ident: <LruPair<K, V> as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT,
-//     rust_proto_ident: <LruPair<K, V> as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT,
-//     generic_args: &[],
-//     proto_label: ::proto_rs::schemas::ProtoLabel::Repeated,
-//     tag: 1u32,
-//     attributes: &[],
-//     array_len: ::core::option::Option::None,
-//     array_is_bytes: false,
-//     array_elem: ::core::option::Option::None,
-// };
-
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[proto(generic_types = [K = [String], V = [u8]])]
 pub struct TinyLruKeyd<K, V, const CAP: usize> {
@@ -490,7 +476,11 @@ fn compute_hash_for_enum_test_2(value: &VeryComplexTestSkip) -> String {
 fn compute_hash_for_enum(value: &VeryComplex) -> String {
     match value {
         VeryComplex::Attr {
-            id_vec, id_opt, status, status_opt, ..
+            id_vec,
+            id_opt,
+            status,
+            status_opt,
+            ..
         } => {
             let mut parts = id_vec.join("|");
             if let Some(opt) = id_opt {

@@ -261,7 +261,11 @@ impl tonic_prost_test::complex_rpc::complex_service_server::ComplexService for P
     }
 }
 
-async fn spawn_our_server() -> (std::net::SocketAddr, tokio::sync::oneshot::Sender<()>, tokio::task::JoinHandle<Result<(), tonic::transport::Error>>) {
+async fn spawn_our_server() -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;
@@ -283,7 +287,11 @@ async fn spawn_our_server() -> (std::net::SocketAddr, tokio::sync::oneshot::Send
     (addr, shutdown_tx, handle)
 }
 
-async fn spawn_prost_server() -> (std::net::SocketAddr, tokio::sync::oneshot::Sender<()>, tokio::task::JoinHandle<Result<(), tonic::transport::Error>>) {
+async fn spawn_prost_server() -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
     use tokio::net::TcpListener;
     use tokio_stream::wrappers::TcpListenerStream;
     use tonic::transport::Server;

@@ -35,14 +35,10 @@ pub fn should_emit_file() -> bool {
 }
 
 /// Register proto content and optionally write to file
-pub fn register_and_emit_proto_inner(file_name: &str, content: &str, schema_tokens: TokenStream) -> TokenStream {
-    let emission_code = schema_tokens;
-
+pub fn register_and_emit_proto_inner(file_name: &str, content: &str) {
     if should_emit_file() {
         write_proto_file(file_name, content);
     }
-
-    emission_code
 }
 
 /// Register imports for a proto file
