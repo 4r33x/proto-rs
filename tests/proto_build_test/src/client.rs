@@ -53,14 +53,6 @@ pub mod goon_types {
     use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
-    pub enum ServiceStatus {
-        ACTIVE = 0,
-        PENDING = 1,
-        INACTIVE = 2,
-        COMPLETED = 3,
-    }
-
-    #[proto_message]
     pub struct GoonPong {
         pub id: Id,
         pub status: ServiceStatus,
@@ -75,6 +67,14 @@ pub mod goon_types {
     pub struct RizzPing {
         pub id: Id,
         pub status: ServiceStatus,
+    }
+
+    #[proto_message]
+    pub enum ServiceStatus {
+        ACTIVE = 0,
+        PENDING = 1,
+        INACTIVE = 2,
+        COMPLETED = 3,
     }
 
 }
@@ -145,16 +145,6 @@ pub mod solana {
     }
 
     #[proto_message]
-    pub struct Keypair {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
-    pub struct Signature {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
     pub enum InstructionError {
         GenericError,
         InvalidArgument,
@@ -212,6 +202,16 @@ pub mod solana {
         MaxAccountsExceeded,
         MaxInstructionTraceLengthExceeded,
         BuiltinProgramsMustConsumeComputeUnits,
+    }
+
+    #[proto_message]
+    pub struct Keypair {
+        pub inner: [u8; BYTES],
+    }
+
+    #[proto_message]
+    pub struct Signature {
+        pub inner: [u8; BYTES],
     }
 
     #[proto_message]

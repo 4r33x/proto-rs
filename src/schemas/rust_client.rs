@@ -381,12 +381,33 @@ fn render_entries(
     let mut ordered_entries = entries.to_vec();
     ordered_entries.sort_by(|left, right| super::utils::entry_sort_key(left).cmp(&super::utils::entry_sort_key(right)));
 
-    let mut seen = BTreeSet::new();
+    // Group entries by Rust type name to handle generic types with concrete variants
+    let mut entries_by_name: BTreeMap<String, Vec<&ProtoSchema>> = BTreeMap::new();
     for entry in ordered_entries {
         let type_name = rust_type_name(entry.id);
-        if !seen.insert(type_name) {
-            continue;
-        }
+        entries_by_name.entry(type_name).or_default().push(entry);
+    }
+
+    // For each unique type name (BTreeMap ensures stable alphabetical ordering),
+    // prefer the generic version over concrete variants
+    for (_type_name, group) in entries_by_name {
+        // If there are multiple schemas with the same name, prefer the one with generics
+        // (the base generic type) over concrete variants (which have empty generics but
+        // different proto_type like "EnvelopeBuildRequest" vs "Envelope")
+        //
+        // Stable selection: prefer in order:
+        // 1. Entry with non-empty generics (base generic type)
+        // 2. Entry where proto_type matches name (non-generic or original type)
+        // 3. First entry (fallback for consistent ordering)
+        let entry = if group.len() > 1 {
+            group.iter()
+                .find(|e| !e.generics.is_empty())
+                .or_else(|| group.iter().find(|e| e.id.proto_type == e.id.name))
+                .unwrap_or(&group[0])
+        } else {
+            group[0]
+        };
+
         if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent) {
             output.push_str(&definition);
             output.push('\n');

@@ -123,8 +123,34 @@ pub(crate) fn render_entries(
     let mut ordered_entries = entries.to_vec();
     ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
 
+    // Collect all proto_types that will be rendered via specializations
+    // to avoid rendering concrete variant schemas twice
+    let mut specialized_types = std::collections::BTreeSet::new();
+    for (base_id, specs) in specializations {
+        // Only collect if the base type actually has generics and is in our entries
+        if entries.iter().any(|e| e.id == *base_id && !e.generics.is_empty()) {
+            for spec in specs {
+                specialized_types.insert(spec.name.as_str());
+            }
+        }
+    }
+
     let mut rendered = Vec::new();
+    let mut seen_proto_types = std::collections::BTreeSet::new();
+
     for entry in ordered_entries {
+        // Skip duplicate proto_types (ensures stable ordering - first occurrence wins)
+        if !seen_proto_types.insert(entry.id.proto_type) {
+            continue;
+        }
+
+        // Skip concrete variant schemas that will be rendered via specializations
+        // These are identifiable by having a proto_type that differs from their name
+        // and matches a specialized type
+        if entry.id.proto_type != entry.id.name && specialized_types.contains(entry.id.proto_type) {
+            continue;
+        }
+
         let specs = specializations.get(&entry.id);
         rendered.extend(render_entry(entry, package_name, ident_index, specs));
     }
@@ -285,6 +311,13 @@ fn proto_ident_type_name_with_generics(
 ) -> String {
     let ident = apply_substitution(ident, substitution);
     if generic_args.is_empty() {
+        return proto_ident_type_name(ident, package_name, ident_index);
+    }
+
+    // Check if proto_type already represents a specialized/concrete type
+    // (e.g., proto_type="EnvelopeGoonPong" but name="Envelope")
+    // If so, don't append generic args again to avoid duplication
+    if ident.proto_type != ident.name {
         return proto_ident_type_name(ident, package_name, ident_index);
     }
 
