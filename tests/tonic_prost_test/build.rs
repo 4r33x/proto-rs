@@ -7,9 +7,9 @@ fn main() -> io::Result<()> {
 
     cfg.compile_protos(
         &[
-            "../../protos/ref_proto/sigma_rpc.proto",
-            "../../protos/ref_proto/goon_types.proto",
-            "../../protos/ref_proto/rizz_types.proto",
+            "../../protos_ref/ref_proto/sigma_rpc.proto",
+            "../../protos_ref/ref_proto/goon_types.proto",
+            "../../protos_ref/ref_proto/rizz_types.proto",
             "../../protos/tests/complex_rpc.proto",
             "../../protos/tests/encoding.proto",
             "../../protos/tests/advanced_features.proto",
