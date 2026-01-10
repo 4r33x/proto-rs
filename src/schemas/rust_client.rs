@@ -388,15 +388,21 @@ fn render_entries(
         entries_by_name.entry(type_name).or_default().push(entry);
     }
 
-    // For each unique type name, prefer the generic version over concrete variants
-    for (type_name, group) in entries_by_name {
+    // For each unique type name (BTreeMap ensures stable alphabetical ordering),
+    // prefer the generic version over concrete variants
+    for (_type_name, group) in entries_by_name {
         // If there are multiple schemas with the same name, prefer the one with generics
         // (the base generic type) over concrete variants (which have empty generics but
         // different proto_type like "EnvelopeBuildRequest" vs "Envelope")
+        //
+        // Stable selection: prefer in order:
+        // 1. Entry with non-empty generics (base generic type)
+        // 2. Entry where proto_type matches name (non-generic or original type)
+        // 3. First entry (fallback for consistent ordering)
         let entry = if group.len() > 1 {
-            // Find the generic base type (has non-empty generics OR proto_type matches name exactly)
             group.iter()
-                .find(|e| !e.generics.is_empty() || e.id.proto_type == e.id.name)
+                .find(|e| !e.generics.is_empty())
+                .or_else(|| group.iter().find(|e| e.id.proto_type == e.id.name))
                 .unwrap_or(&group[0])
         } else {
             group[0]
