@@ -12,7 +12,6 @@ use crate::emit_proto::generate_complex_enum_proto;
 use crate::emit_proto::generate_simple_enum_proto;
 use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
-use crate::schema::SchemaTokens;
 use crate::schema::assoc_proto_ident_const;
 use crate::schema::schema_tokens_for_complex_enum;
 use crate::schema::schema_tokens_for_simple_enum;
@@ -63,25 +62,17 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let tokens = match input.data {
         Data::Struct(ref data) => {
-            let mut schema_tokens_col = quote! {};
-            let mut inventory_tokens_col = quote! {};
             for proto_name in &proto_names {
                 let proto = generate_struct_proto(proto_name, &data.fields, &generic_params);
                 let schema_tokens = schema_tokens_for_struct(&input.ident, proto_name, &data.fields, &config, proto_name);
-                config.register_and_emit_proto(&proto);
-                let SchemaTokens { schema, inventory_submit } = schema_tokens;
-                schema_tokens_col = quote! { #schema #schema_tokens_col};
-                inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
+                config.register_and_emit_proto(&proto, schema_tokens);
             }
 
             let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
-            let type_tokens = generate_struct_impl(&input, &item_struct, data, &config);
-            quote! {#type_tokens #schema_tokens_col #inventory_tokens_col}
+            generate_struct_impl(&input, &item_struct, data, &config)
         }
         Data::Enum(ref data) => {
             let is_simple_enum = data.variants.iter().all(|variant| matches!(variant.fields, Fields::Unit));
-            let mut schema_tokens_col = quote! {};
-            let mut inventory_tokens_col = quote! {};
             for proto_name in &proto_names {
                 let proto = if is_simple_enum {
                     generate_simple_enum_proto(proto_name, data)
@@ -93,22 +84,18 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 } else {
                     schema_tokens_for_complex_enum(&input.ident, proto_name, data, &config, proto_name)
                 };
-                config.register_and_emit_proto(&proto);
-                let SchemaTokens { schema, inventory_submit } = schema_tokens;
-                schema_tokens_col = quote! { #schema #schema_tokens_col};
-                inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
+                config.register_and_emit_proto(&proto, schema_tokens);
             }
 
             let item_enum: ItemEnum = syn::parse2(item_ts).expect("failed to parse enum");
-            let type_tokens = if is_simple_enum {
+            if is_simple_enum {
                 generate_simple_enum_impl(&input, &item_enum, data, &config)
             } else {
                 match generate_complex_enum_impl(&input, &item_enum, data, &config) {
                     Ok(tokens) => tokens,
                     Err(err) => return err.to_compile_error().into(),
                 }
-            };
-            quote! {#type_tokens #schema_tokens_col #inventory_tokens_col}
+            }
         }
         Data::Union(_) => Error::new_spanned(&input.ident, "proto_message cannot be used on unions").to_compile_error(),
     };

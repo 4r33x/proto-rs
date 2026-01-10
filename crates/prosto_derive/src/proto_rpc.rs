@@ -14,7 +14,6 @@ use utils::extract_methods_and_types; // Add this import
 
 use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
-use crate::schema::SchemaTokens;
 use crate::schema::schema_tokens_for_service;
 
 pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
@@ -30,8 +29,8 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 
     // Generate .proto file if requested
     let service_content = generate_service_content(trait_name, &methods, &config.type_imports, config.import_all_from.as_deref());
-    let SchemaTokens { schema, inventory_submit } = schema_tokens_for_service(&input.ident, &ty_ident, &methods, &package_name, &config, &ty_ident);
-    config.register_and_emit_proto(&service_content);
+    let schema_tokens = schema_tokens_for_service(&input.ident, &ty_ident, &methods, &package_name, &config, &ty_ident);
+    config.register_and_emit_proto(&service_content, schema_tokens);
     let proto = config.imports_mat.clone();
 
     // Generate user-facing trait
@@ -52,16 +51,13 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     };
 
     quote! {
-        #schema
-        #inventory_submit
-        #proto
         #vis trait #trait_name {
             #(#user_associated_types)*
             #(#user_methods)*
-
         }
 
         #client_module
         #server_module
+        #proto
     }
 }

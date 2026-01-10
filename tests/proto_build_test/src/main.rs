@@ -106,12 +106,7 @@ pub struct BuildResponse {
 }
 
 // Define trait with the proto_rpc macro
-#[proto_rpc(
-    rpc_package = "sigma_rpc",
-    rpc_server = true,
-    rpc_client = true,
-    proto_path = "protos/build_system_test/sigma_rpc_simple.proto"
-)]
+#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/build_system_test/sigma_rpc_simple.proto")]
 //unnecessary for build system, this imports would be auto-resolved
 #[proto_imports(
     rizz_types = ["BarSub", "FooResponse"],
@@ -138,10 +133,10 @@ fn main() {
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
 
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
-    // assert!(client_contents.contains("use fastnum::UD128;"));
-    // assert!(!client_contents.contains("pub struct UD128"));
-    // assert!(client_contents.contains("pub mod"));
-    // assert!(client_contents.contains("pub trait"));
+    assert!(client_contents.contains("use fastnum::UD128;"));
+    assert!(!client_contents.contains("pub struct UD128"));
+    assert!(client_contents.contains("pub mod"));
+    assert!(client_contents.contains("pub trait"));
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);
