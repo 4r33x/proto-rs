@@ -979,7 +979,7 @@ fn build_field_const_tokens(
     tag: u32,
     name: FieldName,
     item_config: &UnifiedProtoConfig,
-    is_concrete: bool,
+    _is_concrete: bool,
 ) -> FieldConstTokens {
     let field_ident = field_const_ident(type_ident, suffix, idx);
 
@@ -1095,7 +1095,6 @@ fn generic_args_tokens_from_type(
     let mut arg_consts = Vec::new();
     let mut arg_refs = Vec::new();
     let mut arg_idx = 0usize;
-    let mut has_any_generic_param = false;
 
     for arg in &args.args {
         let syn::GenericArgument::Type(arg_ty) = arg else {
@@ -1104,11 +1103,6 @@ fn generic_args_tokens_from_type(
 
         // Classify the generic argument
         let kind = classify_generic_arg(arg, generics);
-
-        // Track if we have any true generic parameters
-        if kind == GenericArgKind::Generic {
-            has_any_generic_param = true;
-        }
 
         // Only generate PROTO_SCHEMA_GENERIC_ARG constants for concrete types
         // Skip generic parameters and const generics
