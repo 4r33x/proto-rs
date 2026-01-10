@@ -56,12 +56,19 @@ impl ParseFieldAttr for () {
     }
 }
 
+#[derive(Clone)]
+pub struct InterceptorConfig {
+    pub function_name: String,
+    pub ctx_type: TokenStream2,
+}
+
 #[derive(Clone, Default)]
 pub struct UnifiedProtoConfig {
     pub proto_path: Option<String>,
     pub rpc_server: bool,
     pub rpc_client: bool,
     rpc_package: Option<String>,
+    pub rpc_client_ctx: Option<InterceptorConfig>,
     pub import_all_from: Option<String>,
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
     file_imports: BTreeMap<String, BTreeSet<String>>,
@@ -162,6 +169,29 @@ impl UnifiedProtoConfig {
     }
 }
 
+fn parse_interceptor_config(input: &str) -> Option<InterceptorConfig> {
+    // Parse format: "function_name<TypeParam<Inner>>"
+    let input = input.trim();
+
+    // Find the first '<' to separate function name from type parameter
+    let angle_pos = input.find('<')?;
+    let function_name = input[..angle_pos].to_string();
+
+    // Find the matching closing '>' to extract the type parameter
+    // We need to handle nested angle brackets
+    let type_param_str = &input[angle_pos + 1..];
+    let closing_pos = type_param_str.rfind('>')?;
+    let type_param_str = &type_param_str[..closing_pos];
+
+    // Parse the type parameter as a TokenStream
+    let ctx_type: TokenStream2 = type_param_str.parse().ok()?;
+
+    Some(InterceptorConfig {
+        function_name,
+        ctx_type,
+    })
+}
+
 fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
     let parser = syn::meta::parser(|meta| {
         if meta.path.is_ident("transparent") {
@@ -201,6 +231,10 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
             && let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>()
         {
             config.rpc_package = Some(lit_str.value());
+        } else if meta.path.is_ident("rpc_client_ctx") {
+            if let Ok(lit_str) = meta.value()?.parse::<syn::LitStr>() {
+                config.rpc_client_ctx = parse_interceptor_config(&lit_str.value());
+            }
         } else if meta.path.is_ident("proto_import_all_from") {
             if meta.input.peek(syn::token::Paren) {
                 let mut import_path = None;
@@ -727,5 +761,26 @@ mod tests {
         assert_eq!(entries[0].types.len(), 2);
         assert_eq!(entries[1].param.to_string(), "U");
         assert_eq!(entries[1].types.len(), 1);
+    }
+
+    #[test]
+    fn parses_interceptor_config() {
+        let config = parse_interceptor_config("user_advanced_interceptor<UserId>").unwrap();
+        assert_eq!(config.function_name, "user_advanced_interceptor");
+        assert_eq!(config.ctx_type.to_string(), "UserId");
+    }
+
+    #[test]
+    fn parses_interceptor_config_with_nested_generics() {
+        let config = parse_interceptor_config("user_advanced_interceptor<UserId<()>>").unwrap();
+        assert_eq!(config.function_name, "user_advanced_interceptor");
+        assert_eq!(config.ctx_type.to_string(), "UserId < () >");
+    }
+
+    #[test]
+    fn parses_interceptor_config_with_complex_type() {
+        let config = parse_interceptor_config("my_interceptor<HashMap<String, Value>>").unwrap();
+        assert_eq!(config.function_name, "my_interceptor");
+        assert_eq!(config.ctx_type.to_string(), "HashMap < String , Value >");
     }
 }
