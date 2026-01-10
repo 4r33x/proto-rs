@@ -14,7 +14,6 @@ use crate::generic_substitutions::apply_generic_substitutions_enum;
 use crate::generic_substitutions::apply_generic_substitutions_fields;
 use crate::parse::UnifiedProtoConfig;
 use crate::proto_rpc::utils::extract_methods_and_types;
-use crate::schema::SchemaTokens;
 use crate::schema::schema_tokens_for_complex_enum;
 use crate::schema::schema_tokens_for_service;
 use crate::schema::schema_tokens_for_simple_enum;
@@ -45,10 +44,8 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
         Err(err) => return err.to_compile_error().into(),
     };
 
-    let schema = match &input.data {
+    match &input.data {
         Data::Struct(data) => {
-            let mut schema_tokens_col = quote! {};
-            let mut inventory_tokens_col = quote! {};
             for variant in &generic_variants {
                 let message_name = if variant.suffix.is_empty() {
                     clean_name.to_string()
@@ -57,20 +54,12 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                 };
                 let fields = apply_generic_substitutions_fields(&data.fields, &variant.substitutions);
                 let proto_def = generate_struct_proto(&message_name, &fields, &generic_params);
-                let SchemaTokens { schema, inventory_submit } = schema_tokens_for_struct(&input.ident, &message_name, &fields, &config, &message_name);
-                config.register_and_emit_proto(&proto_def);
-                schema_tokens_col = quote! { #schema #schema_tokens_col};
-                inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
-            }
-            SchemaTokens {
-                schema: schema_tokens_col,
-                inventory_submit: inventory_tokens_col,
+                let schema_tokens = schema_tokens_for_struct(&input.ident, &message_name, &fields, &config, &message_name);
+                config.register_and_emit_proto(&proto_def, schema_tokens);
             }
         }
         Data::Enum(data) => {
             let is_simple_enum = data.variants.iter().all(|v| matches!(v.fields, Fields::Unit));
-            let mut schema_tokens_col = quote! {};
-            let mut inventory_tokens_col = quote! {};
             for variant in &generic_variants {
                 let message_name = if variant.suffix.is_empty() {
                     clean_name.to_string()
@@ -88,26 +77,16 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                 } else {
                     schema_tokens_for_complex_enum(&input.ident, &message_name, &data, &config, &message_name)
                 };
-                config.register_and_emit_proto(&proto_def);
-                let SchemaTokens { schema, inventory_submit } = schema_tokens;
-                schema_tokens_col = quote! { #schema #schema_tokens_col};
-                inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
-            }
-            SchemaTokens {
-                schema: schema_tokens_col,
-                inventory_submit: inventory_tokens_col,
+                config.register_and_emit_proto(&proto_def, schema_tokens);
             }
         }
         Data::Union(_) => panic!("proto_dump can only be used on structs and enums, make PR/issue if you want unions"),
-    };
+    }
     strip_proto_attributes(&mut input.data);
     let proto = config.imports_mat;
-    let SchemaTokens { schema, inventory_submit } = schema;
     quote! {
         #input
         #proto
-        #schema
-        #inventory_submit
     }
     .into()
 }
@@ -119,15 +98,12 @@ fn trait_service(mut input: ItemTrait, mut config: UnifiedProtoConfig) -> TokenS
     let proto_def = generate_service_content(&input.ident, &methods, &config.type_imports, config.import_all_from.as_deref());
     let rpc_package = config.get_rpc_package();
     let schema_tokens = schema_tokens_for_service(&input.ident, clean_name, &methods, rpc_package, &config, clean_name);
-    config.register_and_emit_proto(&proto_def);
+    config.register_and_emit_proto(&proto_def, schema_tokens);
     strip_proto_attributes_from_trait(&mut input);
     let proto = config.imports_mat;
-    let SchemaTokens { schema, inventory_submit } = schema_tokens;
     quote! {
         #input
         #proto
-        #schema
-        #inventory_submit
     }
     .into()
 }

@@ -96,14 +96,14 @@ pub struct GenericTypeVariant {
 
 impl UnifiedProtoConfig {
     /// Register and emit proto content (only if `proto_path` is specified)
-    pub fn register_and_emit_proto(&mut self, content: &str) {
+    pub fn register_and_emit_proto(&mut self, content: &str, schema_tokens: TokenStream2) {
         if let Some(proto_path) = self.proto_path() {
-            register_and_emit_proto_inner(proto_path, content);
+            let mat = register_and_emit_proto_inner(proto_path, content, schema_tokens);
             let imports = &self.imports_mat;
-            self.imports_mat = quote::quote! { #imports };
+            self.imports_mat = quote::quote! { #imports #mat };
         } else if self.transparent {
             let imports = &self.imports_mat;
-            self.imports_mat = quote::quote! { #imports };
+            self.imports_mat = quote::quote! { #imports #schema_tokens };
         }
     }
 
@@ -116,9 +116,10 @@ impl UnifiedProtoConfig {
             parse_attr_params(attr, &mut config);
         }
 
+        // Extract validators from item-level #[proto(...)] attributes
         config.item_generics = generics;
         config.item_attrs = item_attrs.to_vec();
-        // Extract validators from item-level #[proto(...)] attributes
+
         let item_validators = extract_item_validators(item_attrs);
         config.validator = item_validators.validator;
         config.validator_with_ext = item_validators.validator_with_ext;
@@ -451,10 +452,7 @@ pub fn extract_item_generic_types(item_attrs: &[Attribute]) -> Vec<GenericTypeEn
                     types.push(ty);
                 }
 
-                entries.push(GenericTypeEntry {
-                    param: param_ident.clone(),
-                    types,
-                });
+                entries.push(GenericTypeEntry { param: param_ident.clone(), types });
             }
 
             Ok(())
@@ -696,12 +694,7 @@ mod tests {
 
         assert_eq!(
             suffixes,
-            vec![
-                "U64StringStdHashRandomState",
-                "U64U16StdHashRandomState",
-                "U32StringStdHashRandomState",
-                "U32U16StdHashRandomState",
-            ]
+            vec!["U64StringStdHashRandomState", "U64U16StdHashRandomState", "U32StringStdHashRandomState", "U32U16StdHashRandomState",]
         );
     }
 
