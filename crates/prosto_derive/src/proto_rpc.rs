@@ -39,7 +39,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 
     // Generate client module if requested
     let client_module = if config.rpc_client {
-        generate_client_module(trait_name, vis, &package_name, &methods)
+        generate_client_module(trait_name, vis, &package_name, &methods, config.rpc_client_ctx.as_ref())
     } else {
         quote! {}
     };

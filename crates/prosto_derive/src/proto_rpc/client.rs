@@ -3,6 +3,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::parse::InterceptorConfig;
 use crate::proto_rpc::rpc_common::client_module_name;
 use crate::proto_rpc::rpc_common::client_struct_name;
 use crate::proto_rpc::rpc_common::generate_client_with_interceptor;
@@ -19,11 +20,20 @@ use crate::utils::MethodInfo;
 // CLIENT MODULE GENERATION
 // ============================================================================
 
-pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, package_name: &str, methods: &[MethodInfo]) -> TokenStream {
+pub fn generate_client_module(
+    trait_name: &syn::Ident,
+    vis: &syn::Visibility,
+    package_name: &str,
+    methods: &[MethodInfo],
+    interceptor_config: Option<&InterceptorConfig>,
+) -> TokenStream {
     let client_module = client_module_name(trait_name);
     let client_struct = client_struct_name(trait_name);
 
-    let client_methods = methods.iter().map(|m| generate_client_method(m, package_name, trait_name)).collect::<Vec<_>>();
+    let client_methods = methods
+        .iter()
+        .map(|m| generate_client_method(m, package_name, trait_name, interceptor_config))
+        .collect::<Vec<_>>();
 
     let compression_methods = generate_client_compression_methods();
     let with_interceptor = generate_client_with_interceptor(&client_struct);
@@ -87,15 +97,25 @@ pub fn generate_client_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
 // CLIENT METHOD GENERATION
 // ============================================================================
 
-fn generate_client_method(method: &MethodInfo, package_name: &str, trait_name: &syn::Ident) -> TokenStream {
+fn generate_client_method(
+    method: &MethodInfo,
+    package_name: &str,
+    trait_name: &syn::Ident,
+    interceptor_config: Option<&InterceptorConfig>,
+) -> TokenStream {
     if is_streaming_method(method) {
-        generate_streaming_client_method(method, package_name, trait_name)
+        generate_streaming_client_method(method, package_name, trait_name, interceptor_config)
     } else {
-        generate_unary_client_method(method, package_name, trait_name)
+        generate_unary_client_method(method, package_name, trait_name, interceptor_config)
     }
 }
 
-fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_name: &syn::Ident) -> TokenStream {
+fn generate_unary_client_method(
+    method: &MethodInfo,
+    package_name: &str,
+    trait_name: &syn::Ident,
+    interceptor_config: Option<&InterceptorConfig>,
+) -> TokenStream {
     let method_name = &method.name;
     let request_type = &method.request_type;
     let response_type = &method.response_type;
@@ -105,9 +125,22 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
     let request_conversion = generate_native_to_proto_request_unary(request_type);
     let response_conversion = generate_proto_to_native_response(response_type);
 
+    // Generate ctx parameter and interceptor call if configured
+    let (ctx_param, interceptor_call) = if let Some(config) = interceptor_config {
+        let function_name = syn::Ident::new(&config.function_name, proc_macro2::Span::call_site());
+        let ctx_type = &config.ctx_type;
+        (
+            quote! { ctx: #ctx_type, },
+            quote! { #function_name(ctx, &mut request); },
+        )
+    } else {
+        (quote! {}, quote! {})
+    };
+
     quote! {
         pub async fn #method_name<R>(
             &mut self,
+            #ctx_param
             request: R,
         ) -> ::core::result::Result<tonic::Response<#response_type>, tonic::Status>
         where
@@ -117,6 +150,7 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
             #request_conversion
             #ready_check
             let mut request = request.into_request();
+            #interceptor_call
             request.extensions_mut().insert(
                 tonic::codegen::GrpcMethod::new(#package_name, stringify!(#method_name))
             );
@@ -130,7 +164,12 @@ fn generate_unary_client_method(method: &MethodInfo, package_name: &str, trait_n
     }
 }
 
-fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, trait_name: &syn::Ident) -> TokenStream {
+fn generate_streaming_client_method(
+    method: &MethodInfo,
+    package_name: &str,
+    trait_name: &syn::Ident,
+    interceptor_config: Option<&InterceptorConfig>,
+) -> TokenStream {
     let method_name = &method.name;
     let request_type = &method.request_type;
     let inner_response_type = method.inner_response_type.as_ref().unwrap();
@@ -140,9 +179,22 @@ fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, tra
     let request_conversion = generate_native_to_proto_request_streaming(request_type);
     let stream_conversion = generate_stream_conversion(inner_response_type);
 
+    // Generate ctx parameter and interceptor call if configured
+    let (ctx_param, interceptor_call) = if let Some(config) = interceptor_config {
+        let function_name = syn::Ident::new(&config.function_name, proc_macro2::Span::call_site());
+        let ctx_type = &config.ctx_type;
+        (
+            quote! { ctx: #ctx_type, },
+            quote! { #function_name(ctx, &mut request); },
+        )
+    } else {
+        (quote! {}, quote! {})
+    };
+
     quote! {
         pub async fn #method_name<R>(
             &mut self,
+            #ctx_param
             request: R,
         ) -> ::core::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#inner_response_type, tonic::Status>>>, tonic::Status>
         where
@@ -151,7 +203,8 @@ fn generate_streaming_client_method(method: &MethodInfo, package_name: &str, tra
         {
             #request_conversion
             #ready_check
-            let request = request.into_request();
+            let mut request = request.into_request();
+            #interceptor_call
             let codec = ::proto_rs::ProtoCodec::<R::Encode, #inner_response_type, R::Mode>::default();
             let path = http::uri::PathAndQuery::from_static(#route_path);
             let response = self.inner.server_streaming(request, path, codec).await?;
@@ -208,7 +261,7 @@ mod tests {
         let vis: syn::Visibility = parse_quote! { pub };
         let methods = vec![];
 
-        let module = generate_client_module(&trait_name, &vis, "test_package", &methods);
+        let module = generate_client_module(&trait_name, &vis, "test_package", &methods, None);
 
         let module_str = module.to_string();
         assert!(module_str.contains("test_service_client"));
