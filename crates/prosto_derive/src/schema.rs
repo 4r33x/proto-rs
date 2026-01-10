@@ -32,6 +32,54 @@ use crate::utils::resolved_field_type;
 use crate::utils::to_pascal_case;
 use crate::utils::to_upper_snake_case;
 
+/// Determines if a type has true generic parameters that are not fully substituted.
+/// Returns true if:
+/// - The type has any const generic parameters (cannot be substituted via generic_types)
+/// - The type has any lifetime parameters (cannot be substituted via generic_types)
+/// - The type has type parameters that are not all listed in generic_types
+/// - The type has no suns (concrete substitutions) and has generics but no generic_types specified
+fn has_true_generics(config: &UnifiedProtoConfig) -> bool {
+    // If the type has no generics at all, it's fully concrete
+    if config.item_generics.params.is_empty() {
+        return false;
+    }
+
+    // If we have suns (concrete substitutions), those are handled specially
+    // and don't count as having true generics
+    if config.has_suns() {
+        return false;
+    }
+
+    // If we don't have generic_types specified, and we have generics,
+    // then we have true generics that need to be in an impl block
+    if config.generic_types.is_empty() {
+        return true;
+    }
+
+    // If we have generic_types specified, check if ALL type parameters are covered
+    // and there are no const generics or lifetimes
+    use std::collections::HashSet;
+    let substituted_params: HashSet<String> = config.generic_types.iter().map(|entry| entry.param.to_string()).collect();
+
+    for param in &config.item_generics.params {
+        match param {
+            syn::GenericParam::Type(type_param) => {
+                // If this type parameter is not in the substitution list, we have a true generic
+                if !substituted_params.contains(&type_param.ident.to_string()) {
+                    return true;
+                }
+            }
+            // Const generics and lifetimes cannot be substituted, so they're always true generics
+            syn::GenericParam::Const(_) | syn::GenericParam::Lifetime(_) => {
+                return true;
+            }
+        }
+    }
+
+    // All type parameters are substituted, and there are no const generics or lifetimes
+    false
+}
+
 pub fn assoc_proto_ident_const(config: &UnifiedProtoConfig, type_ident: &syn::Ident, generics: &syn::Generics, proto_names: &[String]) -> TokenStream2 {
     let proto_name_base = proto_names.first().map_or_else(|| type_ident.to_string(), ToString::to_string);
     let (proto_package, proto_file_path) = config.proto_path().map_or_else(
@@ -123,7 +171,7 @@ pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fie
     // Only use impl block for truly generic types (not concrete substitutions via generic_types)
     // If generic_types is specified, we generate multiple concrete schemas at module level
     // If not specified but type has generics, we generate one schema in impl block
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = has_true_generics(config);
     let fields_tokens = build_fields_tokens(type_ident, const_suffix, fields, config, has_unsubstituted_generics);
     let field_consts = fields_tokens.consts;
     let field_refs = fields_tokens.refs;
@@ -146,7 +194,7 @@ pub fn schema_tokens_for_struct(type_ident: &syn::Ident, message_name: &str, fie
 }
 
 pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = has_true_generics(config);
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{err}"));
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
     if let Some(idx) = marked_default
@@ -202,7 +250,7 @@ pub fn schema_tokens_for_simple_enum(type_ident: &syn::Ident, message_name: &str
 }
 
 pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = has_true_generics(config);
     let mut variant_consts = Vec::new();
     let mut variant_refs = Vec::new();
 
@@ -252,7 +300,7 @@ pub fn schema_tokens_for_complex_enum(type_ident: &syn::Ident, message_name: &st
 }
 
 pub fn schema_tokens_for_service(type_ident: &syn::Ident, service_name: &str, methods: &[MethodInfo], rpc_package_name: &str, config: &UnifiedProtoConfig, const_suffix: &str) -> TokenStream2 {
-    let has_unsubstituted_generics = !config.item_generics.params.is_empty() && !config.has_suns() && config.generic_types.is_empty();
+    let has_unsubstituted_generics = has_true_generics(config);
     let methods_tokens = build_service_method_tokens(type_ident, const_suffix, methods, &config.item_generics);
     let method_consts = methods_tokens.consts;
     let method_refs = methods_tokens.refs;
