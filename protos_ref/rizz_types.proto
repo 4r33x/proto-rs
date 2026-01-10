@@ -1,0 +1,6 @@
+syntax = "proto3";
+package rizz_types;
+
+message RizzMessage {
+  string value = 1;
+}

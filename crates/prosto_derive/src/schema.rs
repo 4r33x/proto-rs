@@ -358,7 +358,11 @@ fn build_schema_tokens(
     // Build tokens with or without Self:: prefix depending on whether we're in an impl block
     let generics_tokens = build_generics_tokens(type_ident, const_suffix, config);
     let lifetimes_tokens = build_lifetime_tokens(type_ident, const_suffix, config);
-    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs, config.transparent);
+    let assoc_for_attr = match kind {
+        SchemaKind::Message => true,
+        SchemaKind::Service => false,
+    };
+    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs, config.transparent, assoc_for_attr);
 
     let generics_consts = generics_tokens.consts;
     let generics_refs = generics_tokens.refs;
@@ -370,10 +374,11 @@ fn build_schema_tokens(
     let schema = match kind {
         SchemaKind::Message => {
             quote! {
+
                 impl #impl_generics #type_ident #ty_generics #where_clause {
+                    #attrs_consts
                     #generics_consts
                     #lifetime_consts
-                    #attrs_consts
                     #extra_consts
                     #[cfg(feature = "build-schemas")]
                     pub const #schema_ident: ::proto_rs::schemas::ProtoSchema = ::proto_rs::schemas::ProtoSchema {
@@ -460,10 +465,10 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
         let method_ident = service_method_const_ident(type_ident, suffix, idx);
         let method_name = to_pascal_case(&method.name.to_string());
         let request_ident = proto_ident_tokens_from_type(&method.request_type);
-        let (request_generic_consts, request_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type, generics);
+        let (request_generic_consts, request_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type, generics, false);
         let response_type = method.inner_response_type.as_ref().unwrap_or(&method.response_type);
         let response_ident = proto_ident_tokens_from_type(response_type);
-        let (response_generic_consts, response_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type, generics);
+        let (response_generic_consts, response_generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type, generics, false);
         let server_streaming = method.is_streaming;
 
         method_consts.push(quote! {
@@ -481,7 +486,7 @@ fn build_service_method_tokens(type_ident: &syn::Ident, suffix: &str, methods: &
             #response_generic_consts
         });
 
-        method_refs.push(quote! { &Self::#method_ident });
+        method_refs.push(quote! { &#method_ident });
     }
 
     ServiceMethodTokens {
@@ -569,7 +574,7 @@ fn build_lifetime_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
     }
 }
 
-fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool) -> AttributeTokens {
+fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::Attribute], include_transparent: bool, assoc: bool) -> AttributeTokens {
     let mut attr_consts = Vec::new();
     let mut attr_refs = Vec::new();
 
@@ -584,7 +589,11 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
                 tokens: stringify!(#tokens),
             };
         });
-        attr_refs.push(quote! { Self::#attr_ident });
+        if assoc {
+            attr_refs.push(quote! { Self::#attr_ident });
+        } else {
+            attr_refs.push(quote! { #attr_ident });
+        }
     }
 
     if include_transparent {
@@ -597,7 +606,11 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
                 tokens: "transparent",
             };
         });
-        attr_refs.push(quote! { Self::#attr_ident });
+        if assoc {
+            attr_refs.push(quote! { Self::#attr_ident });
+        } else {
+            attr_refs.push(quote! { #attr_ident });
+        }
     }
 
     AttributeTokens {
@@ -732,7 +745,7 @@ fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &
     let parsed = parse_field_type(&inner_type);
     let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics);
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, true);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty);
     let extra_consts = quote! { #generic_consts #array_consts };
 
@@ -815,7 +828,7 @@ fn build_field_const_tokens(
     item_config: &UnifiedProtoConfig,
 ) -> FieldConstTokens {
     let field_ident = field_const_ident(type_ident, suffix, idx);
-    let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false);
+    let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false, true);
     let attr_consts = attrs_tokens.consts;
     let attr_refs = attrs_tokens.refs;
     let FieldInfoTokens {
@@ -895,7 +908,15 @@ fn classify_generic_arg(arg: &syn::GenericArgument, generics: &syn::Generics) ->
     }
 }
 
-fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usize, context: &str, ty: &Type, generics: &syn::Generics) -> (TokenStream2, TokenStream2) {
+fn generic_args_tokens_from_type(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    idx: usize,
+    context: &str,
+    ty: &Type,
+    generics: &syn::Generics,
+    assoc: bool,
+) -> (TokenStream2, TokenStream2) {
     let Type::Path(path) = ty else {
         return (quote! {}, quote! { &[] });
     };
@@ -927,7 +948,11 @@ fn generic_args_tokens_from_type(type_ident: &syn::Ident, suffix: &str, idx: usi
                 #[cfg(feature = "build-schemas")]
                 const #arg_ident: ::proto_rs::schemas::ProtoIdent = #proto_ident;
             });
-            arg_refs.push(quote! { &Self::#arg_ident });
+            if assoc {
+                arg_refs.push(quote! { &Self::#arg_ident });
+            } else {
+                arg_refs.push(quote! { &#arg_ident });
+            }
         }
 
         arg_idx += 1;

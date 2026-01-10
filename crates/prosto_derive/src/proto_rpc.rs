@@ -52,12 +52,13 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     };
 
     quote! {
+        #schema
         #inventory_submit
         #proto
         #vis trait #trait_name {
             #(#user_associated_types)*
             #(#user_methods)*
-            #schema
+
         }
 
         #client_module
