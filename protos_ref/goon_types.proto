@@ -1,0 +1,6 @@
+syntax = "proto3";
+package goon_types;
+
+message GoonMessage {
+  string value = 1;
+}
