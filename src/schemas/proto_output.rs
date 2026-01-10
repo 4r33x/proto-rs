@@ -288,6 +288,13 @@ fn proto_ident_type_name_with_generics(
         return proto_ident_type_name(ident, package_name, ident_index);
     }
 
+    // Check if proto_type already represents a specialized/concrete type
+    // (e.g., proto_type="EnvelopeGoonPong" but name="Envelope")
+    // If so, don't append generic args again to avoid duplication
+    if ident.proto_type != ident.name {
+        return proto_ident_type_name(ident, package_name, ident_index);
+    }
+
     let mut resolved_args = Vec::new();
     for arg in generic_args {
         let resolved = apply_substitution(**arg, substitution);

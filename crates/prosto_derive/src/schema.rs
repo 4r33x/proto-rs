@@ -165,8 +165,9 @@ fn schema_tokens_for_simple_enum_impl(type_ident: &syn::Ident, message_name: &st
     let mut variant_refs = Vec::new();
 
     // Determine if we need to use Self:: prefix (in impl block) or not (module level)
+    // When has_type_params is true, schema is at module level, so no Self:: prefix
     let has_type_params = config.item_generics.type_params().next().is_some();
-    let use_self_prefix = !is_concrete || !has_type_params;
+    let use_self_prefix = !has_type_params;
 
     for (idx, (variant, value)) in ordered_variants.iter().zip(ordered_discriminants.iter()).enumerate() {
         let variant_const = variant_const_ident(type_ident, const_suffix, idx);
@@ -223,8 +224,9 @@ fn schema_tokens_for_complex_enum_impl(type_ident: &syn::Ident, message_name: &s
     let mut variant_refs = Vec::new();
 
     // Determine if we need to use Self:: prefix (in impl block) or not (module level)
+    // When has_type_params is true, schema is at module level, so no Self:: prefix
     let has_type_params = config.item_generics.type_params().next().is_some();
-    let use_self_prefix = !is_concrete || !has_type_params;
+    let use_self_prefix = !has_type_params;
 
     for (idx, variant) in data.variants.iter().enumerate() {
         let variant_const = variant_const_ident(type_ident, const_suffix, idx);
@@ -419,8 +421,8 @@ fn build_schema_tokens_impl(
     let has_type_params = generics.type_params().next().is_some();
 
     // Build tokens with or without Self:: prefix depending on whether we're in an impl block
-    // For concrete types with generics, we generate at module level so no Self:: prefix
-    let use_self_prefix = !is_concrete || !has_type_params;
+    // When has_type_params is true, schema is at module level, so no Self:: prefix
+    let use_self_prefix = !has_type_params;
     let assoc_for_schema = match kind {
         SchemaKind::Message => use_self_prefix,
         SchemaKind::Service => false,
@@ -466,9 +468,9 @@ fn build_schema_tokens_impl(
     let attrs_refs = attrs_tokens.refs;
 
     let schema = match kind {
-        SchemaKind::Message if is_concrete && has_type_params => {
-            // For concrete types with generic substitutions, generate schema at module level
-            // to avoid needing generic parameters in scope
+        SchemaKind::Message if has_type_params => {
+            // For types with generic parameters (both base generic types and concrete variants),
+            // generate schema at module level to avoid needing generic parameters in scope
             quote! {
                 #generics_consts
                 #lifetime_consts
@@ -538,19 +540,16 @@ fn build_schema_tokens_impl(
             }
         }
     };
-    // Only emit inventory::submit for concrete types
-    // When a type has generic type parameters (not const generics), we should NOT register it
-    // unless is_concrete is true (indicating generic substitutions have been applied)
+    // Always register schemas with inventory for lookup purposes
+    // The distinction between base generic types and concrete variants is handled during
+    // proto file emission (in proto_message/mod.rs)
     let has_type_params = generics.type_params().next().is_some();
-    let should_register = match kind {
-        SchemaKind::Message => !has_type_params || is_concrete,
-        SchemaKind::Service => true,
-    };
+    let should_register = true;
 
     let inventory_submit = if should_register {
         match kind {
-            SchemaKind::Message if is_concrete && has_type_params => {
-                // Concrete type with generic substitutions - schema is at module level
+            SchemaKind::Message if has_type_params => {
+                // Type with generic parameters - schema is at module level
                 quote! {
                 #[cfg(feature = "build-schemas")]
                 inventory::submit! {
@@ -558,7 +557,7 @@ fn build_schema_tokens_impl(
                 }}
             }
             SchemaKind::Message => {
-                // Non-generic type or generic without substitutions - schema is in impl block
+                // Non-generic type - schema is in impl block
                 quote! {
                 #[cfg(feature = "build-schemas")]
                 inventory::submit! {
@@ -985,8 +984,9 @@ fn build_field_const_tokens(
     let field_ident = field_const_ident(type_ident, suffix, idx);
 
     // Determine if we need to use Self:: prefix (in impl block) or not (module level)
+    // When has_type_params is true, schema is at module level, so no Self:: prefix
     let has_type_params = item_config.item_generics.type_params().next().is_some();
-    let use_self_prefix = !is_concrete || !has_type_params;
+    let use_self_prefix = !has_type_params;
 
     let attrs_tokens = build_attribute_tokens(type_ident, &format!("{suffix}_FIELD_{idx}"), &field.attrs, false, use_self_prefix);
     let attr_consts = attrs_tokens.consts;
@@ -1130,14 +1130,6 @@ fn generic_args_tokens_from_type(
     }
 
     if arg_refs.is_empty() {
-        return (quote! {}, quote! { &[] });
-    }
-
-    // If all type arguments are concrete (no generic parameters from the containing type),
-    // then this is a fully instantiated generic type that likely has its own ProtoIdentifiable
-    // with a concrete proto_type (e.g., Envelope<GoonPong> → "EnvelopeGoonPong").
-    // In this case, we should NOT include generic_args to avoid duplication in proto file generation.
-    if !has_any_generic_param {
         return (quote! {}, quote! { &[] });
     }
 

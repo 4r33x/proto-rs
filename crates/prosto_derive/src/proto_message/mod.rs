@@ -95,7 +95,12 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     } else {
                         crate::schema::schema_tokens_for_struct_concrete(&input.ident, &message_name, &fields, &config, &message_name)
                     };
-                    config.register_and_emit_proto(&proto);
+                    // Only emit proto file entry for concrete variants (not base generic type)
+                    // Base generic type (empty substitutions) is only for Rust client schema
+                    let has_type_params = !input.generics.type_params().collect::<Vec<_>>().is_empty();
+                    if !has_type_params || !variant.substitutions.is_empty() {
+                        config.register_and_emit_proto(&proto);
+                    }
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
@@ -147,7 +152,12 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                             crate::schema::schema_tokens_for_complex_enum_concrete(&input.ident, &message_name, &enum_data, &config, &message_name)
                         }
                     };
-                    config.register_and_emit_proto(&proto);
+                    // Only emit proto file entry for concrete variants (not base generic type)
+                    // Base generic type (empty substitutions) is only for Rust client schema
+                    let has_type_params = !input.generics.type_params().collect::<Vec<_>>().is_empty();
+                    if !has_type_params || !variant.substitutions.is_empty() {
+                        config.register_and_emit_proto(&proto);
+                    }
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};

@@ -25,12 +25,12 @@ pub mod extra_types {
     #[proto_message]
     pub struct BuildResponse {
         pub status: ServiceStatus,
-        pub envelope: Envelope,
+        pub envelope: Envelope<GoonPong>,
     }
 
     #[proto_message]
-    pub struct Envelope {
-        pub payload: BuildRequest,
+    pub struct Envelope<T> {
+        pub payload: T,
         pub trace_id: ::proto_rs::alloc::string::String,
     }
 
@@ -53,14 +53,6 @@ pub mod goon_types {
     use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
-    pub enum ServiceStatus {
-        ACTIVE = 0,
-        PENDING = 1,
-        INACTIVE = 2,
-        COMPLETED = 3,
-    }
-
-    #[proto_message]
     pub struct GoonPong {
         pub id: Id,
         pub status: ServiceStatus,
@@ -75,6 +67,14 @@ pub mod goon_types {
     pub struct RizzPing {
         pub id: Id,
         pub status: ServiceStatus,
+    }
+
+    #[proto_message]
+    pub enum ServiceStatus {
+        ACTIVE = 0,
+        PENDING = 1,
+        INACTIVE = 2,
+        COMPLETED = 3,
     }
 
 }
@@ -92,6 +92,7 @@ pub mod rizz_types {
 pub mod sigma_rpc_simple {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
+    use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
     use crate::fastnum::D128;
@@ -118,8 +119,8 @@ pub mod sigma_rpc_simple {
 
         async fn build(
             &self,
-            request: ::tonic::Request<Envelope>,
-        ) -> ::core::result::Result<::tonic::Response<Envelope>, ::tonic::Status>;
+            request: ::tonic::Request<Envelope<BuildRequest>>,
+        ) -> ::core::result::Result<::tonic::Response<Envelope<BuildResponse>>, ::tonic::Status>;
 
         async fn owner_lookup(
             &self,
@@ -140,16 +141,6 @@ pub mod solana {
 
     #[proto_message]
     pub struct Address {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
-    pub struct Keypair {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
-    pub struct Signature {
         pub inner: [u8; BYTES],
     }
 
@@ -211,6 +202,16 @@ pub mod solana {
         MaxAccountsExceeded,
         MaxInstructionTraceLengthExceeded,
         BuiltinProgramsMustConsumeComputeUnits,
+    }
+
+    #[proto_message]
+    pub struct Keypair {
+        pub inner: [u8; BYTES],
+    }
+
+    #[proto_message]
+    pub struct Signature {
+        pub inner: [u8; BYTES],
     }
 
     #[proto_message]

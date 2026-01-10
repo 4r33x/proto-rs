@@ -284,6 +284,12 @@ impl UnifiedProtoConfig {
             substitutions: BTreeMap::new(),
         }];
 
+        // Keep the base variant for Rust client code generation
+        let base_variant = GenericTypeVariant {
+            suffix: String::new(),
+            substitutions: BTreeMap::new(),
+        };
+
         for param in type_params {
             let Some(types) = generic_map.get(&param.to_string()) else {
                 return Err(syn::Error::new_spanned(&param, format!("missing generic_types entry for `{param}`")));
@@ -304,6 +310,10 @@ impl UnifiedProtoConfig {
             }
             variants = next_variants;
         }
+
+        // Add the base generic variant at the beginning for Rust client generation
+        // This ensures we have a schema for Envelope<T>, not just concrete variants
+        variants.insert(0, base_variant);
 
         Ok(variants)
     }
