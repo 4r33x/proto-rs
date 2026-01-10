@@ -57,7 +57,12 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                 };
                 let fields = apply_generic_substitutions_fields(&data.fields, &variant.substitutions);
                 let proto_def = generate_struct_proto(&message_name, &fields, &generic_params);
-                let SchemaTokens { schema, inventory_submit } = schema_tokens_for_struct(&input.ident, &message_name, &fields, &config, &message_name);
+                // Use _concrete version if we have substitutions
+                let SchemaTokens { schema, inventory_submit } = if variant.substitutions.is_empty() {
+                    schema_tokens_for_struct(&input.ident, &message_name, &fields, &config, &message_name)
+                } else {
+                    crate::schema::schema_tokens_for_struct_concrete(&input.ident, &message_name, &fields, &config, &message_name)
+                };
                 config.register_and_emit_proto(&proto_def);
                 schema_tokens_col = quote! { #schema #schema_tokens_col};
                 inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
@@ -83,10 +88,19 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                 } else {
                     generate_complex_enum_proto(&message_name, &data, &generic_params)
                 };
-                let schema_tokens = if is_simple_enum {
-                    schema_tokens_for_simple_enum(&input.ident, &message_name, &data, &config, &message_name)
+                // Use _concrete version if we have substitutions
+                let schema_tokens = if variant.substitutions.is_empty() {
+                    if is_simple_enum {
+                        schema_tokens_for_simple_enum(&input.ident, &message_name, &data, &config, &message_name)
+                    } else {
+                        schema_tokens_for_complex_enum(&input.ident, &message_name, &data, &config, &message_name)
+                    }
                 } else {
-                    schema_tokens_for_complex_enum(&input.ident, &message_name, &data, &config, &message_name)
+                    if is_simple_enum {
+                        crate::schema::schema_tokens_for_simple_enum_concrete(&input.ident, &message_name, &data, &config, &message_name)
+                    } else {
+                        crate::schema::schema_tokens_for_complex_enum_concrete(&input.ident, &message_name, &data, &config, &message_name)
+                    }
                 };
                 config.register_and_emit_proto(&proto_def);
                 let SchemaTokens { schema, inventory_submit } = schema_tokens;
