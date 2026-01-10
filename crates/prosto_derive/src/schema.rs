@@ -18,6 +18,8 @@ enum GenericArgKind {
     Const,
 }
 
+use std::collections::HashSet;
+
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::MethodInfo;
 use crate::utils::ParsedFieldType;
@@ -34,10 +36,10 @@ use crate::utils::to_upper_snake_case;
 
 /// Determines if a type has true generic parameters that are not fully substituted.
 /// Returns true if:
-/// - The type has any const generic parameters (cannot be substituted via generic_types)
-/// - The type has any lifetime parameters (cannot be substituted via generic_types)
-/// - The type has type parameters that are not all listed in generic_types
-/// - The type has no suns (concrete substitutions) and has generics but no generic_types specified
+/// - The type has any const generic parameters (cannot be substituted via `generic_types`)
+/// - The type has any lifetime parameters (cannot be substituted via `generic_types`)
+/// - The type has type parameters that are not all listed in `generic_types`
+/// - The type has no suns (concrete substitutions) and has generics but no `generic_types` specified
 fn has_true_generics(config: &UnifiedProtoConfig) -> bool {
     // If the type has no generics at all, it's fully concrete
     if config.item_generics.params.is_empty() {
@@ -58,7 +60,7 @@ fn has_true_generics(config: &UnifiedProtoConfig) -> bool {
 
     // If we have generic_types specified, check if ALL type parameters are covered
     // and there are no const generics or lifetimes
-    use std::collections::HashSet;
+
     let substituted_params: HashSet<String> = config.generic_types.iter().map(|entry| entry.param.to_string()).collect();
 
     for param in &config.item_generics.params {
