@@ -168,7 +168,65 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Union(_) => Error::new_spanned(&input.ident, "proto_message cannot be used on unions").to_compile_error(),
     };
 
-    let proto_ident_const = assoc_proto_ident_const(&config, &input.ident, &input.generics, &proto_names);
+    // Only generate ProtoIdentifiable if we're not dealing with a generic type that only has concrete variants
+    // If we have generic_types configured, we generate ProtoIdentifiable for each concrete variant instead of the generic type
+    let has_type_params = input.generics.type_params().next().is_some();
+    let has_concrete_variants_only = has_type_params && generic_variants.iter().all(|v| !v.substitutions.is_empty());
+
+    let proto_ident_const = if has_concrete_variants_only {
+        // Generate ProtoIdentifiable for each concrete variant
+        let mut impls = Vec::new();
+        for variant in &generic_variants {
+            let message_name = if variant.suffix.is_empty() {
+                proto_names.first().map_or_else(|| input.ident.to_string(), ToString::to_string)
+            } else {
+                format!("{}{}", proto_names.first().map_or_else(|| input.ident.to_string(), ToString::to_string), variant.suffix)
+            };
+
+            // Build the concrete type by substituting generic parameters
+            let type_ident = &input.ident;
+            let type_with_concrete_args = if variant.substitutions.is_empty() {
+                quote! { #type_ident }
+            } else {
+                // Get the concrete type arguments from substitutions
+                let type_args: Vec<_> = input.generics.type_params().map(|param| {
+                    variant.substitutions.get(&param.ident.to_string())
+                        .map(|ty| quote! { #ty })
+                        .unwrap_or_else(|| {
+                            let ident = &param.ident;
+                            quote! { #ident }
+                        })
+                }).collect();
+                quote! { #type_ident<#(#type_args),*> }
+            };
+
+            let (proto_package, proto_file_path) = config.proto_path().map_or_else(
+                || (String::new(), String::new()),
+                |path| {
+                    let file_name = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
+                    (crate::utils::derive_package_name(file_name), path.to_string())
+                },
+            );
+
+            let type_name_literal = input.ident.to_string();
+            impls.push(quote! {
+                #[cfg(feature = "build-schemas")]
+                impl ::proto_rs::schemas::ProtoIdentifiable for #type_with_concrete_args {
+                    const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = ::proto_rs::schemas::ProtoIdent {
+                        module_path: ::core::module_path!(),
+                        name: #type_name_literal,
+                        proto_package_name: #proto_package,
+                        proto_file_path: #proto_file_path,
+                        proto_type: #message_name,
+                    };
+                }
+            });
+        }
+        quote! { #(#impls)* }
+    } else {
+        assoc_proto_ident_const(&config, &input.ident, &input.generics, &proto_names)
+    };
+
     let proto_imports = config.imports_mat;
     quote! {
         #proto_imports

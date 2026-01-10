@@ -382,15 +382,7 @@ pub struct SchemaTokens {
     pub inventory_submit: TokenStream2,
 }
 
-impl SchemaTokens {
-    /// Create SchemaTokens without inventory submission (for generic types)
-    pub fn without_inventory(schema: TokenStream2) -> Self {
-        Self {
-            schema,
-            inventory_submit: quote! {},
-        }
-    }
-}
+impl SchemaTokens {}
 #[allow(clippy::too_many_arguments)]
 fn build_schema_tokens(
     type_ident: &syn::Ident,
@@ -419,7 +411,7 @@ fn build_schema_tokens_impl(
 ) -> SchemaTokens {
     let (proto_package, proto_file_path) = proto_path_info(config);
     let schema_ident = schema_ident(type_ident, const_suffix);
-    let reg_ident = reg_ident(type_ident, const_suffix);
+    let _reg_ident = reg_ident(type_ident, const_suffix);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -433,9 +425,38 @@ fn build_schema_tokens_impl(
         SchemaKind::Message => use_self_prefix,
         SchemaKind::Service => false,
     };
-    let generics_tokens = build_generics_tokens(type_ident, const_suffix, config, assoc_for_schema);
-    let lifetimes_tokens = build_lifetime_tokens(type_ident, const_suffix, config, assoc_for_schema);
-    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &config.item_attrs, config.transparent, assoc_for_schema);
+
+    // For concrete types (generic substitutions have been applied), don't include generic parameters
+    // This prevents the proto generation from trying to append type names again
+    let effective_generics = if is_concrete && has_type_params {
+        syn::Generics::default() // Empty generics for fully concrete types
+    } else {
+        config.item_generics.clone()
+    };
+
+    // Build a temporary config with the effective generics
+    let mut temp_config = config.clone();
+    temp_config.item_generics = effective_generics;
+
+    let generics_tokens = build_generics_tokens(type_ident, const_suffix, &temp_config, assoc_for_schema);
+    let lifetimes_tokens = build_lifetime_tokens(type_ident, const_suffix, &temp_config, assoc_for_schema);
+
+    // For concrete types, filter out the generic_types attribute to prevent duplicate suffixing
+    let filtered_attrs: Vec<_> = if is_concrete && has_type_params {
+        config.item_attrs.iter()
+            .filter(|attr| !attr.path().is_ident("proto") ||
+                          !attr.meta.require_list().ok()
+                              .and_then(|list| {
+                                  let tokens_str = list.tokens.to_string();
+                                  Some(tokens_str.contains("generic_types"))
+                              }).unwrap_or(false))
+            .cloned()
+            .collect()
+    } else {
+        config.item_attrs.clone()
+    };
+
+    let attrs_tokens = build_attribute_tokens(type_ident, const_suffix, &filtered_attrs, config.transparent, assoc_for_schema);
 
     let generics_consts = generics_tokens.consts;
     let generics_refs = generics_tokens.refs;
@@ -1074,6 +1095,7 @@ fn generic_args_tokens_from_type(
     let mut arg_consts = Vec::new();
     let mut arg_refs = Vec::new();
     let mut arg_idx = 0usize;
+    let mut has_any_generic_param = false;
 
     for arg in &args.args {
         let syn::GenericArgument::Type(arg_ty) = arg else {
@@ -1082,6 +1104,11 @@ fn generic_args_tokens_from_type(
 
         // Classify the generic argument
         let kind = classify_generic_arg(arg, generics);
+
+        // Track if we have any true generic parameters
+        if kind == GenericArgKind::Generic {
+            has_any_generic_param = true;
+        }
 
         // Only generate PROTO_SCHEMA_GENERIC_ARG constants for concrete types
         // Skip generic parameters and const generics
@@ -1103,6 +1130,14 @@ fn generic_args_tokens_from_type(
     }
 
     if arg_refs.is_empty() {
+        return (quote! {}, quote! { &[] });
+    }
+
+    // If all type arguments are concrete (no generic parameters from the containing type),
+    // then this is a fully instantiated generic type that likely has its own ProtoIdentifiable
+    // with a concrete proto_type (e.g., Envelope<GoonPong> → "EnvelopeGoonPong").
+    // In this case, we should NOT include generic_args to avoid duplication in proto file generation.
+    if !has_any_generic_param {
         return (quote! {}, quote! { &[] });
     }
 

@@ -25,12 +25,12 @@ pub mod extra_types {
     #[proto_message]
     pub struct BuildResponse {
         pub status: ServiceStatus,
-        pub envelope: Envelope<GoonPong>,
+        pub envelope: Envelope,
     }
 
     #[proto_message]
-    pub struct Envelope<T> {
-        pub payload: T,
+    pub struct Envelope {
+        pub payload: BuildRequest,
         pub trace_id: ::proto_rs::alloc::string::String,
     }
 
@@ -92,7 +92,6 @@ pub mod rizz_types {
 pub mod sigma_rpc_simple {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
-    use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
     use crate::fastnum::D128;
@@ -119,8 +118,8 @@ pub mod sigma_rpc_simple {
 
         async fn build(
             &self,
-            request: ::tonic::Request<Envelope<BuildRequest>>,
-        ) -> ::core::result::Result<::tonic::Response<Envelope<BuildResponse>>, ::tonic::Status>;
+            request: ::tonic::Request<Envelope>,
+        ) -> ::core::result::Result<::tonic::Response<Envelope>, ::tonic::Status>;
 
         async fn owner_lookup(
             &self,
