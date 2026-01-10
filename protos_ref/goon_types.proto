@@ -1,6 +1,25 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
 package goon_types;
 
-message GoonMessage {
-  string value = 1;
+enum ServiceStatus {
+  ACTIVE = 0;
+  PENDING = 1;
+  INACTIVE = 2;
+  COMPLETED = 3;
 }
+
+message GoonPong {
+  Id id = 1;
+  ServiceStatus status = 2;
+}
+
+message Id {
+  uint64 id = 1;
+}
+
+message RizzPing {
+  Id id = 1;
+  ServiceStatus status = 2;
+}
+

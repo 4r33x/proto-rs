@@ -6,6 +6,7 @@ use tonic::Request;
 use tonic::Response;
 use tonic::Status;
 use tonic_prost_test::goon_types::GoonPong;
+use tonic_prost_test::goon_types::Id;
 use tonic_prost_test::goon_types::RizzPing;
 use tonic_prost_test::rizz_types::BarSub;
 use tonic_prost_test::rizz_types::FooResponse;
@@ -19,7 +20,10 @@ struct S;
 impl SigmaRpc for S {
     type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
-        Ok(Response::new(GoonPong {}))
+        Ok(Response::new(GoonPong {
+            id: Some(Id { id: 15 }),
+            status: 1,
+        }))
     }
     async fn rizz_uni(&self, _request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status> {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
@@ -38,6 +42,22 @@ impl SigmaRpc for S {
         let boxed_stream: Self::RizzUniStream = Box::pin(stream);
 
         Ok(Response::new(boxed_stream))
+    }
+    async fn build(
+        &self,
+        _req: tonic::Request<tonic_prost_test::extra_types::EnvelopeBuildRequest>,
+    ) -> Result<tonic::Response<tonic_prost_test::extra_types::EnvelopeBuildResponse>, tonic::Status> {
+        Ok(tonic::Response::new(tonic_prost_test::extra_types::EnvelopeBuildResponse::default()))
+    }
+
+    async fn owner_lookup(&self, req: tonic::Request<tonic_prost_test::goon_types::Id>) -> Result<tonic::Response<tonic_prost_test::extra_types::BuildResponse>, tonic::Status> {
+        let _id = req.into_inner();
+        Ok(tonic::Response::new(tonic_prost_test::extra_types::BuildResponse::default()))
+    }
+
+    async fn test_decimals(&self, req: tonic::Request<tonic_prost_test::fastnum::Ud128>) -> Result<tonic::Response<tonic_prost_test::fastnum::D64>, tonic::Status> {
+        let _v = req.into_inner();
+        Ok(tonic::Response::new(tonic_prost_test::fastnum::D64::default()))
     }
 }
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,7 +90,13 @@ mod tests {
     #[tokio::test]
     async fn test_proto_client_unary_impl() {
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
-        let res = client.rizz_ping(RizzPing {}).await.unwrap();
+        let res = client
+            .rizz_ping(RizzPing {
+                id: Some(Id { id: 21 }),
+                status: 1,
+            })
+            .await
+            .unwrap();
         println!("{:?}", res)
     }
 

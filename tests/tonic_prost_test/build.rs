@@ -7,13 +7,16 @@ fn main() -> io::Result<()> {
 
     cfg.compile_protos(
         &[
-            "../../protos_ref/ref_proto/sigma_rpc.proto",
-            "../../protos_ref/ref_proto/goon_types.proto",
-            "../../protos_ref/ref_proto/rizz_types.proto",
+            "../../protos_ref/sigma_rpc_simple.proto",
+            "../../protos_ref/goon_types.proto",
+            "../../protos_ref/extra_types.proto",
+            "../../protos_ref/rizz_types.proto",
+            "../../protos_ref/solana.proto",
+            "../../protos_ref/fastnum.proto",
             "../../protos/tests/complex_rpc.proto",
             "../../protos/tests/encoding.proto",
             "../../protos/tests/advanced_features.proto",
         ],
-        &["../../protos/ref_proto", "../../protos/tests"],
+        &["../../protos_ref", "../../protos/tests"],
     )
 }

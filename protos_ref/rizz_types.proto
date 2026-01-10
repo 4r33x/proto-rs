@@ -1,6 +1,8 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
 package rizz_types;
 
-message RizzMessage {
-  string value = 1;
-}
+message BarSub {}
+
+message FooResponse {}
+
