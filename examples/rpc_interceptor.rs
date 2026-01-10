@@ -21,10 +21,7 @@ pub type UserId = u64;
 // Define the interceptor function that will be called on every client request
 fn user_advanced_interceptor<T>(ctx: UserId, request: &mut tonic::Request<T>) {
     // Add the user ID to the request metadata
-    request.metadata_mut().insert(
-        "user-id",
-        ctx.to_string().parse().unwrap(),
-    );
+    request.metadata_mut().insert("user-id", ctx.to_string().parse().unwrap());
     println!("Interceptor called with user_id: {}", ctx);
 }
 
