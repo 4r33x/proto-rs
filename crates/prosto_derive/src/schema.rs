@@ -1274,12 +1274,12 @@ fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
                             }
                             syn::GenericArgument::Const(expr) => {
                                 // Check if const expr references a const generic param
-                                if let syn::Expr::Path(expr_path) = expr {
-                                    if expr_path.path.segments.len() == 1 {
-                                        let ident = &expr_path.path.segments[0].ident;
-                                        if generics.const_params().any(|param| param.ident == *ident) {
-                                            return true;
-                                        }
+                                if let syn::Expr::Path(expr_path) = expr
+                                    && expr_path.path.segments.len() == 1
+                                {
+                                    let ident = &expr_path.path.segments[0].ident;
+                                    if generics.const_params().any(|param| param.ident == *ident) {
+                                        return true;
                                     }
                                 }
                             }
@@ -1299,12 +1299,12 @@ fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
                                 }
                             }
                             syn::GenericArgument::Const(expr) => {
-                                if let syn::Expr::Path(expr_path) = expr {
-                                    if expr_path.path.segments.len() == 1 {
-                                        let ident = &expr_path.path.segments[0].ident;
-                                        if generics.const_params().any(|param| param.ident == *ident) {
-                                            return true;
-                                        }
+                                if let syn::Expr::Path(expr_path) = expr
+                                    && expr_path.path.segments.len() == 1
+                                {
+                                    let ident = &expr_path.path.segments[0].ident;
+                                    if generics.const_params().any(|param| param.ident == *ident) {
+                                        return true;
                                     }
                                 }
                             }
