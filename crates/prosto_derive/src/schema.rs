@@ -557,10 +557,9 @@ fn build_schema_tokens_impl(
             }
         }
     };
-    // Always register schemas with inventory for lookup purposes
-    // The distinction between base generic types and concrete variants is handled during
-    // proto file emission (in proto_message/mod.rs)
-    let has_type_params = generics.type_params().next().is_some();
+    // Register all schemas with inventory
+    // Generic parameter references in field types are now handled with placeholders
+    // so it's safe to register base generic types
     let should_register = true;
 
     let inventory_submit = if should_register {
@@ -935,7 +934,7 @@ fn field_info_tokens(
     let parsed = parse_field_type(&inner_type);
     let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, true);
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, assoc);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty, assoc);
     let extra_consts = quote! { #generic_consts #array_consts };
 
@@ -970,6 +969,12 @@ fn proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig, par
     }
 
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
+        // If the type references generic parameters from the parent, use a placeholder
+        // This happens when generating schemas for base generic types at module level
+        if type_references_generic_params(inner_type, item_generics) {
+            let type_name = quote! { #inner_type }.to_string();
+            return proto_ident_literal(&type_name, "", "");
+        }
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
     }
 
@@ -995,6 +1000,12 @@ fn rust_proto_ident_tokens(inner_type: &Type, config: &crate::utils::FieldConfig
     }
 
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
+        // If the type references generic parameters from the parent, use a placeholder
+        // This happens when generating schemas for base generic types at module level
+        if type_references_generic_params(inner_type, item_generics) {
+            let type_name = quote! { #inner_type }.to_string();
+            return proto_ident_literal(&type_name, "", "");
+        }
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
     }
 
@@ -1234,6 +1245,82 @@ fn generic_param_name(ty: &Type, generics: &syn::Generics) -> Option<String> {
         Type::Group(group) => generic_param_name(&group.elem, generics),
         Type::Paren(paren) => generic_param_name(&paren.elem, generics),
         _ => None,
+    }
+}
+
+/// Check if a type references any generic parameters from the parent type
+fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
+    match ty {
+        Type::Path(path) => {
+            // Check if this is a bare generic parameter
+            if path.qself.is_none() && path.path.segments.len() == 1 {
+                let segment = &path.path.segments[0];
+                if segment.arguments.is_empty() {
+                    if generics.type_params().any(|param| param.ident == segment.ident) {
+                        return true;
+                    }
+                    if generics.const_params().any(|param| param.ident == segment.ident) {
+                        return true;
+                    }
+                }
+                // Check if any type arguments reference generic params
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    for arg in &args.args {
+                        match arg {
+                            syn::GenericArgument::Type(ty) => {
+                                if type_references_generic_params(ty, generics) {
+                                    return true;
+                                }
+                            }
+                            syn::GenericArgument::Const(expr) => {
+                                // Check if const expr references a const generic param
+                                if let syn::Expr::Path(expr_path) = expr
+                                    && expr_path.path.segments.len() == 1
+                                {
+                                    let ident = &expr_path.path.segments[0].ident;
+                                    if generics.const_params().any(|param| param.ident == *ident) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            // Check all path segments for generic references
+            for segment in &path.path.segments {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    for arg in &args.args {
+                        match arg {
+                            syn::GenericArgument::Type(ty) => {
+                                if type_references_generic_params(ty, generics) {
+                                    return true;
+                                }
+                            }
+                            syn::GenericArgument::Const(expr) => {
+                                if let syn::Expr::Path(expr_path) = expr
+                                    && expr_path.path.segments.len() == 1
+                                {
+                                    let ident = &expr_path.path.segments[0].ident;
+                                    if generics.const_params().any(|param| param.ident == *ident) {
+                                        return true;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            false
+        }
+        Type::Reference(reference) => type_references_generic_params(&reference.elem, generics),
+        Type::Array(array) => type_references_generic_params(&array.elem, generics),
+        Type::Tuple(tuple) => tuple.elems.iter().any(|ty| type_references_generic_params(ty, generics)),
+        Type::Group(group) => type_references_generic_params(&group.elem, generics),
+        Type::Paren(paren) => type_references_generic_params(&paren.elem, generics),
+        _ => false,
     }
 }
 
