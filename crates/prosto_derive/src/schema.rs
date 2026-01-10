@@ -149,7 +149,14 @@ pub fn schema_tokens_for_simple_enum_concrete(type_ident: &syn::Ident, message_n
     schema_tokens_for_simple_enum_impl(type_ident, message_name, data, config, const_suffix, true)
 }
 
-fn schema_tokens_for_simple_enum_impl(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str, is_concrete: bool) -> SchemaTokens {
+fn schema_tokens_for_simple_enum_impl(
+    type_ident: &syn::Ident,
+    message_name: &str,
+    data: &DataEnum,
+    config: &UnifiedProtoConfig,
+    const_suffix: &str,
+    is_concrete: bool,
+) -> SchemaTokens {
     let marked_default = find_marked_default_variant(data).unwrap_or_else(|err| panic!("{err}"));
     let mut order: Vec<usize> = (0..data.variants.len()).collect();
     if let Some(idx) = marked_default
@@ -219,7 +226,14 @@ pub fn schema_tokens_for_complex_enum_concrete(type_ident: &syn::Ident, message_
     schema_tokens_for_complex_enum_impl(type_ident, message_name, data, config, const_suffix, true)
 }
 
-fn schema_tokens_for_complex_enum_impl(type_ident: &syn::Ident, message_name: &str, data: &DataEnum, config: &UnifiedProtoConfig, const_suffix: &str, is_concrete: bool) -> SchemaTokens {
+fn schema_tokens_for_complex_enum_impl(
+    type_ident: &syn::Ident,
+    message_name: &str,
+    data: &DataEnum,
+    config: &UnifiedProtoConfig,
+    const_suffix: &str,
+    is_concrete: bool,
+) -> SchemaTokens {
     let mut variant_consts = Vec::new();
     let mut variant_refs = Vec::new();
 
@@ -445,13 +459,16 @@ fn build_schema_tokens_impl(
 
     // For concrete types, filter out the generic_types attribute to prevent duplicate suffixing
     let filtered_attrs: Vec<_> = if is_concrete && has_type_params {
-        config.item_attrs.iter()
-            .filter(|attr| !attr.path().is_ident("proto") ||
-                          !attr.meta.require_list().ok()
-                              .and_then(|list| {
-                                  let tokens_str = list.tokens.to_string();
-                                  Some(tokens_str.contains("generic_types"))
-                              }).unwrap_or(false))
+        config
+            .item_attrs
+            .iter()
+            .filter(|attr| {
+                !attr.path().is_ident("proto")
+                    || !attr.meta.require_list().ok().is_some_and(|list| {
+                        let tokens_str = list.tokens.to_string();
+                        tokens_str.contains("generic_types")
+                    })
+            })
             .cloned()
             .collect()
     } else {
@@ -771,7 +788,13 @@ fn build_attribute_tokens(type_ident: &syn::Ident, suffix: &str, attrs: &[syn::A
     }
 }
 
-fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig, is_concrete: bool) -> FieldTokens {
+fn build_named_fields_tokens(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>,
+    config: &UnifiedProtoConfig,
+    is_concrete: bool,
+) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
     let mut field_num = 0;
@@ -795,7 +818,13 @@ fn build_named_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn
     }
 }
 
-fn build_unnamed_fields_tokens(type_ident: &syn::Ident, suffix: &str, fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>, config: &UnifiedProtoConfig, is_concrete: bool) -> FieldTokens {
+fn build_unnamed_fields_tokens(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    fields: &syn::punctuated::Punctuated<Field, syn::token::Comma>,
+    config: &UnifiedProtoConfig,
+    is_concrete: bool,
+) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
 
@@ -869,7 +898,15 @@ struct FieldInfoTokens {
     extra_consts: TokenStream2,
 }
 
-fn field_info_tokens(type_ident: &syn::Ident, suffix: &str, idx: usize, field: &Field, config: &crate::utils::FieldConfig, item_generics: &syn::Generics, assoc: bool) -> FieldInfoTokens {
+fn field_info_tokens(
+    type_ident: &syn::Ident,
+    suffix: &str,
+    idx: usize,
+    field: &Field,
+    config: &crate::utils::FieldConfig,
+    item_generics: &syn::Generics,
+    assoc: bool,
+) -> FieldInfoTokens {
     let base_ty = resolved_field_type(field, config);
     let ty = if let Some(ref into_type) = config.into_type {
         syn::parse_str::<Type>(into_type).unwrap_or_else(|_| base_ty.clone())

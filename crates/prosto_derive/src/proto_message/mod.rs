@@ -76,7 +76,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 // For each proto name, iterate over generic variants
                 for variant in &generic_variants {
                     let message_name = if variant.suffix.is_empty() {
-                        proto_name.to_string()
+                        proto_name.clone()
                     } else {
                         format!("{}{}", proto_name, variant.suffix)
                     };
@@ -121,7 +121,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 // For each proto name, iterate over generic variants
                 for variant in &generic_variants {
                     let message_name = if variant.suffix.is_empty() {
-                        proto_name.to_string()
+                        proto_name.clone()
                     } else {
                         format!("{}{}", proto_name, variant.suffix)
                     };
@@ -199,14 +199,19 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 quote! { #type_ident }
             } else {
                 // Get the concrete type arguments from substitutions
-                let type_args: Vec<_> = input.generics.type_params().map(|param| {
-                    variant.substitutions.get(&param.ident.to_string())
-                        .map(|ty| quote! { #ty })
-                        .unwrap_or_else(|| {
-                            let ident = &param.ident;
-                            quote! { #ident }
-                        })
-                }).collect();
+                let type_args: Vec<_> = input
+                    .generics
+                    .type_params()
+                    .map(|param| {
+                        variant.substitutions.get(&param.ident.to_string()).map_or_else(
+                            || {
+                                let ident = &param.ident;
+                                quote! { #ident }
+                            },
+                            |ty| quote! { #ty },
+                        )
+                    })
+                    .collect();
                 quote! { #type_ident<#(#type_args),*> }
             };
 
