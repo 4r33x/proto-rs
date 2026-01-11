@@ -81,7 +81,13 @@ where
     type Shadow<'a> = Option<<T as ProtoExt>::Shadow<'a>>;
 
     #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         let inner = value.get_or_insert_with(T::Shadow::proto_default);
         T::merge_field(inner, tag, wire, buf, ctx)
     }

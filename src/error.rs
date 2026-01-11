@@ -143,7 +143,10 @@ mod test {
         decode_error.push("Foo bad", "bar.foo");
         decode_error.push("Baz bad", "bar.baz");
 
-        assert_eq!(decode_error.to_string(), "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed");
+        assert_eq!(
+            decode_error.to_string(),
+            "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed"
+        );
     }
 
     #[cfg(feature = "std")]

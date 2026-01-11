@@ -226,7 +226,11 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
         } else {
             quote! { tonic::Response<Self::#stream_name> }
         };
-        let method_return = if method.is_async { method_future_return_type(return_type) } else { return_type };
+        let method_return = if method.is_async {
+            method_future_return_type(return_type)
+        } else {
+            return_type
+        };
         quote! {
             #[must_use]
             fn #method_name(
@@ -248,7 +252,11 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
                 tonic::Status
             >
         };
-        let method_return = if method.is_async { method_future_return_type(return_type) } else { return_type };
+        let method_return = if method.is_async {
+            method_future_return_type(return_type)
+        } else {
+            return_type
+        };
         quote! {
             #[must_use]
             fn #method_name(
@@ -502,7 +510,10 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     } else {
         quote! {}
     };
-    let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::Response>, tonic::Status> }, true);
+    let future_type = associated_future_type(
+        quote! { ::core::result::Result<tonic::Response<Self::Response>, tonic::Status> },
+        true,
+    );
     let call_future = wrap_call_future(
         method.is_async,
         quote! {
@@ -567,7 +578,10 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     };
 
     let (future_type, call_future) = if method.response_is_result {
-        let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
+        let future_type = associated_future_type(
+            quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> },
+            true,
+        );
         let body = quote! {
             let response = <T as #trait_name>::#method_name(&inner, request)#await_question_suffix;
             let mapped = response.map(|stream| {
@@ -586,7 +600,10 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
         };
         (future_type, wrap_call_future(method.is_async, body))
     } else {
-        let future_type = associated_future_type(quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> }, true);
+        let future_type = associated_future_type(
+            quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> },
+            true,
+        );
         let body = quote! {
             let response = <T as #trait_name>::#method_name(&inner, request)#await_suffix;
             let mapped = response.map(|stream| {
@@ -721,6 +738,9 @@ mod tests {
         let (blanket_types, _) = generate_blanket_impl_components(&methods, &parse_quote!(SigmaRpc));
 
         assert_eq!(blanket_types.len(), 1, "duplicate stream types should be skipped");
-        assert_eq!(blanket_types[0].to_token_stream().to_string(), "type RizzUniStream = < Self as super :: SigmaRpc > :: RizzUniStream ;");
+        assert_eq!(
+            blanket_types[0].to_token_stream().to_string(),
+            "type RizzUniStream = < Self as super :: SigmaRpc > :: RizzUniStream ;"
+        );
     }
 }

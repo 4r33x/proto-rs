@@ -18,7 +18,12 @@ pub(crate) struct GenericSpecialization {
     pub(crate) args: Vec<ProtoIdent>,
 }
 
-pub(crate) fn collect_imports(entries: &[&ProtoSchema], ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, file_name: &str, package_name: &str) -> std::io::Result<BTreeSet<String>> {
+pub(crate) fn collect_imports(
+    entries: &[&ProtoSchema],
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    file_name: &str,
+    package_name: &str,
+) -> std::io::Result<BTreeSet<String>> {
     let mut imports = BTreeSet::new();
 
     for entry in entries {
@@ -46,7 +51,10 @@ pub(crate) fn collect_imports(entries: &[&ProtoSchema], ident_index: &BTreeMap<P
     Ok(imports)
 }
 
-pub(crate) fn collect_generic_specializations(entries: &[&ProtoSchema], ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> BTreeMap<ProtoIdent, Vec<GenericSpecialization>> {
+pub(crate) fn collect_generic_specializations(
+    entries: &[&ProtoSchema],
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+) -> BTreeMap<ProtoIdent, Vec<GenericSpecialization>> {
     let mut specializations: BTreeMap<ProtoIdent, Vec<GenericSpecialization>> = BTreeMap::new();
     let generic_entries: BTreeMap<ProtoIdent, &ProtoSchema> = entries
         .iter()
@@ -157,13 +165,14 @@ pub(crate) fn render_entries(
     rendered
 }
 
-fn render_entry(entry: &ProtoSchema, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, specializations: Option<&Vec<GenericSpecialization>>) -> Vec<String> {
-    let type_generics: Vec<&str> = entry
-        .generics
-        .iter()
-        .filter(|generic| matches!(generic.kind, super::GenericKind::Type))
-        .map(|generic| generic.name)
-        .collect();
+fn render_entry(
+    entry: &ProtoSchema,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    specializations: Option<&Vec<GenericSpecialization>>,
+) -> Vec<String> {
+    let type_generics: Vec<&str> =
+        entry.generics.iter().filter(|generic| matches!(generic.kind, super::GenericKind::Type)).map(|generic| generic.name).collect();
 
     let has_type_generics = !type_generics.is_empty();
     if has_type_generics {
@@ -176,7 +185,9 @@ fn render_entry(entry: &ProtoSchema, package_name: &str, ident_index: &BTreeMap<
             let definition = match entry.content {
                 ProtoEntry::Struct { fields } => render_struct(&spec.name, fields, package_name, ident_index, Some(&substitution)),
                 ProtoEntry::SimpleEnum { variants } => render_simple_enum(&spec.name, variants),
-                ProtoEntry::ComplexEnum { variants } => render_complex_enum(&spec.name, variants, package_name, ident_index, Some(&substitution)),
+                ProtoEntry::ComplexEnum { variants } => {
+                    render_complex_enum(&spec.name, variants, package_name, ident_index, Some(&substitution))
+                }
                 ProtoEntry::Import { .. } => continue,
                 ProtoEntry::Service { methods, .. } => render_service(&spec.name, methods, package_name, ident_index, Some(&substitution)),
             };
@@ -206,7 +217,13 @@ fn build_substitution<'a>(type_generics: &'a [&'a str], args: &'a [ProtoIdent]) 
     substitution
 }
 
-fn render_struct(name: &str, fields: &[&Field], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> String {
+fn render_struct(
+    name: &str,
+    fields: &[&Field],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
     if fields.is_empty() {
         return format!("message {name} {{}}\n");
     }
@@ -228,7 +245,13 @@ fn render_simple_enum(name: &str, variants: &[&Variant]) -> String {
     format!("enum {name} {{\n{}\n}}\n", lines.join("\n"))
 }
 
-fn render_complex_enum(name: &str, variants: &[&Variant], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> String {
+fn render_complex_enum(
+    name: &str,
+    variants: &[&Variant],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
     let mut nested_messages = Vec::new();
     let mut oneof_fields = Vec::new();
 
@@ -256,10 +279,20 @@ fn render_complex_enum(name: &str, variants: &[&Variant], package_name: &str, id
         oneof_fields.push(format!("    {msg_name} {field_name} = {tag};"));
     }
 
-    format!("{}\nmessage {} {{\n  oneof value {{\n{}\n  }}\n}}\n", nested_messages.join("\n\n"), name, oneof_fields.join("\n"))
+    format!(
+        "{}\nmessage {} {{\n  oneof value {{\n{}\n  }}\n}}\n",
+        nested_messages.join("\n\n"),
+        name,
+        oneof_fields.join("\n")
+    )
 }
 
-fn render_named_fields(fields: &[&Field], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> String {
+fn render_named_fields(
+    fields: &[&Field],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
     let mut lines = Vec::new();
     for (idx, field) in fields.iter().enumerate() {
         lines.push(render_field(field, idx, package_name, ident_index, substitution));
@@ -267,7 +300,13 @@ fn render_named_fields(fields: &[&Field], package_name: &str, ident_index: &BTre
     lines.join("\n")
 }
 
-fn render_field(field: &Field, idx: usize, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> String {
+fn render_field(
+    field: &Field,
+    idx: usize,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
     let name = field.name.map_or_else(|| format!("field_{idx}"), ToString::to_string);
     let label = match field.proto_label {
         ProtoLabel::None => "",
@@ -278,14 +317,31 @@ fn render_field(field: &Field, idx: usize, package_name: &str, ident_index: &BTr
     format!("  {label}{proto_type} {name} = {};", field.tag)
 }
 
-fn render_service(name: &str, methods: &[&ServiceMethod], package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> String {
+fn render_service(
+    name: &str,
+    methods: &[&ServiceMethod],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
     let mut lines = Vec::new();
     lines.push(format!("service {name} {{"));
 
     for method in methods {
-        let request_type = proto_ident_type_name_with_generics(method.request, method.request_generic_args, package_name, ident_index, substitution);
-        let response_type = proto_ident_type_name_with_generics(method.response, method.response_generic_args, package_name, ident_index, substitution);
-        let response_type = if method.server_streaming { format!("stream {response_type}") } else { response_type };
+        let request_type =
+            proto_ident_type_name_with_generics(method.request, method.request_generic_args, package_name, ident_index, substitution);
+        let response_type = proto_ident_type_name_with_generics(
+            method.response,
+            method.response_generic_args,
+            package_name,
+            ident_index,
+            substitution,
+        );
+        let response_type = if method.server_streaming {
+            format!("stream {response_type}")
+        } else {
+            response_type
+        };
         lines.push(format!("  rpc {}({}) returns ({});", method.name, request_type, response_type));
     }
 
@@ -293,7 +349,12 @@ fn render_service(name: &str, methods: &[&ServiceMethod], package_name: &str, id
     lines.join("\n")
 }
 
-fn field_type_name(field: &Field, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> String {
+fn field_type_name(
+    field: &Field,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
     let ident = resolve_transparent_ident(field.proto_ident, ident_index);
     if ident.proto_type.starts_with("map<") {
         return ident.proto_type.to_string();
@@ -360,7 +421,13 @@ fn apply_substitution(ident: ProtoIdent, substitution: Option<&BTreeMap<&str, Pr
     substitution.get(ident.proto_type).copied().unwrap_or(ident)
 }
 
-fn collect_field_imports(imports: &mut BTreeSet<String>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>, fields: &[&Field], file_name: &str, package_name: &str) -> std::io::Result<()> {
+fn collect_field_imports(
+    imports: &mut BTreeSet<String>,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    fields: &[&Field],
+    file_name: &str,
+    package_name: &str,
+) -> std::io::Result<()> {
     for field in fields {
         let ident = resolve_transparent_ident(field.proto_ident, ident_index);
         collect_proto_ident_imports(imports, ident_index, &ident, file_name, package_name)?;

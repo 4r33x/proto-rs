@@ -324,13 +324,21 @@ pub enum VecTestEnumCustom {
     Test,
     Test0(Status),
     Test1(Vec<Status>),
-    Test2 { test1: Vec<Status>, test2: Option<Status>, test3: Status },
+    Test2 {
+        test1: Vec<Status>,
+        test2: Option<Status>,
+        test3: Status,
+    },
     Test3(Option<Status>),
 
     Test7(User),
     Test8(Option<User>),
     Test9(Vec<User>),
-    Test10 { test: Vec<User>, test1: Option<User>, test3: User },
+    Test10 {
+        test: Vec<User>,
+        test1: Option<User>,
+        test3: User,
+    },
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
@@ -338,14 +346,22 @@ pub enum VecTestEnumCustom {
 pub enum VecTestEnumCustom2 {
     Test0(Status),
     Test1(Vec<Status>),
-    Test2 { test1: Vec<Status>, test2: Option<Status>, test3: Status },
+    Test2 {
+        test1: Vec<Status>,
+        test2: Option<Status>,
+        test3: Status,
+    },
     Test3(Option<Status>),
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]
 #[derive(Clone)]
 pub enum VecFailingTestEnum {
-    Test2 { test1: Vec<Status>, test2: Option<Status>, test3: Status },
+    Test2 {
+        test1: Vec<Status>,
+        test2: Option<Status>,
+        test3: Status,
+    },
 }
 
 #[proto_message(proto_path = "protos/showcase_proto/show.proto")]

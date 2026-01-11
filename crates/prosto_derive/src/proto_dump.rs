@@ -112,7 +112,9 @@ fn struct_or_enum(mut input: DeriveInput, mut config: UnifiedProtoConfig) -> Tok
                 inventory_submit: inventory_tokens_col,
             }
         }
-        Data::Union(_) => panic!("proto_dump can only be used on structs and enums, make PR/issue if you want unions"),
+        Data::Union(_) => {
+            panic!("proto_dump can only be used on structs and enums, make PR/issue if you want unions")
+        }
     };
     strip_proto_attributes(&mut input.data);
     let proto = config.imports_mat;

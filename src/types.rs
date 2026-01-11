@@ -346,11 +346,47 @@ impl_google_wrapper!(
 //     (clear),
 //     crate::traits::ProtoKind::Bytes
 // );
-impl_google_wrapper!(String, string, "StringValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::String);
-impl_google_wrapper!(Vec<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
-impl_google_wrapper!(Bytes, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
+impl_google_wrapper!(
+    String,
+    string,
+    "StringValue",
+    by_ref,
+    (!is_empty),
+    (is_empty),
+    (clear),
+    crate::traits::ProtoKind::String
+);
+impl_google_wrapper!(
+    Vec<u8>,
+    bytes,
+    "BytesValue",
+    by_ref,
+    (!is_empty),
+    (is_empty),
+    (clear),
+    crate::traits::ProtoKind::Bytes
+);
+impl_google_wrapper!(
+    Bytes,
+    bytes,
+    "BytesValue",
+    by_ref,
+    (!is_empty),
+    (is_empty),
+    (clear),
+    crate::traits::ProtoKind::Bytes
+);
 
-impl_google_wrapper!(VecDeque<u8>, bytes, "BytesValue", by_ref, (!is_empty), (is_empty), (clear), crate::traits::ProtoKind::Bytes);
+impl_google_wrapper!(
+    VecDeque<u8>,
+    bytes,
+    "BytesValue",
+    by_ref,
+    (!is_empty),
+    (is_empty),
+    (clear),
+    crate::traits::ProtoKind::Bytes
+);
 
 macro_rules! impl_atomic_primitive {
     ($ty:ty, $prim:expr, $default:expr, $base:ty, $module:ident,
@@ -381,14 +417,22 @@ macro_rules! impl_atomic_primitive {
             fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
                 let inner: &$ty = *value;
                 let raw: $base = ($load)(inner);
-                if raw == $default { 0 } else { crate::encoding::$module::encoded_len(raw) }
+                if raw == $default {
+                    0
+                } else {
+                    crate::encoding::$module::encoded_len(raw)
+                }
             }
 
             #[inline(always)]
             fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
                 let inner: &$ty = *value;
                 let raw: $base = ($load)(inner);
-                if raw == $default { 0 } else { crate::encoding::$module::encoded_len_tagged(tag, raw) }
+                if raw == $default {
+                    0
+                } else {
+                    crate::encoding::$module::encoded_len_tagged(tag, raw)
+                }
             }
 
             #[inline(always)]
@@ -450,7 +494,13 @@ macro_rules! impl_atomic_primitive {
                 $ty: 'b;
 
             #[inline(always)]
-            fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            fn merge_field(
+                value: &mut Self::Shadow<'_>,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
                 if tag == 1 {
                     <Self as crate::traits::ProtoWire>::decode_into(wire_type, value, buf, ctx)
                 } else {
@@ -550,7 +600,8 @@ macro_rules! impl_atomic_narrow_primitive {
             fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 let mut raw: $wide = ($load)(&*value) as $wide;
                 crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
-                let narrowed: $narrow = <$narrow>::try_from(raw).map_err(|_| DecodeError::new(concat!(stringify!($narrow), " overflow")))?;
+                let narrowed: $narrow =
+                    <$narrow>::try_from(raw).map_err(|_| DecodeError::new(concat!(stringify!($narrow), " overflow")))?;
                 ($store)(value, narrowed);
                 Ok(())
             }
@@ -579,7 +630,13 @@ macro_rules! impl_atomic_narrow_primitive {
                 $ty: 'b;
 
             #[inline(always)]
-            fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            fn merge_field(
+                value: &mut Self::Shadow<'_>,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
                 if tag == 1 {
                     <Self as crate::traits::ProtoWire>::decode_into(wire_type, value, buf, ctx)
                 } else {
@@ -724,7 +781,13 @@ impl ProtoExt for () {
         Self: 'b;
 
     #[inline(always)]
-    fn merge_field(_value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        _value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         skip_field(wire_type, tag, buf, ctx)
     }
 }

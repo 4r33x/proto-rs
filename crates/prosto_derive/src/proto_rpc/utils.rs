@@ -110,7 +110,11 @@ fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::I
 
     let request_type = &signature.request_type;
 
-    let return_type = if signature.is_async { method_future_return_type(future_output) } else { future_output };
+    let return_type = if signature.is_async {
+        method_future_return_type(future_output)
+    } else {
+        future_output
+    };
 
     quote! {
         #(#attrs)*
@@ -224,7 +228,8 @@ fn extract_stream_metadata(response_type: &Type, trait_items: &[TraitItem]) -> (
             && self_segment.ident == "Self"
         {
             let stream_name = stream_segment.ident.clone();
-            let (item_ty, proto_ty) = find_stream_item_types(&stream_name, trait_items).unwrap_or_else(|| panic!("Could not find associated type definition for {stream_name}"));
+            let (item_ty, proto_ty) = find_stream_item_types(&stream_name, trait_items)
+                .unwrap_or_else(|| panic!("Could not find associated type definition for {stream_name}"));
             return (true, Some(stream_name), Some(proto_ty), Some(item_ty));
         }
     }

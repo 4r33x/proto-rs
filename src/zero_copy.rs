@@ -47,7 +47,9 @@ impl ZeroCopyBuffer {
 
     #[inline(always)]
     pub fn new() -> Self {
-        Self { inner: ZeroCopyBufferInner::new() }
+        Self {
+            inner: ZeroCopyBufferInner::new(),
+        }
     }
 
     #[inline(always)]
@@ -125,7 +127,12 @@ where
         // For all other types (SimpleEnum, primitives, strings, bytes),
         // decode the raw value with its wire type
         let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
-        <T::Shadow<'static> as ProtoWire>::decode_into(<T::Shadow<'static> as ProtoWire>::WIRE_TYPE, &mut shadow, &mut buf, DecodeContext::default())?;
+        <T::Shadow<'static> as ProtoWire>::decode_into(
+            <T::Shadow<'static> as ProtoWire>::WIRE_TYPE,
+            &mut shadow,
+            &mut buf,
+            DecodeContext::default(),
+        )?;
         <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
     }
 }
@@ -146,7 +153,10 @@ where
             <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
             buf
         });
-        Self { inner: bytes, _marker: PhantomData }
+        Self {
+            inner: bytes,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -166,7 +176,10 @@ where
             <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
             buf
         });
-        Self { inner: bytes, _marker: PhantomData }
+        Self {
+            inner: bytes,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -262,7 +275,13 @@ where
 {
     type Shadow<'b> = ZeroCopy<T>;
 
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         append_field(tag, wire_type, buf, &mut value.inner, ctx)
     }
 }
@@ -374,7 +393,13 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCo
 
 /// Append full field (key + payload) with minimized scanning
 #[inline]
-fn append_field(tag: u32, wire_type: WireType, buf: &mut impl Buf, out: &mut ZeroCopyBuffer, ctx: DecodeContext) -> Result<(), DecodeError> {
+fn append_field(
+    tag: u32,
+    wire_type: WireType,
+    buf: &mut impl Buf,
+    out: &mut ZeroCopyBuffer,
+    ctx: DecodeContext,
+) -> Result<(), DecodeError> {
     ctx.limit_reached()?;
 
     match wire_type {

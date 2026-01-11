@@ -50,12 +50,18 @@ impl SigmaRpc for S {
         Ok(tonic::Response::new(tonic_prost_test::extra_types::EnvelopeBuildResponse::default()))
     }
 
-    async fn owner_lookup(&self, req: tonic::Request<tonic_prost_test::goon_types::Id>) -> Result<tonic::Response<tonic_prost_test::extra_types::BuildResponse>, tonic::Status> {
+    async fn owner_lookup(
+        &self,
+        req: tonic::Request<tonic_prost_test::goon_types::Id>,
+    ) -> Result<tonic::Response<tonic_prost_test::extra_types::BuildResponse>, tonic::Status> {
         let _id = req.into_inner();
         Ok(tonic::Response::new(tonic_prost_test::extra_types::BuildResponse::default()))
     }
 
-    async fn test_decimals(&self, req: tonic::Request<tonic_prost_test::fastnum::Ud128>) -> Result<tonic::Response<tonic_prost_test::fastnum::D64>, tonic::Status> {
+    async fn test_decimals(
+        &self,
+        req: tonic::Request<tonic_prost_test::fastnum::Ud128>,
+    ) -> Result<tonic::Response<tonic_prost_test::fastnum::D64>, tonic::Status> {
         let _v = req.into_inner();
         Ok(tonic::Response::new(tonic_prost_test::fastnum::D64::default()))
     }

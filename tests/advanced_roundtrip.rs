@@ -213,8 +213,12 @@ impl From<&AdvancedOrigin> for tonic_prost_test::advanced::AdvancedOrigin {
         } else {
             match value {
                 AdvancedOrigin::Raw(text) => Some(tonic_prost_test::advanced::advanced_origin::Value::Raw(text.clone())),
-                AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(nested))),
-                AdvancedOrigin::Missing => Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(tonic_prost_test::advanced::AdvancedOriginMissing {})),
+                AdvancedOrigin::Nested(nested) => Some(tonic_prost_test::advanced::advanced_origin::Value::Nested(
+                    tonic_prost_test::advanced::AdvancedNested::from(nested),
+                )),
+                AdvancedOrigin::Missing => Some(tonic_prost_test::advanced::advanced_origin::Value::Missing(
+                    tonic_prost_test::advanced::AdvancedOriginMissing {},
+                )),
             }
         };
 
@@ -241,13 +245,18 @@ impl From<&AdvancedComplexUnion> for tonic_prost_test::advanced::AdvancedComplex
             None
         } else {
             match value {
-                AdvancedComplexUnion::Unit => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Unit(tonic_prost_test::advanced::AdvancedComplexUnionUnit {})),
-                AdvancedComplexUnion::Named { label, count } => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Named(
-                    tonic_prost_test::advanced::AdvancedComplexUnionNamed { label: label.clone(), count: *count },
+                AdvancedComplexUnion::Unit => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Unit(
+                    tonic_prost_test::advanced::AdvancedComplexUnionUnit {},
                 )),
-                AdvancedComplexUnion::Nested(nested) => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(tonic_prost_test::advanced::AdvancedNested::from(
-                    nested,
-                ))),
+                AdvancedComplexUnion::Named { label, count } => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Named(
+                    tonic_prost_test::advanced::AdvancedComplexUnionNamed {
+                        label: label.clone(),
+                        count: *count,
+                    },
+                )),
+                AdvancedComplexUnion::Nested(nested) => Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(
+                    tonic_prost_test::advanced::AdvancedNested::from(nested),
+                )),
             }
         };
 
@@ -263,7 +272,9 @@ impl From<&tonic_prost_test::advanced::AdvancedComplexUnion> for AdvancedComplex
                 label: named.label.clone(),
                 count: named.count,
             },
-            Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(nested)) => AdvancedComplexUnion::Nested(AdvancedNested::from(nested)),
+            Some(tonic_prost_test::advanced::advanced_complex_union::Value::Nested(nested)) => {
+                AdvancedComplexUnion::Nested(AdvancedNested::from(nested))
+            }
         }
     }
 }
@@ -589,7 +600,10 @@ fn advanced_optional_blob_roundtrip_preserves_digest() {
 
 #[test]
 fn advanced_complex_enum_roundtrip_variants() {
-    assert_union_roundtrip(AdvancedComplexUnion::Named { label: "alpha".into(), count: 7 });
+    assert_union_roundtrip(AdvancedComplexUnion::Named {
+        label: "alpha".into(),
+        count: 7,
+    });
 
     assert_union_roundtrip(AdvancedComplexUnion::Nested(AdvancedNested {
         value: 21,
@@ -603,7 +617,10 @@ fn advanced_complex_enum_roundtrip_variants() {
 fn advanced_complex_enum_preserves_default_payloads() {
     assert_union_roundtrip(AdvancedComplexUnion::Nested(AdvancedNested::default()));
 
-    assert_union_roundtrip(AdvancedComplexUnion::Named { label: String::new(), count: 0 });
+    assert_union_roundtrip(AdvancedComplexUnion::Named {
+        label: String::new(),
+        count: 0,
+    });
 }
 
 #[test]

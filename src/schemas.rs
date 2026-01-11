@@ -23,22 +23,34 @@ pub struct ProtoSchema {
 pub struct RustClientCtx<'a> {
     pub output_path: Option<&'a str>,
     pub imports: &'a [&'a str],
+    pub client_attrs: BTreeMap<ProtoIdent, Vec<UserAttr>>,
 }
 
 impl<'a> RustClientCtx<'a> {
     pub fn disabled() -> Self {
-        Self { output_path: None, imports: &[] }
+        Self {
+            output_path: None,
+            imports: &[],
+            client_attrs: BTreeMap::new(),
+        }
     }
 
     pub fn enabled(output_path: &'a str) -> Self {
         Self {
             output_path: Some(output_path),
             imports: &[],
+            client_attrs: BTreeMap::new(),
         }
     }
     #[must_use]
     pub fn with_imports(mut self, imports: &'a [&'a str]) -> Self {
         self.imports = imports;
+        self
+    }
+
+    #[must_use]
+    pub fn add_client_attrs(mut self, ident: ProtoIdent, attr: UserAttr) -> Self {
+        self.client_attrs.entry(ident).or_default().push(attr);
         self
     }
 }
@@ -60,6 +72,19 @@ pub trait ProtoIdentifiable {
 pub struct Attribute {
     pub path: &'static str,
     pub tokens: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserAttr {
+    pub level: AttrLevel,
+    pub attr: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttrLevel {
+    Top,
+    Field { field_name: String, r#type: ProtoIdent },
+    Method { method_name: String },
 }
 
 #[derive(Clone, Copy)]
@@ -238,7 +263,13 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
     }
 
     if let Some(output_path) = rust_client_output.output_path {
-        rust_client::write_rust_client_module(output_path, rust_client_output.imports, &registry, &ident_index)?;
+        rust_client::write_rust_client_module(
+            output_path,
+            rust_client_output.imports,
+            &rust_client_output.client_attrs,
+            &registry,
+            &ident_index,
+        )?;
     }
 
     Ok(count)
@@ -254,7 +285,10 @@ pub fn file_names() -> Vec<String> {
     REGISTRY.keys().cloned().collect()
 }
 
-fn build_registry() -> (BTreeMap<String, Vec<&'static ProtoSchema>>, BTreeMap<ProtoIdent, &'static ProtoSchema>) {
+fn build_registry() -> (
+    BTreeMap<String, Vec<&'static ProtoSchema>>,
+    BTreeMap<ProtoIdent, &'static ProtoSchema>,
+) {
     let mut registry = BTreeMap::new();
     let mut ident_index = BTreeMap::new();
 

@@ -71,8 +71,12 @@ fn collect_type_params(ty: &Type, params: &BTreeSet<Ident>, used: &mut BTreeSet<
                     PathArguments::AngleBracketed(args) => {
                         for arg in &args.args {
                             match arg {
-                                GenericArgument::Type(inner_ty) => collect_type_params(inner_ty, params, used),
-                                GenericArgument::AssocType(assoc) => collect_type_params(&assoc.ty, params, used),
+                                GenericArgument::Type(inner_ty) => {
+                                    collect_type_params(inner_ty, params, used);
+                                }
+                                GenericArgument::AssocType(assoc) => {
+                                    collect_type_params(&assoc.ty, params, used);
+                                }
                                 GenericArgument::Constraint(constraint) => {
                                     for bound in &constraint.bounds {
                                         if let syn::TypeParamBound::Trait(trait_bound) = bound {

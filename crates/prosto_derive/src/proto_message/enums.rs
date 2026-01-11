@@ -15,7 +15,12 @@ use crate::parse::UnifiedProtoConfig;
 use crate::utils::collect_discriminants_for_variants;
 use crate::utils::find_marked_default_variant;
 
-pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &syn::DataEnum, config: &UnifiedProtoConfig) -> TokenStream2 {
+pub(super) fn generate_simple_enum_impl(
+    input: &DeriveInput,
+    item_enum: &ItemEnum,
+    data: &syn::DataEnum,
+    config: &UnifiedProtoConfig,
+) -> TokenStream2 {
     let mut enum_item = sanitize_enum(item_enum.clone());
 
     let name = &input.ident;
@@ -48,7 +53,12 @@ pub(super) fn generate_simple_enum_impl(input: &DeriveInput, item_enum: &ItemEnu
     enum_item.attrs.push(parse_quote!(#[repr(i32)]));
     for (variant, value) in enum_item.variants.iter_mut().zip(discriminants.iter()) {
         let expr: syn::Expr = parse_quote!(#value);
-        variant.discriminant = Some((syn::token::Eq { spans: [Span::call_site()] }, expr));
+        variant.discriminant = Some((
+            syn::token::Eq {
+                spans: [Span::call_site()],
+            },
+            expr,
+        ));
     }
 
     let raw_from_variant: Vec<_> = ordered_variants

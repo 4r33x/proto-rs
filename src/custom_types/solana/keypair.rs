@@ -26,7 +26,9 @@ impl ProtoShadow<Keypair> for KeypairProto {
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        Self { inner: *value.secret_bytes() }
+        Self {
+            inner: *value.secret_bytes(),
+        }
     }
 }
 
@@ -70,9 +72,18 @@ mod tests {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
                 let message = err.to_string();
-                assert!(message.contains("invalid length for fixed byte array"), "unexpected error message: {message}");
-                assert!(message.contains(&BYTES.to_string()), "missing expected length in error message: {message}");
-                assert!(message.contains(&(BYTES - 1).to_string()), "missing actual length in error message: {message}");
+                assert!(
+                    message.contains("invalid length for fixed byte array"),
+                    "unexpected error message: {message}"
+                );
+                assert!(
+                    message.contains(&BYTES.to_string()),
+                    "missing expected length in error message: {message}"
+                );
+                assert!(
+                    message.contains(&(BYTES - 1).to_string()),
+                    "missing actual length in error message: {message}"
+                );
             }
         }
     }

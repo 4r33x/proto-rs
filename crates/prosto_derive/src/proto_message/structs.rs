@@ -32,7 +32,12 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::resolved_field_type;
 
-pub(super) fn generate_struct_impl(input: &DeriveInput, item_struct: &ItemStruct, data: &syn::DataStruct, config: &UnifiedProtoConfig) -> TokenStream2 {
+pub(super) fn generate_struct_impl(
+    input: &DeriveInput,
+    item_struct: &ItemStruct,
+    data: &syn::DataStruct,
+    config: &UnifiedProtoConfig,
+) -> TokenStream2 {
     let name = &input.ident;
     let generics = &input.generics;
 
@@ -153,8 +158,12 @@ fn collect_type_params(ty: &Type, params: &BTreeSet<syn::Ident>, used: &mut BTre
                     PathArguments::AngleBracketed(args) => {
                         for arg in &args.args {
                             match arg {
-                                GenericArgument::Type(inner_ty) => collect_type_params(inner_ty, params, used),
-                                GenericArgument::AssocType(assoc) => collect_type_params(&assoc.ty, params, used),
+                                GenericArgument::Type(inner_ty) => {
+                                    collect_type_params(inner_ty, params, used);
+                                }
+                                GenericArgument::AssocType(assoc) => {
+                                    collect_type_params(&assoc.ty, params, used);
+                                }
                                 GenericArgument::Constraint(constraint) => {
                                     for bound in &constraint.bounds {
                                         if let syn::TypeParamBound::Trait(trait_bound) = bound {

@@ -45,7 +45,10 @@ pub fn generate_simple_enum_proto(name: &str, data: &DataEnum) -> String {
         "enum #[default] variant must have discriminant 0"
     );
 
-    assert!(ordered_discriminants.contains(&0), "proto enums must contain a variant with discriminant 0");
+    assert!(
+        ordered_discriminants.contains(&0),
+        "proto enums must contain a variant with discriminant 0"
+    );
 
     let variants: Vec<String> = ordered_variants
         .into_iter()
@@ -77,7 +80,10 @@ pub fn generate_complex_enum_proto(name: &str, data: &DataEnum, generic_params: 
                 oneof_fields.push(format!("    {msg_name} {field_name_snake} = {tag};"));
             }
             Fields::Unnamed(fields) => {
-                assert!((fields.unnamed.len() == 1), "Complex enum unnamed variants must have exactly one field");
+                assert!(
+                    (fields.unnamed.len() == 1),
+                    "Complex enum unnamed variants must have exactly one field"
+                );
 
                 let field = &fields.unnamed[0];
                 let config = parse_field_config(field);
@@ -118,7 +124,11 @@ pub fn generate_struct_proto(name: &str, fields: &Fields, generic_params: &[syn:
     }
 }
 
-fn generate_named_struct_proto(name: &str, fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>, generic_params: &[syn::Ident]) -> String {
+fn generate_named_struct_proto(
+    name: &str,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+    generic_params: &[syn::Ident],
+) -> String {
     let field_defs = generate_named_fields(fields, generic_params);
     format!("message {name} {{\n{field_defs}\n}}\n\n")
 }
@@ -151,7 +161,13 @@ fn generate_tuple_struct_proto(name: &str, fields: &Punctuated<Field, Comma>, ge
     format!("message {} {{\n{}\n}}\n\n", name, proto_fields.join("\n"))
 }
 
-fn resolve_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, is_option: &mut bool, is_repeated: &mut bool, generic_params: &[syn::Ident]) -> String {
+fn resolve_proto_type(
+    inner_type: &Type,
+    config: &crate::utils::FieldConfig,
+    is_option: &mut bool,
+    is_repeated: &mut bool,
+    generic_params: &[syn::Ident],
+) -> String {
     if let Some(rename) = &config.rename {
         if let Some(flag) = rename.is_optional {
             *is_option = flag;
@@ -232,7 +248,11 @@ fn get_field_proto_type(field: &Field, generic_params: &[syn::Ident]) -> String 
         let elem_ty = &*type_array.elem;
         let parsed = parse_field_type(elem_ty);
 
-        return if parsed.is_message_like { proto_type_name(&parsed.proto_rust_type) } else { parsed.proto_type };
+        return if parsed.is_message_like {
+            proto_type_name(&parsed.proto_rust_type)
+        } else {
+            parsed.proto_type
+        };
     }
 
     let parsed = parse_field_type(&ty);
@@ -249,7 +269,11 @@ fn get_field_proto_type(field: &Field, generic_params: &[syn::Ident]) -> String 
         return rust_type_path_ident(&ty).to_string();
     }
 
-    if parsed.is_message_like { proto_type_name(&parsed.proto_rust_type) } else { parsed.proto_type }
+    if parsed.is_message_like {
+        proto_type_name(&parsed.proto_rust_type)
+    } else {
+        parsed.proto_type
+    }
 }
 
 /// Determine proto type string based on field config
@@ -288,7 +312,12 @@ fn determine_proto_type(inner_type: &Type, config: &crate::utils::FieldConfig, g
     parsed.proto_type
 }
 
-pub fn generate_service_content(trait_name: &syn::Ident, methods: &[MethodInfo], proto_imports: &BTreeMap<String, BTreeSet<String>>, import_all_from: Option<&str>) -> String {
+pub fn generate_service_content(
+    trait_name: &syn::Ident,
+    methods: &[MethodInfo],
+    proto_imports: &BTreeMap<String, BTreeSet<String>>,
+    import_all_from: Option<&str>,
+) -> String {
     let mut lines = vec![format!("service {} {{", trait_name)];
 
     for method in methods {
