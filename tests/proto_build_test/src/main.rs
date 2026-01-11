@@ -7,7 +7,9 @@ use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use proto_rs::schemas::AttrLevel;
 use proto_rs::schemas::ClientAttrTarget;
+use proto_rs::schemas::MethodReplace;
 use proto_rs::schemas::ProtoIdentifiable;
+use proto_rs::schemas::TypeReplace;
 use proto_rs::schemas::UserAttr;
 use tokio_stream::Stream;
 use tonic::Response;
@@ -181,6 +183,7 @@ fn main() {
                 level: AttrLevel::Field {
                     field_name: "status".to_string(),
                     id: ServiceStatus::PROTO_IDENT,
+                    variant: None,
                 },
                 attr: "#[allow(dead_code)]".to_string(),
             },
@@ -209,7 +212,27 @@ fn main() {
                 level: AttrLevel::Top,
                 attr: "#[allow(dead_code)]".to_string(),
             },
-        );
+        )
+        .replace_type(&[
+            TypeReplace::Type {
+                id: BuildResponse::PROTO_IDENT,
+                variant: None,
+                field: "status".to_string(),
+                r#type: "::core::primitive::u32".to_string(),
+            },
+            TypeReplace::Trait {
+                id: sigma_ident,
+                method: "OwnerLookup".to_string(),
+                kind: MethodReplace::Argument("::core::primitive::u64".to_string()),
+                r#type: "::core::primitive::u64".to_string(),
+            },
+            TypeReplace::Trait {
+                id: sigma_ident,
+                method: "Build".to_string(),
+                kind: MethodReplace::Return("::core::primitive::u32".to_string()),
+                r#type: "::core::primitive::u32".to_string(),
+            },
+        ]);
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
 
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
@@ -220,6 +243,9 @@ fn main() {
     assert!(client_contents.contains("#[allow(dead_code)]"));
     assert!(client_contents.contains("const MY_CONST: usize = 1337;"));
     assert!(client_contents.contains("#[allow(clippy::upper_case_acronyms)]"));
+    assert!(client_contents.contains("status: ::core::primitive::u32"));
+    assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
+    assert!(client_contents.contains("::tonic::Response<::core::primitive::u32>"));
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);

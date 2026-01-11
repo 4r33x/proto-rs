@@ -26,6 +26,7 @@ pub struct RustClientCtx<'a> {
     pub client_attrs: BTreeMap<ProtoIdent, Vec<UserAttr>>,
     pub module_attrs: BTreeMap<String, Vec<String>>,
     pub statements: BTreeMap<String, Vec<String>>,
+    pub type_replacements: BTreeMap<ProtoIdent, Vec<TypeReplace>>,
 }
 
 impl<'a> RustClientCtx<'a> {
@@ -36,6 +37,7 @@ impl<'a> RustClientCtx<'a> {
             client_attrs: BTreeMap::new(),
             module_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
+            type_replacements: BTreeMap::new(),
         }
     }
 
@@ -46,6 +48,7 @@ impl<'a> RustClientCtx<'a> {
             client_attrs: BTreeMap::new(),
             module_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
+            type_replacements: BTreeMap::new(),
         }
     }
     #[must_use]
@@ -78,6 +81,18 @@ impl<'a> RustClientCtx<'a> {
                     "module-level client attributes must use AttrLevel::Top"
                 );
                 self.module_attrs.entry(module_name.to_string()).or_default().push(attr.attr);
+            }
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn replace_type(mut self, replacements: &[TypeReplace]) -> Self {
+        for replacement in replacements {
+            let entry = replacement.target_ident();
+            let entry_replacements = self.type_replacements.entry(entry).or_default();
+            if !entry_replacements.contains(replacement) {
+                entry_replacements.push(replacement.clone());
             }
         }
         self
@@ -117,8 +132,42 @@ pub struct UserAttr {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttrLevel {
     Top,
-    Field { field_name: String, id: ProtoIdent },
+    Field {
+        field_name: String,
+        id: ProtoIdent,
+        variant: Option<String>,
+    },
     Method { method_name: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum MethodReplace {
+    Argument(String),
+    Return(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum TypeReplace {
+    Trait {
+        id: ProtoIdent,
+        method: String,
+        kind: MethodReplace,
+        r#type: String,
+    },
+    Type {
+        id: ProtoIdent,
+        variant: Option<String>,
+        field: String,
+        r#type: String,
+    },
+}
+
+impl TypeReplace {
+    pub fn target_ident(&self) -> ProtoIdent {
+        match self {
+            TypeReplace::Trait { id, .. } | TypeReplace::Type { id, .. } => *id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
@@ -304,6 +353,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             &rust_client_output.client_attrs,
             &rust_client_output.module_attrs,
             &rust_client_output.statements,
+            &rust_client_output.type_replacements,
             &registry,
             &ident_index,
         )?;
