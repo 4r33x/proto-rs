@@ -7,7 +7,6 @@ use quote::quote;
 use syn::Type;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
-use crate::proto_rpc::rpc_common::generate_proto_to_native_request;
 use crate::proto_rpc::rpc_common::generate_request_proto_type;
 use crate::proto_rpc::rpc_common::generate_response_proto_type;
 use crate::proto_rpc::rpc_common::generate_route_path;
@@ -34,6 +33,45 @@ fn response_to_proto_response(response_return_type: &Type, response_binding: &To
         <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::into_response(
             #normalized
         )
+    }
+}
+
+fn generate_proto_to_native_request(request_type: &Type, fallible: bool, request_is_wrapped: bool) -> TokenStream {
+    if fallible {
+        if request_is_wrapped {
+            quote! {
+                let (metadata, extensions, mut message) = request.into_parts();
+                <#request_type as ::proto_rs::ProtoExt>::validate_with_ext(&mut message, &extensions)
+                    .map_err(|err| tonic::Status::invalid_argument(format!("failed to validate request: {err}")))?;
+                let native_request = tonic::Request::from_parts(metadata, extensions, message);
+            }
+        } else {
+            quote! {
+                let (metadata, extensions, mut message) = request.into_parts();
+                <#request_type as ::proto_rs::ProtoExt>::validate_with_ext(&mut message, &extensions)
+                    .map_err(|err| tonic::Status::invalid_argument(format!("failed to validate request: {err}")))?;
+                let native_request = message;
+                let _ = metadata;
+            }
+        }
+    } else if request_is_wrapped {
+        quote! {
+            const _: () = {
+                if <#request_type as ::proto_rs::ProtoExt>::VALIDATE_WITH_EXT {
+                    ::proto_rs::const_test_validate_with_ext::<#request_type>();
+                }
+            };
+            let native_request = request;
+        }
+    } else {
+        quote! {
+            const _: () = {
+                if <#request_type as ::proto_rs::ProtoExt>::VALIDATE_WITH_EXT {
+                    ::proto_rs::const_test_validate_with_ext::<#request_type>();
+                }
+            };
+            let native_request = request.into_inner();
+        }
     }
 }
 
