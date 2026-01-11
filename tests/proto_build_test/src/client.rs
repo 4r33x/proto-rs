@@ -15,6 +15,7 @@ pub mod extra_types {
         pub owner: Id,
     }
 
+    #[allow(dead_code)]
     #[proto_message]
     pub struct BuildRequest {
         pub config: BuildConfig,
@@ -24,6 +25,7 @@ pub mod extra_types {
 
     #[proto_message]
     pub struct BuildResponse {
+        #[allow(dead_code)]
         pub status: ServiceStatus,
         pub envelope: Envelope<GoonPong>,
     }
@@ -117,6 +119,7 @@ pub mod sigma_rpc_simple {
             request: ::tonic::Request<BarSub>,
         ) -> ::core::result::Result<::tonic::Response<Self::RizzUniStream>, ::tonic::Status>;
 
+        #[allow(dead_code)]
         async fn build(
             &self,
             request: ::tonic::Request<Envelope<BuildRequest>>,

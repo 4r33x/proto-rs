@@ -3,6 +3,9 @@
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
+use proto_rs::schemas::AttrLevel;
+use proto_rs::schemas::ProtoIdentifiable;
+use proto_rs::schemas::UserAttr;
 use tokio_stream::Stream;
 use tonic::Response;
 use tonic::Status;
@@ -106,7 +109,12 @@ pub struct BuildResponse {
 }
 
 // Define trait with the proto_rpc macro
-#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/build_system_test/sigma_rpc_simple.proto")]
+#[proto_rpc(
+    rpc_package = "sigma_rpc",
+    rpc_server = true,
+    rpc_client = true,
+    proto_path = "protos/build_system_test/sigma_rpc_simple.proto"
+)]
 //unnecessary for build system, this imports would be auto-resolved
 #[proto_imports(
     rizz_types = ["BarSub", "FooResponse"],
@@ -129,7 +137,40 @@ pub trait SigmaRpc {
 use proto_rs::schemas::ProtoSchema;
 fn main() {
     let rust_client_path = "src/client.rs";
-    let rust_ctx = proto_rs::schemas::RustClientCtx::enabled(rust_client_path).with_imports(&["fastnum::UD128"]);
+    let sigma_entries: Vec<&ProtoSchema> = inventory::iter::<ProtoSchema>().filter(|schema| schema.id.name == "SigmaRpc").collect();
+    let sigma_schema = sigma_entries
+        .iter()
+        .find(|schema| !schema.generics.is_empty())
+        .or_else(|| sigma_entries.iter().find(|schema| schema.id.proto_type == schema.id.name))
+        .copied()
+        .unwrap_or_else(|| sigma_entries.first().copied().expect("Missing SigmaRpc schema"));
+    let sigma_ident = sigma_schema.id;
+    let rust_ctx = proto_rs::schemas::RustClientCtx::enabled(rust_client_path)
+        .with_imports(&["fastnum::UD128"])
+        .add_client_attrs(
+            BuildRequest::PROTO_IDENT,
+            UserAttr {
+                level: AttrLevel::Top,
+                attr: "#[allow(dead_code)]".to_string(),
+            },
+        )
+        .add_client_attrs(
+            BuildResponse::PROTO_IDENT,
+            UserAttr {
+                level: AttrLevel::Field {
+                    field_name: "status".to_string(),
+                    r#type: ServiceStatus::PROTO_IDENT,
+                },
+                attr: "#[allow(dead_code)]".to_string(),
+            },
+        )
+        .add_client_attrs(
+            sigma_ident,
+            UserAttr {
+                level: AttrLevel::Method { method_name: "Build".to_string() },
+                attr: "#[allow(dead_code)]".to_string(),
+            },
+        );
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
 
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
@@ -137,6 +178,7 @@ fn main() {
     assert!(!client_contents.contains("pub struct UD128"));
     assert!(client_contents.contains("pub mod"));
     assert!(client_contents.contains("pub trait"));
+    assert!(client_contents.contains("#[allow(dead_code)]"));
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);

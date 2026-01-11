@@ -5,6 +5,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use super::AttrLevel;
 use super::Field;
 use super::GenericKind;
 use super::ProtoEntry;
@@ -12,6 +13,7 @@ use super::ProtoIdent;
 use super::ProtoLabel;
 use super::ProtoSchema;
 use super::ServiceMethod;
+use super::UserAttr;
 use super::Variant;
 use super::utils::indent_line;
 use super::utils::module_path_for_package;
@@ -45,6 +47,7 @@ impl ClientImport {
 pub(crate) fn write_rust_client_module(
     output_path: &str,
     imports: &[&str],
+    client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     registry: &BTreeMap<String, Vec<&'static ProtoSchema>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> io::Result<()> {
@@ -94,13 +97,24 @@ pub(crate) fn write_rust_client_module(
             &package_by_ident,
             &proto_type_index,
             &client_imports_by_type,
+            client_attrs,
             0,
         );
         output.push('\n');
     }
 
     for (name, child) in &root.children {
-        render_named_module(&mut output, name, child, 0, ident_index, &package_by_ident, &proto_type_index, &client_imports_by_type);
+        render_named_module(
+            &mut output,
+            name,
+            child,
+            0,
+            ident_index,
+            &package_by_ident,
+            &proto_type_index,
+            &client_imports_by_type,
+            client_attrs,
+        );
     }
 
     if let Some(parent) = Path::new(output_path).parent() {
@@ -162,6 +176,7 @@ fn render_named_module(
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
+    client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
 ) {
     indent_line(output, indent);
     output.push_str("pub mod ");
@@ -195,11 +210,22 @@ fn render_named_module(
         package_by_ident,
         proto_type_index,
         client_imports,
+        client_attrs,
         inner_indent,
     );
 
     for (child_name, child) in &node.children {
-        render_named_module(output, child_name, child, inner_indent, ident_index, package_by_ident, proto_type_index, client_imports);
+        render_named_module(
+            output,
+            child_name,
+            child,
+            inner_indent,
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+            client_attrs,
+        );
     }
 
     indent_line(output, indent);
@@ -373,6 +399,7 @@ fn render_entries(
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
+    client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     indent: usize,
 ) {
     if entries.is_empty() {
@@ -400,7 +427,8 @@ fn render_entries(
         // 2. Entry where proto_type matches name (non-generic or original type)
         // 3. First entry (fallback for consistent ordering)
         let entry = if group.len() > 1 {
-            group.iter()
+            group
+                .iter()
                 .find(|e| !e.generics.is_empty())
                 .or_else(|| group.iter().find(|e| e.id.proto_type == e.id.name))
                 .unwrap_or(&group[0])
@@ -408,7 +436,8 @@ fn render_entries(
             group[0]
         };
 
-        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent) {
+        let user_attrs = build_entry_user_attrs(entry, client_attrs, ident_index);
+        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &user_attrs, indent) {
             output.push_str(&definition);
             output.push('\n');
         }
@@ -422,11 +451,22 @@ fn render_rust_entry(
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
+    user_attrs: &EntryUserAttrs,
     indent: usize,
 ) -> Option<String> {
     match entry.content {
-        ProtoEntry::Struct { fields } => Some(render_rust_struct(entry, fields, package_name, ident_index, package_by_ident, proto_type_index, client_imports, indent)),
-        ProtoEntry::SimpleEnum { variants } => Some(render_rust_simple_enum(entry, variants, indent)),
+        ProtoEntry::Struct { fields } => Some(render_rust_struct(
+            entry,
+            fields,
+            package_name,
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+            user_attrs,
+            indent,
+        )),
+        ProtoEntry::SimpleEnum { variants } => Some(render_rust_simple_enum(entry, variants, user_attrs, indent)),
         ProtoEntry::ComplexEnum { variants } => Some(render_rust_complex_enum(
             entry,
             variants,
@@ -435,6 +475,7 @@ fn render_rust_entry(
             package_by_ident,
             proto_type_index,
             client_imports,
+            user_attrs,
             indent,
         )),
         ProtoEntry::Import { .. } => None,
@@ -447,6 +488,7 @@ fn render_rust_entry(
             package_by_ident,
             proto_type_index,
             client_imports,
+            user_attrs,
             indent,
         )),
     }
@@ -461,6 +503,7 @@ fn render_rust_struct(
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
+    user_attrs: &EntryUserAttrs,
     indent: usize,
 ) -> String {
     let mut output = String::new();
@@ -468,7 +511,7 @@ fn render_rust_struct(
     let generics = render_generics(entry);
     let is_tuple = fields.iter().all(|field| field.name.is_none());
 
-    render_top_level_attributes(&mut output, entry, indent);
+    render_top_level_attributes(&mut output, entry, user_attrs, indent);
 
     indent_line(&mut output, indent);
     if fields.is_empty() {
@@ -480,7 +523,8 @@ fn render_rust_struct(
         output.write_fmt(format_args!("pub struct {type_name}{generics}(\n")).unwrap();
 
         for (idx, field) in fields.iter().enumerate() {
-            render_field_attributes(&mut output, field, idx, indent + 4);
+            let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+            render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 4);
             indent_line(&mut output, indent + 4);
             output.push_str("pub ");
             output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
@@ -493,7 +537,8 @@ fn render_rust_struct(
     output.write_fmt(format_args!("pub struct {type_name}{generics} {{\n")).unwrap();
 
     for (idx, field) in fields.iter().enumerate() {
-        render_field_attributes(&mut output, field, idx, indent + 4);
+        let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+        render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 4);
         indent_line(&mut output, indent + 4);
         let name = field.name.unwrap_or("field");
         output.push_str("pub ");
@@ -507,12 +552,12 @@ fn render_rust_struct(
     output
 }
 
-fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], indent: usize) -> String {
+fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], user_attrs: &EntryUserAttrs, indent: usize) -> String {
     let mut output = String::new();
     let type_name = rust_type_name(entry.id);
     let generics = render_generics(entry);
 
-    render_top_level_attributes(&mut output, entry, indent);
+    render_top_level_attributes(&mut output, entry, user_attrs, indent);
     indent_line(&mut output, indent);
     output.write_fmt(format_args!("pub enum {type_name}{generics} {{\n")).unwrap();
 
@@ -538,13 +583,14 @@ fn render_rust_complex_enum(
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
+    user_attrs: &EntryUserAttrs,
     indent: usize,
 ) -> String {
     let mut output = String::new();
     let type_name = rust_type_name(entry.id);
     let generics = render_generics(entry);
 
-    render_top_level_attributes(&mut output, entry, indent);
+    render_top_level_attributes(&mut output, entry, user_attrs, indent);
     indent_line(&mut output, indent);
     output.write_fmt(format_args!("pub enum {type_name}{generics} {{\n")).unwrap();
 
@@ -560,7 +606,8 @@ fn render_rust_complex_enum(
         if has_named {
             output.push_str(" {\n");
             for (idx, field) in variant.fields.iter().enumerate() {
-                render_field_attributes(&mut output, field, idx, indent + 8);
+                let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+                render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 8);
                 indent_line(&mut output, indent + 8);
                 let name = field.name.unwrap_or("field");
                 output.push_str(name);
@@ -573,7 +620,8 @@ fn render_rust_complex_enum(
         } else {
             output.push_str("(\n");
             for (idx, field) in variant.fields.iter().enumerate() {
-                render_field_attributes(&mut output, field, idx, indent + 8);
+                let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+                render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 8);
                 indent_line(&mut output, indent + 8);
                 output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
                 output.push_str(",\n");
@@ -597,16 +645,14 @@ fn render_rust_service(
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
+    user_attrs: &EntryUserAttrs,
     indent: usize,
 ) -> String {
     let mut output = String::new();
     let trait_name = rust_type_name(entry.id);
     let generics = render_generics(entry);
 
-    indent_line(&mut output, indent);
-    output.push_str("#[proto_rpc(rpc_package = \"");
-    output.push_str(rpc_package_name);
-    output.push_str("\", rpc_server = false, rpc_client = true)]\n");
+    render_service_attributes(&mut output, rpc_package_name, user_attrs, indent);
     indent_line(&mut output, indent);
     writeln!(output, "pub trait {trait_name}{generics} {{").unwrap();
 
@@ -615,7 +661,14 @@ fn render_rust_service(
         if method.server_streaming {
             let stream_name = format!("{}Stream", method.name);
             let response_ident = resolve_transparent_ident(method.response, ident_index);
-            let item_type = render_proto_type_with_generics(response_ident, method.response_generic_args, package_name, package_by_ident, proto_type_index, client_imports);
+            let item_type = render_proto_type_with_generics(
+                response_ident,
+                method.response_generic_args,
+                package_name,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+            );
             stream_types.push(stream_name.clone());
             indent_line(&mut output, indent + 4);
             writeln!(
@@ -637,9 +690,17 @@ fn render_rust_service(
             format!("Self::{}Stream", method.name)
         } else {
             let response_ident = resolve_transparent_ident(method.response, ident_index);
-            render_proto_type_with_generics(response_ident, method.response_generic_args, package_name, package_by_ident, proto_type_index, client_imports)
+            render_proto_type_with_generics(
+                response_ident,
+                method.response_generic_args,
+                package_name,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+            )
         };
 
+        render_method_attributes(&mut output, user_attrs.method_attrs.get(method.name), indent + 4);
         indent_line(&mut output, indent + 4);
         writeln!(output, "async fn {}(", to_snake_case(method.name)).unwrap();
         indent_line(&mut output, indent + 8);
@@ -657,39 +718,107 @@ fn render_rust_service(
     output
 }
 
-fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, indent: usize) {
-    let mut has_proto_message = false;
-    for attr in entry.top_level_attributes {
-        if attr.path == "proto_message" {
-            has_proto_message = true;
+fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, user_attrs: &EntryUserAttrs, indent: usize) {
+    let mut seen = BTreeSet::new();
+    for attr in &user_attrs.top_level {
+        if seen.insert(attr.clone()) {
             indent_line(output, indent);
-            output.push_str(attr.tokens);
+            output.push_str(attr);
             output.push('\n');
         }
     }
-    if !has_proto_message {
-        indent_line(output, indent);
-        output.push_str("#[proto_message]\n");
+
+    let mut has_proto_message = false;
+    for attr in entry.top_level_attributes {
+        if attr.path == "proto_message" {
+            if user_attrs.top_level_override_paths.contains("proto_message") {
+                continue;
+            }
+            has_proto_message = true;
+            if seen.insert(attr.tokens.to_string()) {
+                indent_line(output, indent);
+                output.push_str(attr.tokens);
+                output.push('\n');
+            }
+        }
+    }
+    if !has_proto_message && !user_attrs.top_level_override_paths.contains("proto_message") {
+        let default = "#[proto_message]";
+        if seen.insert(default.to_string()) {
+            indent_line(output, indent);
+            output.push_str(default);
+            output.push('\n');
+        }
     }
 }
 
-fn render_field_attributes(output: &mut String, field: &Field, idx: usize, indent: usize) {
+fn render_field_attributes(output: &mut String, field: &Field, idx: usize, user_attrs: Option<&Vec<String>>, override_paths: Option<&BTreeSet<String>>, indent: usize) {
+    let mut seen = BTreeSet::new();
+    if let Some(attrs) = user_attrs {
+        for attr in attrs {
+            if seen.insert(attr.clone()) {
+                indent_line(output, indent);
+                output.push_str(attr);
+                output.push('\n');
+            }
+        }
+    }
+
     let expected_tag = idx as u32 + 1;
     let mut emitted = false;
+    let empty_override_paths = BTreeSet::new();
+    let override_paths = override_paths.unwrap_or(&empty_override_paths);
     for attr in field.attributes {
         if attr.path == "proto" {
+            if override_paths.contains("proto") {
+                continue;
+            }
             if is_tag_only_attr(attr.tokens, expected_tag) {
                 continue;
             }
             emitted = true;
+            if seen.insert(attr.tokens.to_string()) {
+                indent_line(output, indent);
+                output.push_str(attr.tokens);
+                output.push('\n');
+            }
+        }
+    }
+    if !emitted && field.tag > 0 && field.tag != expected_tag && !override_paths.contains("proto") {
+        indent_line(output, indent);
+        output.write_fmt(format_args!("#[proto(tag = {})]\n", field.tag)).unwrap();
+    }
+}
+
+fn render_service_attributes(output: &mut String, rpc_package_name: &str, user_attrs: &EntryUserAttrs, indent: usize) {
+    let mut seen = BTreeSet::new();
+    for attr in &user_attrs.top_level {
+        if seen.insert(attr.clone()) {
             indent_line(output, indent);
-            output.push_str(attr.tokens);
+            output.push_str(attr);
             output.push('\n');
         }
     }
-    if !emitted && field.tag > 0 && field.tag != expected_tag {
-        indent_line(output, indent);
-        output.write_fmt(format_args!("#[proto(tag = {})]\n", field.tag)).unwrap();
+    if !user_attrs.top_level_override_paths.contains("proto_rpc") {
+        let default = format!("#[proto_rpc(rpc_package = \"{rpc_package_name}\", rpc_server = false, rpc_client = true)]");
+        if seen.insert(default.clone()) {
+            indent_line(output, indent);
+            output.push_str(&default);
+            output.push('\n');
+        }
+    }
+}
+
+fn render_method_attributes(output: &mut String, attrs: Option<&Vec<String>>, indent: usize) {
+    let mut seen = BTreeSet::new();
+    if let Some(attrs) = attrs {
+        for attr in attrs {
+            if seen.insert(attr.clone()) {
+                indent_line(output, indent);
+                output.push_str(attr);
+                output.push('\n');
+            }
+        }
     }
 }
 
@@ -710,6 +839,84 @@ fn is_tag_only_attr(tokens: &str, expected_tag: u32) -> bool {
         return false;
     };
     tag_value.parse::<u32>().ok().is_some_and(|tag| tag == expected_tag)
+}
+
+#[derive(Default)]
+struct EntryUserAttrs {
+    top_level: Vec<String>,
+    top_level_override_paths: BTreeSet<String>,
+    field_attrs: BTreeMap<String, Vec<String>>,
+    field_override_paths: BTreeMap<String, BTreeSet<String>>,
+    method_attrs: BTreeMap<String, Vec<String>>,
+}
+
+fn build_entry_user_attrs(entry: &ProtoSchema, client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> EntryUserAttrs {
+    let mut entry_attrs = EntryUserAttrs::default();
+    let Some(attrs) = client_attrs.get(&entry.id) else {
+        return entry_attrs;
+    };
+
+    for attr in attrs {
+        match &attr.level {
+            AttrLevel::Top => {
+                if let Some(path) = parse_attr_path(&attr.attr) {
+                    entry_attrs.top_level_override_paths.insert(path.to_string());
+                }
+                entry_attrs.top_level.push(attr.attr.clone());
+            }
+            AttrLevel::Field { field_name, r#type } => {
+                let fields = find_entry_fields(entry);
+                let matches: Vec<&Field> = fields.iter().copied().filter(|field| field.name.is_some_and(|name| name == field_name)).collect();
+                if matches.is_empty() {
+                    panic!("client attribute targets missing field '{}' on type '{}'", field_name, entry.id.name);
+                }
+                for field in &matches {
+                    let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+                    if actual_type != *r#type {
+                        panic!("client attribute targets field '{}' on type '{}' with mismatched type", field_name, entry.id.name);
+                    }
+                }
+                if let Some(path) = parse_attr_path(&attr.attr) {
+                    entry_attrs.field_override_paths.entry(field_name.clone()).or_default().insert(path.to_string());
+                }
+                entry_attrs.field_attrs.entry(field_name.clone()).or_default().push(attr.attr.clone());
+            }
+            AttrLevel::Method { method_name } => {
+                let Some(methods) = find_entry_methods(entry) else {
+                    panic!("client attribute targets method '{}' on non-service type '{}'", method_name, entry.id.name);
+                };
+                if !methods.iter().any(|method| method.name == method_name) {
+                    panic!("client attribute targets missing method '{}' on type '{}'", method_name, entry.id.name);
+                }
+                entry_attrs.method_attrs.entry(method_name.clone()).or_default().push(attr.attr.clone());
+            }
+        }
+    }
+
+    entry_attrs
+}
+
+fn parse_attr_path(attr: &str) -> Option<&str> {
+    let trimmed = attr.trim();
+    let stripped = trimmed.strip_prefix("#[")?.trim();
+    let end = stripped.find(['(', ']']).unwrap_or(stripped.len());
+    let path = stripped[..end].trim();
+    if path.is_empty() { None } else { Some(path) }
+}
+
+fn find_entry_fields(entry: &ProtoSchema) -> Vec<&Field> {
+    match entry.content {
+        ProtoEntry::Struct { fields } => fields.to_vec(),
+        ProtoEntry::ComplexEnum { variants } => variants.iter().flat_map(|variant| variant.fields.iter().copied()).collect(),
+        ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } | ProtoEntry::Service { .. } => Vec::new(),
+    }
+}
+
+fn find_entry_methods(entry: &ProtoSchema) -> Option<&[&ServiceMethod]> {
+    match entry.content {
+        ProtoEntry::Service { methods, .. } => Some(methods),
+        _ => None,
+    }
 }
 
 fn render_field_type(
