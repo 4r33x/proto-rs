@@ -6,6 +6,7 @@ use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use proto_rs::schemas::AttrLevel;
+use proto_rs::schemas::ClientAttrTarget;
 use proto_rs::schemas::ProtoIdentifiable;
 use proto_rs::schemas::UserAttr;
 use tokio_stream::Stream;
@@ -129,11 +130,11 @@ pub trait SigmaRpc {
 
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 
-    // async fn rizz_uni2(&self, request: BarSub) -> Self::RizzUniStream;
+    async fn rizz_uni2(&self, request: BarSub) -> Self::RizzUniStream;
 
     async fn build(&self, request: Request<Envelope<BuildRequest>>) -> Result<Response<Envelope<BuildResponse>>, Status>;
 
-    // async fn build2(&self, request: Envelope<BuildRequest>) -> Envelope<BuildResponse>;
+    async fn build2(&self, request: Envelope<BuildRequest>) -> Envelope<BuildResponse>;
 
     async fn owner_lookup(&self, request: Request<TransparentId>) -> Result<Response<BuildResponse>, Status>;
 
@@ -161,14 +162,21 @@ fn main() {
         //(mod name, statement) format
         .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
         .add_client_attrs(
-            BuildRequest::PROTO_IDENT,
+            ClientAttrTarget::Module("extra_types"),
+            UserAttr {
+                level: AttrLevel::Top,
+                attr: "#[allow(clippy::upper_case_acronyms)]".to_string(),
+            },
+        )
+        .add_client_attrs(
+            ClientAttrTarget::Ident(BuildRequest::PROTO_IDENT),
             UserAttr {
                 level: AttrLevel::Top,
                 attr: "#[allow(dead_code)]".to_string(),
             },
         )
         .add_client_attrs(
-            BuildResponse::PROTO_IDENT,
+            ClientAttrTarget::Ident(BuildResponse::PROTO_IDENT),
             UserAttr {
                 level: AttrLevel::Field {
                     field_name: "status".to_string(),
@@ -178,7 +186,7 @@ fn main() {
             },
         )
         .add_client_attrs(
-            sigma_ident,
+            ClientAttrTarget::Ident(sigma_ident),
             UserAttr {
                 level: AttrLevel::Method {
                     method_name: "Build".to_string(),
@@ -187,7 +195,7 @@ fn main() {
             },
         )
         .add_client_attrs(
-            sigma_ident,
+            ClientAttrTarget::Ident(sigma_ident),
             UserAttr {
                 level: AttrLevel::Method {
                     method_name: "Build".to_string(),
@@ -196,7 +204,7 @@ fn main() {
             },
         )
         .add_client_attrs(
-            sigma_ident,
+            ClientAttrTarget::Ident(sigma_ident),
             UserAttr {
                 level: AttrLevel::Top,
                 attr: "#[allow(dead_code)]".to_string(),
@@ -210,6 +218,8 @@ fn main() {
     assert!(client_contents.contains("pub mod"));
     assert!(client_contents.contains("pub trait"));
     assert!(client_contents.contains("#[allow(dead_code)]"));
+    assert!(client_contents.contains("const MY_CONST: usize = 1337;"));
+    assert!(client_contents.contains("#[allow(clippy::upper_case_acronyms)]"));
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);

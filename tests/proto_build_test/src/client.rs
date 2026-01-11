@@ -1,4 +1,5 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
+#[allow(clippy::upper_case_acronyms)]
 pub mod extra_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
@@ -6,6 +7,8 @@ pub mod extra_types {
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
     use crate::goon_types::ServiceStatus;
+
+    const MY_CONST: usize = 1337;
 
     #[proto_message]
     pub struct BuildConfig {
@@ -105,9 +108,11 @@ pub mod sigma_rpc_simple {
     use crate::rizz_types::FooResponse;
     use fastnum::UD128;
 
+    #[allow(dead_code)]
     #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = false, rpc_client = true)]
     pub trait SigmaRpc {
         type RizzUniStream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>> + ::core::marker::Send;
+        type RizzUni2Stream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>> + ::core::marker::Send;
 
         async fn rizz_ping(
             &self,
@@ -119,8 +124,18 @@ pub mod sigma_rpc_simple {
             request: ::tonic::Request<BarSub>,
         ) -> ::core::result::Result<::tonic::Response<Self::RizzUniStream>, ::tonic::Status>;
 
+        async fn rizz_uni2(
+            &self,
+            request: ::tonic::Request<BarSub>,
+        ) -> ::core::result::Result<::tonic::Response<Self::RizzUni2Stream>, ::tonic::Status>;
+
         #[allow(dead_code)]
         async fn build(
+            &self,
+            request: ::tonic::Request<Envelope<BuildRequest>>,
+        ) -> ::core::result::Result<::tonic::Response<Envelope<BuildResponse>>, ::tonic::Status>;
+
+        async fn build2(
             &self,
             request: ::tonic::Request<Envelope<BuildRequest>>,
         ) -> ::core::result::Result<::tonic::Response<Envelope<BuildResponse>>, ::tonic::Status>;

@@ -505,12 +505,15 @@ pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     (false, false, ty.clone())
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct MethodInfo {
     pub name: syn::Ident,
     pub request_type: Type,
+    pub request_is_wrapped: bool,
     pub response_type: Type,
     pub response_return_type: Type,
     pub response_is_result: bool,
+    pub response_is_response: bool,
     pub is_async: bool,
     pub is_streaming: bool,
     pub stream_type_name: Option<syn::Ident>,

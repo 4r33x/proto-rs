@@ -10,7 +10,9 @@ import "rizz_types.proto";
 service SigmaRpc {
   rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong);
   rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse);
+  rpc RizzUni2(rizz_types.BarSub) returns (stream rizz_types.FooResponse);
   rpc Build(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse);
+  rpc Build2(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse);
   rpc OwnerLookup(goon_types.Id) returns (extra_types.BuildResponse);
   rpc TestDecimals(fastnum.UD128) returns (fastnum.D64);
 }
