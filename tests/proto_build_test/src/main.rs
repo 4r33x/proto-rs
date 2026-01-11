@@ -129,6 +129,8 @@ pub trait SigmaRpc {
 
     async fn build(&self, request: Request<Envelope<BuildRequest>>) -> Result<Response<Envelope<BuildResponse>>, Status>;
 
+    // async fn build2(&self, request: Envelope<BuildRequest>) -> Envelope<BuildResponse>;
+
     async fn owner_lookup(&self, request: Request<TransparentId>) -> Result<Response<BuildResponse>, Status>;
 
     async fn test_decimals(&self, request: Request<fastnum::UD128>) -> Result<Response<fastnum::D64>, Status>;
@@ -167,7 +169,9 @@ fn main() {
         .add_client_attrs(
             sigma_ident,
             UserAttr {
-                level: AttrLevel::Method { method_name: "Build".to_string() },
+                level: AttrLevel::Method {
+                    method_name: "Build".to_string(),
+                },
                 attr: "#[allow(dead_code)]".to_string(),
             },
         );

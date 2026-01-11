@@ -73,7 +73,10 @@ fn apply_generic_substitutions_type(ty: &Type, substitutions: &BTreeMap<String, 
             }
         }
 
-        Type::Paren(TypeParen { elem, .. }) | Type::Group(TypeGroup { elem, .. }) | Type::Reference(TypeReference { elem, .. }) | Type::Array(TypeArray { elem, .. }) => {
+        Type::Paren(TypeParen { elem, .. })
+        | Type::Group(TypeGroup { elem, .. })
+        | Type::Reference(TypeReference { elem, .. })
+        | Type::Array(TypeArray { elem, .. }) => {
             **elem = apply_generic_substitutions_type(elem, substitutions);
         }
         Type::Tuple(TypeTuple { elems, .. }) => {

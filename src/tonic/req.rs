@@ -20,7 +20,10 @@ pub struct ZeroCopyRequest<T> {
 impl<T> ZeroCopyRequest<T> {
     #[inline]
     pub fn from_zerocopy_request(request: Request<ZeroCopyBuffer>) -> Self {
-        Self { inner: request, _marker: PhantomData }
+        Self {
+            inner: request,
+            _marker: PhantomData,
+        }
     }
 
     #[inline]

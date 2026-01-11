@@ -47,7 +47,16 @@ pub struct VecDequeMessageProst {
 
 #[test]
 fn vecdeque_roundtrip_primitives_and_messages() {
-    let children = VecDeque::from([Nested { id: 7, name: "alpha".into() }, Nested { id: 8, name: "beta".into() }]);
+    let children = VecDeque::from([
+        Nested {
+            id: 7,
+            name: "alpha".into(),
+        },
+        Nested {
+            id: 8,
+            name: "beta".into(),
+        },
+    ]);
 
     let message = VecDequeMessage {
         numbers: VecDeque::from([1, 2, 3, 4]),

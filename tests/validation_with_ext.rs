@@ -31,7 +31,11 @@ pub struct Pong {
     pub id: u32,
 }
 
-#[proto_rpc(rpc_package = "validation_with_ext", rpc_server = true, proto_path = "protos/tests/validation_with_ext.proto")]
+#[proto_rpc(
+    rpc_package = "validation_with_ext",
+    rpc_server = true,
+    proto_path = "protos/tests/validation_with_ext.proto"
+)]
 pub trait ValidationWithExt {
     async fn check(&self, request: Request<Pong>) -> Result<Response<Pong>, Status>;
 }

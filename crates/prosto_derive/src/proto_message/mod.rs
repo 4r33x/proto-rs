@@ -147,9 +147,21 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                         }
                     } else {
                         if is_simple_enum {
-                            crate::schema::schema_tokens_for_simple_enum_concrete(&input.ident, &message_name, &enum_data, &config, &message_name)
+                            crate::schema::schema_tokens_for_simple_enum_concrete(
+                                &input.ident,
+                                &message_name,
+                                &enum_data,
+                                &config,
+                                &message_name,
+                            )
                         } else {
-                            crate::schema::schema_tokens_for_complex_enum_concrete(&input.ident, &message_name, &enum_data, &config, &message_name)
+                            crate::schema::schema_tokens_for_complex_enum_concrete(
+                                &input.ident,
+                                &message_name,
+                                &enum_data,
+                                &config,
+                                &message_name,
+                            )
                         }
                     };
                     // Only emit proto file entry for concrete variants (not base generic type)

@@ -263,7 +263,13 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
     }
 
     if let Some(output_path) = rust_client_output.output_path {
-        rust_client::write_rust_client_module(output_path, rust_client_output.imports, &rust_client_output.client_attrs, &registry, &ident_index)?;
+        rust_client::write_rust_client_module(
+            output_path,
+            rust_client_output.imports,
+            &rust_client_output.client_attrs,
+            &registry,
+            &ident_index,
+        )?;
     }
 
     Ok(count)
@@ -279,7 +285,10 @@ pub fn file_names() -> Vec<String> {
     REGISTRY.keys().cloned().collect()
 }
 
-fn build_registry() -> (BTreeMap<String, Vec<&'static ProtoSchema>>, BTreeMap<ProtoIdent, &'static ProtoSchema>) {
+fn build_registry() -> (
+    BTreeMap<String, Vec<&'static ProtoSchema>>,
+    BTreeMap<ProtoIdent, &'static ProtoSchema>,
+) {
     let mut registry = BTreeMap::new();
     let mut ident_index = BTreeMap::new();
 

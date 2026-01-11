@@ -116,7 +116,11 @@ impl ProtoKind {
 #[allow(clippy::extra_unused_type_parameters)]
 pub const fn const_unreachable<T: ProtoWire>(structure_name: &'static str) -> ! {
     match T::KIND {
-        crate::ProtoKind::Primitive(_) | crate::ProtoKind::SimpleEnum | crate::ProtoKind::Message | crate::ProtoKind::Bytes | crate::ProtoKind::String => {
+        crate::ProtoKind::Primitive(_)
+        | crate::ProtoKind::SimpleEnum
+        | crate::ProtoKind::Message
+        | crate::ProtoKind::Bytes
+        | crate::ProtoKind::String => {
             const_panic::concat_panic!("SHOULD BE SUPPORTED kind: ", T::KIND.dbg_name(), "in", structure_name)
         }
         crate::ProtoKind::Repeated(proto_kind) => {
@@ -128,7 +132,10 @@ pub const fn const_unreachable<T: ProtoWire>(structure_name: &'static str) -> ! 
 #[track_caller]
 #[allow(clippy::extra_unused_type_parameters)]
 pub const fn const_test_validate_with_ext<T: ProtoWire>() -> ! {
-    const_panic::concat_panic!("Type has validator with ext and it should not be used in infallible rpc methods", T::KIND.dbg_name())
+    const_panic::concat_panic!(
+        "Type has validator with ext and it should not be used in infallible rpc methods",
+        T::KIND.dbg_name()
+    )
 }
 
 pub trait ProtoWire: Sized {
@@ -211,7 +218,11 @@ pub trait ProtoWire: Sized {
 
     #[inline(always)]
     fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        if Self::is_default_impl(value) { 0 } else { unsafe { Self::encoded_len_impl_raw(value) } }
+        if Self::is_default_impl(value) {
+            0
+        } else {
+            unsafe { Self::encoded_len_impl_raw(value) }
+        }
     }
 
     #[inline(always)]
@@ -303,7 +314,13 @@ pub trait ProtoExt: Sized {
     /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
     type Shadow<'b>: ProtoShadow<Self, OwnedSun = Self> + ProtoWire<EncodeInput<'b> = ViewOf<'b, Self>>;
 
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError>;
 
     #[inline(always)]
     fn with_shadow<R, F>(value: SunOf<'_, Self>, f: F) -> R
@@ -458,7 +475,13 @@ where
     type Shadow<'a> = ID<'b, K, V>;
 
     #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         match tag {
             1 => {
                 if wire_type != WireType::Varint {

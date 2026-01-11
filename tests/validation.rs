@@ -129,7 +129,10 @@ mod tests {
 
     #[test]
     fn test_user_validation_good_input() {
-        let user = User { name: "Alice".to_string(), age: 25 };
+        let user = User {
+            name: "Alice".to_string(),
+            age: 25,
+        };
 
         let encoded = User::encode_to_vec(&user);
         let decoded = User::decode(&encoded[..]).unwrap();

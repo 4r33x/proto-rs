@@ -99,11 +99,19 @@ pub fn needs_encode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -
 }
 
 pub fn needs_decode_conversion(config: &FieldConfig, parsed: &ParsedFieldType) -> bool {
-    config.from_type.is_some() || config.from_fn.is_some() || config.try_from_fn.is_some() || config.into_type.is_some() || is_numeric_enum(config, parsed)
+    config.from_type.is_some()
+        || config.from_fn.is_some()
+        || config.try_from_fn.is_some()
+        || config.into_type.is_some()
+        || is_numeric_enum(config, parsed)
 }
 
 pub(super) fn uses_proto_wire_directly(info: &FieldInfo<'_>) -> bool {
-    !info.config.skip && !needs_encode_conversion(&info.config, &info.parsed) && info.config.from_type.is_none() && info.config.from_fn.is_none() && info.config.try_from_fn.is_none()
+    !info.config.skip
+        && !needs_encode_conversion(&info.config, &info.parsed)
+        && info.config.from_type.is_none()
+        && info.config.from_fn.is_none()
+        && info.config.try_from_fn.is_none()
 }
 
 pub fn strip_proto_attrs(attrs: &[Attribute]) -> Vec<Attribute> {
@@ -257,7 +265,10 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
                 <#proto_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(&(#access_expr))
             }
         };
-        EncodeBinding { prelude: None, value: init_expr }
+        EncodeBinding {
+            prelude: None,
+            value: init_expr,
+        }
     }
 }
 
@@ -616,6 +627,9 @@ mod tests {
         let binding = encode_input_binding(&info, &TokenStream2::new());
         assert!(binding.prelude.is_none());
         let rendered = binding.value.to_string();
-        assert!(rendered.contains("Borrow :: borrow"), "binding should borrow before copying: {rendered}");
+        assert!(
+            rendered.contains("Borrow :: borrow"),
+            "binding should borrow before copying: {rendered}"
+        );
     }
 }

@@ -53,7 +53,16 @@ pub struct ParsedFieldType {
 
 impl ParsedFieldType {
     #[allow(clippy::too_many_arguments)]
-    fn new(rust_type: Type, proto_type: &str, prost_type: TokenStream, is_message_like: bool, is_numeric_scalar: bool, proto_rust_type: Type, elem_type: Type, is_rust_enum: bool) -> Self {
+    fn new(
+        rust_type: Type,
+        proto_type: &str,
+        prost_type: TokenStream,
+        is_message_like: bool,
+        is_numeric_scalar: bool,
+        proto_rust_type: Type,
+        elem_type: Type,
+        is_rust_enum: bool,
+    ) -> Self {
         Self {
             rust_type,
             proto_type: proto_type.to_string(),
@@ -81,7 +90,9 @@ pub fn parse_field_type(ty: &Type) -> ParsedFieldType {
 /// True if the type is `[u8; N]`.
 pub fn is_bytes_array(ty: &Type) -> bool {
     match ty {
-        Type::Array(array) => matches!(&*array.elem, Type::Path(inner) if last_ident(inner).is_some_and(|id| id == "u8")),
+        Type::Array(array) => {
+            matches!(&*array.elem, Type::Path(inner) if last_ident(inner).is_some_and(|id| id == "u8"))
+        }
         Type::Path(path) => last_ident(path).is_some_and(|id| id == "FixedBytes"),
         _ => false,
     }
@@ -293,8 +304,26 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "AtomicU64" | "AtomicUsize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
                     "AtomicI8" | "AtomicI16" | "AtomicI32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
                     "AtomicI64" | "AtomicIsize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
-                    "f32" => ParsedFieldType::new(ty.clone(), "float", quote! { float }, false, true, parse_quote! { f32 }, ty.clone(), false),
-                    "f64" => ParsedFieldType::new(ty.clone(), "double", quote! { double }, false, true, parse_quote! { f64 }, ty.clone(), false),
+                    "f32" => ParsedFieldType::new(
+                        ty.clone(),
+                        "float",
+                        quote! { float },
+                        false,
+                        true,
+                        parse_quote! { f32 },
+                        ty.clone(),
+                        false,
+                    ),
+                    "f64" => ParsedFieldType::new(
+                        ty.clone(),
+                        "double",
+                        quote! { double },
+                        false,
+                        true,
+                        parse_quote! { f64 },
+                        ty.clone(),
+                        false,
+                    ),
                     "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
                     "String" => ParsedFieldType::new(
                         ty.clone(),
@@ -306,7 +335,16 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                         ty.clone(),
                         false,
                     ),
-                    "Bytes" => ParsedFieldType::new(ty.clone(), "bytes", quote! { bytes }, false, false, parse_quote! { ::proto_rs::bytes::Bytes }, ty.clone(), false),
+                    "Bytes" => ParsedFieldType::new(
+                        ty.clone(),
+                        "bytes",
+                        quote! { bytes },
+                        false,
+                        false,
+                        parse_quote! { ::proto_rs::bytes::Bytes },
+                        ty.clone(),
+                        false,
+                    ),
                     _ => parse_custom_type(ty),
                 };
             }
@@ -345,7 +383,9 @@ fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType 
     let value_proto_ty = value_info.proto_rust_type.clone();
     let proto_rust_type = match kind {
         MapKind::HashMap => parse_quote! { ::std::collections::HashMap<#key_proto_ty, #value_proto_ty> },
-        MapKind::BTreeMap => parse_quote! { ::proto_rs::alloc::collections::BTreeMap<#key_proto_ty, #value_proto_ty> },
+        MapKind::BTreeMap => {
+            parse_quote! { ::proto_rs::alloc::collections::BTreeMap<#key_proto_ty, #value_proto_ty> }
+        }
     };
 
     ParsedFieldType {

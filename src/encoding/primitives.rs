@@ -34,7 +34,12 @@ macro_rules! merge_repeated_numeric {
      $wire_type:expr,
      $merge:ident,
      $merge_repeated:ident) => {
-        pub fn $merge_repeated(wire_type: WireType, values: &mut Vec<$ty>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        pub fn $merge_repeated(
+            wire_type: WireType,
+            values: &mut Vec<$ty>,
+            buf: &mut impl Buf,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError> {
             if wire_type == WireType::LengthDelimited {
                 // Packed.
                 merge_loop(values, buf, ctx, |values, buf, ctx| {
@@ -305,7 +310,12 @@ macro_rules! length_delimited_encode {
 
 macro_rules! length_delimited_decode {
     ($ty:ty) => {
-        pub fn merge_repeated(wire_type: WireType, values: &mut Vec<$ty>, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        pub fn merge_repeated(
+            wire_type: WireType,
+            values: &mut Vec<$ty>,
+            buf: &mut impl Buf,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError> {
             check_wire_type(WireType::LengthDelimited, wire_type)?;
             let mut value = Default::default();
             merge(wire_type, &mut value, buf, ctx)?;
@@ -437,7 +447,12 @@ pub mod bytes {
         encode_tagged(tag, value, buf);
     }
     #[inline]
-    pub fn merge(wire_type: WireType, value: &mut impl BytesAdapterDecode, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+    pub fn merge(
+        wire_type: WireType,
+        value: &mut impl BytesAdapterDecode,
+        buf: &mut impl Buf,
+        _ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let len = decode_varint(buf)?;
         if len > buf.remaining() as u64 {
@@ -461,7 +476,12 @@ pub mod bytes {
         Ok(())
     }
     #[inline]
-    pub(super) fn merge_one_copy(wire_type: WireType, value: &mut impl BytesAdapterDecode, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+    pub(super) fn merge_one_copy(
+        wire_type: WireType,
+        value: &mut impl BytesAdapterDecode,
+        buf: &mut impl Buf,
+        _ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         let len = decode_varint(buf)?;
         if len > buf.remaining() as u64 {

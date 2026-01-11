@@ -67,7 +67,11 @@ where
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 let n = value.len();
-                if n == 0 { 0 } else { key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) } }
+                if n == 0 {
+                    0
+                } else {
+                    key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) }
+                }
             }
             ProtoKind::Repeated(_) => {
                 unreachable!()
@@ -248,7 +252,11 @@ mod hashset_impl {
                 }
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                     let n = value.len();
-                    if n == 0 { 0 } else { key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) } }
+                    if n == 0 {
+                        0
+                    } else {
+                        key_len(tag) * n + unsafe { Self::encoded_len_impl_raw(value) }
+                    }
                 }
                 ProtoKind::Repeated(_) => {
                     unreachable!()

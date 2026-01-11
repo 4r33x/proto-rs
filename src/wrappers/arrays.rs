@@ -428,7 +428,11 @@ impl<const N: usize> ProtoWire for [u8; N] {
     #[inline(always)]
     fn encoded_len_tagged_impl(v: &Self::EncodeInput<'_>, tag: u32) -> usize {
         let s = v;
-        if is_all_zero(*s) { 0 } else { crate::encoding::key_len(tag) + encoded_len_varint(N as u64) + N }
+        if is_all_zero(*s) {
+            0
+        } else {
+            crate::encoding::key_len(tag) + encoded_len_varint(N as u64) + N
+        }
     }
 
     #[inline(always)]
@@ -471,7 +475,9 @@ impl<const N: usize> ProtoWire for [u8; N] {
         }
         if len != N {
             buf.advance(len);
-            return Err(DecodeError::new(format!("invalid length for fixed byte array: expected {N}, got {len}")));
+            return Err(DecodeError::new(format!(
+                "invalid length for fixed byte array: expected {N}, got {len}"
+            )));
         }
         buf.copy_to_slice(value);
         Ok(())

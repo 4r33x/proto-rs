@@ -115,7 +115,13 @@ impl UnifiedProtoConfig {
     }
 
     /// Parse configuration from attributes and extract all imports
-    pub fn from_attributes(attr: TokenStream, type_ident: &str, item_attrs: &[Attribute], fields: impl ParseFieldAttr, generics: syn::Generics) -> Self {
+    pub fn from_attributes(
+        attr: TokenStream,
+        type_ident: &str,
+        item_attrs: &[Attribute],
+        fields: impl ParseFieldAttr,
+        generics: syn::Generics,
+    ) -> Self {
         let mut config = Self::default();
 
         // Parse attribute parameters
@@ -186,10 +192,7 @@ fn parse_interceptor_config(input: &str) -> Option<InterceptorConfig> {
     // Parse the type parameter as a TokenStream
     let ctx_type: TokenStream2 = type_param_str.parse().ok()?;
 
-    Some(InterceptorConfig {
-        function_name,
-        ctx_type,
-    })
+    Some(InterceptorConfig { function_name, ctx_type })
 }
 
 fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
@@ -326,10 +329,16 @@ impl UnifiedProtoConfig {
 
         for param in type_params {
             let Some(types) = generic_map.get(&param.to_string()) else {
-                return Err(syn::Error::new_spanned(&param, format!("missing generic_types entry for `{param}`")));
+                return Err(syn::Error::new_spanned(
+                    &param,
+                    format!("missing generic_types entry for `{param}`"),
+                ));
             };
             if types.is_empty() {
-                return Err(syn::Error::new_spanned(&param, format!("generic_types entry for `{param}` is empty")));
+                return Err(syn::Error::new_spanned(
+                    &param,
+                    format!("generic_types entry for `{param}` is empty"),
+                ));
             }
 
             let mut next_variants = Vec::new();

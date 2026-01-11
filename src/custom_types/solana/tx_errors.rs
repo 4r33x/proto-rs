@@ -332,7 +332,9 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
             Self::MaxLoadedAccountsDataSizeExceeded => TransactionError::MaxLoadedAccountsDataSizeExceeded,
             Self::InvalidLoadedAccountsDataSizeLimit => TransactionError::InvalidLoadedAccountsDataSizeLimit,
             Self::ResanitizationNeeded => TransactionError::ResanitizationNeeded,
-            Self::ProgramExecutionTemporarilyRestricted { account_index } => TransactionError::ProgramExecutionTemporarilyRestricted { account_index },
+            Self::ProgramExecutionTemporarilyRestricted { account_index } => {
+                TransactionError::ProgramExecutionTemporarilyRestricted { account_index }
+            }
             Self::UnbalancedTransaction => TransactionError::UnbalancedTransaction,
             Self::ProgramCacheHitMaxLimit => TransactionError::ProgramCacheHitMaxLimit,
             Self::CommitCancelled => TransactionError::CommitCancelled,
@@ -441,11 +443,17 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
         TransactionError::WouldExceedMaxVoteCostLimit => TransactionErrorProto::WouldExceedMaxVoteCostLimit,
         TransactionError::WouldExceedAccountDataTotalLimit => TransactionErrorProto::WouldExceedAccountDataTotalLimit,
         TransactionError::DuplicateInstruction(index) => TransactionErrorProto::DuplicateInstruction(*index),
-        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent { account_index: *account_index },
+        TransactionError::InsufficientFundsForRent { account_index } => TransactionErrorProto::InsufficientFundsForRent {
+            account_index: *account_index,
+        },
         TransactionError::MaxLoadedAccountsDataSizeExceeded => TransactionErrorProto::MaxLoadedAccountsDataSizeExceeded,
         TransactionError::InvalidLoadedAccountsDataSizeLimit => TransactionErrorProto::InvalidLoadedAccountsDataSizeLimit,
         TransactionError::ResanitizationNeeded => TransactionErrorProto::ResanitizationNeeded,
-        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => TransactionErrorProto::ProgramExecutionTemporarilyRestricted { account_index: *account_index },
+        TransactionError::ProgramExecutionTemporarilyRestricted { account_index } => {
+            TransactionErrorProto::ProgramExecutionTemporarilyRestricted {
+                account_index: *account_index,
+            }
+        }
         TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
         TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
         TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,

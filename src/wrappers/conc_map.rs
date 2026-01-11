@@ -42,7 +42,10 @@ where
 {
     #[inline]
     pub fn new(map: &'a papaya::HashMap<K, V, S>) -> Self {
-        Self { map, guard: Some(map.pin()) }
+        Self {
+            map,
+            guard: Some(map.pin()),
+        }
     }
 
     #[inline]
@@ -150,12 +153,28 @@ where
                 .map(|(k, v)| {
                     let key_input = K::encode_input_from_ref(k);
                     let key_default = K::is_default_impl(&key_input);
-                    let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&key_input) } };
-                    let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };
+                    let key_body = if key_default {
+                        0
+                    } else {
+                        unsafe { K::encoded_len_impl_raw(&key_input) }
+                    };
+                    let key_len_total = if key_default {
+                        0
+                    } else {
+                        map_entry_field_len(K::WIRE_TYPE, 1, key_body)
+                    };
                     let value_input = V::encode_input_from_ref(v);
                     let value_default = V::is_default_impl(&value_input);
-                    let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&value_input) } };
-                    let value_len_total = if value_default { 0 } else { map_entry_field_len(V::WIRE_TYPE, 2, value_body) };
+                    let value_body = if value_default {
+                        0
+                    } else {
+                        unsafe { V::encoded_len_impl_raw(&value_input) }
+                    };
+                    let value_len_total = if value_default {
+                        0
+                    } else {
+                        map_entry_field_len(V::WIRE_TYPE, 2, value_body)
+                    };
                     let entry_len = key_len_total + value_len_total;
                     key_len(tag) + encoded_len_varint(entry_len as u64) + entry_len
                 })
@@ -170,12 +189,28 @@ where
             .map(|(k, v)| {
                 let key_input = K::encode_input_from_ref(k);
                 let key_default = K::is_default_impl(&key_input);
-                let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&key_input) } };
-                let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };
+                let key_body = if key_default {
+                    0
+                } else {
+                    unsafe { K::encoded_len_impl_raw(&key_input) }
+                };
+                let key_len_total = if key_default {
+                    0
+                } else {
+                    map_entry_field_len(K::WIRE_TYPE, 1, key_body)
+                };
                 let value_input = V::encode_input_from_ref(v);
                 let value_default = V::is_default_impl(&value_input);
-                let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&value_input) } };
-                let value_len_total = if value_default { 0 } else { map_entry_field_len(V::WIRE_TYPE, 2, value_body) };
+                let value_body = if value_default {
+                    0
+                } else {
+                    unsafe { V::encoded_len_impl_raw(&value_input) }
+                };
+                let value_len_total = if value_default {
+                    0
+                } else {
+                    map_entry_field_len(V::WIRE_TYPE, 2, value_body)
+                };
                 let entry_len = key_len_total + value_len_total;
                 encoded_len_varint(entry_len as u64) + entry_len
             })
@@ -193,12 +228,28 @@ where
         for (k, v) in &guard {
             let key_input = K::encode_input_from_ref(k);
             let key_default = K::is_default_impl(&key_input);
-            let key_body = if key_default { 0 } else { unsafe { K::encoded_len_impl_raw(&key_input) } };
-            let key_len_total = if key_default { 0 } else { map_entry_field_len(K::WIRE_TYPE, 1, key_body) };
+            let key_body = if key_default {
+                0
+            } else {
+                unsafe { K::encoded_len_impl_raw(&key_input) }
+            };
+            let key_len_total = if key_default {
+                0
+            } else {
+                map_entry_field_len(K::WIRE_TYPE, 1, key_body)
+            };
             let value_input = V::encode_input_from_ref(v);
             let value_default = V::is_default_impl(&value_input);
-            let value_body = if value_default { 0 } else { unsafe { V::encoded_len_impl_raw(&value_input) } };
-            let value_len_total = if value_default { 0 } else { map_entry_field_len(V::WIRE_TYPE, 2, value_body) };
+            let value_body = if value_default {
+                0
+            } else {
+                unsafe { V::encoded_len_impl_raw(&value_input) }
+            };
+            let value_len_total = if value_default {
+                0
+            } else {
+                map_entry_field_len(V::WIRE_TYPE, 2, value_body)
+            };
             let entry_len = key_len_total + value_len_total;
             encode_key(tag, WireType::LengthDelimited, buf);
             encode_varint(entry_len as u64, buf);

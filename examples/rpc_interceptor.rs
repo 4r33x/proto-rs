@@ -22,7 +22,7 @@ pub type UserId = u64;
 fn user_advanced_interceptor<T>(ctx: UserId, request: &mut tonic::Request<T>) {
     // Add the user ID to the request metadata
     request.metadata_mut().insert("user-id", ctx.to_string().parse().unwrap());
-    println!("Interceptor called with user_id: {}", ctx);
+    println!("Interceptor called with user_id: {ctx}");
 }
 
 // Define trait with the proto_rpc macro using the rpc_client_ctx parameter
@@ -45,7 +45,7 @@ impl InterceptorRpc for S {
     async fn ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         // Server can access the user_id from metadata
         if let Some(user_id) = request.metadata().get("user-id") {
-            println!("Server received user_id: {:?}", user_id);
+            println!("Server received user_id: {user_id:?}");
         }
         Ok(Response::new(GoonPong {}))
     }

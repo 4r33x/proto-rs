@@ -143,7 +143,8 @@ pub fn parse_field_config(field: &Field) -> FieldConfig {
                 Some("import_path") => cfg.import_path = parse_string_value(&meta),
                 Some("tag") => cfg.custom_tag = parse_usize_value(&meta),
                 Some("rename") => {
-                    let tokens: TokenStream = meta.value().expect("rename expects a value").parse().expect("failed to parse rename attribute");
+                    let tokens: TokenStream =
+                        meta.value().expect("rename expects a value").parse().expect("failed to parse rename attribute");
                     cfg.rename = Some(parse_proto_rename(field, tokens));
                 }
                 Some("validator") => cfg.validator = parse_string_or_path_value(&meta),
@@ -216,11 +217,19 @@ fn parse_proto_rename_string(field: &Field, raw: String) -> ProtoRename {
 
     let proto_type = canonicalize_proto_type_from_str(&base).unwrap_or_else(|| canonicalize_proto_type_from_type_str(&base));
 
-    ProtoRename { proto_type, is_optional, is_repeated }
+    ProtoRename {
+        proto_type,
+        is_optional,
+        is_repeated,
+    }
 }
 
 fn canonicalize_proto_type_from_str(base: &str) -> Option<String> {
-    if is_known_proto_scalar(base) { Some(base.to_string()) } else { None }
+    if is_known_proto_scalar(base) {
+        Some(base.to_string())
+    } else {
+        None
+    }
 }
 
 fn canonicalize_proto_type_from_type_str(base: &str) -> String {
@@ -269,7 +278,21 @@ fn proto_scalar_ident(ty: &Type) -> Option<String> {
 fn is_known_proto_scalar(name: &str) -> bool {
     matches!(
         name,
-        "double" | "float" | "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "fixed32" | "fixed64" | "sfixed32" | "sfixed64" | "bool" | "string" | "bytes"
+        "double"
+            | "float"
+            | "int32"
+            | "int64"
+            | "uint32"
+            | "uint64"
+            | "sint32"
+            | "sint64"
+            | "fixed32"
+            | "fixed64"
+            | "sfixed32"
+            | "sfixed64"
+            | "bool"
+            | "string"
+            | "bytes"
     )
 }
 
@@ -503,7 +526,8 @@ fn collect_discriminants_impl(variants: &[&syn::Variant]) -> Result<Vec<i32>, sy
     for variant in variants {
         let value = if let Some((_, expr)) = &variant.discriminant {
             let parsed = eval_discriminant(expr)?;
-            next_value = parsed.checked_add(1).ok_or_else(|| syn::Error::new_spanned(&variant.ident, "enum discriminant overflowed i32 range"))?;
+            next_value =
+                parsed.checked_add(1).ok_or_else(|| syn::Error::new_spanned(&variant.ident, "enum discriminant overflowed i32 range"))?;
             parsed
         } else {
             let value = next_value;
@@ -541,7 +565,9 @@ pub fn find_marked_default_variant(data: &DataEnum) -> syn::Result<Option<usize>
 fn eval_discriminant(expr: &Expr) -> Result<i32, syn::Error> {
     match expr {
         Expr::Lit(expr_lit) => match &expr_lit.lit {
-            Lit::Int(lit_int) => lit_int.base10_parse::<i32>().map_err(|_| syn::Error::new(lit_int.span(), "enum discriminant must fit in i32")),
+            Lit::Int(lit_int) => {
+                lit_int.base10_parse::<i32>().map_err(|_| syn::Error::new(lit_int.span(), "enum discriminant must fit in i32"))
+            }
             _ => Err(syn::Error::new(expr.span(), "unsupported enum discriminant literal")),
         },
         Expr::Unary(expr_unary) => {

@@ -28,13 +28,22 @@ impl Default for StdMutexHolder {
 #[test]
 fn std_mutex_roundtrip_preserves_inner_values() {
     let holder = StdMutexHolder {
-        inner: std::sync::Mutex::new(MutexInner { value: "alpha".into(), count: 42 }),
+        inner: std::sync::Mutex::new(MutexInner {
+            value: "alpha".into(),
+            count: 42,
+        }),
     };
 
     let encoded = <StdMutexHolder as ProtoExt>::encode_to_vec(&holder);
     let decoded = <StdMutexHolder as ProtoExt>::decode(&encoded[..]).expect("decode std mutex holder");
 
-    assert_eq!(decoded.inner.into_inner().expect("mutex poisoned"), MutexInner { value: "alpha".into(), count: 42 });
+    assert_eq!(
+        decoded.inner.into_inner().expect("mutex poisoned"),
+        MutexInner {
+            value: "alpha".into(),
+            count: 42
+        }
+    );
 }
 
 #[test]
@@ -68,13 +77,22 @@ impl Default for ParkingLotMutexHolder {
 #[test]
 fn parking_lot_mutex_roundtrip_preserves_inner_values() {
     let holder = ParkingLotMutexHolder {
-        inner: parking_lot::Mutex::new(MutexInner { value: "beta".into(), count: 7 }),
+        inner: parking_lot::Mutex::new(MutexInner {
+            value: "beta".into(),
+            count: 7,
+        }),
     };
 
     let encoded = <ParkingLotMutexHolder as ProtoExt>::encode_to_vec(&holder);
     let decoded = <ParkingLotMutexHolder as ProtoExt>::decode(&encoded[..]).expect("decode parking_lot mutex holder");
 
-    assert_eq!(decoded.inner.into_inner(), MutexInner { value: "beta".into(), count: 7 });
+    assert_eq!(
+        decoded.inner.into_inner(),
+        MutexInner {
+            value: "beta".into(),
+            count: 7
+        }
+    );
 }
 
 #[cfg(feature = "parking_lot")]

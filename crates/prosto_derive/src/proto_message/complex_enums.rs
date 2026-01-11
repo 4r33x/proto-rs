@@ -31,7 +31,12 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::resolved_field_type;
 
-pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEnum, data: &syn::DataEnum, config: &UnifiedProtoConfig) -> syn::Result<TokenStream2> {
+pub(super) fn generate_complex_enum_impl(
+    input: &DeriveInput,
+    item_enum: &ItemEnum,
+    data: &syn::DataEnum,
+    config: &UnifiedProtoConfig,
+) -> syn::Result<TokenStream2> {
     let enum_item = sanitize_enum(item_enum.clone());
 
     let name = &input.ident;
@@ -40,7 +45,10 @@ pub(super) fn generate_complex_enum_impl(input: &DeriveInput, item_enum: &ItemEn
     let default_index = crate::utils::find_marked_default_variant(data)?.unwrap_or(0);
     let mut variants = collect_variant_infos(data, config)?;
     if variants.is_empty() {
-        return Err(syn::Error::new(input.ident.span(), "proto_message enum must contain at least one variant"));
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "proto_message enum must contain at least one variant",
+        ));
     }
     if default_index >= variants.len() {
         return Err(syn::Error::new(input.ident.span(), "#[default] variant index is out of bounds"));
@@ -229,14 +237,20 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
     for (idx, variant) in data.variants.iter().enumerate() {
         let tag = resolve_variant_tag(variant, idx + 1)?;
         if !used_tags.insert(tag) {
-            return Err(syn::Error::new(variant.ident.span(), format!("duplicate proto(tag) attribute for enum variant: {tag}")));
+            return Err(syn::Error::new(
+                variant.ident.span(),
+                format!("duplicate proto(tag) attribute for enum variant: {tag}"),
+            ));
         }
 
         let kind = match &variant.fields {
             syn::Fields::Unit => VariantKind::Unit,
             syn::Fields::Unnamed(fields) => {
                 if fields.unnamed.len() != 1 {
-                    return Err(syn::Error::new(variant.ident.span(), "complex enum tuple variants must contain exactly one field"));
+                    return Err(syn::Error::new(
+                        variant.ident.span(),
+                        "complex enum tuple variants must contain exactly one field",
+                    ));
                 }
 
                 let field = &fields.unnamed[0];
@@ -245,7 +259,10 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                 let parsed = parse_field_type(&effective_ty);
                 let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
                 let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
-                let binding_ident = Ident::new(&format!("__proto_rs_variant_{}_value", variant.ident.to_string().to_lowercase()), field.span());
+                let binding_ident = Ident::new(
+                    &format!("__proto_rs_variant_{}_value", variant.ident.to_string().to_lowercase()),
+                    field.span(),
+                );
 
                 let mut field_info = FieldInfo {
                     index: 0,
@@ -267,7 +284,10 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                 }
 
                 VariantKind::Tuple {
-                    field: TupleVariantInfo { field: field_info, binding_ident },
+                    field: TupleVariantInfo {
+                        field: field_info,
+                        binding_ident,
+                    },
                 }
             }
             syn::Fields::Named(fields_named) => {
@@ -345,7 +365,10 @@ fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u3
                 let lit: Lit = meta.value()?.parse()?;
                 let value = match lit {
                     Lit::Int(int_lit) => int_lit.base10_parse::<usize>()?,
-                    Lit::Str(str_lit) => str_lit.value().parse::<usize>().map_err(|_| syn::Error::new(str_lit.span(), "proto tag must be a positive integer"))?,
+                    Lit::Str(str_lit) => str_lit
+                        .value()
+                        .parse::<usize>()
+                        .map_err(|_| syn::Error::new(str_lit.span(), "proto tag must be a positive integer"))?,
                     _ => {
                         return Err(syn::Error::new(lit.span(), "proto tag must be specified as an integer"));
                     }
@@ -359,7 +382,10 @@ fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u3
 
     let tag = custom_tag.unwrap_or(default);
     if tag == 0 {
-        return Err(syn::Error::new(variant.ident.span(), "proto enum variant tags must be greater than or equal to 1"));
+        return Err(syn::Error::new(
+            variant.ident.span(),
+            "proto enum variant tags must be greater than or equal to 1",
+        ));
     }
 
     let tag_u32 = u32::try_from(tag).map_err(|_| syn::Error::new(variant.ident.span(), "proto tag overflowed u32"))?;
@@ -649,7 +675,10 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     ::proto_rs::encoding::skip_field(wire_type, #tag, buf, ctx)?;
                 }
             } else if needs_decode_conversion(&field.field.config, &field.field.parsed) {
-                let tmp_ident = Ident::new(&format!("__proto_rs_variant_field_{}_tmp", field.field.index), field.field.field.span());
+                let tmp_ident = Ident::new(
+                    &format!("__proto_rs_variant_field_{}_tmp", field.field.index),
+                    field.field.field.span(),
+                );
                 let decode_ty = &field.field.decode_ty;
                 let assign = decode_conversion_assign(&field.field, &quote! { #binding_ident }, &tmp_ident);
                 quote! {
@@ -677,8 +706,14 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
             let post_hook = if field.field.config.skip {
                 field.field.config.skip_deser_fn.as_ref().map(|fun| {
                     let fun_path = parse_path_string(field.field.field, fun);
-                    let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_skip_binding", ident.to_string().to_lowercase()), field.field.field.span());
-                    let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_computed", ident.to_string().to_lowercase()), field.field.field.span());
+                    let skip_binding_ident = Ident::new(
+                        &format!("__proto_rs_variant_{}_skip_binding", ident.to_string().to_lowercase()),
+                        field.field.field.span(),
+                    );
+                    let computed_ident = Ident::new(
+                        &format!("__proto_rs_variant_{}_computed", ident.to_string().to_lowercase()),
+                        field.field.field.span(),
+                    );
                     quote! {
                         let #computed_ident = #fun_path(value);
                         if let #name::#ident(#skip_binding_ident) = value {
@@ -769,8 +804,18 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let fun = info.config.skip_deser_fn.as_ref()?;
                     let field_ident = info.field.ident.as_ref().expect("named field");
                     let fun_path = parse_path_string(info.field, fun);
-                    let skip_binding_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_skip_binding", ident.to_string().to_lowercase(), info.index), info.field.span());
-                    let computed_ident = Ident::new(&format!("__proto_rs_variant_{}_{}_computed", ident.to_string().to_lowercase(), info.index), info.field.span());
+                    let skip_binding_ident = Ident::new(
+                        &format!(
+                            "__proto_rs_variant_{}_{}_skip_binding",
+                            ident.to_string().to_lowercase(),
+                            info.index
+                        ),
+                        info.field.span(),
+                    );
+                    let computed_ident = Ident::new(
+                        &format!("__proto_rs_variant_{}_{}_computed", ident.to_string().to_lowercase(), info.index),
+                        info.field.span(),
+                    );
                     Some(quote! {
                         let #computed_ident = #fun_path(value);
                         if let #name::#ident { #field_ident: #skip_binding_ident, .. } = value {

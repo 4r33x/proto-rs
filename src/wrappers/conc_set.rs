@@ -29,7 +29,10 @@ where
 {
     #[inline]
     pub fn new(set: &'a papaya::HashSet<T, S>) -> Self {
-        Self { set, guard: Some(set.pin()) }
+        Self {
+            set,
+            guard: Some(set.pin()),
+        }
     }
 
     #[inline]

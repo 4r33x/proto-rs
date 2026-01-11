@@ -243,7 +243,14 @@ fn render_module_imports(
     client_imports: &BTreeMap<String, ClientImport>,
     indent: usize,
 ) {
-    let imports = collect_module_imports(entries, package_name, ident_index, package_by_ident, proto_type_index, client_imports);
+    let imports = collect_module_imports(
+        entries,
+        package_name,
+        ident_index,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    );
     for import in imports {
         indent_line(output, indent);
         output.push_str("use ");
@@ -265,13 +272,29 @@ fn collect_module_imports(
         match entry.content {
             ProtoEntry::Struct { fields } => {
                 for field in fields {
-                    collect_rust_field_imports(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &mut imports);
+                    collect_rust_field_imports(
+                        field,
+                        package_name,
+                        ident_index,
+                        package_by_ident,
+                        proto_type_index,
+                        client_imports,
+                        &mut imports,
+                    );
                 }
             }
             ProtoEntry::ComplexEnum { variants } => {
                 for variant in variants {
                     for field in variant.fields {
-                        collect_rust_field_imports(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &mut imports);
+                        collect_rust_field_imports(
+                            field,
+                            package_name,
+                            ident_index,
+                            package_by_ident,
+                            proto_type_index,
+                            client_imports,
+                            &mut imports,
+                        );
                     }
                 }
             }
@@ -279,8 +302,22 @@ fn collect_module_imports(
                 for method in methods {
                     let request = resolve_transparent_ident(method.request, ident_index);
                     let response = resolve_transparent_ident(method.response, ident_index);
-                    collect_rust_proto_ident_imports(request, package_name, package_by_ident, proto_type_index, client_imports, &mut imports);
-                    collect_rust_proto_ident_imports(response, package_name, package_by_ident, proto_type_index, client_imports, &mut imports);
+                    collect_rust_proto_ident_imports(
+                        request,
+                        package_name,
+                        package_by_ident,
+                        proto_type_index,
+                        client_imports,
+                        &mut imports,
+                    );
+                    collect_rust_proto_ident_imports(
+                        response,
+                        package_name,
+                        package_by_ident,
+                        proto_type_index,
+                        client_imports,
+                        &mut imports,
+                    );
                     for arg in method.request_generic_args {
                         collect_rust_proto_ident_imports(
                             resolve_transparent_ident(**arg, ident_index),
@@ -348,10 +385,11 @@ fn collect_rust_proto_ident_imports(
         return;
     }
 
-    let package = package_by_ident
-        .get(&ident)
-        .map(String::as_str)
-        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
+    let package = package_by_ident.get(&ident).map(String::as_str).or(if ident.proto_package_name.is_empty() {
+        None
+    } else {
+        Some(ident.proto_package_name)
+    });
 
     if let Some(package) = package
         && !package.is_empty()
@@ -381,11 +419,25 @@ fn collect_rust_proto_name_imports(
     }
     if let Some(candidates) = proto_type_index.get(proto_name) {
         if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == package_name)) {
-            collect_rust_proto_ident_imports(*candidate, package_name, package_by_ident, proto_type_index, client_imports, imports);
+            collect_rust_proto_ident_imports(
+                *candidate,
+                package_name,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+                imports,
+            );
             return;
         }
         if let Some(candidate) = candidates.first() {
-            collect_rust_proto_ident_imports(*candidate, package_name, package_by_ident, proto_type_index, client_imports, imports);
+            collect_rust_proto_ident_imports(
+                *candidate,
+                package_name,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+                imports,
+            );
         }
     }
 }
@@ -437,13 +489,23 @@ fn render_entries(
         };
 
         let user_attrs = build_entry_user_attrs(entry, client_attrs, ident_index);
-        if let Some(definition) = render_rust_entry(entry, package_name, ident_index, package_by_ident, proto_type_index, client_imports, &user_attrs, indent) {
+        if let Some(definition) = render_rust_entry(
+            entry,
+            package_name,
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+            &user_attrs,
+            indent,
+        ) {
             output.push_str(&definition);
             output.push('\n');
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_rust_entry(
     entry: &ProtoSchema,
     package_name: &str,
@@ -523,11 +585,20 @@ fn render_rust_struct(
         output.write_fmt(format_args!("pub struct {type_name}{generics}(\n")).unwrap();
 
         for (idx, field) in fields.iter().enumerate() {
-            let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+            let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| {
+                (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name))
+            });
             render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 4);
             indent_line(&mut output, indent + 4);
             output.push_str("pub ");
-            output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
+            output.push_str(&render_field_type(
+                field,
+                package_name,
+                ident_index,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+            ));
             output.push_str(",\n");
         }
         indent_line(&mut output, indent);
@@ -537,14 +608,23 @@ fn render_rust_struct(
     output.write_fmt(format_args!("pub struct {type_name}{generics} {{\n")).unwrap();
 
     for (idx, field) in fields.iter().enumerate() {
-        let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+        let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| {
+            (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name))
+        });
         render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 4);
         indent_line(&mut output, indent + 4);
         let name = field.name.unwrap_or("field");
         output.push_str("pub ");
         output.push_str(name);
         output.push_str(": ");
-        output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
+        output.push_str(&render_field_type(
+            field,
+            package_name,
+            ident_index,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        ));
         output.push_str(",\n");
     }
     indent_line(&mut output, indent);
@@ -606,13 +686,22 @@ fn render_rust_complex_enum(
         if has_named {
             output.push_str(" {\n");
             for (idx, field) in variant.fields.iter().enumerate() {
-                let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+                let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| {
+                    (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name))
+                });
                 render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 8);
                 indent_line(&mut output, indent + 8);
                 let name = field.name.unwrap_or("field");
                 output.push_str(name);
                 output.push_str(": ");
-                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
+                output.push_str(&render_field_type(
+                    field,
+                    package_name,
+                    ident_index,
+                    package_by_ident,
+                    proto_type_index,
+                    client_imports,
+                ));
                 output.push_str(",\n");
             }
             indent_line(&mut output, indent + 4);
@@ -620,10 +709,19 @@ fn render_rust_complex_enum(
         } else {
             output.push_str("(\n");
             for (idx, field) in variant.fields.iter().enumerate() {
-                let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name)));
+                let (field_attrs, field_overrides) = field.name.map_or((None, None), |name| {
+                    (user_attrs.field_attrs.get(name), user_attrs.field_override_paths.get(name))
+                });
                 render_field_attributes(&mut output, field, idx, field_attrs, field_overrides, indent + 8);
                 indent_line(&mut output, indent + 8);
-                output.push_str(&render_field_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports));
+                output.push_str(&render_field_type(
+                    field,
+                    package_name,
+                    ident_index,
+                    package_by_ident,
+                    proto_type_index,
+                    client_imports,
+                ));
                 output.push_str(",\n");
             }
             indent_line(&mut output, indent + 4);
@@ -685,7 +783,14 @@ fn render_rust_service(
 
     for method in methods {
         let request_ident = resolve_transparent_ident(method.request, ident_index);
-        let request_type = render_proto_type_with_generics(request_ident, method.request_generic_args, package_name, package_by_ident, proto_type_index, client_imports);
+        let request_type = render_proto_type_with_generics(
+            request_ident,
+            method.request_generic_args,
+            package_name,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        );
         let response_type = if method.server_streaming {
             format!("Self::{}Stream", method.name)
         } else {
@@ -752,7 +857,14 @@ fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, user_at
     }
 }
 
-fn render_field_attributes(output: &mut String, field: &Field, idx: usize, user_attrs: Option<&Vec<String>>, override_paths: Option<&BTreeSet<String>>, indent: usize) {
+fn render_field_attributes(
+    output: &mut String,
+    field: &Field,
+    idx: usize,
+    user_attrs: Option<&Vec<String>>,
+    override_paths: Option<&BTreeSet<String>>,
+    indent: usize,
+) {
     let mut seen = BTreeSet::new();
     if let Some(attrs) = user_attrs {
         for attr in attrs {
@@ -850,7 +962,11 @@ struct EntryUserAttrs {
     method_attrs: BTreeMap<String, Vec<String>>,
 }
 
-fn build_entry_user_attrs(entry: &ProtoSchema, client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> EntryUserAttrs {
+fn build_entry_user_attrs(
+    entry: &ProtoSchema,
+    client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+) -> EntryUserAttrs {
     let mut entry_attrs = EntryUserAttrs::default();
     let Some(attrs) = client_attrs.get(&entry.id) else {
         return entry_attrs;
@@ -866,15 +982,22 @@ fn build_entry_user_attrs(entry: &ProtoSchema, client_attrs: &BTreeMap<ProtoIden
             }
             AttrLevel::Field { field_name, r#type } => {
                 let fields = find_entry_fields(entry);
-                let matches: Vec<&Field> = fields.iter().copied().filter(|field| field.name.is_some_and(|name| name == field_name)).collect();
-                if matches.is_empty() {
-                    panic!("client attribute targets missing field '{}' on type '{}'", field_name, entry.id.name);
-                }
+                let matches: Vec<&Field> =
+                    fields.iter().copied().filter(|field| field.name.is_some_and(|name| name == field_name)).collect();
+                assert!(
+                    !matches.is_empty(),
+                    "client attribute targets missing field '{}' on type '{}'",
+                    field_name,
+                    entry.id.name
+                );
                 for field in &matches {
                     let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
-                    if actual_type != *r#type {
-                        panic!("client attribute targets field '{}' on type '{}' with mismatched type", field_name, entry.id.name);
-                    }
+                    assert!(
+                        actual_type == *r#type,
+                        "client attribute targets field '{}' on type '{}' with mismatched type",
+                        field_name,
+                        entry.id.name
+                    );
                 }
                 if let Some(path) = parse_attr_path(&attr.attr) {
                     entry_attrs.field_override_paths.entry(field_name.clone()).or_default().insert(path.to_string());
@@ -883,11 +1006,17 @@ fn build_entry_user_attrs(entry: &ProtoSchema, client_attrs: &BTreeMap<ProtoIden
             }
             AttrLevel::Method { method_name } => {
                 let Some(methods) = find_entry_methods(entry) else {
-                    panic!("client attribute targets method '{}' on non-service type '{}'", method_name, entry.id.name);
+                    panic!(
+                        "client attribute targets method '{}' on non-service type '{}'",
+                        method_name, entry.id.name
+                    );
                 };
-                if !methods.iter().any(|method| method.name == method_name) {
-                    panic!("client attribute targets missing method '{}' on type '{}'", method_name, entry.id.name);
-                }
+                assert!(
+                    methods.iter().any(|method| method.name == method_name),
+                    "client attribute targets missing method '{}' on type '{}'",
+                    method_name,
+                    entry.id.name
+                );
                 entry_attrs.method_attrs.entry(method_name.clone()).or_default().push(attr.attr.clone());
             }
         }
@@ -938,7 +1067,14 @@ fn render_field_type(
     }
 
     let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
-    let base = render_proto_type_with_generics(ident, field.generic_args, package_name, package_by_ident, proto_type_index, client_imports);
+    let base = render_proto_type_with_generics(
+        ident,
+        field.generic_args,
+        package_name,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    );
     match field.proto_label {
         ProtoLabel::None => base,
         ProtoLabel::Optional => format!("::core::option::Option<{base}>"),
@@ -954,7 +1090,13 @@ fn render_proto_type(
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
     if ident.proto_type.starts_with("map<") {
-        return render_map_type(ident.proto_type, current_package, package_by_ident, proto_type_index, client_imports);
+        return render_map_type(
+            ident.proto_type,
+            current_package,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        );
     }
     if ident.module_path.is_empty()
         && ident.proto_file_path.is_empty()
@@ -968,10 +1110,11 @@ fn render_proto_type(
     if let Some(import) = client_imports.get(&type_name) {
         return import.render_type();
     }
-    let package = package_by_ident
-        .get(&ident)
-        .map(String::as_str)
-        .or(if ident.proto_package_name.is_empty() { None } else { Some(ident.proto_package_name) });
+    let package = package_by_ident.get(&ident).map(String::as_str).or(if ident.proto_package_name.is_empty() {
+        None
+    } else {
+        Some(ident.proto_package_name)
+    });
 
     match package {
         Some(package) if package == current_package => type_name,

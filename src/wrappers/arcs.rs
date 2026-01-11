@@ -85,7 +85,13 @@ where
         T: 'a;
 
     #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         T::merge_field(value.0.as_mut(), tag, wire, buf, ctx)
     }
 }

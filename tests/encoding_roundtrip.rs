@@ -493,16 +493,19 @@ fn length_delimited_round_trips() {
     let proto_bytes = encode_proto_length_delimited(&proto_msg);
     let prost_bytes = encode_prost_length_delimited(&prost_msg);
 
-    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.clone(), encoding::DecodeContext::default()).expect("proto length-delimited decode failed");
+    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.clone(), encoding::DecodeContext::default())
+        .expect("proto length-delimited decode failed");
     assert_eq!(decoded_proto, proto_msg);
 
-    let decoded_proto_from_prost = SampleMessage::decode_length_delimited(prost_bytes.clone(), encoding::DecodeContext::default()).expect("proto decode from prost length-delimited failed");
+    let decoded_proto_from_prost = SampleMessage::decode_length_delimited(prost_bytes.clone(), encoding::DecodeContext::default())
+        .expect("proto decode from prost length-delimited failed");
     assert_eq!(decoded_proto_from_prost, proto_msg);
 
     let decoded_prost = SampleMessageProst::decode_length_delimited(prost_bytes.clone()).expect("prost length-delimited decode failed");
     assert_eq!(decoded_prost, prost_msg);
 
-    let decoded_prost_from_proto = SampleMessageProst::decode_length_delimited(proto_bytes).expect("prost decode from proto length-delimited failed");
+    let decoded_prost_from_proto =
+        SampleMessageProst::decode_length_delimited(proto_bytes).expect("prost decode from proto length-delimited failed");
     assert_eq!(decoded_prost_from_proto, prost_msg);
 }
 
@@ -621,7 +624,11 @@ fn mixed_proto_skip_and_rebuild_behaviour() {
     let decoded = MixedProto::decode(bytes).expect("mixed proto decode failed");
 
     assert!(decoded.cached.is_empty(), "skipped field should remain at default");
-    assert_eq!(decoded.checksum, compute_checksum(&decoded), "checksum must be recomputed after decode");
+    assert_eq!(
+        decoded.checksum,
+        compute_checksum(&decoded),
+        "checksum must be recomputed after decode"
+    );
 }
 
 #[test]
@@ -697,7 +704,8 @@ fn encoded_len_matches_prost_for_complex_collections() {
     let defaults_proto_len = CollectionsMessage::encoded_len(&collections_with_defaults);
     let defaults_proto_bytes = CollectionsMessage::encode_to_vec(&collections_with_defaults);
     assert_eq!(defaults_proto_bytes.len(), defaults_proto_len);
-    let defaults_prost = CollectionsMessageProst::decode(Bytes::from(defaults_proto_bytes.clone())).expect("prost decode with default map entries");
+    let defaults_prost =
+        CollectionsMessageProst::decode(Bytes::from(defaults_proto_bytes.clone())).expect("prost decode with default map entries");
     assert_eq!(defaults_prost, CollectionsMessageProst::from(&collections_with_defaults));
 
     let base_proto_len = CollectionsMessage::encoded_len(&base_collections);
@@ -713,7 +721,8 @@ fn encoded_len_matches_prost_for_complex_collections() {
     let zero_defaults_proto_len = ZeroCopyContainer::encoded_len(&zero_container);
     let zero_defaults_bytes = ZeroCopyContainer::encode_to_vec(&zero_container);
     assert_eq!(zero_defaults_bytes.len(), zero_defaults_proto_len);
-    let zero_defaults_prost = ZeroCopyContainerProst::decode(Bytes::from(zero_defaults_bytes.clone())).expect("prost decode zero copy container with defaults");
+    let zero_defaults_prost =
+        ZeroCopyContainerProst::decode(Bytes::from(zero_defaults_bytes.clone())).expect("prost decode zero copy container with defaults");
     assert_eq!(zero_defaults_prost, ZeroCopyContainerProst::from(&zero_container));
 }
 
@@ -730,7 +739,10 @@ fn map_default_entries_align_with_prost() {
     let mut prost_bytes = Vec::new();
     CollectionsMessageProst::from(&message).encode(&mut prost_bytes).expect("prost encode default map entries");
 
-    assert_eq!(proto_bytes, prost_bytes, "map encoding must match prost when default keys or values are present");
+    assert_eq!(
+        proto_bytes, prost_bytes,
+        "map encoding must match prost when default keys or values are present"
+    );
 
     let roundtrip = CollectionsMessage::decode(Bytes::from(proto_bytes)).expect("decode proto message");
     assert_eq!(roundtrip, message, "default map entries should survive encode/decode");

@@ -40,7 +40,9 @@ pub struct OptionalSwapHolder {
 
 impl Default for OptionalSwapHolder {
     fn default() -> Self {
-        Self { maybe: ArcSwapOption::new(None) }
+        Self {
+            maybe: ArcSwapOption::new(None),
+        }
     }
 }
 
@@ -86,7 +88,10 @@ impl Default for ArcSwapOptionBytesHolder {
 #[test]
 fn arc_swap_roundtrip_preserves_inner_value() {
     let holder = SwapHolder {
-        primary: ArcSwap::from_pointee(SwapInner { label: "alpha".into(), count: 7 }),
+        primary: ArcSwap::from_pointee(SwapInner {
+            label: "alpha".into(),
+            count: 7,
+        }),
     };
 
     let encoded = <SwapHolder as ProtoExt>::encode_to_vec(&holder);
@@ -100,7 +105,10 @@ fn arc_swap_roundtrip_preserves_inner_value() {
 #[test]
 fn arc_swap_option_roundtrip_handles_present_value() {
     let holder = OptionalSwapHolder {
-        maybe: ArcSwapOption::new(Some(Arc::new(SwapInner { label: "beta".into(), count: 13 }))),
+        maybe: ArcSwapOption::new(Some(Arc::new(SwapInner {
+            label: "beta".into(),
+            count: 13,
+        }))),
     };
 
     let encoded = <OptionalSwapHolder as ProtoExt>::encode_to_vec(&holder);
@@ -152,6 +160,7 @@ fn arc_swap_option_bytes_roundtrip_handles_presence_and_absence() {
 
     let default_holder = ArcSwapOptionBytesHolder::default();
     let encoded_default = <ArcSwapOptionBytesHolder as ProtoExt>::encode_to_vec(&default_holder);
-    let decoded_default = <ArcSwapOptionBytesHolder as ProtoExt>::decode(&encoded_default[..]).expect("decode default arc swap option bytes");
+    let decoded_default =
+        <ArcSwapOptionBytesHolder as ProtoExt>::decode(&encoded_default[..]).expect("decode default arc swap option bytes");
     assert!(decoded_default.maybe_swap_bytes.load().as_ref().is_none());
 }

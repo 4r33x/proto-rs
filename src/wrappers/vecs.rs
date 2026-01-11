@@ -94,7 +94,11 @@ where
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 let len = value.len();
-                if len == 0 { 0 } else { key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) } }
+                if len == 0 {
+                    0
+                } else {
+                    key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) }
+                }
             }
 
             ProtoKind::Repeated(_) => {
@@ -107,7 +111,9 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>()
+            }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
@@ -227,7 +233,13 @@ where
     type Shadow<'b> = Vec<T>;
 
     #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         if tag == 1 {
             <Vec<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
         } else {
@@ -273,7 +285,11 @@ where
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 let len = value.len();
-                if len == 0 { 0 } else { key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) } }
+                if len == 0 {
+                    0
+                } else {
+                    key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) }
+                }
             }
 
             ProtoKind::Repeated(_) => {
@@ -286,7 +302,9 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>()
+            }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
@@ -406,7 +424,13 @@ where
     type Shadow<'b> = VecDeque<T>;
 
     #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         if tag == 1 {
             <VecDeque<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
         } else {

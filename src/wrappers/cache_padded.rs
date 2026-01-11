@@ -83,7 +83,13 @@ where
         T: 'a;
 
     #[inline(always)]
-    fn merge_field(value: &mut Self::Shadow<'_>, tag: u32, wire: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         let inner: &mut <T as ProtoExt>::Shadow<'_> = &mut value.0;
         T::merge_field(inner, tag, wire, buf, ctx)
     }

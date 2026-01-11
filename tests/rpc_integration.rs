@@ -27,7 +27,12 @@ use encoding_messages::sample_collections_messages;
 use encoding_messages::sample_message;
 use encoding_messages::zero_copy_fixture;
 
-#[proto_rpc(rpc_package = "complex_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/tests/complex_rpc.proto")]
+#[proto_rpc(
+    rpc_package = "complex_rpc",
+    rpc_server = true,
+    rpc_client = true,
+    proto_path = "protos/tests/complex_rpc.proto"
+)]
 #[proto_imports(encoding = ["SampleMessage", "CollectionsMessage", "NestedMessage", "ZeroCopyContainer"])]
 pub trait ComplexService {
     type StreamCollectionsStream: Stream<Item = Result<CollectionsMessage, Status>> + Send;
@@ -239,24 +244,39 @@ struct ProstService;
 impl tonic_prost_test::complex_rpc::complex_service_server::ComplexService for ProstService {
     type StreamCollectionsStream = Pin<Box<dyn Stream<Item = Result<tonic_prost_test::encoding::CollectionsMessage, Status>> + Send>>;
 
-    async fn echo_sample(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
+    async fn echo_sample(
+        &self,
+        _request: Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
         Ok(Response::new(sample_to_tonic(&response_message())))
     }
 
-    async fn echo_sample_arc(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
+    async fn echo_sample_arc(
+        &self,
+        _request: Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
         Ok(Response::new(sample_to_tonic(&response_message())))
     }
 
-    async fn echo_sample_box(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
+    async fn echo_sample_box(
+        &self,
+        _request: Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
         Ok(Response::new(sample_to_tonic(&response_message())))
     }
 
-    async fn stream_collections(&self, _request: Request<tonic_prost_test::encoding::SampleMessage>) -> Result<Response<Self::StreamCollectionsStream>, Status> {
+    async fn stream_collections(
+        &self,
+        _request: Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<Response<Self::StreamCollectionsStream>, Status> {
         let items = response_collections().into_iter().map(|msg| Ok(collections_to_tonic(&msg)));
         Ok(Response::new(Box::pin(tokio_stream::iter(items))))
     }
 
-    async fn echo_container(&self, _request: Request<tonic_prost_test::encoding::ZeroCopyContainer>) -> Result<Response<tonic_prost_test::encoding::ZeroCopyContainer>, Status> {
+    async fn echo_container(
+        &self,
+        _request: Request<tonic_prost_test::encoding::ZeroCopyContainer>,
+    ) -> Result<Response<tonic_prost_test::encoding::ZeroCopyContainer>, Status> {
         Ok(Response::new(container_to_tonic(&response_container())))
     }
 }
@@ -303,7 +323,9 @@ async fn spawn_prost_server() -> (
 
     let handle = tokio::spawn(async move {
         Server::builder()
-            .add_service(tonic_prost_test::complex_rpc::complex_service_server::ComplexServiceServer::new(ProstService))
+            .add_service(tonic_prost_test::complex_rpc::complex_service_server::ComplexServiceServer::new(
+                ProstService,
+            ))
             .serve_with_incoming_shutdown(incoming, async {
                 let _ = shutdown_rx.await;
             })
@@ -317,9 +339,8 @@ async fn spawn_prost_server() -> (
 async fn tonic_client_roundtrip_against_proto_server() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
-    let mut client = tonic_prost_test::complex_rpc::complex_service_client::ComplexServiceClient::connect(format!("http://{addr}"))
-        .await
-        .unwrap();
+    let mut client =
+        tonic_prost_test::complex_rpc::complex_service_client::ComplexServiceClient::connect(format!("http://{addr}")).await.unwrap();
 
     let request = sample_to_tonic(&request_message());
     let response = client.echo_sample(request.clone()).await.unwrap().into_inner();
@@ -432,7 +453,12 @@ async fn proto_client_accepts_borrowed_requests() {
     assert_eq!(response, response_message());
 
     let owned_request = tonic::Request::new(request_message());
-    let zero_copy_owned = tonic::Request::from_parts(owned_request.metadata().clone(), owned_request.extensions().clone(), owned_request.get_ref()).to_zero_copy();
+    let zero_copy_owned = tonic::Request::from_parts(
+        owned_request.metadata().clone(),
+        owned_request.extensions().clone(),
+        owned_request.get_ref(),
+    )
+    .to_zero_copy();
     let response = client.echo_sample(zero_copy_owned).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 

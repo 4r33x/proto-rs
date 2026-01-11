@@ -114,7 +114,10 @@ pub trait SigmaRpc {
     async fn generic_uni(&self, request: Request<BarSub>) -> Result<Response<Self::GenericUniStream>, Status>;
     async fn rizz_uni_other(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
     async fn with_generic(&self, request: Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, Status>;
-    async fn with_generic_transparent(&self, request: Request<IdGenericTransparent<u64>>) -> Result<Response<IdGenericTransparent<u32>>, Status>;
+    async fn with_generic_transparent(
+        &self,
+        request: Request<IdGenericTransparent<u64>>,
+    ) -> Result<Response<IdGenericTransparent<u32>>, Status>;
 }
 
 // A dummy server impl
@@ -238,7 +241,10 @@ impl SigmaRpc for S {
     async fn with_generic(&self, _request: tonic::Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, tonic::Status> {
         Ok(IdGeneric { id: 1u32 }.into())
     }
-    async fn with_generic_transparent(&self, _request: tonic::Request<IdGenericTransparent<u64>>) -> Result<Response<IdGenericTransparent<u32>>, tonic::Status> {
+    async fn with_generic_transparent(
+        &self,
+        _request: tonic::Request<IdGenericTransparent<u64>>,
+    ) -> Result<Response<IdGenericTransparent<u32>>, tonic::Status> {
         Ok(IdGenericTransparent { id: 1u32 }.into())
     }
 }

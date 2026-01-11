@@ -93,7 +93,11 @@ impl DecodeContext {
     #[cfg(not(feature = "no-recursion-limit"))]
     #[inline]
     pub fn limit_reached(&self) -> Result<(), DecodeError> {
-        if self.recurse_count == 0 { Err(DecodeError::new("recursion limit reached")) } else { Ok(()) }
+        if self.recurse_count == 0 {
+            Err(DecodeError::new("recursion limit reached"))
+        } else {
+            Ok(())
+        }
     }
     #[allow(clippy::trivially_copy_pass_by_ref)]
     #[allow(clippy::unnecessary_wraps)]
@@ -226,7 +230,13 @@ mod test {
 
         let mut buf = buf.freeze();
 
-        prop_assert_eq!(buf.remaining(), expected_len, "encoded_len wrong; expected: {}, actual: {}", expected_len, buf.remaining());
+        prop_assert_eq!(
+            buf.remaining(),
+            expected_len,
+            "encoded_len wrong; expected: {}, actual: {}",
+            expected_len,
+            buf.remaining()
+        );
 
         if !buf.has_remaining() {
             // Short circuit for empty packed values.
@@ -234,7 +244,13 @@ mod test {
         }
 
         let (decoded_tag, decoded_wire_type) = decode_key(&mut buf).map_err(|error| TestCaseError::fail(error.to_string()))?;
-        prop_assert_eq!(tag, decoded_tag, "decoded tag does not match; expected: {}, actual: {}", tag, decoded_tag);
+        prop_assert_eq!(
+            tag,
+            decoded_tag,
+            "decoded tag does not match; expected: {}, actual: {}",
+            tag,
+            decoded_tag
+        );
 
         prop_assert_eq!(
             wire_type,
@@ -245,13 +261,22 @@ mod test {
         );
 
         match wire_type {
-            WireType::SixtyFourBit if buf.remaining() != 8 => Err(TestCaseError::fail(format!("64bit wire type illegal remaining: {}, tag: {}", buf.remaining(), tag))),
-            WireType::ThirtyTwoBit if buf.remaining() != 4 => Err(TestCaseError::fail(format!("32bit wire type illegal remaining: {}, tag: {}", buf.remaining(), tag))),
+            WireType::SixtyFourBit if buf.remaining() != 8 => Err(TestCaseError::fail(format!(
+                "64bit wire type illegal remaining: {}, tag: {}",
+                buf.remaining(),
+                tag
+            ))),
+            WireType::ThirtyTwoBit if buf.remaining() != 4 => Err(TestCaseError::fail(format!(
+                "32bit wire type illegal remaining: {}, tag: {}",
+                buf.remaining(),
+                tag
+            ))),
             _ => Ok(()),
         }?;
 
         let mut roundtrip_value = T::default();
-        merge(wire_type, &mut roundtrip_value, &mut buf, DecodeContext::default()).map_err(|error| TestCaseError::fail(error.to_string()))?;
+        merge(wire_type, &mut roundtrip_value, &mut buf, DecodeContext::default())
+            .map_err(|error| TestCaseError::fail(error.to_string()))?;
 
         prop_assert!(!buf.has_remaining(), "expected buffer to be empty, remaining: {}", buf.remaining());
 
@@ -260,7 +285,14 @@ mod test {
         Ok(())
     }
 
-    pub fn check_collection_type<T, B, E, M, L>(value: T, tag: u32, wire_type: WireType, encode: E, mut merge: M, encoded_len: L) -> TestCaseResult
+    pub fn check_collection_type<T, B, E, M, L>(
+        value: T,
+        tag: u32,
+        wire_type: WireType,
+        encode: E,
+        mut merge: M,
+        encoded_len: L,
+    ) -> TestCaseResult
     where
         T: Debug + Default + PartialEq + Borrow<B>,
         B: ?Sized,
@@ -277,13 +309,25 @@ mod test {
 
         let mut buf = buf.freeze();
 
-        prop_assert_eq!(buf.remaining(), expected_len, "encoded_len wrong; expected: {}, actual: {}", expected_len, buf.remaining());
+        prop_assert_eq!(
+            buf.remaining(),
+            expected_len,
+            "encoded_len wrong; expected: {}, actual: {}",
+            expected_len,
+            buf.remaining()
+        );
 
         let mut roundtrip_value = Default::default();
         while buf.has_remaining() {
             let (decoded_tag, decoded_wire_type) = decode_key(&mut buf).map_err(|error| TestCaseError::fail(error.to_string()))?;
 
-            prop_assert_eq!(tag, decoded_tag, "decoded tag does not match; expected: {}, actual: {}", tag, decoded_tag);
+            prop_assert_eq!(
+                tag,
+                decoded_tag,
+                "decoded tag does not match; expected: {}, actual: {}",
+                tag,
+                decoded_tag
+            );
 
             prop_assert_eq!(
                 wire_type,
@@ -293,7 +337,8 @@ mod test {
                 decoded_wire_type
             );
 
-            merge(wire_type, &mut roundtrip_value, &mut buf, DecodeContext::default()).map_err(|error| TestCaseError::fail(error.to_string()))?;
+            merge(wire_type, &mut roundtrip_value, &mut buf, DecodeContext::default())
+                .map_err(|error| TestCaseError::fail(error.to_string()))?;
         }
 
         prop_assert_eq!(value, roundtrip_value);

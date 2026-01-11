@@ -30,10 +30,8 @@ pub fn generate_client_module(
     let client_module = client_module_name(trait_name);
     let client_struct = client_struct_name(trait_name);
 
-    let client_methods = methods
-        .iter()
-        .map(|m| generate_client_method(m, package_name, trait_name, interceptor_config))
-        .collect::<Vec<_>>();
+    let client_methods =
+        methods.iter().map(|m| generate_client_method(m, package_name, trait_name, interceptor_config)).collect::<Vec<_>>();
 
     let compression_methods = generate_client_compression_methods();
     let with_interceptor = generate_client_with_interceptor(&client_struct);
@@ -129,10 +127,7 @@ fn generate_unary_client_method(
     let (ctx_param, interceptor_call) = if let Some(config) = interceptor_config {
         let function_name = syn::Ident::new(&config.function_name, proc_macro2::Span::call_site());
         let ctx_type = &config.ctx_type;
-        (
-            quote! { ctx: #ctx_type, },
-            quote! { #function_name(ctx, &mut request); },
-        )
+        (quote! { ctx: #ctx_type, }, quote! { #function_name(ctx, &mut request); })
     } else {
         (quote! {}, quote! {})
     };
@@ -183,10 +178,7 @@ fn generate_streaming_client_method(
     let (ctx_param, interceptor_call) = if let Some(config) = interceptor_config {
         let function_name = syn::Ident::new(&config.function_name, proc_macro2::Span::call_site());
         let ctx_type = &config.ctx_type;
-        (
-            quote! { ctx: #ctx_type, },
-            quote! { #function_name(ctx, &mut request); },
-        )
+        (quote! { ctx: #ctx_type, }, quote! { #function_name(ctx, &mut request); })
     } else {
         (quote! {}, quote! {})
     };
