@@ -117,7 +117,7 @@ pub struct UserAttr {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttrLevel {
     Top,
-    Field { field_name: String, r#type: ProtoIdent },
+    Field { field_name: String, id: ProtoIdent },
     Method { method_name: String },
 }
 

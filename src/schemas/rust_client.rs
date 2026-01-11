@@ -1022,7 +1022,7 @@ fn build_entry_user_attrs(
                 }
                 entry_attrs.top_level.push(attr.attr.clone());
             }
-            AttrLevel::Field { field_name, r#type } => {
+            AttrLevel::Field { field_name, id } => {
                 let fields = find_entry_fields(entry);
                 let matches: Vec<&Field> =
                     fields.iter().copied().filter(|field| field.name.is_some_and(|name| name == field_name)).collect();
@@ -1035,7 +1035,7 @@ fn build_entry_user_attrs(
                 for field in &matches {
                     let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
                     assert!(
-                        actual_type == *r#type,
+                        actual_type == *id,
                         "client attribute targets field '{}' on type '{}' with mismatched type",
                         field_name,
                         entry.id.name

@@ -180,7 +180,7 @@ fn main() {
             UserAttr {
                 level: AttrLevel::Field {
                     field_name: "status".to_string(),
-                    r#type: ServiceStatus::PROTO_IDENT,
+                    id: ServiceStatus::PROTO_IDENT,
                 },
                 attr: "#[allow(dead_code)]".to_string(),
             },
