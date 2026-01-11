@@ -190,7 +190,7 @@ fn main() {
             sigma_ident,
             UserAttr {
                 level: AttrLevel::Method {
-                    method_name: "build".to_string(),
+                    method_name: "Build".to_string(),
                 },
                 attr: "#[allow(dead_code)]".to_string(),
             },
