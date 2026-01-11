@@ -17,22 +17,11 @@ use crate::proto_rpc::rpc_common::is_streaming_method;
 use crate::proto_rpc::rpc_common::server_module_name;
 use crate::proto_rpc::rpc_common::server_struct_name;
 use crate::proto_rpc::utils::associated_future_type;
+use crate::proto_rpc::utils::is_response_wrapper;
 use crate::proto_rpc::utils::method_future_return_type;
 use crate::proto_rpc::utils::wrap_async_block;
 use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
-
-fn is_response_wrapper(ty: &Type) -> bool {
-    matches!(
-        ty,
-        Type::Path(type_path)
-            if type_path
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "Response")
-    )
-}
 
 fn response_to_proto_response(response_return_type: &Type, response_binding: &TokenStream, response_proto: &TokenStream) -> TokenStream {
     let normalized = if is_response_wrapper(response_return_type) {
@@ -322,7 +311,7 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let request_proto = generate_request_proto_type(request_type);
     let response_proto = generate_response_proto_type(response_type);
 
-    let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result);
+    let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result, method.request_is_wrapped);
     let response_conversion = response_to_proto_response(response_return_type, &quote! { native_response }, &response_proto);
 
     if method.is_async {
@@ -400,11 +389,44 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let request_proto = generate_request_proto_type(request_type);
 
-    let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result);
+    let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result, method.request_is_wrapped);
 
     if method.response_is_result {
         let result_type = quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> };
-        if method.is_async {
+        if method.response_is_response {
+            if method.is_async {
+                let return_type = method_future_return_type(result_type.clone());
+                quote! {
+                    fn #method_name(
+                        &self,
+                        request: tonic::Request<#request_proto>,
+                    ) -> #return_type {
+                        async move {
+                            #request_conversion
+
+                            <Self as super::#trait_name>::#method_name(
+                                self,
+                                native_request
+                            ).await
+                        }
+                    }
+                }
+            } else {
+                quote! {
+                    fn #method_name(
+                        &self,
+                        request: tonic::Request<#request_proto>,
+                    ) -> #result_type {
+                        #request_conversion
+
+                        <Self as super::#trait_name>::#method_name(
+                            self,
+                            native_request
+                        )
+                    }
+                }
+            }
+        } else if method.is_async {
             let return_type = method_future_return_type(result_type.clone());
             quote! {
                 fn #method_name(
@@ -414,10 +436,11 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     async move {
                         #request_conversion
 
-                        <Self as super::#trait_name>::#method_name(
+                        let native_response = <Self as super::#trait_name>::#method_name(
                             self,
                             native_request
-                        ).await
+                        ).await?;
+                        Ok(tonic::Response::new(native_response))
                     }
                 }
             }
@@ -429,16 +452,50 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                 ) -> #result_type {
                     #request_conversion
 
-                    <Self as super::#trait_name>::#method_name(
+                    let native_response = <Self as super::#trait_name>::#method_name(
                         self,
                         native_request
-                    )
+                    )?;
+                    Ok(tonic::Response::new(native_response))
                 }
             }
         }
     } else {
         let ok_type = quote! { tonic::Response<Self::#stream_name> };
-        if method.is_async {
+        if method.response_is_response {
+            if method.is_async {
+                let return_type = method_future_return_type(ok_type.clone());
+                quote! {
+                    fn #method_name(
+                        &self,
+                        request: tonic::Request<#request_proto>,
+                    ) -> #return_type {
+                        async move {
+                            #request_conversion
+
+                            <Self as super::#trait_name>::#method_name(
+                                self,
+                                native_request
+                            ).await
+                        }
+                    }
+                }
+            } else {
+                quote! {
+                    fn #method_name(
+                        &self,
+                        request: tonic::Request<#request_proto>,
+                    ) -> #ok_type {
+                        #request_conversion
+
+                        <Self as super::#trait_name>::#method_name(
+                            self,
+                            native_request
+                        )
+                    }
+                }
+            }
+        } else if method.is_async {
             let return_type = method_future_return_type(ok_type.clone());
             quote! {
                 fn #method_name(
@@ -448,10 +505,11 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                     async move {
                         #request_conversion
 
-                        <Self as super::#trait_name>::#method_name(
+                        let native_response = <Self as super::#trait_name>::#method_name(
                             self,
                             native_request
-                        ).await
+                        ).await;
+                        tonic::Response::new(native_response)
                     }
                 }
             }
@@ -463,10 +521,11 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
                 ) -> #ok_type {
                     #request_conversion
 
-                    <Self as super::#trait_name>::#method_name(
+                    let native_response = <Self as super::#trait_name>::#method_name(
                         self,
                         native_request
-                    )
+                    );
+                    tonic::Response::new(native_response)
                 }
             }
         }
@@ -710,9 +769,11 @@ mod tests {
             MethodInfo {
                 name: parse_quote!(rizz_uni),
                 request_type: parse_quote!(BarSub),
+                request_is_wrapped: true,
                 response_type: parse_quote!(FooResponse),
                 response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
                 response_is_result: true,
+                response_is_response: true,
                 is_async: true,
                 is_streaming: true,
                 stream_type_name: Some(parse_quote!(RizzUniStream)),
@@ -723,9 +784,11 @@ mod tests {
             MethodInfo {
                 name: parse_quote!(rizz_uni_other),
                 request_type: parse_quote!(BarSub),
+                request_is_wrapped: true,
                 response_type: parse_quote!(FooResponse),
                 response_return_type: parse_quote!(tonic::Response<Self::RizzUniStream>),
                 response_is_result: true,
+                response_is_response: true,
                 is_async: true,
                 is_streaming: true,
                 stream_type_name: Some(parse_quote!(RizzUniStream)),

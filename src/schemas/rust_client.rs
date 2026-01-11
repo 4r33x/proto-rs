@@ -48,6 +48,8 @@ pub(crate) fn write_rust_client_module(
     output_path: &str,
     imports: &[&str],
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    module_attrs: &BTreeMap<String, Vec<String>>,
+    statements: &BTreeMap<String, Vec<String>>,
     registry: &BTreeMap<String, Vec<&'static ProtoSchema>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> io::Result<()> {
@@ -114,6 +116,8 @@ pub(crate) fn write_rust_client_module(
             &proto_type_index,
             &client_imports_by_type,
             client_attrs,
+            module_attrs,
+            statements,
         );
     }
 
@@ -166,6 +170,38 @@ fn insert_module_entry(node: &mut ModuleNode, segments: &[String], package_name:
     insert_module_entry(child, &segments[1..], package_name, entry);
 }
 
+fn render_module_attributes(output: &mut String, name: &str, module_attrs: &BTreeMap<String, Vec<String>>, indent: usize) {
+    let Some(attrs) = module_attrs.get(name) else {
+        return;
+    };
+    let mut seen = BTreeSet::new();
+    for attr in attrs {
+        if seen.insert(attr.clone()) {
+            indent_line(output, indent);
+            output.push_str(attr);
+            output.push('\n');
+        }
+    }
+}
+
+fn render_module_statements(output: &mut String, name: &str, statements: &BTreeMap<String, Vec<String>>, indent: usize) {
+    let Some(statements) = statements.get(name) else {
+        return;
+    };
+    let mut seen = BTreeSet::new();
+    for statement in statements {
+        if seen.insert(statement.clone()) {
+            indent_line(output, indent);
+            output.push_str(statement);
+            if !statement.trim_end().ends_with(';') {
+                output.push(';');
+            }
+            output.push('\n');
+        }
+    }
+    output.push('\n');
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_named_module(
     output: &mut String,
@@ -177,7 +213,10 @@ fn render_named_module(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    module_attrs: &BTreeMap<String, Vec<String>>,
+    statements: &BTreeMap<String, Vec<String>>,
 ) {
+    render_module_attributes(output, name, module_attrs, indent);
     indent_line(output, indent);
     output.push_str("pub mod ");
     output.push_str(name);
@@ -202,6 +241,7 @@ fn render_named_module(
         output.push('\n');
     }
 
+    render_module_statements(output, name, statements, inner_indent);
     render_entries(
         output,
         &node.entries,
@@ -225,6 +265,8 @@ fn render_named_module(
             proto_type_index,
             client_imports,
             client_attrs,
+            module_attrs,
+            statements,
         );
     }
 

@@ -1,4 +1,5 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
+#[allow(clippy::upper_case_acronyms)]
 pub mod extra_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
@@ -6,6 +7,8 @@ pub mod extra_types {
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
     use crate::goon_types::ServiceStatus;
+
+    const MY_CONST: usize = 1337;
 
     #[proto_message]
     pub struct BuildConfig {
@@ -105,6 +108,7 @@ pub mod sigma_rpc_simple {
     use crate::rizz_types::FooResponse;
     use fastnum::UD128;
 
+    #[allow(dead_code)]
     #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = false, rpc_client = true)]
     pub trait SigmaRpc {
         type RizzUniStream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>> + ::core::marker::Send;

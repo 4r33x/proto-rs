@@ -24,6 +24,8 @@ pub struct RustClientCtx<'a> {
     pub output_path: Option<&'a str>,
     pub imports: &'a [&'a str],
     pub client_attrs: BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    pub module_attrs: BTreeMap<String, Vec<String>>,
+    pub statements: BTreeMap<String, Vec<String>>,
 }
 
 impl<'a> RustClientCtx<'a> {
@@ -32,6 +34,8 @@ impl<'a> RustClientCtx<'a> {
             output_path: None,
             imports: &[],
             client_attrs: BTreeMap::new(),
+            module_attrs: BTreeMap::new(),
+            statements: BTreeMap::new(),
         }
     }
 
@@ -40,6 +44,8 @@ impl<'a> RustClientCtx<'a> {
             output_path: Some(output_path),
             imports: &[],
             client_attrs: BTreeMap::new(),
+            module_attrs: BTreeMap::new(),
+            statements: BTreeMap::new(),
         }
     }
     #[must_use]
@@ -49,10 +55,43 @@ impl<'a> RustClientCtx<'a> {
     }
 
     #[must_use]
-    pub fn add_client_attrs(mut self, ident: ProtoIdent, attr: UserAttr) -> Self {
-        self.client_attrs.entry(ident).or_default().push(attr);
+    pub fn with_statements(mut self, statements: &[(&str, &str)]) -> Self {
+        for (module_name, statement) in statements {
+            if statement.trim().is_empty() {
+                continue;
+            }
+            self.statements
+                .entry((*module_name).to_string())
+                .or_default()
+                .push((*statement).to_string());
+        }
         self
     }
+
+    #[must_use]
+    pub fn add_client_attrs(mut self, target: ClientAttrTarget<'a>, attr: UserAttr) -> Self {
+        match target {
+            ClientAttrTarget::Ident(ident) => {
+                self.client_attrs.entry(ident).or_default().push(attr);
+            }
+            ClientAttrTarget::Module(module_name) => {
+                assert!(
+                    matches!(attr.level, AttrLevel::Top),
+                    "module-level client attributes must use AttrLevel::Top"
+                );
+                self.module_attrs
+                    .entry(module_name.to_string())
+                    .or_default()
+                    .push(attr.attr);
+            }
+        }
+        self
+    }
+}
+
+pub enum ClientAttrTarget<'a> {
+    Module(&'a str),
+    Ident(ProtoIdent),
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -268,6 +307,8 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             output_path,
             rust_client_output.imports,
             &rust_client_output.client_attrs,
+            &rust_client_output.module_attrs,
+            &rust_client_output.statements,
             &registry,
             &ident_index,
         )?;

@@ -13,11 +13,25 @@ use syn::TypePath;
 
 use crate::utils::MethodInfo;
 
+pub(crate) fn is_response_wrapper(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Path(type_path)
+            if type_path
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "Response")
+    )
+}
+
 struct ParsedMethodSignature {
     request_type: Type,
+    request_is_wrapped: bool,
     response_type: Type,
     response_return_type: Type,
     response_is_result: bool,
+    response_is_response: bool,
     is_async: bool,
     is_streaming: bool,
     stream_type_name: Option<syn::Ident>,
@@ -27,17 +41,20 @@ struct ParsedMethodSignature {
 
 impl ParsedMethodSignature {
     fn new(sig: &syn::Signature, trait_items: &[TraitItem]) -> Self {
-        let request_type = extract_request_type(sig);
+        let (request_type, request_is_wrapped) = extract_request_type(sig);
         let (response_return_type, response_is_result) = extract_response_return(sig);
+        let response_is_response = is_response_wrapper(&response_return_type);
         let response_type = extract_proto_type(&response_return_type);
         let (is_streaming, stream_type_name, inner_response_type, stream_item_type) = extract_stream_metadata(&response_type, trait_items);
         let is_async = sig.asyncness.is_some();
 
         Self {
             request_type,
+            request_is_wrapped,
             response_type,
             response_return_type,
             response_is_result,
+            response_is_response,
             is_async,
             is_streaming,
             stream_type_name,
@@ -63,9 +80,11 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                 methods.push(MethodInfo {
                     name: method_name,
                     request_type: signature.request_type,
+                    request_is_wrapped: signature.request_is_wrapped,
                     response_type: signature.response_type,
                     response_return_type: signature.response_return_type,
                     response_is_result: signature.response_is_result,
+                    response_is_response: signature.response_is_response,
                     is_async: signature.is_async,
                     is_streaming: signature.is_streaming,
                     stream_type_name: signature.stream_type_name,
@@ -93,22 +112,20 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
 
 /// Generate user-facing method signature for the trait
 fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::Ident, signature: &ParsedMethodSignature) -> TokenStream {
-    let future_output = if signature.is_streaming {
-        let stream_name = signature.stream_type_name.as_ref().expect("streaming method must define stream name");
-        if signature.response_is_result {
-            quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
-        } else {
-            quote! { tonic::Response<Self::#stream_name> }
-        }
-    } else if signature.response_is_result {
-        let response_return_type = &signature.response_return_type;
+    let response_return_type = &signature.response_return_type;
+    let future_output = if signature.response_is_result {
         quote! { ::core::result::Result<#response_return_type, tonic::Status> }
     } else {
-        let response_return_type = &signature.response_return_type;
         quote! { #response_return_type }
     };
 
-    let request_type = &signature.request_type;
+    let request_type = if signature.request_is_wrapped {
+        let request_type = &signature.request_type;
+        quote! { tonic::Request<#request_type> }
+    } else {
+        let request_type = &signature.request_type;
+        quote! { #request_type }
+    };
 
     let return_type = if signature.is_async {
         method_future_return_type(future_output)
@@ -120,7 +137,7 @@ fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::I
         #(#attrs)*
         fn #method_name(
             &self,
-            request: tonic::Request<#request_type>,
+            request: #request_type,
         ) -> #return_type
         where
             Self: ::core::marker::Send + ::core::marker::Sync;
@@ -165,21 +182,26 @@ pub(crate) fn wrap_async_block(block: TokenStream, boxed: bool) -> TokenStream {
     }
 }
 
-fn extract_request_type(sig: &syn::Signature) -> Type {
+fn extract_request_type(sig: &syn::Signature) -> (Type, bool) {
     sig.inputs
         .iter()
-        .find_map(|arg| {
-            if let FnArg::Typed(PatType { ty, .. }) = arg
-                && let Type::Path(TypePath { path, .. }) = &**ty
-                && let Some(segment) = path.segments.last()
-                && segment.ident == "Request"
-                && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-                && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-            {
-                Some(inner_ty.clone())
-            } else {
-                None
+        .find_map(|arg| match arg {
+            FnArg::Typed(PatType { ty, .. }) => Some(&**ty),
+            _ => None,
+        })
+        .map(|ty| match ty {
+            Type::Path(TypePath { path, .. }) => {
+                if let Some(segment) = path.segments.last()
+                    && segment.ident == "Request"
+                    && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                    && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+                {
+                    (inner_ty.clone(), true)
+                } else {
+                    (ty.clone(), false)
+                }
             }
+            _ => (ty.clone(), false),
         })
         .unwrap_or_else(|| panic!("Could not extract request type"))
 }
@@ -322,6 +344,16 @@ mod tests {
                     request: tonic::Request<MyRequest>
                 ) -> MyResponse;
 
+                async fn plain_request(
+                    &self,
+                    request: MyRequest
+                ) -> MyResponse;
+
+                async fn stream_plain_request(
+                    &self,
+                    request: MyRequest
+                ) -> Self::MyStream;
+
                 fn sync_plain(
                     &self,
                     request: tonic::Request<MyRequest>
@@ -381,8 +413,18 @@ mod tests {
         assert!(!plain.response_is_result);
         let plain_return = &plain.response_return_type;
         assert_eq!(quote!(#plain_return).to_string(), "MyResponse");
+        assert!(plain.request_is_wrapped);
 
-        let sync_plain = &signatures[7];
+        let plain_request = &signatures[7];
+        assert!(!plain_request.response_is_result);
+        assert!(!plain_request.request_is_wrapped);
+
+        let stream_plain_request = &signatures[8];
+        assert!(stream_plain_request.is_streaming);
+        assert!(!stream_plain_request.request_is_wrapped);
+        assert!(!stream_plain_request.response_is_response);
+
+        let sync_plain = &signatures[9];
         assert!(sync_plain.response_is_result);
         assert!(!sync_plain.is_async);
         let sync_response = &sync_plain.response_return_type;
