@@ -218,19 +218,19 @@ fn main() {
                 id: BuildResponse::PROTO_IDENT,
                 variant: None,
                 field: "status".to_string(),
-                r#type: "::core::primitive::u32".to_string(),
+                type_name: "::core::primitive::u32".to_string(),
             },
             TypeReplace::Trait {
                 id: sigma_ident,
                 method: "OwnerLookup".to_string(),
                 kind: MethodReplace::Argument("::core::primitive::u64".to_string()),
-                r#type: "::core::primitive::u64".to_string(),
+                type_name: "::core::primitive::u64".to_string(),
             },
             TypeReplace::Trait {
                 id: sigma_ident,
                 method: "Build".to_string(),
                 kind: MethodReplace::Return("::core::primitive::u32".to_string()),
-                r#type: "::core::primitive::u32".to_string(),
+                type_name: "::core::primitive::u32".to_string(),
             },
         ]);
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");

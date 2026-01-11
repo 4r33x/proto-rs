@@ -45,7 +45,7 @@ impl ClientImport {
         self.alias.as_deref().unwrap_or(&self.type_name).to_string()
     }
 }
-
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn write_rust_client_module(
     output_path: &str,
     imports: &[&str],
@@ -757,9 +757,7 @@ fn render_rust_complex_enum(
                 let name = field.name.unwrap_or("field");
                 output.push_str(name);
                 output.push_str(": ");
-                let type_replacement = field
-                    .name
-                    .and_then(|name| lookup_field_replacement(type_replacements, Some(variant.name), name));
+                let type_replacement = field.name.and_then(|name| lookup_field_replacement(type_replacements, Some(variant.name), name));
                 output.push_str(&render_field_type(
                     field,
                     package_name,
@@ -781,9 +779,7 @@ fn render_rust_complex_enum(
                 });
                 render_field_attributes(&mut output, field, idx, &field_attrs, &field_overrides, indent + 8);
                 indent_line(&mut output, indent + 8);
-                let type_replacement = field
-                    .name
-                    .and_then(|name| lookup_field_replacement(type_replacements, Some(variant.name), name));
+                let type_replacement = field.name.and_then(|name| lookup_field_replacement(type_replacements, Some(variant.name), name));
                 output.push_str(&render_field_type(
                     field,
                     package_name,
@@ -831,9 +827,8 @@ fn render_rust_service(
         if method.server_streaming {
             let stream_name = format!("{}Stream", method.name);
             let response_ident = resolve_transparent_ident(method.response, ident_index);
-            let item_type = method_type_replacement(type_replacements, method.name, MethodTypeKind::Return)
-                .map(str::to_string)
-                .unwrap_or_else(|| {
+            let item_type = method_type_replacement(type_replacements, method.name, MethodTypeKind::Return).map_or_else(
+                || {
                     render_proto_type_with_generics(
                         response_ident,
                         method.response_generic_args,
@@ -842,7 +837,9 @@ fn render_rust_service(
                         proto_type_index,
                         client_imports,
                     )
-                });
+                },
+                str::to_string,
+            );
             stream_types.push(stream_name.clone());
             indent_line(&mut output, indent + 4);
             writeln!(
@@ -859,9 +856,8 @@ fn render_rust_service(
 
     for method in methods {
         let request_ident = resolve_transparent_ident(method.request, ident_index);
-        let request_type = method_type_replacement(type_replacements, method.name, MethodTypeKind::Argument)
-            .map(str::to_string)
-            .unwrap_or_else(|| {
+        let request_type = method_type_replacement(type_replacements, method.name, MethodTypeKind::Argument).map_or_else(
+            || {
                 render_proto_type_with_generics(
                     request_ident,
                     method.request_generic_args,
@@ -870,13 +866,14 @@ fn render_rust_service(
                     proto_type_index,
                     client_imports,
                 )
-            });
+            },
+            str::to_string,
+        );
         let response_type = if method.server_streaming {
             format!("Self::{}Stream", method.name)
         } else {
-            method_type_replacement(type_replacements, method.name, MethodTypeKind::Return)
-                .map(str::to_string)
-                .unwrap_or_else(|| {
+            method_type_replacement(type_replacements, method.name, MethodTypeKind::Return).map_or_else(
+                || {
                     let response_ident = resolve_transparent_ident(method.response, ident_index);
                     render_proto_type_with_generics(
                         response_ident,
@@ -886,7 +883,9 @@ fn render_rust_service(
                         proto_type_index,
                         client_imports,
                     )
-                })
+                },
+                str::to_string,
+            )
         };
 
         render_method_attributes(&mut output, user_attrs.method_attrs.get(method.name), indent + 4);
@@ -1161,10 +1160,7 @@ fn find_entry_field_matches<'a>(entry: &'a ProtoSchema, field_name: &str, varian
             let selected_variants: Vec<&Variant> = match variant {
                 Some(name) => {
                     let Some(target) = variants.iter().find(|variant| variant.name == name) else {
-                        panic!(
-                            "client attribute targets missing variant '{}' on type '{}'",
-                            name, entry.id.name
-                        );
+                        panic!("client attribute targets missing variant '{}' on type '{}'", name, entry.id.name);
                     };
                     vec![target]
                 }
@@ -1172,13 +1168,7 @@ fn find_entry_field_matches<'a>(entry: &'a ProtoSchema, field_name: &str, varian
             };
             selected_variants
                 .iter()
-                .flat_map(|variant| {
-                    variant
-                        .fields
-                        .iter()
-                        .copied()
-                        .filter(|field| field.name.is_some_and(|name| name == field_name))
-                })
+                .flat_map(|variant| variant.fields.iter().copied().filter(|field| field.name.is_some_and(|name| name == field_name)))
                 .collect()
         }
         ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } | ProtoEntry::Service { .. } => Vec::new(),
@@ -1192,10 +1182,7 @@ fn find_entry_methods(entry: &ProtoSchema) -> Option<&[&ServiceMethod]> {
     }
 }
 
-fn build_entry_type_replacements(
-    entry: &ProtoSchema,
-    type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
-) -> EntryTypeReplacements {
+fn build_entry_type_replacements(entry: &ProtoSchema, type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>) -> EntryTypeReplacements {
     let mut entry_replacements = EntryTypeReplacements::default();
     let Some(replacements) = type_replacements.get(&entry.id) else {
         return entry_replacements;
@@ -1203,7 +1190,9 @@ fn build_entry_type_replacements(
 
     for replacement in replacements {
         match replacement {
-            TypeReplace::Trait { method, kind, r#type, .. } => {
+            TypeReplace::Trait {
+                method, kind, type_name, ..
+            } => {
                 let Some(methods) = find_entry_methods(entry) else {
                     panic!(
                         "type replacement targets method '{}' on non-service type '{}'",
@@ -1216,7 +1205,7 @@ fn build_entry_type_replacements(
                     method,
                     entry.id.name
                 );
-                let replacement_type = resolve_method_replace_type(kind, r#type).to_string();
+                let replacement_type = resolve_method_replace_type(kind, type_name).to_string();
                 match kind {
                     MethodReplace::Argument(_) => {
                         entry_replacements.method_arguments.entry(method.clone()).or_insert(replacement_type);
@@ -1227,10 +1216,7 @@ fn build_entry_type_replacements(
                 }
             }
             TypeReplace::Type {
-                field,
-                variant,
-                r#type,
-                ..
+                field, variant, type_name, ..
             } => {
                 let matches = find_entry_field_matches(entry, field, variant.as_deref());
                 assert!(
@@ -1241,7 +1227,7 @@ fn build_entry_type_replacements(
                     entry.id.name
                 );
                 let key = FieldTargetKey::new(variant.as_deref(), field);
-                entry_replacements.field_types.entry(key).or_insert_with(|| r#type.clone());
+                entry_replacements.field_types.entry(key).or_insert_with(|| type_name.clone());
             }
         }
     }
@@ -1256,26 +1242,18 @@ fn resolve_method_replace_type<'a>(kind: &'a MethodReplace, fallback: &'a str) -
     }
 }
 
-fn method_type_replacement<'a>(
-    replacements: &'a EntryTypeReplacements,
-    method_name: &str,
-    kind: MethodTypeKind,
-) -> Option<&'a str> {
+fn method_type_replacement<'a>(replacements: &'a EntryTypeReplacements, method_name: &str, kind: MethodTypeKind) -> Option<&'a str> {
     match kind {
         MethodTypeKind::Argument => replacements.method_arguments.get(method_name).map(String::as_str),
         MethodTypeKind::Return => replacements.method_returns.get(method_name).map(String::as_str),
     }
 }
 
-fn lookup_field_replacement<'a>(
-    replacements: &'a EntryTypeReplacements,
-    variant: Option<&str>,
-    field_name: &str,
-) -> Option<&'a str> {
-    if let Some(variant) = variant {
-        if let Some(replacement) = replacements.field_types.get(&FieldTargetKey::new(Some(variant), field_name)) {
-            return Some(replacement);
-        }
+fn lookup_field_replacement<'a>(replacements: &'a EntryTypeReplacements, variant: Option<&str>, field_name: &str) -> Option<&'a str> {
+    if let Some(variant) = variant
+        && let Some(replacement) = replacements.field_types.get(&FieldTargetKey::new(Some(variant), field_name))
+    {
+        return Some(replacement);
     }
     replacements.field_types.get(&FieldTargetKey::new(None, field_name)).map(String::as_str)
 }

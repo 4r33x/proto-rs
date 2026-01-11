@@ -137,7 +137,9 @@ pub enum AttrLevel {
         id: ProtoIdent,
         variant: Option<String>,
     },
-    Method { method_name: String },
+    Method {
+        method_name: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -152,13 +154,13 @@ pub enum TypeReplace {
         id: ProtoIdent,
         method: String,
         kind: MethodReplace,
-        r#type: String,
+        type_name: String,
     },
     Type {
         id: ProtoIdent,
         variant: Option<String>,
         field: String,
-        r#type: String,
+        type_name: String,
     },
 }
 
