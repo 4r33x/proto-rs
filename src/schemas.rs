@@ -11,7 +11,7 @@ mod rust_client;
 mod utils;
 
 /// Represents a proto schema collected at compile time
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub struct ProtoSchema {
     pub id: ProtoIdent,
     pub generics: &'static [Generic],
@@ -55,7 +55,7 @@ impl<'a> RustClientCtx<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ProtoIdent {
     pub module_path: &'static str,
     pub name: &'static str,
@@ -68,7 +68,7 @@ pub trait ProtoIdentifiable {
     const PROTO_IDENT: ProtoIdent;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Attribute {
     pub path: &'static str,
     pub tokens: &'static str,
@@ -87,7 +87,7 @@ pub enum AttrLevel {
     Method { method_name: String },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub struct Generic {
     pub name: &'static str,
     pub kind: GenericKind,
@@ -95,18 +95,19 @@ pub struct Generic {
     pub const_type: Option<&'static str>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub enum GenericKind {
     Type,
     Const,
 }
 
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub struct Lifetime {
     pub name: &'static str,
     pub bounds: &'static [&'static str],
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
 pub enum ProtoEntry {
     SimpleEnum {
         variants: &'static [&'static Variant],
@@ -126,14 +127,14 @@ pub enum ProtoEntry {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 pub struct Variant {
     pub name: &'static str,
     pub fields: &'static [&'static Field],
     pub discriminant: Option<i32>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 pub struct Field {
     pub name: Option<&'static str>,
     pub proto_ident: ProtoIdent,
@@ -147,7 +148,7 @@ pub struct Field {
     pub array_elem: Option<ProtoIdent>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 pub struct ServiceMethod {
     pub name: &'static str,
     pub request: ProtoIdent,
@@ -158,7 +159,7 @@ pub struct ServiceMethod {
     pub server_streaming: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 pub enum ProtoLabel {
     None,
     Optional,

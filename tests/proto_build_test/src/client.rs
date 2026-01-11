@@ -1,10 +1,7 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
 pub mod extra_types {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
-
+    use proto_rs::{proto_message, proto_rpc};
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
@@ -38,12 +35,11 @@ pub mod extra_types {
         pub payload: T,
         pub trace_id: ::proto_rs::alloc::string::String,
     }
+
 }
 pub mod fastnum {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub struct D128 {
@@ -52,12 +48,11 @@ pub mod fastnum {
         pub fractional_digits_count: i32,
         pub is_negative: bool,
     }
+
 }
 pub mod goon_types {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub struct GoonPong {
@@ -83,26 +78,22 @@ pub mod goon_types {
         INACTIVE = 2,
         COMPLETED = 3,
     }
+
 }
 pub mod rizz_types {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub struct BarSub;
 
     #[proto_message]
     pub struct FooResponse;
+
 }
 pub mod sigma_rpc_simple {
-    use fastnum::UD128;
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
-
+    use proto_rs::{proto_message, proto_rpc};
     use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
@@ -112,11 +103,11 @@ pub mod sigma_rpc_simple {
     use crate::goon_types::RizzPing;
     use crate::rizz_types::BarSub;
     use crate::rizz_types::FooResponse;
+    use fastnum::UD128;
 
     #[proto_rpc(rpc_package = "sigma_rpc", rpc_server = false, rpc_client = true)]
     pub trait SigmaRpc {
-        type RizzUniStream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>>
-            + ::core::marker::Send;
+        type RizzUniStream: ::tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<FooResponse, ::tonic::Status>> + ::core::marker::Send;
 
         async fn rizz_ping(
             &self,
@@ -139,20 +130,17 @@ pub mod sigma_rpc_simple {
             request: ::tonic::Request<Id>,
         ) -> ::core::result::Result<::tonic::Response<BuildResponse>, ::tonic::Status>;
 
-        async fn test_decimals(&self, request: ::tonic::Request<UD128>)
-        -> ::core::result::Result<::tonic::Response<D128>, ::tonic::Status>;
+        async fn test_decimals(
+            &self,
+            request: ::tonic::Request<UD128>,
+        ) -> ::core::result::Result<::tonic::Response<D128>, ::tonic::Status>;
+
     }
+
 }
 pub mod solana {
     #[allow(unused_imports)]
-    use proto_rs::proto_message;
-    #[allow(unused_imports)]
-    use proto_rs::proto_rpc;
-
-    #[proto_message]
-    pub struct Address {
-        pub inner: [u8; BYTES],
-    }
+    use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
     pub enum InstructionError {
@@ -181,7 +169,9 @@ pub mod solana {
         AccountBorrowFailed,
         AccountBorrowOutstanding,
         DuplicateAccountOutOfSync,
-        Custom(u32),
+        Custom(
+            u32,
+        ),
         InvalidError,
         ExecutableDataModified,
         ExecutableLamportChange,
@@ -213,16 +203,6 @@ pub mod solana {
     }
 
     #[proto_message]
-    pub struct Keypair {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
-    pub struct Signature {
-        pub inner: [u8; BYTES],
-    }
-
-    #[proto_message]
     pub enum TransactionError {
         AccountInUse,
         AccountLoadedTwice,
@@ -232,7 +212,10 @@ pub mod solana {
         InvalidAccountForFee,
         AlreadyProcessed,
         BlockhashNotFound,
-        InstructionError { index: u32, error: InstructionError },
+        InstructionError {
+            index: u32,
+            error: InstructionError,
+        },
         CallChainTooDeep,
         MissingSignatureForFee,
         InvalidAccountIndex,
@@ -254,14 +237,21 @@ pub mod solana {
         InvalidRentPayingAccount,
         WouldExceedMaxVoteCostLimit,
         WouldExceedAccountDataTotalLimit,
-        DuplicateInstruction(u32),
-        InsufficientFundsForRent { account_index: u32 },
+        DuplicateInstruction(
+            u32,
+        ),
+        InsufficientFundsForRent {
+            account_index: u32,
+        },
         MaxLoadedAccountsDataSizeExceeded,
         InvalidLoadedAccountsDataSizeLimit,
         ResanitizationNeeded,
-        ProgramExecutionTemporarilyRestricted { account_index: u32 },
+        ProgramExecutionTemporarilyRestricted {
+            account_index: u32,
+        },
         UnbalancedTransaction,
         ProgramCacheHitMaxLimit,
         CommitCancelled,
     }
+
 }

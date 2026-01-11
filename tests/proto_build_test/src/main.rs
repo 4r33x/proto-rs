@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
+use std::collections::HashSet;
+
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
@@ -127,6 +129,8 @@ pub trait SigmaRpc {
 
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
 
+    // async fn rizz_uni2(&self, request: BarSub) -> Self::RizzUniStream;
+
     async fn build(&self, request: Request<Envelope<BuildRequest>>) -> Result<Response<Envelope<BuildResponse>>, Status>;
 
     // async fn build2(&self, request: Envelope<BuildRequest>) -> Envelope<BuildResponse>;
@@ -139,16 +143,23 @@ pub trait SigmaRpc {
 use proto_rs::schemas::ProtoSchema;
 fn main() {
     let rust_client_path = "src/client.rs";
-    let sigma_entries: Vec<&ProtoSchema> = inventory::iter::<ProtoSchema>().filter(|schema| schema.id.name == "SigmaRpc").collect();
-    let sigma_schema = sigma_entries
-        .iter()
-        .find(|schema| !schema.generics.is_empty())
-        .or_else(|| sigma_entries.iter().find(|schema| schema.id.proto_type == schema.id.name))
-        .copied()
-        .unwrap_or_else(|| sigma_entries.first().copied().expect("Missing SigmaRpc schema"));
+    let sigma_entries: HashSet<ProtoSchema> = inventory::iter::<ProtoSchema>()
+        .filter(|schema| schema.id.name == "SigmaRpc" && schema.id.proto_type != "Import")
+        .cloned()
+        .collect();
+    println!("{:?}", sigma_entries);
+    assert_eq!(sigma_entries.len(), 1);
+    let sigma_schema = sigma_entries.into_iter().next().unwrap();
     let sigma_ident = sigma_schema.id;
     let rust_ctx = proto_rs::schemas::RustClientCtx::enabled(rust_client_path)
-        .with_imports(&["fastnum::UD128"])
+        .with_imports(&[
+            "fastnum::UD128",
+            "solana_address::Address",
+            "solana_keypair::Keypair",
+            "solana_signature::Signature",
+        ])
+        //(mod name, statement) format
+        .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
         .add_client_attrs(
             BuildRequest::PROTO_IDENT,
             UserAttr {
@@ -172,6 +183,22 @@ fn main() {
                 level: AttrLevel::Method {
                     method_name: "Build".to_string(),
                 },
+                attr: "#[allow(dead_code)]".to_string(),
+            },
+        )
+        .add_client_attrs(
+            sigma_ident,
+            UserAttr {
+                level: AttrLevel::Method {
+                    method_name: "build".to_string(),
+                },
+                attr: "#[allow(dead_code)]".to_string(),
+            },
+        )
+        .add_client_attrs(
+            sigma_ident,
+            UserAttr {
+                level: AttrLevel::Top,
                 attr: "#[allow(dead_code)]".to_string(),
             },
         );
