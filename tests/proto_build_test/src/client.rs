@@ -29,7 +29,7 @@ pub mod extra_types {
     #[proto_message]
     pub struct BuildResponse {
         #[allow(dead_code)]
-        pub status: ServiceStatus,
+        pub status: ::core::primitive::u32,
         pub envelope: Envelope<GoonPong>,
     }
 
@@ -133,7 +133,7 @@ pub mod sigma_rpc_simple {
         async fn build(
             &self,
             request: ::tonic::Request<Envelope<BuildRequest>>,
-        ) -> ::core::result::Result<::tonic::Response<Envelope<BuildResponse>>, ::tonic::Status>;
+        ) -> ::core::result::Result<::tonic::Response<::core::primitive::u32>, ::tonic::Status>;
 
         async fn build2(
             &self,
@@ -142,7 +142,7 @@ pub mod sigma_rpc_simple {
 
         async fn owner_lookup(
             &self,
-            request: ::tonic::Request<Id>,
+            request: ::tonic::Request<::core::primitive::u64>,
         ) -> ::core::result::Result<::tonic::Response<BuildResponse>, ::tonic::Status>;
 
         async fn test_decimals(
