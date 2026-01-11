@@ -505,6 +505,7 @@ pub fn extract_field_wrapper_info(ty: &Type) -> (bool, bool, Type) {
     (false, false, ty.clone())
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct MethodInfo {
     pub name: syn::Ident,
     pub request_type: Type,

@@ -25,6 +25,7 @@ pub(crate) fn is_response_wrapper(ty: &Type) -> bool {
     )
 }
 
+#[allow(clippy::struct_excessive_bools)]
 struct ParsedMethodSignature {
     request_type: Type,
     request_is_wrapped: bool,
@@ -187,23 +188,25 @@ fn extract_request_type(sig: &syn::Signature) -> (Type, bool) {
         .iter()
         .find_map(|arg| match arg {
             FnArg::Typed(PatType { ty, .. }) => Some(&**ty),
-            _ => None,
+            FnArg::Receiver(_) => None,
         })
-        .map(|ty| match ty {
-            Type::Path(TypePath { path, .. }) => {
-                if let Some(segment) = path.segments.last()
-                    && segment.ident == "Request"
-                    && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-                    && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-                {
-                    (inner_ty.clone(), true)
-                } else {
-                    (ty.clone(), false)
+        .map_or_else(
+            || panic!("Could not extract request type"),
+            |ty| match ty {
+                Type::Path(TypePath { path, .. }) => {
+                    if let Some(segment) = path.segments.last()
+                        && segment.ident == "Request"
+                        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+                        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+                    {
+                        (inner_ty.clone(), true)
+                    } else {
+                        (ty.clone(), false)
+                    }
                 }
-            }
-            _ => (ty.clone(), false),
-        })
-        .unwrap_or_else(|| panic!("Could not extract request type"))
+                _ => (ty.clone(), false),
+            },
+        )
 }
 
 fn extract_response_return(sig: &syn::Signature) -> (Type, bool) {

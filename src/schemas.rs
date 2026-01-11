@@ -60,15 +60,13 @@ impl<'a> RustClientCtx<'a> {
             if statement.trim().is_empty() {
                 continue;
             }
-            self.statements
-                .entry((*module_name).to_string())
-                .or_default()
-                .push((*statement).to_string());
+            self.statements.entry((*module_name).to_string()).or_default().push((*statement).to_string());
         }
         self
     }
 
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_client_attrs(mut self, target: ClientAttrTarget<'a>, attr: UserAttr) -> Self {
         match target {
             ClientAttrTarget::Ident(ident) => {
@@ -79,10 +77,7 @@ impl<'a> RustClientCtx<'a> {
                     matches!(attr.level, AttrLevel::Top),
                     "module-level client attributes must use AttrLevel::Top"
                 );
-                self.module_attrs
-                    .entry(module_name.to_string())
-                    .or_default()
-                    .push(attr.attr);
+                self.module_attrs.entry(module_name.to_string()).or_default().push(attr.attr);
             }
         }
         self
