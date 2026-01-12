@@ -1,5 +1,7 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -25,14 +27,25 @@ type CustomOption<T> = Option<T>;
 type CustomVec<T> = Vec<T>;
 type CustomVecDeq<T> = VecDeque<T>;
 
+macro_rules! define_wrapper_message {
+    ($name:ident, $inner:ty) => {
+        #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
+        #[derive(Debug)]
+        pub struct $name {
+            #[proto(tag = 1)]
+            pub value: $inner,
+        }
+    };
+}
+
 #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MEx {
     pub id: u64,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct CustomEx {
     pub mutex: std::sync::Mutex<MEx>,
     pub mutex_copy: std::sync::Mutex<u64>,
@@ -56,6 +69,17 @@ pub struct CustomEx {
     pub custom_vec: CustomVec<MEx>,
     pub custom_vec_deque: CustomVecDeq<MEx>,
 }
+
+define_wrapper_message!(MutexMEx, std::sync::Mutex<MEx>);
+define_wrapper_message!(ArcMEx, std::sync::Arc<MEx>);
+define_wrapper_message!(BoxMEx, Box<MEx>);
+define_wrapper_message!(OptionMEx, Option<MEx>);
+define_wrapper_message!(VecMEx, Vec<MEx>);
+define_wrapper_message!(VecDequeMEx, VecDeque<MEx>);
+define_wrapper_message!(HashMapMEx, HashMap<u32, MEx>);
+define_wrapper_message!(BTreeMapMEx, BTreeMap<u32, MEx>);
+define_wrapper_message!(HashSetMEx, HashSet<MEx>);
+define_wrapper_message!(BTreeSetMEx, BTreeSet<MEx>);
 
 #[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq, Copy)]
@@ -184,6 +208,26 @@ pub trait SigmaRpc {
     async fn owner_lookup(&self, request: Request<TransparentId>) -> Result<Response<BuildResponse>, Status>;
 
     async fn custom_ex_echo(&self, request: Request<CustomEx>) -> Result<Response<CustomEx>, Status>;
+
+    async fn mutex_echo(&self, request: Request<MutexMEx>) -> Result<Response<MutexMEx>, Status>;
+
+    async fn arc_echo(&self, request: Request<ArcMEx>) -> Result<Response<ArcMEx>, Status>;
+
+    async fn box_echo(&self, request: Request<BoxMEx>) -> Result<Response<BoxMEx>, Status>;
+
+    async fn option_echo(&self, request: Request<OptionMEx>) -> Result<Response<OptionMEx>, Status>;
+
+    async fn vec_echo(&self, request: Request<VecMEx>) -> Result<Response<VecMEx>, Status>;
+
+    async fn vec_deque_echo(&self, request: Request<VecDequeMEx>) -> Result<Response<VecDequeMEx>, Status>;
+
+    async fn hash_map_echo(&self, request: Request<HashMapMEx>) -> Result<Response<HashMapMEx>, Status>;
+
+    async fn btree_map_echo(&self, request: Request<BTreeMapMEx>) -> Result<Response<BTreeMapMEx>, Status>;
+
+    async fn hash_set_echo(&self, request: Request<HashSetMEx>) -> Result<Response<HashSetMEx>, Status>;
+
+    async fn btree_set_echo(&self, request: Request<BTreeSetMEx>) -> Result<Response<BTreeSetMEx>, Status>;
 
     async fn mex_echo(&self, request: MEx) -> MEx;
 

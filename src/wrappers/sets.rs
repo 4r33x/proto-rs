@@ -4,7 +4,6 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::EncodeInputFromRef;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -18,7 +17,7 @@ use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for BTreeSet<T>
 where
-    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
 {
     type Sun<'a> = &'a BTreeSet<T>;
     type OwnedSun = BTreeSet<T>;
@@ -36,7 +35,7 @@ where
 
 impl<T> ProtoWire for BTreeSet<T>
 where
-    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + Ord + 'a,
+    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + Ord + 'a,
 {
     type EncodeInput<'a> = &'a BTreeSet<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
@@ -84,19 +83,12 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
             // packed: body only
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
-                .iter()
-                .map(|v| {
-                    let input = T::encode_input_from_ref(v);
-                    unsafe { T::encoded_len_impl_raw(&input) }
-                })
-                .sum(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v: &T| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
             // messages/bytes/string: per element (len varint + body)
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                 .iter()
                 .map(|m| {
-                    let input = T::encode_input_from_ref(m);
-                    let len = unsafe { T::encoded_len_impl_raw(&input) };
+                    let len = unsafe { T::encoded_len_impl_raw(&m) };
                     encoded_len_varint(len as u64) + len
                 })
                 .sum(),
@@ -119,26 +111,18 @@ where
                     return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value
-                    .iter()
-                    .map(|v| {
-                        let input = T::encode_input_from_ref(v);
-                        T::encoded_len_impl(&input)
-                    })
-                    .sum::<usize>();
+                let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
-                    let input = T::encode_input_from_ref(v);
-                    T::encode_raw_unchecked(input, buf);
+                    T::encode_raw_unchecked(v, buf);
                 }
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for m in value {
-                    let input = T::encode_input_from_ref(m);
-                    let len = unsafe { T::encoded_len_impl_raw(&input) };
+                    let len = unsafe { T::encoded_len_impl_raw(&m) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(input, buf);
+                    T::encode_raw_unchecked(m, buf);
                 }
             }
             ProtoKind::Repeated(_) => {
@@ -216,7 +200,7 @@ mod hashset_impl {
 
     impl<T, S> ProtoShadow<Self> for HashSet<T, S>
     where
-        for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+        for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
         for<'a> S: BuildHasher + 'a,
     {
         type Sun<'a> = &'a HashSet<T, S>;
@@ -235,7 +219,7 @@ mod hashset_impl {
 
     impl<T, S> ProtoWire for HashSet<T, S>
     where
-        for<'a> T: ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
+        for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + Eq + Hash + 'a,
         for<'a> S: BuildHasher + Default + 'a,
     {
         type EncodeInput<'a> = &'a HashSet<T, S>;
@@ -283,19 +267,12 @@ mod hashset_impl {
         #[inline]
         unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
             match T::KIND {
-                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
-                    .iter()
-                    .map(|v| {
-                        let input = T::encode_input_from_ref(v);
-                        unsafe { T::encoded_len_impl_raw(&input) }
-                    })
-                    .sum(),
+                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v: &T| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
 
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                     .iter()
                     .map(|m| {
-                        let input = T::encode_input_from_ref(m);
-                        let len = unsafe { T::encoded_len_impl_raw(&input) };
+                        let len = unsafe { T::encoded_len_impl_raw(&m) };
                         encoded_len_varint(len as u64) + len
                     })
                     .sum(),
@@ -318,26 +295,18 @@ mod hashset_impl {
                         return;
                     }
                     encode_key(tag, WireType::LengthDelimited, buf);
-                    let body_len = value
-                        .iter()
-                        .map(|v| {
-                            let input = T::encode_input_from_ref(v);
-                            T::encoded_len_impl(&input)
-                        })
-                        .sum::<usize>();
+                    let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
                     encode_varint(body_len as u64, buf);
                     for v in value {
-                        let input = T::encode_input_from_ref(v);
-                        T::encode_raw_unchecked(input, buf);
+                        T::encode_raw_unchecked(v, buf);
                     }
                 }
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                     for m in value {
-                        let input = T::encode_input_from_ref(m);
-                        let len = unsafe { T::encoded_len_impl_raw(&input) };
+                        let len = unsafe { T::encoded_len_impl_raw(&m) };
                         encode_key(tag, WireType::LengthDelimited, buf);
                         encode_varint(len as u64, buf);
-                        T::encode_raw_unchecked(input, buf);
+                        T::encode_raw_unchecked(m, buf);
                     }
                 }
                 ProtoKind::Repeated(_) => {

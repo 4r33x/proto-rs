@@ -293,6 +293,15 @@ where
     }
 }
 
+impl<'a, T> EncodeInputFromRefValue<'a, Option<T>> for Option<&'a T> {
+    type Output = Option<&'a T>;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a Option<T>) -> Self::Output {
+        value.as_ref()
+    }
+}
+
 impl<'a, T> EncodeInputFromRef<'a> for T
 where
     T: ProtoWire,

@@ -6,9 +6,6 @@ use std::io;
 use std::path::Path;
 use std::sync::LazyLock;
 
-#[cfg(feature = "build-schemas")]
-use const_format::formatc;
-
 mod proto_output;
 mod rust_client;
 mod utils;
@@ -124,24 +121,6 @@ impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
 }
 
-#[cfg(feature = "build-schemas")]
-const fn ident_name_for_collection(name: &str) -> &str {
-    if name == "u8" {
-        "U8"
-    } else {
-        name
-    }
-}
-
-#[cfg(feature = "build-schemas")]
-const fn ident_proto_for_collection(name: &str, proto_type: &str) -> &str {
-    if name == "u8" {
-        "bytes"
-    } else {
-        proto_type
-    }
-}
-
 macro_rules! impl_proto_ident_primitive {
     ($ty:ty, $proto_type:literal) => {
         #[cfg(feature = "build-schemas")]
@@ -208,17 +187,10 @@ impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Mutex<T> {
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::vec::Vec<T> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!("Vec{}", ident_name_for_collection(T::PROTO_IDENT.name)),
+        name: "Vec",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: if T::PROTO_IDENT.name == "u8" {
-            "bytes"
-        } else {
-            formatc!(
-                "Vec{}",
-                ident_proto_for_collection(T::PROTO_IDENT.name, T::PROTO_IDENT.proto_type)
-            )
-        },
+        proto_type: "Vec",
     };
 }
 
@@ -226,17 +198,10 @@ impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::vec::Vec<T> {
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::VecDeque<T> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!("VecDeque{}", ident_name_for_collection(T::PROTO_IDENT.name)),
+        name: "VecDeque",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: if T::PROTO_IDENT.name == "u8" {
-            "bytes"
-        } else {
-            formatc!(
-                "VecDeque{}",
-                ident_proto_for_collection(T::PROTO_IDENT.name, T::PROTO_IDENT.proto_type)
-            )
-        },
+        proto_type: "VecDeque",
     };
 }
 
@@ -244,18 +209,10 @@ impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::VecDeque<T>
 impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashMap<K, V, S> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!(
-            "HashMap{}{}",
-            ident_name_for_collection(K::PROTO_IDENT.name),
-            ident_name_for_collection(V::PROTO_IDENT.name)
-        ),
+        name: "HashMap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: formatc!(
-            "HashMap{}{}",
-            ident_proto_for_collection(K::PROTO_IDENT.name, K::PROTO_IDENT.proto_type),
-            ident_proto_for_collection(V::PROTO_IDENT.name, V::PROTO_IDENT.proto_type)
-        ),
+        proto_type: "map",
     };
 }
 
@@ -263,18 +220,10 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std:
 impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeMap<K, V> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!(
-            "BTreeMap{}{}",
-            ident_name_for_collection(K::PROTO_IDENT.name),
-            ident_name_for_collection(V::PROTO_IDENT.name)
-        ),
+        name: "BTreeMap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: formatc!(
-            "BTreeMap{}{}",
-            ident_proto_for_collection(K::PROTO_IDENT.name, K::PROTO_IDENT.proto_type),
-            ident_proto_for_collection(V::PROTO_IDENT.name, V::PROTO_IDENT.proto_type)
-        ),
+        proto_type: "map",
     };
 }
 
@@ -282,13 +231,10 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::co
 impl<T: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashSet<T, S> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!("HashSet{}", ident_name_for_collection(T::PROTO_IDENT.name)),
+        name: "HashSet",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: formatc!(
-            "HashSet{}",
-            ident_proto_for_collection(T::PROTO_IDENT.name, T::PROTO_IDENT.proto_type)
-        ),
+        proto_type: "set",
     };
 }
 
@@ -296,13 +242,10 @@ impl<T: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashSet<
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeSet<T> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!("BTreeSet{}", ident_name_for_collection(T::PROTO_IDENT.name)),
+        name: "BTreeSet",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: formatc!(
-            "BTreeSet{}",
-            ident_proto_for_collection(T::PROTO_IDENT.name, T::PROTO_IDENT.proto_type)
-        ),
+        proto_type: "set",
     };
 }
 
@@ -330,18 +273,10 @@ impl<T: ProtoIdentifiable> ProtoIdentifiable for parking_lot::Mutex<T> {
 impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashMap<K, V, S> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!(
-            "HashMap{}{}",
-            ident_name_for_collection(K::PROTO_IDENT.name),
-            ident_name_for_collection(V::PROTO_IDENT.name)
-        ),
+        name: "HashMap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: formatc!(
-            "HashMap{}{}",
-            ident_proto_for_collection(K::PROTO_IDENT.name, K::PROTO_IDENT.proto_type),
-            ident_proto_for_collection(V::PROTO_IDENT.name, V::PROTO_IDENT.proto_type)
-        ),
+        proto_type: "map",
     };
 }
 
@@ -349,13 +284,10 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for papaya
 impl<T: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashSet<T, S> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
-        name: formatc!("HashSet{}", ident_name_for_collection(T::PROTO_IDENT.name)),
+        name: "HashSet",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: formatc!(
-            "HashSet{}",
-            ident_proto_for_collection(T::PROTO_IDENT.name, T::PROTO_IDENT.proto_type)
-        ),
+        proto_type: "set",
     };
 }
 
