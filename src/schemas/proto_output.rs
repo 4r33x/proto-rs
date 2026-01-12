@@ -7,6 +7,7 @@ use super::ProtoIdent;
 use super::ProtoLabel;
 use super::ProtoSchema;
 use super::ServiceMethod;
+use super::ProtoType;
 use super::Variant;
 use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
@@ -20,6 +21,7 @@ use super::utils::wrapper_kind_from_schema_name;
 use super::utils::wrapper_is_map;
 use super::utils::wrapper_kind_for;
 use super::utils::wrapper_label;
+use super::utils::wrapper_prefix_from_schema_name;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct GenericSpecialization {
@@ -163,7 +165,13 @@ pub(crate) fn render_entries(
         if is_wrapper_schema(entry)
             || (matches!(entry.content, ProtoEntry::Struct { .. }) && wrapper_kind_from_schema_name(entry.id.name).is_some())
         {
-            continue;
+            if let Some(kind) = wrapper_kind_from_schema_name(entry.id.name)
+                && matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap | WrapperKind::HashSet | WrapperKind::BTreeSet)
+            {
+                // Keep wrapper schemas for map/set wrappers so RPC types can reference them.
+            } else {
+                continue;
+            }
         }
 
         // Skip duplicate proto_types (ensures stable ordering - first occurrence wins)
@@ -216,7 +224,7 @@ fn render_entry(
         return rendered;
     }
 
-    let entry_name = proto_ident_base_type_name(entry.id);
+    let entry_name = wrapper_schema_message_name(entry).unwrap_or_else(|| proto_ident_base_type_name(entry.id));
     let definition = match entry.content {
         ProtoEntry::Struct { fields } => render_struct(&entry_name, fields, package_name, ident_index, None),
         ProtoEntry::SimpleEnum { variants } => render_simple_enum(&entry_name, variants),
@@ -409,10 +417,23 @@ fn method_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
-    if wrapper_is_map(wrapper, ident)
-        && let Some(map_type) = method_map_type_name(wrapper, generic_args, package_name, ident_index, substitution)
-    {
-        return map_type;
+    let resolved = resolve_transparent_or_wrapper_inner(ident, ident_index);
+    if let Some((key, value)) = proto_map_types(&resolved.proto_type) {
+        let base = wrapper_prefix_from_schema_name(ident.name).unwrap_or(ident.name);
+        let name = format!("{base}{}{}", proto_type_segment(key), proto_type_segment(value));
+        return qualify_type_name(ident, package_name, name);
+    }
+    if wrapper_kind_from_schema_name(ident.name).is_some_and(|kind| matches!(kind, WrapperKind::HashSet | WrapperKind::BTreeSet)) {
+        let elem = match resolved.proto_type {
+            ProtoType::Optional(inner) | ProtoType::Repeated(inner) => inner,
+            _ => &resolved.proto_type,
+        };
+        let base = wrapper_prefix_from_schema_name(ident.name).unwrap_or(ident.name);
+        let name = format!("{base}{}", proto_type_segment(elem));
+        return qualify_type_name(ident, package_name, name);
+    }
+    if let Some(wrapper_name) = method_wrapper_schema_type_name(ident, package_name, ident_index) {
+        return wrapper_name;
     }
 
     if let Some(inner_type) = method_wrapper_inner_type_name(ident, generic_args, wrapper, package_name, ident_index, substitution) {
@@ -431,7 +452,7 @@ fn method_wrapper_inner_type_name(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
     let kind = wrapper_kind_for(wrapper, ident)?;
-    if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap) {
+    if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap | WrapperKind::HashSet | WrapperKind::BTreeSet) {
         return None;
     }
 
@@ -444,8 +465,6 @@ fn method_wrapper_inner_type_name(
         WrapperKind::Option
         | WrapperKind::Vec
         | WrapperKind::VecDeque
-        | WrapperKind::HashSet
-        | WrapperKind::BTreeSet
         | WrapperKind::Box
         | WrapperKind::Arc
         | WrapperKind::Mutex
@@ -455,23 +474,30 @@ fn method_wrapper_inner_type_name(
             let fallback = resolve_transparent_or_wrapper_inner(ident, ident_index);
             Some(proto_ident_type_name(fallback, package_name, ident_index))
         }),
-        WrapperKind::HashMap | WrapperKind::BTreeMap => None,
+        WrapperKind::HashMap | WrapperKind::BTreeMap | WrapperKind::HashSet | WrapperKind::BTreeSet => None,
     }
 }
 
-fn method_map_type_name(
-    wrapper: Option<ProtoIdent>,
-    generic_args: &[&ProtoIdent],
+fn method_wrapper_schema_type_name(
+    ident: ProtoIdent,
     package_name: &str,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
-    let (key, value) = wrapper_map_args(wrapper, generic_args)?;
-    let key_ident = resolve_transparent_or_wrapper_inner(apply_substitution(key, substitution), ident_index);
-    let value_ident = resolve_transparent_or_wrapper_inner(apply_substitution(value, substitution), ident_index);
-    let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
-    let value_type = proto_ident_type_name(value_ident, package_name, ident_index);
-    Some(format!("map<{key_type}, {value_type}>"))
+    let schema = ident_index.get(&ident)?;
+    let name = wrapper_schema_message_name(schema)?;
+    if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
+        Some(name)
+    } else {
+        Some(format!("{}.{}", ident.proto_package_name, name))
+    }
+}
+
+fn qualify_type_name(ident: ProtoIdent, package_name: &str, name: String) -> String {
+    if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
+        name
+    } else {
+        format!("{}.{}", ident.proto_package_name, name)
+    }
 }
 
 fn wrapper_inner_type_name(
@@ -538,6 +564,65 @@ fn wrapper_map_args(wrapper: Option<ProtoIdent>, generic_args: &[&ProtoIdent]) -
             let value = generic_args.get(1).copied().copied()?;
             Some((key, value))
         })
+}
+
+fn wrapper_schema_message_name(schema: &ProtoSchema) -> Option<String> {
+    let kind = wrapper_kind_from_schema_name(schema.id.name)?;
+    if !matches!(
+        kind,
+        WrapperKind::HashMap | WrapperKind::BTreeMap | WrapperKind::HashSet | WrapperKind::BTreeSet
+    ) {
+        return None;
+    }
+
+    let fields = match schema.content {
+        ProtoEntry::Struct { fields } if fields.len() == 1 => fields,
+        _ => return None,
+    };
+    let field = fields[0];
+    let prefix = wrapper_prefix_from_schema_name(schema.id.name)?;
+
+    match kind {
+        WrapperKind::HashMap | WrapperKind::BTreeMap => {
+            let (key, value) = proto_map_types(&field.proto_ident.proto_type)?;
+            Some(format!("{prefix}{}{}", proto_type_segment(key), proto_type_segment(value)))
+        }
+        WrapperKind::HashSet | WrapperKind::BTreeSet => {
+            let elem = match field.proto_ident.proto_type {
+                ProtoType::Optional(inner) | ProtoType::Repeated(inner) => inner,
+                _ => &field.proto_ident.proto_type,
+            };
+            Some(format!("{prefix}{}", proto_type_segment(elem)))
+        }
+        WrapperKind::Option
+        | WrapperKind::Vec
+        | WrapperKind::VecDeque
+        | WrapperKind::Box
+        | WrapperKind::Arc
+        | WrapperKind::Mutex
+        | WrapperKind::ArcSwap
+        | WrapperKind::ArcSwapOption
+        | WrapperKind::CachePadded => None,
+    }
+}
+
+fn proto_type_segment(proto_type: &ProtoType) -> String {
+    match proto_type {
+        ProtoType::Message(name) => (*name).to_string(),
+        ProtoType::Enum => "Enum".to_string(),
+        ProtoType::Optional(inner) | ProtoType::Repeated(inner) => proto_type_segment(inner),
+        ProtoType::Double => "F64".to_string(),
+        ProtoType::Float => "F32".to_string(),
+        ProtoType::Int32 | ProtoType::Sint32 | ProtoType::Sfixed32 => "I32".to_string(),
+        ProtoType::Int64 | ProtoType::Sint64 | ProtoType::Sfixed64 => "I64".to_string(),
+        ProtoType::Uint32 | ProtoType::Fixed32 => "U32".to_string(),
+        ProtoType::Uint64 | ProtoType::Fixed64 => "U64".to_string(),
+        ProtoType::Bool => "Bool".to_string(),
+        ProtoType::Bytes => "Bytes".to_string(),
+        ProtoType::String => "String".to_string(),
+        ProtoType::Map { key, value } => format!("Map{}{}", proto_type_segment(key), proto_type_segment(value)),
+        ProtoType::None => "None".to_string(),
+    }
 }
 
 fn proto_ident_type_name_with_generics(

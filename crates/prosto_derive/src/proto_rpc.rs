@@ -16,6 +16,7 @@ use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
 use crate::schema::SchemaTokens;
 use crate::schema::schema_tokens_for_service;
+use crate::schema::type_references_generic_params;
 
 pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let input: ItemTrait = syn::parse(item).expect("Failed to parse trait");
@@ -34,6 +35,17 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
         schema_tokens_for_service(&input.ident, &ty_ident, &methods, &package_name, &config, &ty_ident);
     config.register_and_emit_proto(&service_content);
     let proto = config.imports_mat.clone();
+
+    let mut validator_consts = Vec::new();
+    for method in &methods {
+        if !type_references_generic_params(&method.request_type, &input.generics) {
+            validator_consts.push(build_validator_const(&method.request_type));
+        }
+        let response_ty = method.inner_response_type.as_ref().unwrap_or(&method.response_type);
+        if !type_references_generic_params(response_ty, &input.generics) {
+            validator_consts.push(build_validator_const(response_ty));
+        }
+    }
 
     // Generate user-facing trait
     let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();
@@ -56,6 +68,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
         #schema
         #inventory_submit
         #proto
+        #(#validator_consts)*
         #vis trait #trait_name {
             #(#user_associated_types)*
             #(#user_methods)*
@@ -64,5 +77,12 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 
         #client_module
         #server_module
+    }
+}
+
+fn build_validator_const(ty: &syn::Type) -> TokenStream2 {
+    quote! {
+        #[cfg(feature = "build-schemas")]
+        const _: () = <#ty as ::proto_rs::schemas::ProtoIdentifiable>::_VALIDATOR;
     }
 }

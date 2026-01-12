@@ -22,10 +22,10 @@ service SigmaRpc {
   rpc OptionEcho(MEx) returns (MEx);
   rpc VecEcho(MEx) returns (MEx);
   rpc VecDequeEcho(MEx) returns (MEx);
-  rpc HashMapEcho(map<uint32, MEx>) returns (map<uint32, MEx>);
-  rpc BtreeMapEcho(map<uint32, MEx>) returns (map<uint32, MEx>);
-  rpc HashSetEcho(MEx) returns (MEx);
-  rpc BtreeSetEcho(MEx) returns (MEx);
+  rpc HashMapEcho(custom_types.HashMapU32MEx) returns (custom_types.HashMapU32MEx);
+  rpc BtreeMapEcho(custom_types.BTreeMapU32MEx) returns (custom_types.BTreeMapU32MEx);
+  rpc HashSetEcho(custom_types.HashSetMEx) returns (custom_types.HashSetMEx);
+  rpc BtreeSetEcho(custom_types.BTreeSetMEx) returns (custom_types.BTreeSetMEx);
   rpc MexEcho(custom_types.MEx) returns (custom_types.MEx);
   rpc TestDecimals(fastnum.UD128) returns (fastnum.D64);
 }
