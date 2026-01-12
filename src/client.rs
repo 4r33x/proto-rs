@@ -4,26 +4,6 @@ pub mod custom_types {
     use proto_rs::{proto_message, proto_rpc};
 
     #[proto_message]
-    pub struct ArcMEx {
-        pub value: MEx,
-    }
-
-    #[proto_message]
-    pub struct BTreeMapMEx {
-        pub value: ::proto_rs::alloc::collections::BTreeMap<u32, MEx>,
-    }
-
-    #[proto_message]
-    pub struct BTreeSetMEx {
-        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
-    }
-
-    #[proto_message]
-    pub struct BoxMEx {
-        pub value: MEx,
-    }
-
-    #[proto_message]
     pub struct CustomEx {
         pub mutex: MEx,
         pub mutex_copy: u64,
@@ -49,38 +29,8 @@ pub mod custom_types {
     }
 
     #[proto_message]
-    pub struct HashMapMEx {
-        pub value: ::proto_rs::alloc::collections::BTreeMap<u32, MEx>,
-    }
-
-    #[proto_message]
-    pub struct HashSetMEx {
-        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
-    }
-
-    #[proto_message]
     pub struct MEx {
         pub id: u64,
-    }
-
-    #[proto_message]
-    pub struct MutexMEx {
-        pub value: MEx,
-    }
-
-    #[proto_message]
-    pub struct OptionMEx {
-        pub value: ::core::option::Option<MEx>,
-    }
-
-    #[proto_message]
-    pub struct VecDequeMEx {
-        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
-    }
-
-    #[proto_message]
-    pub struct VecMEx {
-        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
 }
@@ -182,18 +132,8 @@ pub mod rizz_types {
 pub mod sigma_rpc_simple {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
-    use crate::custom_types::ArcMEx;
-    use crate::custom_types::BTreeMapMEx;
-    use crate::custom_types::BTreeSetMEx;
-    use crate::custom_types::BoxMEx;
     use crate::custom_types::CustomEx;
-    use crate::custom_types::HashMapMEx;
-    use crate::custom_types::HashSetMEx;
     use crate::custom_types::MEx;
-    use crate::custom_types::MutexMEx;
-    use crate::custom_types::OptionMEx;
-    use crate::custom_types::VecDequeMEx;
-    use crate::custom_types::VecMEx;
     use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
@@ -249,53 +189,53 @@ pub mod sigma_rpc_simple {
 
         async fn mutex_echo(
             &self,
-            request: ::tonic::Request<MutexMEx>,
-        ) -> ::core::result::Result<::tonic::Response<MutexMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::std::sync::Mutex<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::std::sync::Mutex<MEx>>, ::tonic::Status>;
 
         async fn arc_echo(
             &self,
-            request: ::tonic::Request<ArcMEx>,
-        ) -> ::core::result::Result<::tonic::Response<ArcMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::std::sync::Arc<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::std::sync::Arc<MEx>>, ::tonic::Status>;
 
         async fn box_echo(
             &self,
-            request: ::tonic::Request<BoxMEx>,
-        ) -> ::core::result::Result<::tonic::Response<BoxMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::std::boxed::Box<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::std::boxed::Box<MEx>>, ::tonic::Status>;
 
         async fn option_echo(
             &self,
-            request: ::tonic::Request<OptionMEx>,
-        ) -> ::core::result::Result<::tonic::Response<OptionMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::core::option::Option<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::core::option::Option<MEx>>, ::tonic::Status>;
 
         async fn vec_echo(
             &self,
-            request: ::tonic::Request<VecMEx>,
-        ) -> ::core::result::Result<::tonic::Response<VecMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
 
         async fn vec_deque_echo(
             &self,
-            request: ::tonic::Request<VecDequeMEx>,
-        ) -> ::core::result::Result<::tonic::Response<VecDequeMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
 
         async fn hash_map_echo(
             &self,
-            request: ::tonic::Request<HashMapMEx>,
-        ) -> ::core::result::Result<::tonic::Response<HashMapMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>, ::tonic::Status>;
 
         async fn btree_map_echo(
             &self,
-            request: ::tonic::Request<BTreeMapMEx>,
-        ) -> ::core::result::Result<::tonic::Response<BTreeMapMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>, ::tonic::Status>;
 
         async fn hash_set_echo(
             &self,
-            request: ::tonic::Request<HashSetMEx>,
-        ) -> ::core::result::Result<::tonic::Response<HashSetMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
 
         async fn btree_set_echo(
             &self,
-            request: ::tonic::Request<BTreeSetMEx>,
-        ) -> ::core::result::Result<::tonic::Response<BTreeSetMEx>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
 
         async fn mex_echo(
             &self,

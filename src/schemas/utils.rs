@@ -175,6 +175,107 @@ pub(crate) fn resolve_transparent_ident(ident: ProtoIdent, ident_index: &BTreeMa
     transparent_inner_ident(&ident, ident_index).unwrap_or(ident)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct WrapperSchemaInfo {
+    pub(crate) wrapper: ProtoIdent,
+    pub(crate) inner: ProtoIdent,
+}
+
+const WRAPPER_SCHEMA_PREFIXES: &[(&str, WrapperKind)] = &[
+    ("ArcSwapOption", WrapperKind::ArcSwapOption),
+    ("ArcSwap", WrapperKind::ArcSwap),
+    ("CachePadded", WrapperKind::CachePadded),
+    ("Option", WrapperKind::Option),
+    ("VecDeque", WrapperKind::VecDeque),
+    ("Vec", WrapperKind::Vec),
+    ("HashMap", WrapperKind::HashMap),
+    ("BTreeMap", WrapperKind::BTreeMap),
+    ("HashSet", WrapperKind::HashSet),
+    ("BTreeSet", WrapperKind::BTreeSet),
+    ("Box", WrapperKind::Box),
+    ("Arc", WrapperKind::Arc),
+    ("Mutex", WrapperKind::Mutex),
+];
+
+pub(crate) fn wrapper_kind_from_schema_name(name: &str) -> Option<WrapperKind> {
+    WRAPPER_SCHEMA_PREFIXES
+        .iter()
+        .find_map(|(prefix, kind)| name.starts_with(prefix).then_some(*kind))
+}
+
+pub(crate) fn wrapper_prefix_from_schema_name(name: &str) -> Option<&'static str> {
+    WRAPPER_SCHEMA_PREFIXES
+        .iter()
+        .find_map(|(prefix, _)| name.starts_with(prefix).then_some(*prefix))
+}
+
+pub(crate) fn wrapper_schema_info(
+    ident: ProtoIdent,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+) -> Option<WrapperSchemaInfo> {
+    let schema = ident_index.get(&ident)?;
+    wrapper_schema_info_from_entry(schema)
+}
+
+pub(crate) fn wrapper_schema_info_from_entry(schema: &ProtoSchema) -> Option<WrapperSchemaInfo> {
+    let fields = match schema.content {
+        ProtoEntry::Struct { fields } if fields.len() == 1 => fields,
+        _ => return None,
+    };
+    let field = fields[0];
+    let wrapper = field.wrapper?;
+    if wrapper_kind_for(Some(wrapper), field.proto_ident).is_none() {
+        if wrapper.proto_package_name.is_empty()
+            && wrapper.proto_file_path.is_empty()
+            && field.name == Some("value")
+            && wrapper_kind_from_schema_name(schema.id.name).is_some()
+        {
+            return Some(WrapperSchemaInfo {
+                wrapper,
+                inner: field.proto_ident,
+            });
+        }
+        return None;
+    }
+    Some(WrapperSchemaInfo {
+        wrapper,
+        inner: field.proto_ident,
+    })
+}
+
+pub(crate) fn is_wrapper_schema(schema: &ProtoSchema) -> bool {
+    if wrapper_schema_info_from_entry(schema).is_some() {
+        return true;
+    }
+
+    match schema.content {
+        ProtoEntry::Struct { fields } if fields.len() == 1 => {
+            let field = fields[0];
+            field.name == Some("value")
+                && (field.wrapper.is_some()
+                    || matches!(field.proto_label, ProtoLabel::Optional | ProtoLabel::Repeated)
+                    || matches!(field.proto_ident.proto_type, ProtoType::Map { .. }))
+                && wrapper_kind_from_schema_name(schema.id.name).is_some()
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn resolve_transparent_or_wrapper_inner(
+    ident: ProtoIdent,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+) -> ProtoIdent {
+    if let Some(schema) = ident_index.get(&ident) {
+        if wrapper_kind_from_schema_name(schema.id.name).is_some()
+            && let ProtoEntry::Struct { fields } = schema.content
+            && fields.len() == 1
+        {
+            return fields[0].proto_ident;
+        }
+    }
+    wrapper_schema_info(ident, ident_index).map_or_else(|| resolve_transparent_ident(ident, ident_index), |info| info.inner)
+}
+
 fn transparent_inner_ident(ident: &ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> Option<ProtoIdent> {
     let schema = ident_index.get(ident)?;
     if !is_transparent_schema(schema) {
