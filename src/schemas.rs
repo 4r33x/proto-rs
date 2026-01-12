@@ -117,6 +117,10 @@ pub trait ProtoIdentifiable {
     const PROTO_IDENT: ProtoIdent;
 }
 
+impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Attribute {
     pub path: &'static str,

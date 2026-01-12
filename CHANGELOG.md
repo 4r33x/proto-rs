@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.1]
+- Impl ProtoIdentifiable for ZeroCopy<T>
+
 ## [0.7.0]
 - Impl proper build system for .proto definitions and lightweight rust clients with auto resolving names, imports, attributes
 - View tests/proto_build_test for example

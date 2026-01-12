@@ -18,18 +18,3 @@ message BuildResponse {
   EnvelopeGoonPong envelope = 2;
 }
 
-message EnvelopeBuildRequest {
-  BuildRequest payload = 1;
-  string trace_id = 2;
-}
-
-message EnvelopeBuildResponse {
-  BuildResponse payload = 1;
-  string trace_id = 2;
-}
-
-message EnvelopeGoonPong {
-  GoonPong payload = 1;
-  string trace_id = 2;
-}
-
