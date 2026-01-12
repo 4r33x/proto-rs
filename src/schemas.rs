@@ -6,8 +6,6 @@ use std::io;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::impl_proto_ident;
-
 mod proto_output;
 mod rust_client;
 mod utils;
@@ -123,47 +121,153 @@ impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
 }
 
-impl_proto_ident!(bool);
-impl_proto_ident!(u8);
-impl_proto_ident!(u16);
-impl_proto_ident!(u32);
-impl_proto_ident!(u64);
-impl_proto_ident!(usize);
-impl_proto_ident!(i8);
-impl_proto_ident!(i16);
-impl_proto_ident!(i32);
-impl_proto_ident!(i64);
-impl_proto_ident!(isize);
-impl_proto_ident!(f32);
-impl_proto_ident!(f64);
-impl_proto_ident!(crate::bytes::Bytes);
-impl_proto_ident!(::std::string::String);
-impl_proto_ident!(::core::option::Option<T>);
-impl_proto_ident!(::std::vec::Vec<T>);
-impl_proto_ident!(::std::collections::VecDeque<T>);
-impl_proto_ident!(::std::boxed::Box<T>);
-impl_proto_ident!(::std::sync::Arc<T>);
-impl_proto_ident!(::std::sync::Mutex<T>);
-impl_proto_ident!(::std::collections::BTreeMap<K, V>);
-impl_proto_ident!(::std::collections::BTreeSet<T>);
-impl_proto_ident!(::std::collections::HashMap<K, V, S>);
-impl_proto_ident!(::std::collections::HashSet<T, S>);
+macro_rules! impl_proto_ident_primitive {
+    ($ty:ty, $proto_type:literal) => {
+        #[cfg(feature = "build-schemas")]
+        impl ProtoIdentifiable for $ty {
+            const PROTO_IDENT: ProtoIdent = ProtoIdent {
+                module_path: module_path!(),
+                name: stringify!($ty),
+                proto_package_name: "",
+                proto_file_path: "",
+                proto_type: $proto_type,
+            };
+        }
+    };
+}
 
-#[cfg(feature = "arc_swap")]
-impl_proto_ident!(arc_swap::ArcSwap<T>);
-#[cfg(feature = "arc_swap")]
-impl_proto_ident!(arc_swap::ArcSwapOption<T>);
+impl_proto_ident_primitive!(bool, "bool");
+impl_proto_ident_primitive!(u8, "uint32");
+impl_proto_ident_primitive!(u16, "uint32");
+impl_proto_ident_primitive!(u32, "uint32");
+impl_proto_ident_primitive!(u64, "uint64");
+impl_proto_ident_primitive!(usize, "uint64");
+impl_proto_ident_primitive!(i8, "int32");
+impl_proto_ident_primitive!(i16, "int32");
+impl_proto_ident_primitive!(i32, "int32");
+impl_proto_ident_primitive!(i64, "int64");
+impl_proto_ident_primitive!(isize, "int64");
+impl_proto_ident_primitive!(f32, "float");
+impl_proto_ident_primitive!(f64, "double");
+impl_proto_ident_primitive!(crate::bytes::Bytes, "bytes");
+impl_proto_ident_primitive!(::std::string::String, "string");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicBool, "bool");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU8, "uint32");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU16, "uint32");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU32, "uint32");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU64, "uint64");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicUsize, "uint64");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI8, "int32");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI16, "int32");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI32, "int32");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI64, "int64");
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicIsize, "int64");
 
-#[cfg(feature = "cache_padded")]
-impl_proto_ident!(crossbeam_utils::CachePadded<T>);
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::core::option::Option<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
 
-#[cfg(feature = "parking_lot")]
-impl_proto_ident!(parking_lot::Mutex<T>);
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::boxed::Box<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
 
-#[cfg(feature = "papaya")]
-impl_proto_ident!(papaya::HashMap<K, V, S>);
-#[cfg(feature = "papaya")]
-impl_proto_ident!(papaya::HashSet<T, S>);
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Arc<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Mutex<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashMap<K, V, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashMap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "map",
+    };
+}
+
+#[cfg(feature = "build-schemas")]
+impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeMap<K, V> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "BTreeMap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "map",
+    };
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashSet<T, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashSet",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "set",
+    };
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeSet<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "BTreeSet",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "set",
+    };
+}
+
+#[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwap<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwapOption<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "cache_padded"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for crossbeam_utils::CachePadded<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "parking_lot"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for parking_lot::Mutex<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "papaya"))]
+impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashMap<K, V, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashMap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "map",
+    };
+}
+
+#[cfg(all(feature = "build-schemas", feature = "papaya"))]
+impl<T: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashSet<T, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashSet",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "set",
+    };
+}
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Attribute {
