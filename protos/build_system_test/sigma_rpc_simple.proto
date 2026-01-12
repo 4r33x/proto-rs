@@ -7,6 +7,14 @@ import "goon_types.proto";
 import "rizz_types.proto";
 
 service SigmaRpc {
+  rpc RizzPing(RizzPing) returns (GoonPong) {}
+  rpc RizzUni(BarSub) returns (stream FooResponse) {}
+  rpc RizzUni2(BarSub) returns (stream FooResponse) {}
+  rpc Build(EnvelopeBuildRequest) returns (EnvelopeBuildResponse) {}
+  rpc Build2(EnvelopeBuildRequest) returns (EnvelopeBuildResponse) {}
+  rpc OwnerLookup(TransparentId) returns (BuildResponse) {}
+  rpc TestDecimals(UD128) returns (D64) {}
+}service SigmaRpc {
   rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
   rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
   rpc RizzUni2(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}

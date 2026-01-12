@@ -73,7 +73,8 @@ impl From<i64> for MilliSeconds {
 pub struct TransparentId(pub Id);
 
 #[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
-#[proto(generic_types = [T = [BuildRequest, BuildResponse, GoonPong]])]
+//unnecessary for build system, this imports would be auto-resolved
+// #[proto(generic_types = [T = [BuildRequest, BuildResponse, GoonPong]])]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Envelope<T> {
     #[proto(tag = 1)]
@@ -121,11 +122,11 @@ pub struct BuildResponse {
     proto_path = "protos/build_system_test/sigma_rpc_simple.proto"
 )]
 //unnecessary for build system, this imports would be auto-resolved
-#[proto_imports(
-    rizz_types = ["BarSub", "FooResponse"],
-    goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"],
-    extra_types = ["EnvelopeBuildRequest", "EnvelopeBuildResponse", "BuildConfig", "BuildRequest", "BuildResponse"]
-)]
+// #[proto_imports(
+//     rizz_types = ["BarSub", "FooResponse"],
+//     goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"],
+//     extra_types = ["EnvelopeBuildRequest", "EnvelopeBuildResponse", "BuildConfig", "BuildRequest", "BuildResponse"]
+// )]
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
