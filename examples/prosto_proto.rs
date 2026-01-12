@@ -137,6 +137,12 @@ type CustomOption<T> = Option<T>;
 type CustomVec<T> = Vec<T>;
 type CustomVecDeq<T> = VecDeque<T>;
 
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+struct ConcreteStdMap {
+    map_alias: CustomMap<u32, MEx, std::hash::RandomState>,
+    map: HashMap<u16, u8, std::hash::RandomState>,
+}
+
 #[proto_message]
 struct MEx {
     id: u64,

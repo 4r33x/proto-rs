@@ -8,9 +8,13 @@ use super::ProtoLabel;
 use super::ProtoSchema;
 use super::ServiceMethod;
 use super::Variant;
+use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
 use super::utils::resolve_transparent_ident;
 use super::utils::to_snake_case;
+use super::utils::wrapper_is_map;
+use super::utils::wrapper_kind_for;
+use super::utils::wrapper_label;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct GenericSpecialization {
@@ -308,7 +312,7 @@ fn render_field(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
     let name = field.name.map_or_else(|| format!("field_{idx}"), ToString::to_string);
-    let label = match field.proto_label {
+    let label = match wrapper_label(field.wrapper, field.proto_ident, field.proto_label) {
         ProtoLabel::None => "",
         ProtoLabel::Optional => "optional ",
         ProtoLabel::Repeated => "repeated ",
@@ -328,11 +332,18 @@ fn render_service(
     lines.push(format!("service {name} {{"));
 
     for method in methods {
-        let request_type =
-            proto_ident_type_name_with_generics(method.request, method.request_generic_args, package_name, ident_index, substitution);
-        let response_type = proto_ident_type_name_with_generics(
+        let request_type = method_type_name(
+            method.request,
+            method.request_generic_args,
+            method.request_wrapper,
+            package_name,
+            ident_index,
+            substitution,
+        );
+        let response_type = method_type_name(
             method.response,
             method.response_generic_args,
+            method.response_wrapper,
             package_name,
             ident_index,
             substitution,
@@ -355,12 +366,152 @@ fn field_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
+    if wrapper_is_map(field.wrapper, field.proto_ident)
+        && let Some(map_type) = map_wrapper_type_name(field, package_name, ident_index, substitution)
+    {
+        return map_type;
+    }
+
+    if let Some(inner_type) = wrapper_inner_type_name(field, package_name, ident_index, substitution) {
+        return inner_type;
+    }
+
     let ident = resolve_transparent_ident(field.proto_ident, ident_index);
     if ident.proto_type.starts_with("map<") {
         return ident.proto_type.to_string();
     }
 
     proto_ident_type_name_with_generics(ident, field.generic_args, package_name, ident_index, substitution)
+}
+
+fn method_type_name(
+    ident: ProtoIdent,
+    generic_args: &[&ProtoIdent],
+    wrapper: Option<ProtoIdent>,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> String {
+    if wrapper_is_map(wrapper, ident)
+        && let Some(map_type) = method_map_type_name(generic_args, package_name, ident_index, substitution)
+    {
+        return map_type;
+    }
+
+    if let Some(inner_type) = method_wrapper_inner_type_name(ident, generic_args, wrapper, package_name, ident_index, substitution) {
+        return inner_type;
+    }
+
+    proto_ident_type_name_with_generics(ident, generic_args, package_name, ident_index, substitution)
+}
+
+fn method_wrapper_inner_type_name(
+    ident: ProtoIdent,
+    generic_args: &[&ProtoIdent],
+    wrapper: Option<ProtoIdent>,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> Option<String> {
+    let kind = wrapper_kind_for(wrapper, ident)?;
+    if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap) {
+        return None;
+    }
+
+    let inner = generic_args
+        .first()
+        .copied()
+        .copied()
+        .map(|ident| apply_substitution(ident, substitution))
+        .map(|ident| resolve_transparent_ident(ident, ident_index))
+        .map(|ident| proto_ident_type_name(ident, package_name, ident_index));
+
+    match kind {
+        WrapperKind::Option
+        | WrapperKind::Vec
+        | WrapperKind::VecDeque
+        | WrapperKind::HashSet
+        | WrapperKind::BTreeSet
+        | WrapperKind::Box
+        | WrapperKind::Arc
+        | WrapperKind::Mutex
+        | WrapperKind::ArcSwap
+        | WrapperKind::ArcSwapOption
+        | WrapperKind::CachePadded => inner.or_else(|| {
+            let fallback = resolve_transparent_ident(ident, ident_index);
+            Some(proto_ident_type_name(fallback, package_name, ident_index))
+        }),
+        WrapperKind::HashMap | WrapperKind::BTreeMap => None,
+    }
+}
+
+fn method_map_type_name(
+    generic_args: &[&ProtoIdent],
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> Option<String> {
+    let key = generic_args.first().copied().copied()?;
+    let value = generic_args.get(1).copied().copied()?;
+    let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
+    let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
+    let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
+    let value_type = proto_ident_type_name(value_ident, package_name, ident_index);
+    Some(format!("map<{key_type}, {value_type}>"))
+}
+
+fn wrapper_inner_type_name(
+    field: &Field,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> Option<String> {
+    let kind = wrapper_kind_for(field.wrapper, field.proto_ident)?;
+    if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap) {
+        return None;
+    }
+
+    let ident = field
+        .generic_args
+        .first()
+        .copied()
+        .copied()
+        .map(|ident| apply_substitution(ident, substitution))
+        .map(|ident| resolve_transparent_ident(ident, ident_index))
+        .map(|ident| proto_ident_type_name(ident, package_name, ident_index));
+
+    match kind {
+        WrapperKind::Option
+        | WrapperKind::Vec
+        | WrapperKind::VecDeque
+        | WrapperKind::HashSet
+        | WrapperKind::BTreeSet
+        | WrapperKind::Box
+        | WrapperKind::Arc
+        | WrapperKind::Mutex
+        | WrapperKind::ArcSwap
+        | WrapperKind::ArcSwapOption
+        | WrapperKind::CachePadded => ident.or_else(|| {
+            let fallback = resolve_transparent_ident(field.proto_ident, ident_index);
+            Some(proto_ident_type_name(fallback, package_name, ident_index))
+        }),
+        WrapperKind::HashMap | WrapperKind::BTreeMap => None,
+    }
+}
+
+fn map_wrapper_type_name(
+    field: &Field,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
+) -> Option<String> {
+    let key = field.generic_args.first().copied().copied()?;
+    let value = field.generic_args.get(1).copied().copied()?;
+    let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
+    let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
+    let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
+    let value_type = proto_ident_type_name(value_ident, package_name, ident_index);
+    Some(format!("map<{key_type}, {value_type}>"))
 }
 
 fn proto_ident_type_name_with_generics(

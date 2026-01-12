@@ -2,6 +2,7 @@
 syntax = "proto3";
 package sigma_rpc_simple;
 
+import "custom_types.proto";
 import "extra_types.proto";
 import "fastnum.proto";
 import "goon_types.proto";
@@ -14,5 +15,17 @@ service SigmaRpc {
   rpc Build(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse);
   rpc Build2(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse);
   rpc OwnerLookup(goon_types.Id) returns (extra_types.BuildResponse);
+  rpc CustomExEcho(custom_types.CustomEx) returns (custom_types.CustomEx);
+  rpc MutexEcho(custom_types.MutexMEx) returns (custom_types.MutexMEx);
+  rpc ArcEcho(custom_types.ArcMEx) returns (custom_types.ArcMEx);
+  rpc BoxEcho(custom_types.BoxMEx) returns (custom_types.BoxMEx);
+  rpc OptionEcho(custom_types.OptionMEx) returns (custom_types.OptionMEx);
+  rpc VecEcho(custom_types.VecMEx) returns (custom_types.VecMEx);
+  rpc VecDequeEcho(custom_types.VecDequeMEx) returns (custom_types.VecDequeMEx);
+  rpc HashMapEcho(custom_types.HashMapMEx) returns (custom_types.HashMapMEx);
+  rpc BtreeMapEcho(custom_types.BTreeMapMEx) returns (custom_types.BTreeMapMEx);
+  rpc HashSetEcho(custom_types.HashSetMEx) returns (custom_types.HashSetMEx);
+  rpc BtreeSetEcho(custom_types.BTreeSetMEx) returns (custom_types.BTreeSetMEx);
+  rpc MexEcho(custom_types.MEx) returns (custom_types.MEx);
   rpc TestDecimals(fastnum.UD128) returns (fastnum.D64);
 }

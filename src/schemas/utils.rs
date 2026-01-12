@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use super::ProtoEntry;
 use super::ProtoIdent;
+use super::ProtoLabel;
 use super::ProtoSchema;
 
 pub(crate) fn derive_package_name(file_path: &str) -> String {
@@ -77,6 +78,73 @@ pub(crate) fn entry_sort_key(entry: &ProtoSchema) -> (u8, &'static str) {
         ProtoEntry::Service { .. } => 4,
     };
     (kind, entry.id.proto_type)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WrapperKind {
+    Option,
+    Vec,
+    VecDeque,
+    HashMap,
+    BTreeMap,
+    HashSet,
+    BTreeSet,
+    Box,
+    Arc,
+    Mutex,
+    ArcSwap,
+    ArcSwapOption,
+    CachePadded,
+}
+
+pub(crate) fn wrapper_kind(wrapper: Option<ProtoIdent>) -> Option<WrapperKind> {
+    let wrapper = wrapper?;
+    Some(match wrapper.name {
+        "Option" => WrapperKind::Option,
+        "Vec" => WrapperKind::Vec,
+        "VecDeque" => WrapperKind::VecDeque,
+        "HashMap" => WrapperKind::HashMap,
+        "BTreeMap" => WrapperKind::BTreeMap,
+        "HashSet" => WrapperKind::HashSet,
+        "BTreeSet" => WrapperKind::BTreeSet,
+        "Box" => WrapperKind::Box,
+        "Arc" => WrapperKind::Arc,
+        "Mutex" => WrapperKind::Mutex,
+        "ArcSwap" => WrapperKind::ArcSwap,
+        "ArcSwapOption" => WrapperKind::ArcSwapOption,
+        "CachePadded" => WrapperKind::CachePadded,
+        _ => return None,
+    })
+}
+
+pub(crate) fn wrapper_kind_for(wrapper: Option<ProtoIdent>, ident: ProtoIdent) -> Option<WrapperKind> {
+    wrapper_kind(wrapper).or_else(|| {
+        if ident.proto_file_path.is_empty() && ident.proto_package_name.is_empty() {
+            wrapper_kind(Some(ident))
+        } else {
+            None
+        }
+    })
+}
+
+pub(crate) fn wrapper_label(wrapper: Option<ProtoIdent>, ident: ProtoIdent, current: ProtoLabel) -> ProtoLabel {
+    match wrapper_kind_for(wrapper, ident) {
+        Some(WrapperKind::Option | WrapperKind::ArcSwapOption) => ProtoLabel::Optional,
+        Some(
+            WrapperKind::Vec
+            | WrapperKind::VecDeque
+            | WrapperKind::HashSet
+            | WrapperKind::BTreeSet
+        ) => ProtoLabel::Repeated,
+        _ => current,
+    }
+}
+
+pub(crate) fn wrapper_is_map(wrapper: Option<ProtoIdent>, ident: ProtoIdent) -> bool {
+    matches!(
+        wrapper_kind_for(wrapper, ident),
+        Some(WrapperKind::HashMap | WrapperKind::BTreeMap)
+    )
 }
 
 pub(crate) fn resolve_transparent_ident(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> ProtoIdent {

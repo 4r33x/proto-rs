@@ -115,6 +115,7 @@ pub struct ProtoIdent {
 
 pub trait ProtoIdentifiable {
     const PROTO_IDENT: ProtoIdent;
+    const WRAPPER: Option<ProtoIdent> = None;
 }
 
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
@@ -164,23 +165,80 @@ impl_proto_ident_primitive!(::core::sync::atomic::AtomicI64, "int64");
 impl_proto_ident_primitive!(::core::sync::atomic::AtomicIsize, "int64");
 
 #[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable, const N: usize> ProtoIdentifiable for [T; N] {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+}
+
+#[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::core::option::Option<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "Option",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "Option",
+    });
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::boxed::Box<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "Box",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "Box",
+    });
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Arc<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "Arc",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "Arc",
+    });
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Mutex<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "Mutex",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "Mutex",
+    });
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::vec::Vec<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "Vec",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "Vec",
+    });
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::VecDeque<T> {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "VecDeque",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "VecDeque",
+    });
 }
 
 #[cfg(feature = "build-schemas")]
@@ -192,6 +250,7 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std:
         proto_file_path: "",
         proto_type: "map",
     };
+    const WRAPPER: Option<ProtoIdent> = Some(Self::PROTO_IDENT);
 }
 
 #[cfg(feature = "build-schemas")]
@@ -203,48 +262,79 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::co
         proto_file_path: "",
         proto_type: "map",
     };
+    const WRAPPER: Option<ProtoIdent> = Some(Self::PROTO_IDENT);
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashSet<T, S> {
-    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
         module_path: module_path!(),
         name: "HashSet",
         proto_package_name: "",
         proto_file_path: "",
         proto_type: "set",
-    };
+    });
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeSet<T> {
-    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
         module_path: module_path!(),
         name: "BTreeSet",
         proto_package_name: "",
         proto_file_path: "",
         proto_type: "set",
-    };
+    });
 }
 
 #[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwap<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "ArcSwap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "ArcSwap",
+    });
 }
 
 #[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwapOption<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "ArcSwapOption",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "ArcSwapOption",
+    });
 }
 
 #[cfg(all(feature = "build-schemas", feature = "cache_padded"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crossbeam_utils::CachePadded<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "CachePadded",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "CachePadded",
+    });
 }
 
 #[cfg(all(feature = "build-schemas", feature = "parking_lot"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for parking_lot::Mutex<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+        module_path: module_path!(),
+        name: "Mutex",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: "Mutex",
+    });
 }
 
 #[cfg(all(feature = "build-schemas", feature = "papaya"))]
@@ -256,17 +346,19 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for papaya
         proto_file_path: "",
         proto_type: "map",
     };
+    const WRAPPER: Option<ProtoIdent> = Some(Self::PROTO_IDENT);
 }
 
 #[cfg(all(feature = "build-schemas", feature = "papaya"))]
 impl<T: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashSet<T, S> {
-    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
         module_path: module_path!(),
         name: "HashSet",
         proto_package_name: "",
         proto_file_path: "",
         proto_type: "set",
-    };
+    });
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -376,6 +468,7 @@ pub struct Field {
     pub name: Option<&'static str>,
     pub proto_ident: ProtoIdent,
     pub rust_proto_ident: ProtoIdent,
+    pub wrapper: Option<ProtoIdent>,
     pub generic_args: &'static [&'static ProtoIdent],
     pub proto_label: ProtoLabel,
     pub tag: u32,
@@ -390,8 +483,10 @@ pub struct ServiceMethod {
     pub name: &'static str,
     pub request: ProtoIdent,
     pub request_generic_args: &'static [&'static ProtoIdent],
+    pub request_wrapper: Option<ProtoIdent>,
     pub response: ProtoIdent,
     pub response_generic_args: &'static [&'static ProtoIdent],
+    pub response_wrapper: Option<ProtoIdent>,
     pub client_streaming: bool,
     pub server_streaming: bool,
 }
