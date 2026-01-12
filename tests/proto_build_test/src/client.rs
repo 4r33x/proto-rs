@@ -15,7 +15,7 @@ pub mod custom_types {
 
     #[proto_message]
     pub struct BTreeSetMEx {
-        pub value: BTreeSet,
+        pub value: MEx,
     }
 
     #[proto_message]
@@ -27,25 +27,25 @@ pub mod custom_types {
     pub struct CustomEx {
         pub mutex: MEx,
         pub mutex_copy: u64,
-        pub mutex_custom: MEx<MEx>,
-        pub mutex_copy_custom: u64<u64>,
+        pub mutex_custom: MEx,
+        pub mutex_copy_custom: u64,
         pub arc: MEx,
         pub arc_copy: u64,
-        pub arc_custom: MEx<MEx>,
-        pub arc_copy_custom: u64<u64>,
+        pub arc_custom: MEx,
+        pub arc_copy_custom: u64,
         pub boxed: MEx,
         pub box_copy: u64,
-        pub boxed_custom: MEx<MEx>,
-        pub box_copy_custom: u64<u64>,
-        pub custom_map: HashMap<u32, MEx, std :: hash :: RandomState>,
-        pub custom_option: MEx<MEx>,
-        pub custom_option_copy: u64<u64>,
-        pub custom_vec_bytes: Vec<u32>,
-        pub custom_vec_deque_bytes: VecDeque<u32>,
-        pub custom_vec_copy: Vec<u64>,
-        pub custom_vec_deque_copy: VecDeque<u64>,
-        pub custom_vec: Vec<MEx>,
-        pub custom_vec_deque: VecDeque<MEx>,
+        pub boxed_custom: MEx,
+        pub box_copy_custom: u64,
+        pub custom_map: ::proto_rs::alloc::collections::BTreeMap<u32, MEx>,
+        pub custom_option: ::core::option::Option<MEx>,
+        pub custom_option_copy: ::core::option::Option<u64>,
+        pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u32>,
+        pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u32>,
+        pub custom_vec_copy: ::proto_rs::alloc::vec::Vec<u64>,
+        pub custom_vec_deque_copy: ::proto_rs::alloc::vec::Vec<u64>,
+        pub custom_vec: ::proto_rs::alloc::vec::Vec<MEx>,
+        pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
     #[proto_message]
@@ -55,7 +55,7 @@ pub mod custom_types {
 
     #[proto_message]
     pub struct HashSetMEx {
-        pub value: HashSet,
+        pub value: MEx,
     }
 
     #[proto_message]
@@ -75,12 +75,12 @@ pub mod custom_types {
 
     #[proto_message]
     pub struct VecDequeMEx {
-        pub value: VecDeque,
+        pub value: MEx,
     }
 
     #[proto_message]
     pub struct VecMEx {
-        pub value: Vec,
+        pub value: MEx,
     }
 
 }

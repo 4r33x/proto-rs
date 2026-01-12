@@ -17,6 +17,7 @@ use super::ServiceMethod;
 use super::TypeReplace;
 use super::UserAttr;
 use super::Variant;
+use super::utils::WrapperKind;
 use super::utils::indent_line;
 use super::utils::module_path_for_package;
 use super::utils::module_path_segments;
@@ -24,11 +25,10 @@ use super::utils::parse_map_types;
 use super::utils::proto_scalar_type;
 use super::utils::resolve_transparent_ident;
 use super::utils::rust_type_name;
+use super::utils::to_snake_case;
 use super::utils::wrapper_is_map;
 use super::utils::wrapper_kind_for;
 use super::utils::wrapper_label;
-use super::utils::WrapperKind;
-use super::utils::to_snake_case;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ClientImport {
@@ -1311,14 +1311,7 @@ fn render_field_type(
     let base = if let Some(type_replacement) = type_replacement {
         type_replacement.to_string()
     } else {
-        render_wrapper_field_base_type(
-            field,
-            package_name,
-            ident_index,
-            package_by_ident,
-            proto_type_index,
-            client_imports,
-        )
+        render_wrapper_field_base_type(field, package_name, ident_index, package_by_ident, proto_type_index, client_imports)
     };
     match wrapper_label(field.wrapper, field.proto_ident, field.proto_label) {
         ProtoLabel::None => base,
@@ -1335,16 +1328,10 @@ fn render_wrapper_field_base_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    if wrapper_is_map(field.wrapper, field.proto_ident) {
-        if let Some(base) = render_map_wrapper_type(
-            field.generic_args,
-            package_name,
-            package_by_ident,
-            proto_type_index,
-            client_imports,
-        ) {
-            return base;
-        }
+    if wrapper_is_map(field.wrapper, field.proto_ident)
+        && let Some(base) = render_map_wrapper_type(field.generic_args, package_name, package_by_ident, proto_type_index, client_imports)
+    {
+        return base;
     }
 
     if let Some(inner) = render_wrapper_inner_type(
@@ -1384,9 +1371,11 @@ fn render_wrapper_inner_type(
         return None;
     }
 
-    let inner = generic_args.first().copied().copied().map(|ident| {
-        render_proto_type(ident, package_name, package_by_ident, proto_type_index, client_imports)
-    });
+    let inner = generic_args
+        .first()
+        .copied()
+        .copied()
+        .map(|ident| render_proto_type(ident, package_name, package_by_ident, proto_type_index, client_imports));
 
     match kind {
         WrapperKind::Option
@@ -1411,7 +1400,7 @@ fn render_map_wrapper_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> Option<String> {
-    let key = generic_args.get(0).copied().copied()?;
+    let key = generic_args.first().copied().copied()?;
     let value = generic_args.get(1).copied().copied()?;
     let key_type = render_proto_type(key, package_name, package_by_ident, proto_type_index, client_imports);
     let value_type = render_proto_type(value, package_name, package_by_ident, proto_type_index, client_imports);
@@ -1487,10 +1476,10 @@ fn render_method_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    if wrapper_is_map(wrapper, ident) {
-        if let Some(base) = render_map_wrapper_type(generic_args, current_package, package_by_ident, proto_type_index, client_imports) {
-            return base;
-        }
+    if wrapper_is_map(wrapper, ident)
+        && let Some(base) = render_map_wrapper_type(generic_args, current_package, package_by_ident, proto_type_index, client_imports)
+    {
+        return base;
     }
 
     if let Some(inner) = render_wrapper_inner_type(
@@ -1505,7 +1494,14 @@ fn render_method_type(
         return inner;
     }
 
-    render_proto_type_with_generics(ident, generic_args, current_package, package_by_ident, proto_type_index, client_imports)
+    render_proto_type_with_generics(
+        ident,
+        generic_args,
+        current_package,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    )
 }
 
 fn render_map_type(

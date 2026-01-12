@@ -1241,9 +1241,10 @@ fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
 }
 
 fn wrapper_ident_tokens(ty: &Type) -> TokenStream2 {
-    match ty {
-        Type::Path(_) => quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::WRAPPER },
-        _ => quote! { ::core::option::Option::None },
+    if let Type::Path(_) = ty {
+        quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::WRAPPER }
+    } else {
+        quote! { ::core::option::Option::None }
     }
 }
 

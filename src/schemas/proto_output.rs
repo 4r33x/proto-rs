@@ -8,13 +8,13 @@ use super::ProtoLabel;
 use super::ProtoSchema;
 use super::ServiceMethod;
 use super::Variant;
+use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
 use super::utils::resolve_transparent_ident;
 use super::utils::to_snake_case;
 use super::utils::wrapper_is_map;
 use super::utils::wrapper_kind_for;
 use super::utils::wrapper_label;
-use super::utils::WrapperKind;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct GenericSpecialization {
@@ -366,10 +366,10 @@ fn field_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
-    if wrapper_is_map(field.wrapper, field.proto_ident) {
-        if let Some(map_type) = map_wrapper_type_name(field, package_name, ident_index, substitution) {
-            return map_type;
-        }
+    if wrapper_is_map(field.wrapper, field.proto_ident)
+        && let Some(map_type) = map_wrapper_type_name(field, package_name, ident_index, substitution)
+    {
+        return map_type;
     }
 
     if let Some(inner_type) = wrapper_inner_type_name(field, package_name, ident_index, substitution) {
@@ -392,10 +392,10 @@ fn method_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
-    if wrapper_is_map(wrapper, ident) {
-        if let Some(map_type) = method_map_type_name(generic_args, package_name, ident_index, substitution) {
-            return map_type;
-        }
+    if wrapper_is_map(wrapper, ident)
+        && let Some(map_type) = method_map_type_name(generic_args, package_name, ident_index, substitution)
+    {
+        return map_type;
     }
 
     if let Some(inner_type) = method_wrapper_inner_type_name(ident, generic_args, wrapper, package_name, ident_index, substitution) {
@@ -451,7 +451,7 @@ fn method_map_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
-    let key = generic_args.get(0).copied().copied()?;
+    let key = generic_args.first().copied().copied()?;
     let value = generic_args.get(1).copied().copied()?;
     let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
     let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
@@ -505,7 +505,7 @@ fn map_wrapper_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
-    let key = field.generic_args.get(0).copied().copied()?;
+    let key = field.generic_args.first().copied().copied()?;
     let value = field.generic_args.get(1).copied().copied()?;
     let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
     let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
