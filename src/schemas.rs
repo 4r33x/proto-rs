@@ -142,11 +142,6 @@ pub enum ProtoType {
     None,
 }
 
-pub trait ProtoIdentifiable {
-    const PROTO_IDENT: ProtoIdent;
-    const PROTO_TYPE: ProtoType;
-}
-
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
     const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
