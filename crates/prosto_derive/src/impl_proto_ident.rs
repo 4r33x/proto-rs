@@ -58,8 +58,10 @@ pub fn impl_proto_ident(input: TokenStream) -> TokenStream {
                     name: stringify!(#ty),
                     proto_package_name: "",
                     proto_file_path: "",
-                    proto_type: stringify!(#ty),
+                    proto_type: ::proto_rs::schemas::ProtoType::Message(stringify!(#ty)),
+                    generics: &[],
                 };
+                const PROTO_TYPE: ::proto_rs::schemas::ProtoType = ::proto_rs::schemas::ProtoType::Message(stringify!(#ty));
             }
         }
     } else {
@@ -71,8 +73,10 @@ pub fn impl_proto_ident(input: TokenStream) -> TokenStream {
                     name: stringify!(#ty),
                     proto_package_name: "",
                     proto_file_path: "",
-                    proto_type: stringify!(#ty),
+                    proto_type: ::proto_rs::schemas::ProtoType::Message(stringify!(#ty)),
+                    generics: &[],
                 };
+                const PROTO_TYPE: ::proto_rs::schemas::ProtoType = ::proto_rs::schemas::ProtoType::Message(stringify!(#ty));
             }
         }
     };

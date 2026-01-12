@@ -110,20 +110,50 @@ pub struct ProtoIdent {
     pub name: &'static str,
     pub proto_package_name: &'static str,
     pub proto_file_path: &'static str,
-    pub proto_type: &'static str,
+    pub proto_type: ProtoType,
+    pub generics: &'static [ProtoIdent],
+}
+
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ProtoType {
+    Message(&'static str),
+    Optional(&'static ProtoType),
+    Repeated(&'static ProtoType),
+    Double,
+    Float,
+    Int32,
+    Int64,
+    Uint32,
+    Uint64,
+    Sint32,
+    Sint64,
+    Fixed32,
+    Fixed64,
+    Sfixed32,
+    Sfixed64,
+    Bool,
+    Bytes,
+    String,
+    Enum,
+    Map {
+        key: &'static ProtoType,
+        value: &'static ProtoType,
+    },
+    None,
 }
 
 pub trait ProtoIdentifiable {
     const PROTO_IDENT: ProtoIdent;
-    const WRAPPER: Option<ProtoIdent> = None;
+    const PROTO_TYPE: ProtoType;
 }
 
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 macro_rules! impl_proto_ident_primitive {
-    ($ty:ty, $proto_type:literal) => {
+    ($ty:ty, $proto_type:expr) => {
         #[cfg(feature = "build-schemas")]
         impl ProtoIdentifiable for $ty {
             const PROTO_IDENT: ProtoIdent = ProtoIdent {
@@ -132,113 +162,122 @@ macro_rules! impl_proto_ident_primitive {
                 proto_package_name: "",
                 proto_file_path: "",
                 proto_type: $proto_type,
+                generics: &[],
             };
+            const PROTO_TYPE: ProtoType = $proto_type;
         }
     };
 }
 
-impl_proto_ident_primitive!(bool, "bool");
-impl_proto_ident_primitive!(u8, "uint32");
-impl_proto_ident_primitive!(u16, "uint32");
-impl_proto_ident_primitive!(u32, "uint32");
-impl_proto_ident_primitive!(u64, "uint64");
-impl_proto_ident_primitive!(usize, "uint64");
-impl_proto_ident_primitive!(i8, "int32");
-impl_proto_ident_primitive!(i16, "int32");
-impl_proto_ident_primitive!(i32, "int32");
-impl_proto_ident_primitive!(i64, "int64");
-impl_proto_ident_primitive!(isize, "int64");
-impl_proto_ident_primitive!(f32, "float");
-impl_proto_ident_primitive!(f64, "double");
-impl_proto_ident_primitive!(crate::bytes::Bytes, "bytes");
-impl_proto_ident_primitive!(::std::string::String, "string");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicBool, "bool");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicU8, "uint32");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicU16, "uint32");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicU32, "uint32");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicU64, "uint64");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicUsize, "uint64");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicI8, "int32");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicI16, "int32");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicI32, "int32");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicI64, "int64");
-impl_proto_ident_primitive!(::core::sync::atomic::AtomicIsize, "int64");
+impl_proto_ident_primitive!(bool, ProtoType::Bool);
+impl_proto_ident_primitive!(u8, ProtoType::Uint32);
+impl_proto_ident_primitive!(u16, ProtoType::Uint32);
+impl_proto_ident_primitive!(u32, ProtoType::Uint32);
+impl_proto_ident_primitive!(u64, ProtoType::Uint64);
+impl_proto_ident_primitive!(usize, ProtoType::Uint64);
+impl_proto_ident_primitive!(i8, ProtoType::Int32);
+impl_proto_ident_primitive!(i16, ProtoType::Int32);
+impl_proto_ident_primitive!(i32, ProtoType::Int32);
+impl_proto_ident_primitive!(i64, ProtoType::Int64);
+impl_proto_ident_primitive!(isize, ProtoType::Int64);
+impl_proto_ident_primitive!(f32, ProtoType::Float);
+impl_proto_ident_primitive!(f64, ProtoType::Double);
+impl_proto_ident_primitive!(crate::bytes::Bytes, ProtoType::Bytes);
+impl_proto_ident_primitive!(::std::string::String, ProtoType::String);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicBool, ProtoType::Bool);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU8, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU16, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU32, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU64, ProtoType::Uint64);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicUsize, ProtoType::Uint64);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI8, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI16, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI32, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI64, ProtoType::Int64);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicIsize, ProtoType::Int64);
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable, const N: usize> ProtoIdentifiable for [T; N] {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::core::option::Option<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "Option",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "Option",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Optional(&T::PROTO_TYPE);
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::boxed::Box<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "Box",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "Box",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Arc<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "Arc",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "Arc",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Mutex<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "Mutex",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "Mutex",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::vec::Vec<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "Vec",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "Vec",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::VecDeque<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "VecDeque",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "VecDeque",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
 }
 
 #[cfg(feature = "build-schemas")]
@@ -248,9 +287,13 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std:
         name: "HashMap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "map",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[K::PROTO_IDENT, V::PROTO_IDENT],
     };
-    const WRAPPER: Option<ProtoIdent> = Some(Self::PROTO_IDENT);
+    const PROTO_TYPE: ProtoType = ProtoType::Map {
+        key: &K::PROTO_TYPE,
+        value: &V::PROTO_TYPE,
+    };
 }
 
 #[cfg(feature = "build-schemas")]
@@ -260,81 +303,91 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::co
         name: "BTreeMap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "map",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[K::PROTO_IDENT, V::PROTO_IDENT],
     };
-    const WRAPPER: Option<ProtoIdent> = Some(Self::PROTO_IDENT);
+    const PROTO_TYPE: ProtoType = ProtoType::Map {
+        key: &K::PROTO_TYPE,
+        value: &V::PROTO_TYPE,
+    };
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashSet<T, S> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "HashSet",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "set",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
 }
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeSet<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "BTreeSet",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "set",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
 }
 
 #[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwap<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "ArcSwap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "ArcSwap",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwapOption<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "ArcSwapOption",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "ArcSwapOption",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Optional(&T::PROTO_TYPE);
 }
 
 #[cfg(all(feature = "build-schemas", feature = "cache_padded"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crossbeam_utils::CachePadded<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "CachePadded",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "CachePadded",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(all(feature = "build-schemas", feature = "parking_lot"))]
 impl<T: ProtoIdentifiable> ProtoIdentifiable for parking_lot::Mutex<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "Mutex",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "Mutex",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
 }
 
 #[cfg(all(feature = "build-schemas", feature = "papaya"))]
@@ -344,21 +397,26 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for papaya
         name: "HashMap",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "map",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[K::PROTO_IDENT, V::PROTO_IDENT],
     };
-    const WRAPPER: Option<ProtoIdent> = Some(Self::PROTO_IDENT);
+    const PROTO_TYPE: ProtoType = ProtoType::Map {
+        key: &K::PROTO_TYPE,
+        value: &V::PROTO_TYPE,
+    };
 }
 
 #[cfg(all(feature = "build-schemas", feature = "papaya"))]
 impl<T: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashSet<T, S> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const WRAPPER: Option<ProtoIdent> = Some(ProtoIdent {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),
         name: "HashSet",
         proto_package_name: "",
         proto_file_path: "",
-        proto_type: "set",
-    });
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]

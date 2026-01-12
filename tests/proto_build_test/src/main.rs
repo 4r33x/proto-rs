@@ -238,7 +238,7 @@ use proto_rs::schemas::ProtoSchema;
 fn main() {
     let rust_client_path = "src/client.rs";
     let sigma_entries: HashSet<ProtoSchema> = inventory::iter::<ProtoSchema>()
-        .filter(|schema| schema.id.name == "SigmaRpc" && schema.id.proto_type != "Import")
+        .filter(|schema| schema.id.name == "SigmaRpc" && schema.id.proto_type != proto_rs::schemas::ProtoType::None)
         .cloned()
         .collect();
     println!("{:?}", sigma_entries);

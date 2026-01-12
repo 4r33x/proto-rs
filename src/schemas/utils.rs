@@ -4,6 +4,7 @@ use super::ProtoEntry;
 use super::ProtoIdent;
 use super::ProtoLabel;
 use super::ProtoSchema;
+use super::ProtoType;
 
 pub(crate) fn derive_package_name(file_path: &str) -> String {
     file_path.trim_end_matches(".proto").replace(['/', '\\', '-', '.'], "_").to_lowercase()
@@ -46,30 +47,61 @@ pub(crate) fn rust_type_name(ident: ProtoIdent) -> String {
     strip_proto_suffix(ident.name)
 }
 
-pub(crate) fn proto_scalar_type(proto_type: &str) -> Option<&'static str> {
+pub(crate) fn proto_scalar_type(proto_type: &ProtoType) -> Option<&'static str> {
     match proto_type {
-        "double" => Some("f64"),
-        "float" => Some("f32"),
-        "int32" | "sint32" | "sfixed32" => Some("i32"),
-        "int64" | "sint64" | "sfixed64" => Some("i64"),
-        "uint32" | "fixed32" => Some("u32"),
-        "uint64" | "fixed64" => Some("u64"),
-        "bool" => Some("bool"),
-        "string" => Some("::proto_rs::alloc::string::String"),
-        "bytes" => Some("::proto_rs::alloc::vec::Vec<u8>"),
+        ProtoType::Double => Some("f64"),
+        ProtoType::Float => Some("f32"),
+        ProtoType::Int32 | ProtoType::Sint32 | ProtoType::Sfixed32 => Some("i32"),
+        ProtoType::Int64 | ProtoType::Sint64 | ProtoType::Sfixed64 => Some("i64"),
+        ProtoType::Uint32 | ProtoType::Fixed32 => Some("u32"),
+        ProtoType::Uint64 | ProtoType::Fixed64 => Some("u64"),
+        ProtoType::Bool => Some("bool"),
+        ProtoType::String => Some("::proto_rs::alloc::string::String"),
+        ProtoType::Bytes => Some("::proto_rs::alloc::vec::Vec<u8>"),
         _ => None,
     }
 }
 
-pub(crate) fn parse_map_types(proto_type: &str) -> Option<(&str, &str)> {
-    let inner = proto_type.strip_prefix("map<")?.strip_suffix('>')?;
-    let mut parts = inner.splitn(2, ',');
-    let key = parts.next()?.trim();
-    let value = parts.next()?.trim();
-    Some((key, value))
+pub(crate) fn proto_map_types(proto_type: &ProtoType) -> Option<(&ProtoType, &ProtoType)> {
+    match proto_type {
+        ProtoType::Map { key, value } => Some((key, value)),
+        _ => None,
+    }
 }
 
-pub(crate) fn entry_sort_key(entry: &ProtoSchema) -> (u8, &'static str) {
+pub(crate) fn proto_type_name(proto_type: &ProtoType) -> String {
+    match proto_type {
+        ProtoType::Message(name) => (*name).to_string(),
+        ProtoType::Optional(inner) | ProtoType::Repeated(inner) => proto_type_name(inner),
+        ProtoType::Double => "double".to_string(),
+        ProtoType::Float => "float".to_string(),
+        ProtoType::Int32 => "int32".to_string(),
+        ProtoType::Int64 => "int64".to_string(),
+        ProtoType::Uint32 => "uint32".to_string(),
+        ProtoType::Uint64 => "uint64".to_string(),
+        ProtoType::Sint32 => "sint32".to_string(),
+        ProtoType::Sint64 => "sint64".to_string(),
+        ProtoType::Fixed32 => "fixed32".to_string(),
+        ProtoType::Fixed64 => "fixed64".to_string(),
+        ProtoType::Sfixed32 => "sfixed32".to_string(),
+        ProtoType::Sfixed64 => "sfixed64".to_string(),
+        ProtoType::Bool => "bool".to_string(),
+        ProtoType::Bytes => "bytes".to_string(),
+        ProtoType::String => "string".to_string(),
+        ProtoType::Enum => "enum".to_string(),
+        ProtoType::Map { key, value } => format!("map<{}, {}>", proto_type_name(key), proto_type_name(value)),
+        ProtoType::None => "none".to_string(),
+    }
+}
+
+pub(crate) fn proto_ident_base_type_name(ident: ProtoIdent) -> String {
+    match ident.proto_type {
+        ProtoType::Enum | ProtoType::None => ident.name.to_string(),
+        _ => proto_type_name(&ident.proto_type),
+    }
+}
+
+pub(crate) fn entry_sort_key(entry: &ProtoSchema) -> (u8, String) {
     let kind = match entry.content {
         ProtoEntry::Import { .. } => 0,
         ProtoEntry::SimpleEnum { .. } => 1,
@@ -77,7 +109,7 @@ pub(crate) fn entry_sort_key(entry: &ProtoSchema) -> (u8, &'static str) {
         ProtoEntry::ComplexEnum { .. } => 3,
         ProtoEntry::Service { .. } => 4,
     };
-    (kind, entry.id.proto_type)
+    (kind, proto_ident_base_type_name(entry.id))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,21 +162,13 @@ pub(crate) fn wrapper_kind_for(wrapper: Option<ProtoIdent>, ident: ProtoIdent) -
 pub(crate) fn wrapper_label(wrapper: Option<ProtoIdent>, ident: ProtoIdent, current: ProtoLabel) -> ProtoLabel {
     match wrapper_kind_for(wrapper, ident) {
         Some(WrapperKind::Option | WrapperKind::ArcSwapOption) => ProtoLabel::Optional,
-        Some(
-            WrapperKind::Vec
-            | WrapperKind::VecDeque
-            | WrapperKind::HashSet
-            | WrapperKind::BTreeSet
-        ) => ProtoLabel::Repeated,
+        Some(WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet) => ProtoLabel::Repeated,
         _ => current,
     }
 }
 
 pub(crate) fn wrapper_is_map(wrapper: Option<ProtoIdent>, ident: ProtoIdent) -> bool {
-    matches!(
-        wrapper_kind_for(wrapper, ident),
-        Some(WrapperKind::HashMap | WrapperKind::BTreeMap)
-    )
+    matches!(wrapper_kind_for(wrapper, ident), Some(WrapperKind::HashMap | WrapperKind::BTreeMap))
 }
 
 pub(crate) fn resolve_transparent_ident(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> ProtoIdent {

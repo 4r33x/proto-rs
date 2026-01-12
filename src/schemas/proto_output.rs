@@ -10,6 +10,9 @@ use super::ServiceMethod;
 use super::Variant;
 use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
+use super::utils::proto_ident_base_type_name;
+use super::utils::proto_map_types;
+use super::utils::proto_type_name;
 use super::utils::resolve_transparent_ident;
 use super::utils::to_snake_case;
 use super::utils::wrapper_is_map;
@@ -152,14 +155,15 @@ pub(crate) fn render_entries(
 
     for entry in ordered_entries {
         // Skip duplicate proto_types (ensures stable ordering - first occurrence wins)
-        if !seen_proto_types.insert(entry.id.proto_type) {
+        let entry_proto_type = proto_ident_base_type_name(entry.id);
+        if !seen_proto_types.insert(entry_proto_type.clone()) {
             continue;
         }
 
         // Skip concrete variant schemas that will be rendered via specializations
         // These are identifiable by having a proto_type that differs from their name
         // and matches a specialized type
-        if entry.id.proto_type != entry.id.name && specialized_types.contains(entry.id.proto_type) {
+        if entry_proto_type != entry.id.name && specialized_types.contains(entry_proto_type.as_str()) {
             continue;
         }
 
@@ -200,12 +204,13 @@ fn render_entry(
         return rendered;
     }
 
+    let entry_name = proto_ident_base_type_name(entry.id);
     let definition = match entry.content {
-        ProtoEntry::Struct { fields } => render_struct(entry.id.proto_type, fields, package_name, ident_index, None),
-        ProtoEntry::SimpleEnum { variants } => render_simple_enum(entry.id.proto_type, variants),
-        ProtoEntry::ComplexEnum { variants } => render_complex_enum(entry.id.proto_type, variants, package_name, ident_index, None),
+        ProtoEntry::Struct { fields } => render_struct(&entry_name, fields, package_name, ident_index, None),
+        ProtoEntry::SimpleEnum { variants } => render_simple_enum(&entry_name, variants),
+        ProtoEntry::ComplexEnum { variants } => render_complex_enum(&entry_name, variants, package_name, ident_index, None),
         ProtoEntry::Import { .. } => return Vec::new(),
-        ProtoEntry::Service { methods, .. } => render_service(entry.id.proto_type, methods, package_name, ident_index, None),
+        ProtoEntry::Service { methods, .. } => render_service(&entry_name, methods, package_name, ident_index, None),
     };
 
     vec![definition]
@@ -377,8 +382,8 @@ fn field_type_name(
     }
 
     let ident = resolve_transparent_ident(field.proto_ident, ident_index);
-    if ident.proto_type.starts_with("map<") {
-        return ident.proto_type.to_string();
+    if proto_map_types(&ident.proto_type).is_some() {
+        return proto_type_name(&ident.proto_type);
     }
 
     proto_ident_type_name_with_generics(ident, field.generic_args, package_name, ident_index, substitution)
@@ -393,7 +398,7 @@ fn method_type_name(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
     if wrapper_is_map(wrapper, ident)
-        && let Some(map_type) = method_map_type_name(generic_args, package_name, ident_index, substitution)
+        && let Some(map_type) = method_map_type_name(wrapper, generic_args, package_name, ident_index, substitution)
     {
         return map_type;
     }
@@ -418,10 +423,7 @@ fn method_wrapper_inner_type_name(
         return None;
     }
 
-    let inner = generic_args
-        .first()
-        .copied()
-        .copied()
+    let inner = wrapper_first_generic(wrapper, generic_args)
         .map(|ident| apply_substitution(ident, substitution))
         .map(|ident| resolve_transparent_ident(ident, ident_index))
         .map(|ident| proto_ident_type_name(ident, package_name, ident_index));
@@ -446,13 +448,13 @@ fn method_wrapper_inner_type_name(
 }
 
 fn method_map_type_name(
+    wrapper: Option<ProtoIdent>,
     generic_args: &[&ProtoIdent],
     package_name: &str,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
-    let key = generic_args.first().copied().copied()?;
-    let value = generic_args.get(1).copied().copied()?;
+    let (key, value) = wrapper_map_args(wrapper, generic_args)?;
     let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
     let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
     let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
@@ -471,11 +473,7 @@ fn wrapper_inner_type_name(
         return None;
     }
 
-    let ident = field
-        .generic_args
-        .first()
-        .copied()
-        .copied()
+    let ident = wrapper_first_generic(field.wrapper, field.generic_args)
         .map(|ident| apply_substitution(ident, substitution))
         .map(|ident| resolve_transparent_ident(ident, ident_index))
         .map(|ident| proto_ident_type_name(ident, package_name, ident_index));
@@ -505,13 +503,29 @@ fn map_wrapper_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
-    let key = field.generic_args.first().copied().copied()?;
-    let value = field.generic_args.get(1).copied().copied()?;
+    let (key, value) = wrapper_map_args(field.wrapper, field.generic_args)?;
     let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
     let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
     let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
     let value_type = proto_ident_type_name(value_ident, package_name, ident_index);
     Some(format!("map<{key_type}, {value_type}>"))
+}
+
+fn wrapper_first_generic(wrapper: Option<ProtoIdent>, generic_args: &[&ProtoIdent]) -> Option<ProtoIdent> {
+    wrapper.and_then(|ident| ident.generics.first().copied()).or_else(|| generic_args.first().copied().copied())
+}
+
+fn wrapper_map_args(wrapper: Option<ProtoIdent>, generic_args: &[&ProtoIdent]) -> Option<(ProtoIdent, ProtoIdent)> {
+    wrapper
+        .and_then(|ident| match ident.generics {
+            [key, value, ..] => Some((*key, *value)),
+            _ => None,
+        })
+        .or_else(|| {
+            let key = generic_args.first().copied().copied()?;
+            let value = generic_args.get(1).copied().copied()?;
+            Some((key, value))
+        })
 }
 
 fn proto_ident_type_name_with_generics(
@@ -529,7 +543,7 @@ fn proto_ident_type_name_with_generics(
     // Check if proto_type already represents a specialized/concrete type
     // (e.g., proto_type="EnvelopeGoonPong" but name="Envelope")
     // If so, don't append generic args again to avoid duplication
-    if ident.proto_type != ident.name {
+    if proto_ident_base_type_name(ident) != ident.name {
         return proto_ident_type_name(ident, package_name, ident_index);
     }
 
@@ -549,9 +563,9 @@ fn proto_ident_type_name_with_generics(
 }
 
 fn specialized_proto_name(base: ProtoIdent, args: &[ProtoIdent]) -> String {
-    let mut name = base.proto_type.to_string();
+    let mut name = proto_ident_base_type_name(base);
     for arg in args {
-        name.push_str(arg.proto_type);
+        name.push_str(&proto_ident_base_type_name(*arg));
     }
     name
 }
@@ -559,9 +573,9 @@ fn specialized_proto_name(base: ProtoIdent, args: &[ProtoIdent]) -> String {
 fn proto_ident_type_name(ident: ProtoIdent, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
     let ident = resolve_transparent_ident(ident, ident_index);
     if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
-        ident.proto_type.to_string()
+        proto_ident_base_type_name(ident)
     } else {
-        format!("{}.{}", ident.proto_package_name, ident.proto_type)
+        format!("{}.{}", ident.proto_package_name, proto_ident_base_type_name(ident))
     }
 }
 
@@ -569,7 +583,7 @@ fn apply_substitution(ident: ProtoIdent, substitution: Option<&BTreeMap<&str, Pr
     let Some(substitution) = substitution else {
         return ident;
     };
-    substitution.get(ident.proto_type).copied().unwrap_or(ident)
+    substitution.get(proto_ident_base_type_name(ident).as_str()).copied().unwrap_or(ident)
 }
 
 fn collect_field_imports(
@@ -637,7 +651,9 @@ fn collect_proto_ident_imports(
         if !ident.module_path.is_empty() && !ident_index.contains_key(ident) {
             return Err(std::io::Error::other(format!(
                 "unresolved ProtoIdent for {} (file: {}, package: {})",
-                ident.proto_type, ident.proto_file_path, ident.proto_package_name
+                proto_ident_base_type_name(*ident),
+                ident.proto_file_path,
+                ident.proto_package_name
             )));
         }
         imports.insert(ident.proto_file_path.to_string());
