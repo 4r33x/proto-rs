@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.2]
+- Impl ProtoIdentifiable for AddressHasherBuilder under solana_address_hash feature gate
+
 ## [0.7.1]
 - Impl ProtoIdentifiable for ZeroCopy<T>
 
