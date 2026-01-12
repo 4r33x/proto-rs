@@ -13,6 +13,33 @@ use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
+//example of custom encode\decode impl
+pub struct ValueCanBeFolded {
+    a: u64,
+    b: u64,
+    c: u64,
+}
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto", sun = [ValueCanBeFolded])]
+pub struct FoldedValue {
+    pub a: u64,
+    pub b: u64,
+}
+
+impl proto_rs::ProtoShadow<ValueCanBeFolded> for FoldedValue {
+    type Sun<'a> = &'a ValueCanBeFolded;
+    type OwnedSun = ValueCanBeFolded;
+    type View<'a> = Self;
+
+    fn to_sun(self) -> Result<Self::OwnedSun, proto_rs::DecodeError> {
+        Err(DecodeError::new("TokenBalanceSealed can't be accepted by server"))
+    }
+
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+        Self { a: value.a, b: value.b }
+    }
+}
+
 #[proto_message(transparent)]
 #[derive(Debug)]
 pub struct TinyLruTransparent<T, const CAP: usize> {

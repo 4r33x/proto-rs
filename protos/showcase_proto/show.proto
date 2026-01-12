@@ -257,6 +257,11 @@ message UserWithMetadata {
   string name = 2;
 }
 
+message ValueCanBeFolded {
+  uint64 a = 1;
+  uint64 b = 2;
+}
+
 message VecFailingTestEnumTest2 {
   repeated Status test1 = 1;
   optional Status test2 = 2;
