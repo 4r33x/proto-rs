@@ -10,12 +10,12 @@ pub mod custom_types {
 
     #[proto_message]
     pub struct BTreeMapMEx {
-        pub value: BTreeMap,
+        pub value: ::proto_rs::alloc::collections::BTreeMap<u32, MEx>,
     }
 
     #[proto_message]
     pub struct BTreeSetMEx {
-        pub value: MEx,
+        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
     #[proto_message]
@@ -50,12 +50,12 @@ pub mod custom_types {
 
     #[proto_message]
     pub struct HashMapMEx {
-        pub value: HashMap,
+        pub value: ::proto_rs::alloc::collections::BTreeMap<u32, MEx>,
     }
 
     #[proto_message]
     pub struct HashSetMEx {
-        pub value: MEx,
+        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
     #[proto_message]
@@ -70,17 +70,17 @@ pub mod custom_types {
 
     #[proto_message]
     pub struct OptionMEx {
-        pub value: MEx,
+        pub value: ::core::option::Option<MEx>,
     }
 
     #[proto_message]
     pub struct VecDequeMEx {
-        pub value: MEx,
+        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
     #[proto_message]
     pub struct VecMEx {
-        pub value: MEx,
+        pub value: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
 }

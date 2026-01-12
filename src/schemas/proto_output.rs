@@ -136,7 +136,7 @@ pub(crate) fn render_entries(
     specializations: &BTreeMap<ProtoIdent, Vec<GenericSpecialization>>,
 ) -> Vec<String> {
     let mut ordered_entries = entries.to_vec();
-    ordered_entries.sort_by(|left, right| entry_sort_key(left).cmp(&entry_sort_key(right)));
+    ordered_entries.sort_by_key(|left| entry_sort_key(left));
 
     // Collect all proto_types that will be rendered via specializations
     // to avoid rendering concrete variant schemas twice

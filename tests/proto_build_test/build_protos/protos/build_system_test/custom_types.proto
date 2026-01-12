@@ -7,11 +7,11 @@ message ArcMEx {
 }
 
 message BTreeMapMEx {
-  map value = 1;
+  map<uint32, MEx> value = 1;
 }
 
 message BTreeSetMEx {
-  MEx value = 1;
+  repeated MEx value = 1;
 }
 
 message BoxMEx {
@@ -43,11 +43,11 @@ message CustomEx {
 }
 
 message HashMapMEx {
-  map value = 1;
+  map<uint32, MEx> value = 1;
 }
 
 message HashSetMEx {
-  MEx value = 1;
+  repeated MEx value = 1;
 }
 
 message MEx {
@@ -59,14 +59,14 @@ message MutexMEx {
 }
 
 message OptionMEx {
-  MEx value = 1;
+  optional MEx value = 1;
 }
 
 message VecDequeMEx {
-  MEx value = 1;
+  repeated MEx value = 1;
 }
 
 message VecMEx {
-  MEx value = 1;
+  repeated MEx value = 1;
 }
 

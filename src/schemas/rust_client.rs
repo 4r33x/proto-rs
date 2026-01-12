@@ -543,7 +543,7 @@ fn render_entries(
         return;
     }
     let mut ordered_entries = entries.to_vec();
-    ordered_entries.sort_by(|left, right| super::utils::entry_sort_key(left).cmp(&super::utils::entry_sort_key(right)));
+    ordered_entries.sort_by_key(|left| super::utils::entry_sort_key(left));
 
     // Group entries by Rust type name to handle generic types with concrete variants
     let mut entries_by_name: BTreeMap<String, Vec<&ProtoSchema>> = BTreeMap::new();
