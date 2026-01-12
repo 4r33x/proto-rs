@@ -3,19 +3,19 @@ syntax = "proto3";
 package custom_types;
 
 message ArcMEx {
-  MEx value = 1;
+  ArcMEx value = 1;
 }
 
 message BTreeMapMEx {
-  map<uint32, MEx> value = 1;
+  BTreeMapU32MEx value = 1;
 }
 
 message BTreeSetMEx {
-  repeated MEx value = 1;
+  BTreeSetMEx value = 1;
 }
 
 message BoxMEx {
-  MEx value = 1;
+  BoxMEx value = 1;
 }
 
 message CustomEx {
@@ -43,11 +43,11 @@ message CustomEx {
 }
 
 message HashMapMEx {
-  map<uint32, MEx> value = 1;
+  HashMapU32MEx value = 1;
 }
 
 message HashSetMEx {
-  repeated MEx value = 1;
+  HashSetMEx value = 1;
 }
 
 message MEx {
@@ -55,18 +55,18 @@ message MEx {
 }
 
 message MutexMEx {
-  MEx value = 1;
+  MutexMEx value = 1;
 }
 
 message OptionMEx {
-  optional MEx value = 1;
+  OptionMEx value = 1;
 }
 
 message VecDequeMEx {
-  repeated MEx value = 1;
+  VecDequeMEx value = 1;
 }
 
 message VecMEx {
-  repeated MEx value = 1;
+  VecMEx value = 1;
 }
 
