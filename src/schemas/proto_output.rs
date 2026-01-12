@@ -13,8 +13,10 @@ use super::utils::entry_sort_key;
 use super::utils::proto_ident_base_type_name;
 use super::utils::proto_map_types;
 use super::utils::proto_type_name;
-use super::utils::resolve_transparent_ident;
+use super::utils::resolve_transparent_or_wrapper_inner;
 use super::utils::to_snake_case;
+use super::utils::is_wrapper_schema;
+use super::utils::wrapper_kind_from_schema_name;
 use super::utils::wrapper_is_map;
 use super::utils::wrapper_kind_for;
 use super::utils::wrapper_label;
@@ -154,6 +156,16 @@ pub(crate) fn render_entries(
     let mut seen_proto_types = std::collections::BTreeSet::new();
 
     for entry in ordered_entries {
+        if matches!(entry.content, ProtoEntry::Import { .. }) {
+            continue;
+        }
+
+        if is_wrapper_schema(entry)
+            || (matches!(entry.content, ProtoEntry::Struct { .. }) && wrapper_kind_from_schema_name(entry.id.name).is_some())
+        {
+            continue;
+        }
+
         // Skip duplicate proto_types (ensures stable ordering - first occurrence wins)
         let entry_proto_type = proto_ident_base_type_name(entry.id);
         if !seen_proto_types.insert(entry_proto_type.clone()) {
@@ -381,7 +393,7 @@ fn field_type_name(
         return inner_type;
     }
 
-    let ident = resolve_transparent_ident(field.proto_ident, ident_index);
+    let ident = resolve_transparent_or_wrapper_inner(field.proto_ident, ident_index);
     if proto_map_types(&ident.proto_type).is_some() {
         return proto_type_name(&ident.proto_type);
     }
@@ -425,7 +437,7 @@ fn method_wrapper_inner_type_name(
 
     let inner = wrapper_first_generic(wrapper, generic_args)
         .map(|ident| apply_substitution(ident, substitution))
-        .map(|ident| resolve_transparent_ident(ident, ident_index))
+        .map(|ident| resolve_transparent_or_wrapper_inner(ident, ident_index))
         .map(|ident| proto_ident_type_name(ident, package_name, ident_index));
 
     match kind {
@@ -440,7 +452,7 @@ fn method_wrapper_inner_type_name(
         | WrapperKind::ArcSwap
         | WrapperKind::ArcSwapOption
         | WrapperKind::CachePadded => inner.or_else(|| {
-            let fallback = resolve_transparent_ident(ident, ident_index);
+            let fallback = resolve_transparent_or_wrapper_inner(ident, ident_index);
             Some(proto_ident_type_name(fallback, package_name, ident_index))
         }),
         WrapperKind::HashMap | WrapperKind::BTreeMap => None,
@@ -455,8 +467,8 @@ fn method_map_type_name(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
     let (key, value) = wrapper_map_args(wrapper, generic_args)?;
-    let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
-    let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
+    let key_ident = resolve_transparent_or_wrapper_inner(apply_substitution(key, substitution), ident_index);
+    let value_ident = resolve_transparent_or_wrapper_inner(apply_substitution(value, substitution), ident_index);
     let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
     let value_type = proto_ident_type_name(value_ident, package_name, ident_index);
     Some(format!("map<{key_type}, {value_type}>"))
@@ -475,7 +487,7 @@ fn wrapper_inner_type_name(
 
     let ident = wrapper_first_generic(field.wrapper, field.generic_args)
         .map(|ident| apply_substitution(ident, substitution))
-        .map(|ident| resolve_transparent_ident(ident, ident_index))
+        .map(|ident| resolve_transparent_or_wrapper_inner(ident, ident_index))
         .map(|ident| proto_ident_type_name(ident, package_name, ident_index));
 
     match kind {
@@ -490,7 +502,7 @@ fn wrapper_inner_type_name(
         | WrapperKind::ArcSwap
         | WrapperKind::ArcSwapOption
         | WrapperKind::CachePadded => ident.or_else(|| {
-            let fallback = resolve_transparent_ident(field.proto_ident, ident_index);
+            let fallback = resolve_transparent_or_wrapper_inner(field.proto_ident, ident_index);
             Some(proto_ident_type_name(fallback, package_name, ident_index))
         }),
         WrapperKind::HashMap | WrapperKind::BTreeMap => None,
@@ -504,8 +516,8 @@ fn map_wrapper_type_name(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
     let (key, value) = wrapper_map_args(field.wrapper, field.generic_args)?;
-    let key_ident = resolve_transparent_ident(apply_substitution(key, substitution), ident_index);
-    let value_ident = resolve_transparent_ident(apply_substitution(value, substitution), ident_index);
+    let key_ident = resolve_transparent_or_wrapper_inner(apply_substitution(key, substitution), ident_index);
+    let value_ident = resolve_transparent_or_wrapper_inner(apply_substitution(value, substitution), ident_index);
     let key_type = proto_ident_type_name(key_ident, package_name, ident_index);
     let value_type = proto_ident_type_name(value_ident, package_name, ident_index);
     Some(format!("map<{key_type}, {value_type}>"))
@@ -554,7 +566,7 @@ fn proto_ident_type_name_with_generics(
     }
 
     let specialized_name = specialized_proto_name(ident, &resolved_args);
-    let ident = resolve_transparent_ident(ident, ident_index);
+    let ident = resolve_transparent_or_wrapper_inner(ident, ident_index);
     if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
         specialized_name
     } else {
@@ -571,7 +583,7 @@ fn specialized_proto_name(base: ProtoIdent, args: &[ProtoIdent]) -> String {
 }
 
 fn proto_ident_type_name(ident: ProtoIdent, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
-    let ident = resolve_transparent_ident(ident, ident_index);
+    let ident = resolve_transparent_or_wrapper_inner(ident, ident_index);
     if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
         proto_ident_base_type_name(ident)
     } else {
@@ -594,10 +606,10 @@ fn collect_field_imports(
     package_name: &str,
 ) -> std::io::Result<()> {
     for field in fields {
-        let ident = resolve_transparent_ident(field.proto_ident, ident_index);
+        let ident = resolve_transparent_or_wrapper_inner(field.proto_ident, ident_index);
         collect_proto_ident_imports(imports, ident_index, &ident, file_name, package_name)?;
         for arg in field.generic_args {
-            let arg_ident = resolve_transparent_ident(**arg, ident_index);
+            let arg_ident = resolve_transparent_or_wrapper_inner(**arg, ident_index);
             collect_proto_ident_imports(imports, ident_index, &arg_ident, file_name, package_name)?;
         }
     }
@@ -612,16 +624,16 @@ fn collect_service_imports(
     package_name: &str,
 ) -> std::io::Result<()> {
     for method in methods {
-        let request = resolve_transparent_ident(method.request, ident_index);
-        let response = resolve_transparent_ident(method.response, ident_index);
+        let request = resolve_transparent_or_wrapper_inner(method.request, ident_index);
+        let response = resolve_transparent_or_wrapper_inner(method.response, ident_index);
         collect_proto_ident_imports(imports, ident_index, &request, file_name, package_name)?;
         collect_proto_ident_imports(imports, ident_index, &response, file_name, package_name)?;
         for arg in method.request_generic_args {
-            let arg_ident = resolve_transparent_ident(**arg, ident_index);
+            let arg_ident = resolve_transparent_or_wrapper_inner(**arg, ident_index);
             collect_proto_ident_imports(imports, ident_index, &arg_ident, file_name, package_name)?;
         }
         for arg in method.response_generic_args {
-            let arg_ident = resolve_transparent_ident(**arg, ident_index);
+            let arg_ident = resolve_transparent_or_wrapper_inner(**arg, ident_index);
             collect_proto_ident_imports(imports, ident_index, &arg_ident, file_name, package_name)?;
         }
     }
