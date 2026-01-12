@@ -198,15 +198,11 @@ const WRAPPER_SCHEMA_PREFIXES: &[(&str, WrapperKind)] = &[
 ];
 
 pub(crate) fn wrapper_kind_from_schema_name(name: &str) -> Option<WrapperKind> {
-    WRAPPER_SCHEMA_PREFIXES
-        .iter()
-        .find_map(|(prefix, kind)| name.starts_with(prefix).then_some(*kind))
+    WRAPPER_SCHEMA_PREFIXES.iter().find_map(|(prefix, kind)| name.starts_with(prefix).then_some(*kind))
 }
 
 pub(crate) fn wrapper_prefix_from_schema_name(name: &str) -> Option<&'static str> {
-    WRAPPER_SCHEMA_PREFIXES
-        .iter()
-        .find_map(|(prefix, _)| name.starts_with(prefix).then_some(*prefix))
+    WRAPPER_SCHEMA_PREFIXES.iter().find_map(|(prefix, _)| name.starts_with(prefix).then_some(*prefix))
 }
 
 pub(crate) fn wrapper_schema_info(
@@ -265,13 +261,12 @@ pub(crate) fn resolve_transparent_or_wrapper_inner(
     ident: ProtoIdent,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> ProtoIdent {
-    if let Some(schema) = ident_index.get(&ident) {
-        if wrapper_kind_from_schema_name(schema.id.name).is_some()
-            && let ProtoEntry::Struct { fields } = schema.content
-            && fields.len() == 1
-        {
-            return fields[0].proto_ident;
-        }
+    if let Some(schema) = ident_index.get(&ident)
+        && wrapper_kind_from_schema_name(schema.id.name).is_some()
+        && let ProtoEntry::Struct { fields } = schema.content
+        && fields.len() == 1
+    {
+        return fields[0].proto_ident;
     }
     wrapper_schema_info(ident, ident_index).map_or_else(|| resolve_transparent_ident(ident, ident_index), |info| info.inner)
 }

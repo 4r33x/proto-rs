@@ -141,10 +141,152 @@ pub enum ProtoType {
     },
     None,
 }
+impl ProtoType {
+    const fn is_allowed_as_key(&self) -> bool {
+        matches!(
+            self,
+            ProtoType::Int32
+                | ProtoType::Int64
+                | ProtoType::Uint32
+                | ProtoType::Uint64
+                | ProtoType::Sint32
+                | ProtoType::Sint64
+                | ProtoType::Fixed32
+                | ProtoType::Fixed64
+                | ProtoType::Sfixed32
+                | ProtoType::Sfixed64
+                | ProtoType::Bool
+                | ProtoType::String
+        )
+    }
+    const fn proto_type_validation(&self, mut ctx: TypeValidatorCtx) -> Result<(), &'static str> {
+        match self {
+            ProtoType::Optional(t) => {
+                if ctx.repeated {
+                    return Err("repeated optional is invalid");
+                }
+                if ctx.optional {
+                    return Err("optional optional is invalid");
+                }
+                if ctx.is_map() {
+                    return Err("optional map key/value is invalid");
+                }
+                ctx.optional = true;
+                t.proto_type_validation(ctx)
+            }
+            ProtoType::Repeated(t) => {
+                if ctx.repeated {
+                    return Err("repeated repeated is invalid");
+                }
+                if ctx.optional {
+                    return Err("optional repeated is invalid");
+                }
+                if ctx.map_key {
+                    return Err("repeated map key is invalid");
+                }
+                if ctx.map_value {
+                    return Err("repeated map value is invalid");
+                }
+                ctx.repeated = true;
+                t.proto_type_validation(ctx)
+            }
+            ProtoType::Map { key, value } => {
+                if ctx.repeated {
+                    return Err("repeated map is invalid");
+                }
+                if ctx.optional {
+                    return Err("optional map is invalid");
+                }
+                if ctx.is_map() {
+                    return Err("map in map is not allowed");
+                }
+                if !key.is_allowed_as_key() {
+                    return Err("type is not allowed as map key");
+                }
+
+                let mut ctx_key = ctx;
+                ctx_key.map_key = true;
+
+                if let Err(e) = key.proto_type_validation(ctx_key) {
+                    return Err(e);
+                }
+
+                let mut ctx_val = ctx;
+                ctx_val.map_value = true;
+                value.proto_type_validation(ctx_val)
+            }
+            ProtoType::Message(_) => {
+                if ctx.map_key {
+                    return Err("message as map key is invalid");
+                }
+                Ok(())
+            }
+            ProtoType::Double
+            | ProtoType::Float
+            | ProtoType::Int32
+            | ProtoType::Int64
+            | ProtoType::Uint32
+            | ProtoType::Uint64
+            | ProtoType::Sint32
+            | ProtoType::Sint64
+            | ProtoType::Fixed32
+            | ProtoType::Fixed64
+            | ProtoType::Sfixed32
+            | ProtoType::Sfixed64
+            | ProtoType::Bool
+            | ProtoType::Bytes
+            | ProtoType::String
+            | ProtoType::None
+            | ProtoType::Enum => Ok(()),
+        }
+    }
+}
+
+pub trait ProtoIdentifiable: Sized {
+    const PROTO_IDENT: ProtoIdent;
+    const PROTO_TYPE: ProtoType;
+    const _VALIDATOR: () = {
+        if let Err(e) = Self::PROTO_TYPE.proto_type_validation(TypeValidatorCtx::new()) {
+            proto_type_validation_fail::<Self>(e);
+        }
+    };
+}
+
+#[track_caller]
+#[allow(clippy::extra_unused_type_parameters)]
+pub const fn proto_type_validation_fail<T: ProtoIdentifiable>(e: &'static str) -> ! {
+    const_panic::concat_panic!("Error in validation ", T::PROTO_IDENT.name, ": ", e)
+}
+
+const B: ProtoType = ProtoType::Bool;
+const OPT_B: ProtoType = ProtoType::Optional(&B);
+const MY_FAV: ProtoType = ProtoType::Optional(&OPT_B);
 
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+    const PROTO_TYPE: ProtoType = MY_FAV;
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Copy)]
+struct TypeValidatorCtx {
+    optional: bool,
+    repeated: bool,
+    map_key: bool,
+    map_value: bool,
+}
+impl TypeValidatorCtx {
+    pub const fn new() -> Self {
+        Self {
+            optional: false,
+            repeated: false,
+            map_key: false,
+            map_value: false,
+        }
+    }
+    pub const fn is_map(self) -> bool {
+        self.map_key || self.map_value
+    }
 }
 
 macro_rules! impl_proto_ident_primitive {

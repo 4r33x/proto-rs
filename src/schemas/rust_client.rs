@@ -19,6 +19,7 @@ use super::UserAttr;
 use super::Variant;
 use super::utils::WrapperKind;
 use super::utils::indent_line;
+use super::utils::is_wrapper_schema;
 use super::utils::module_path_for_package;
 use super::utils::module_path_segments;
 use super::utils::proto_ident_base_type_name;
@@ -32,9 +33,8 @@ use super::utils::to_snake_case;
 use super::utils::wrapper_is_map;
 use super::utils::wrapper_kind_for;
 use super::utils::wrapper_kind_from_schema_name;
-use super::utils::wrapper_prefix_from_schema_name;
 use super::utils::wrapper_label;
-use super::utils::is_wrapper_schema;
+use super::utils::wrapper_prefix_from_schema_name;
 use super::utils::wrapper_schema_info;
 
 #[derive(Clone, Debug)]
@@ -844,6 +844,7 @@ fn render_rust_complex_enum(
     output
 }
 
+#[allow(clippy::too_many_lines)]
 #[allow(clippy::too_many_arguments)]
 fn render_rust_service(
     entry: &ProtoSchema,
@@ -1608,7 +1609,14 @@ fn render_method_wrapper_type(
 ) -> Option<String> {
     let kind = wrapper_kind_for(wrapper, fallback_ident)?;
     if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap) {
-        return render_map_wrapper_type(wrapper, generic_args, current_package, package_by_ident, proto_type_index, client_imports);
+        return render_map_wrapper_type(
+            wrapper,
+            generic_args,
+            current_package,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        );
     }
 
     let inner_ident = wrapper
@@ -1695,8 +1703,15 @@ fn render_wrapper_kind_type(
         WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet => {
             Some(format!("::proto_rs::alloc::vec::Vec<{inner_type}>"))
         }
-        WrapperKind::HashMap | WrapperKind::BTreeMap => proto_map_types(&inner_ident.proto_type)
-            .map(|_| render_map_type(&inner_ident.proto_type, current_package, package_by_ident, proto_type_index, client_imports)),
+        WrapperKind::HashMap | WrapperKind::BTreeMap => proto_map_types(&inner_ident.proto_type).map(|_| {
+            render_map_type(
+                &inner_ident.proto_type,
+                current_package,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+            )
+        }),
         WrapperKind::Box => Some(format!("::std::boxed::Box<{inner_type}>")),
         WrapperKind::Arc => Some(format!("::std::sync::Arc<{inner_type}>")),
         WrapperKind::Mutex => Some(format!("::std::sync::Mutex<{inner_type}>")),

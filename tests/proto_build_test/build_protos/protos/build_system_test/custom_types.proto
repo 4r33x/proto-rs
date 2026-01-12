@@ -2,22 +2,6 @@
 syntax = "proto3";
 package custom_types;
 
-message ArcMEx {
-  MEx value = 1;
-}
-
-message BTreeMapMEx {
-  map<uint32, MEx> value = 1;
-}
-
-message BTreeSetMEx {
-  repeated MEx value = 1;
-}
-
-message BoxMEx {
-  MEx value = 1;
-}
-
 message CustomEx {
   MEx mutex = 1;
   uint64 mutex_copy = 2;
@@ -42,31 +26,7 @@ message CustomEx {
   repeated MEx custom_vec_deque = 21;
 }
 
-message HashMapMEx {
-  map<uint32, MEx> value = 1;
-}
-
-message HashSetMEx {
-  repeated MEx value = 1;
-}
-
 message MEx {
   uint64 id = 1;
-}
-
-message MutexMEx {
-  MEx value = 1;
-}
-
-message OptionMEx {
-  optional MEx value = 1;
-}
-
-message VecDequeMEx {
-  repeated MEx value = 1;
-}
-
-message VecMEx {
-  repeated MEx value = 1;
 }
 
