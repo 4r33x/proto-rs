@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 
 use chrono::DateTime;
@@ -136,6 +137,13 @@ pub mod papaya_test {
         inner: papaya::HashMap<K, V>,
     }
 
+    type MapWithHasher<K, V> = papaya::HashMap<K, V, std::hash::RandomState>;
+
+    #[proto_message]
+    pub struct ConcretePapayaMap2 {
+        inner: MapWithHasher<u32, u8>,
+    }
+
     #[proto_message]
     pub struct GenericPapayaSet<K: std::hash::Hash + Eq> {
         inner: papaya::HashSet<K>,
@@ -144,11 +152,24 @@ pub mod papaya_test {
     pub struct ConcretePapayaSet {
         inner: GenericPapayaSet<u8>,
     }
+    #[proto_message]
+    pub struct ConcretePapayaSet2 {
+        inner: papaya::HashSet<u8, std::hash::RandomState>,
+    }
 }
 
 #[proto_message]
 pub struct ConcreteMap {
     inner: GenericMap<u64, String, std::hash::RandomState, 32>,
+}
+
+#[proto_message]
+pub struct ConcreteMap2 {
+    inner: HashMap<u64, String, std::hash::RandomState>,
+}
+#[proto_message]
+pub struct ConcreteSet {
+    inner: HashSet<u64, std::hash::RandomState>,
 }
 
 #[proto_message]
