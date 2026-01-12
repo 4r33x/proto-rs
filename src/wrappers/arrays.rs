@@ -7,6 +7,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
@@ -83,7 +84,7 @@ unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; 
 // -----------------------------------------------------------------------------
 impl<T, const N: usize> ProtoWire for [T; N]
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a [T; N];
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
@@ -137,12 +138,19 @@ where
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
+                .iter()
+                .map(|v| {
+                    let input = T::encode_input_from_ref(v);
+                    unsafe { T::encoded_len_impl_raw(&input) }
+                })
+                .sum(),
 
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                 .iter()
                 .map(|m| {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encoded_len_varint(len as u64) + len
                 })
                 .sum(),
@@ -169,10 +177,17 @@ where
                     return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|v| T::encoded_len_impl(&v)).sum::<usize>();
+                let body_len = value
+                    .iter()
+                    .map(|v| {
+                        let input = T::encode_input_from_ref(v);
+                        T::encoded_len_impl(&input)
+                    })
+                    .sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
-                    T::encode_raw_unchecked(v, buf);
+                    let input = T::encode_input_from_ref(v);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
 
@@ -181,10 +196,11 @@ where
                     return;
                 }
                 for m in value {
-                    let len = T::encoded_len_impl(&m);
+                    let input = T::encode_input_from_ref(m);
+                    let len = T::encoded_len_impl(&input);
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(m, buf);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
 
@@ -237,7 +253,10 @@ where
     // -------------------------------------------------------------------------
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.iter().all(|v| T::is_default_impl(&v))
+        value.iter().all(|v| {
+            let input = T::encode_input_from_ref(v);
+            T::is_default_impl(&input)
+        })
     }
 
     #[inline(always)]

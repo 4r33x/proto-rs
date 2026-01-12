@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
@@ -14,6 +16,46 @@ use proto_rs::schemas::UserAttr;
 use tokio_stream::Stream;
 use tonic::Response;
 use tonic::Status;
+
+type CustomMutex<T> = std::sync::Mutex<T>;
+type CustomArc<T> = std::sync::Arc<T>;
+type CustomBox<T> = Box<T>;
+type CustomMap<K, V, S> = HashMap<K, V, S>;
+type CustomOption<T> = Option<T>;
+type CustomVec<T> = Vec<T>;
+type CustomVecDeq<T> = VecDeque<T>;
+
+#[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MEx {
+    pub id: u64,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomEx {
+    pub mutex: std::sync::Mutex<MEx>,
+    pub mutex_copy: std::sync::Mutex<u64>,
+    pub mutex_custom: CustomMutex<MEx>,
+    pub mutex_copy_custom: CustomMutex<u64>,
+    pub arc: std::sync::Arc<MEx>,
+    pub arc_copy: std::sync::Arc<u64>,
+    pub arc_custom: CustomArc<MEx>,
+    pub arc_copy_custom: CustomArc<u64>,
+    pub boxed: Box<MEx>,
+    pub box_copy: Box<u64>,
+    pub boxed_custom: CustomBox<MEx>,
+    pub box_copy_custom: CustomBox<u64>,
+    pub custom_map: CustomMap<u32, MEx, std::hash::RandomState>,
+    pub custom_option: CustomOption<MEx>,
+    pub custom_option_copy: CustomOption<u64>,
+    pub custom_vec_bytes: CustomVec<u8>,
+    pub custom_vec_deque_bytes: CustomVecDeq<u8>,
+    pub custom_vec_copy: CustomVec<u64>,
+    pub custom_vec_deque_copy: CustomVecDeq<u64>,
+    pub custom_vec: CustomVec<MEx>,
+    pub custom_vec_deque: CustomVecDeq<MEx>,
+}
 
 #[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq, Copy)]
@@ -140,6 +182,10 @@ pub trait SigmaRpc {
     async fn build2(&self, request: Envelope<BuildRequest>) -> Envelope<BuildResponse>;
 
     async fn owner_lookup(&self, request: Request<TransparentId>) -> Result<Response<BuildResponse>, Status>;
+
+    async fn custom_ex_echo(&self, request: Request<CustomEx>) -> Result<Response<CustomEx>, Status>;
+
+    async fn mex_echo(&self, request: MEx) -> MEx;
 
     async fn test_decimals(&self, request: Request<fastnum::UD128>) -> Result<Response<fastnum::D64>, Status>;
 }

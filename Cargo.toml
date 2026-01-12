@@ -80,6 +80,7 @@ const_panic = { version = "0.2.15", features = [
   "rust_latest_stable",
   "derive",
 ] }
+const_format = { version = "0.2.34", features = ["fmt"] }
 arc-swap = { version = "1.8", optional = true }
 papaya = { version = "0.2.3", optional = true }
 parking_lot = { version = "0.12", optional = true }
