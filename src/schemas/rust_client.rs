@@ -21,8 +21,10 @@ use super::utils::WrapperKind;
 use super::utils::indent_line;
 use super::utils::module_path_for_package;
 use super::utils::module_path_segments;
-use super::utils::parse_map_types;
+use super::utils::proto_ident_base_type_name;
+use super::utils::proto_map_types;
 use super::utils::proto_scalar_type;
+use super::utils::proto_type_name;
 use super::utils::resolve_transparent_ident;
 use super::utils::rust_type_name;
 use super::utils::to_snake_case;
@@ -425,11 +427,18 @@ fn collect_rust_proto_ident_imports(
     client_imports: &BTreeMap<String, ClientImport>,
     imports: &mut BTreeSet<String>,
 ) {
-    if ident.proto_type.starts_with("map<") {
-        if let Some((key, value)) = parse_map_types(ident.proto_type) {
-            collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
-            collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
-        }
+    if let Some((key, value)) = proto_map_types(&ident.proto_type) {
+        let key_name = proto_type_name(key);
+        let value_name = proto_type_name(value);
+        collect_rust_proto_name_imports(&key_name, package_name, package_by_ident, proto_type_index, client_imports, imports);
+        collect_rust_proto_name_imports(
+            &value_name,
+            package_name,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+            imports,
+        );
         return;
     }
 
@@ -461,14 +470,12 @@ fn collect_rust_proto_name_imports(
     client_imports: &BTreeMap<String, ClientImport>,
     imports: &mut BTreeSet<String>,
 ) {
-    if proto_scalar_type(proto_name).is_some() {
+    if proto_scalar_type_name(proto_name).is_some() {
         return;
     }
-    if proto_name.starts_with("map<") {
-        if let Some((key, value)) = parse_map_types(proto_name) {
-            collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
-            collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
-        }
+    if let Some((key, value)) = parse_map_type_name(proto_name) {
+        collect_rust_proto_name_imports(key, package_name, package_by_ident, proto_type_index, client_imports, imports);
+        collect_rust_proto_name_imports(value, package_name, package_by_ident, proto_type_index, client_imports, imports);
         return;
     }
     if let Some(candidates) = proto_type_index.get(proto_name) {
@@ -493,6 +500,29 @@ fn collect_rust_proto_name_imports(
                 imports,
             );
         }
+    }
+}
+
+fn parse_map_type_name(proto_name: &str) -> Option<(&str, &str)> {
+    let inner = proto_name.strip_prefix("map<")?.strip_suffix('>')?;
+    let mut parts = inner.splitn(2, ',');
+    let key = parts.next()?.trim();
+    let value = parts.next()?.trim();
+    Some((key, value))
+}
+
+fn proto_scalar_type_name(proto_name: &str) -> Option<&'static str> {
+    match proto_name {
+        "double" => Some("f64"),
+        "float" => Some("f32"),
+        "int32" | "sint32" | "sfixed32" => Some("i32"),
+        "int64" | "sint64" | "sfixed64" => Some("i64"),
+        "uint32" | "fixed32" => Some("u32"),
+        "uint64" | "fixed64" => Some("u64"),
+        "bool" => Some("bool"),
+        "string" => Some("::proto_rs::alloc::string::String"),
+        "bytes" => Some("::proto_rs::alloc::vec::Vec<u8>"),
+        _ => None,
     }
 }
 
@@ -537,7 +567,7 @@ fn render_entries(
             group
                 .iter()
                 .find(|e| !e.generics.is_empty())
-                .or_else(|| group.iter().find(|e| e.id.proto_type == e.id.name))
+                .or_else(|| group.iter().find(|e| proto_ident_base_type_name(e.id) == e.id.name))
                 .unwrap_or(&group[0])
         } else {
             group[0]
@@ -1329,7 +1359,14 @@ fn render_wrapper_field_base_type(
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
     if wrapper_is_map(field.wrapper, field.proto_ident)
-        && let Some(base) = render_map_wrapper_type(field.generic_args, package_name, package_by_ident, proto_type_index, client_imports)
+        && let Some(base) = render_map_wrapper_type(
+            field.wrapper,
+            field.generic_args,
+            package_name,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        )
     {
         return base;
     }
@@ -1360,7 +1397,7 @@ fn render_wrapper_field_base_type(
 fn render_wrapper_inner_type(
     wrapper: Option<ProtoIdent>,
     fallback_ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    _generic_args: &[&ProtoIdent],
     package_name: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
@@ -1371,11 +1408,13 @@ fn render_wrapper_inner_type(
         return None;
     }
 
-    let inner = generic_args
-        .first()
-        .copied()
-        .copied()
-        .map(|ident| render_proto_type(ident, package_name, package_by_ident, proto_type_index, client_imports));
+    let inner = Some(proto_type_to_rust_type(
+        &fallback_ident.proto_type,
+        package_name,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    ));
 
     match kind {
         WrapperKind::Option
@@ -1394,14 +1433,23 @@ fn render_wrapper_inner_type(
 }
 
 fn render_map_wrapper_type(
+    wrapper: Option<ProtoIdent>,
     generic_args: &[&ProtoIdent],
     package_name: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> Option<String> {
-    let key = generic_args.first().copied().copied()?;
-    let value = generic_args.get(1).copied().copied()?;
+    let (key, value) = wrapper
+        .and_then(|ident| match ident.generics {
+            [key, value, ..] => Some((*key, *value)),
+            _ => None,
+        })
+        .or_else(|| {
+            let key = generic_args.first().copied().copied()?;
+            let value = generic_args.get(1).copied().copied()?;
+            Some((key, value))
+        })?;
     let key_type = render_proto_type(key, package_name, package_by_ident, proto_type_index, client_imports);
     let value_type = render_proto_type(value, package_name, package_by_ident, proto_type_index, client_imports);
     Some(format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>"))
@@ -1414,9 +1462,9 @@ fn render_proto_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    if ident.proto_type.starts_with("map<") {
+    if proto_map_types(&ident.proto_type).is_some() {
         return render_map_type(
-            ident.proto_type,
+            &ident.proto_type,
             current_package,
             package_by_ident,
             proto_type_index,
@@ -1426,7 +1474,7 @@ fn render_proto_type(
     if ident.module_path.is_empty()
         && ident.proto_file_path.is_empty()
         && ident.proto_package_name.is_empty()
-        && let Some(scalar) = proto_scalar_type(ident.proto_type)
+        && let Some(scalar) = proto_scalar_type(&ident.proto_type)
     {
         return scalar.to_string();
     }
@@ -1477,7 +1525,14 @@ fn render_method_type(
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
     if wrapper_is_map(wrapper, ident)
-        && let Some(base) = render_map_wrapper_type(generic_args, current_package, package_by_ident, proto_type_index, client_imports)
+        && let Some(base) = render_map_wrapper_type(
+            wrapper,
+            generic_args,
+            current_package,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        )
     {
         return base;
     }
@@ -1505,35 +1560,42 @@ fn render_method_type(
 }
 
 fn render_map_type(
-    proto_type: &str,
+    proto_type: &super::ProtoType,
     current_package: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    let Some((key, value)) = parse_map_types(proto_type) else {
+    let Some((key, value)) = proto_map_types(proto_type) else {
         return "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string();
     };
-    let key_type = proto_name_to_rust_type(key, current_package, package_by_ident, proto_type_index, client_imports);
-    let value_type = proto_name_to_rust_type(value, current_package, package_by_ident, proto_type_index, client_imports);
+    let key_type = proto_type_to_rust_type(key, current_package, package_by_ident, proto_type_index, client_imports);
+    let value_type = proto_type_to_rust_type(value, current_package, package_by_ident, proto_type_index, client_imports);
     format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>")
 }
 
-fn proto_name_to_rust_type(
-    proto_name: &str,
+fn proto_type_to_rust_type(
+    proto_type: &super::ProtoType,
     current_package: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    if let Some(scalar) = proto_scalar_type(proto_name) {
+    match proto_type {
+        super::ProtoType::Optional(inner) | super::ProtoType::Repeated(inner) => {
+            return proto_type_to_rust_type(inner, current_package, package_by_ident, proto_type_index, client_imports);
+        }
+        _ => {}
+    }
+    if let Some(scalar) = proto_scalar_type(proto_type) {
         return scalar.to_string();
     }
-    if proto_name.starts_with("map<") {
-        return render_map_type(proto_name, current_package, package_by_ident, proto_type_index, client_imports);
+    if proto_map_types(proto_type).is_some() {
+        return render_map_type(proto_type, current_package, package_by_ident, proto_type_index, client_imports);
     }
+    let proto_name = proto_type_name(proto_type);
 
-    if let Some(candidates) = proto_type_index.get(proto_name) {
+    if let Some(candidates) = proto_type_index.get(proto_name.as_str()) {
         if let Some(candidate) = candidates.iter().find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == current_package)) {
             return render_proto_type(*candidate, current_package, package_by_ident, proto_type_index, client_imports);
         }
@@ -1542,7 +1604,7 @@ fn proto_name_to_rust_type(
         }
     }
 
-    proto_name.to_string()
+    proto_name
 }
 
 fn render_generics(entry: &ProtoSchema) -> String {
@@ -1585,7 +1647,7 @@ fn build_proto_type_index(registry: &BTreeMap<String, Vec<&'static ProtoSchema>>
     let mut index = BTreeMap::new();
     for entries in registry.values() {
         for entry in entries {
-            index.entry(entry.id.proto_type.to_string()).or_insert_with(Vec::new).push(entry.id);
+            index.entry(proto_ident_base_type_name(entry.id)).or_insert_with(Vec::new).push(entry.id);
         }
     }
     index
