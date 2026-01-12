@@ -3,6 +3,7 @@ use bytes::BufMut;
 use crossbeam_utils::CachePadded;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
@@ -31,21 +32,23 @@ where
 
 impl<T> ProtoWire for CachePadded<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a CachePadded<T>;
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let inner: &T = value;
-        unsafe { T::encoded_len_impl_raw(&inner) }
+        let inner: &T = *value;
+        let input = T::encode_input_from_ref(inner);
+        unsafe { T::encoded_len_impl_raw(&input) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let inner: &T = value;
-        T::encode_raw_unchecked(inner, buf);
+        let input = T::encode_input_from_ref(inner);
+        T::encode_raw_unchecked(input, buf);
     }
 
     #[inline(always)]
@@ -56,8 +59,9 @@ where
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let inner: &T = value;
-        T::is_default_impl(&inner)
+        let inner: &T = *value;
+        let input = T::encode_input_from_ref(inner);
+        T::is_default_impl(&input)
     }
 
     #[inline(always)]

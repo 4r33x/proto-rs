@@ -1248,6 +1248,15 @@ fn classify_generic_arg(arg: &syn::GenericArgument, generics: &syn::Generics) ->
     }
 }
 
+fn hasher_type_index(path: &syn::Path, type_arg_total: usize) -> Option<usize> {
+    let last = path.segments.last()?.ident.to_string();
+    match last.as_str() {
+        "HashMap" if type_arg_total >= 3 => Some(2),
+        "HashSet" if type_arg_total >= 2 => Some(1),
+        _ => None,
+    }
+}
+
 fn generic_args_tokens_from_type(
     type_ident: &syn::Ident,
     suffix: &str,
@@ -1267,6 +1276,9 @@ fn generic_args_tokens_from_type(
         return (quote! {}, quote! { &[] });
     };
 
+    let type_arg_total = args.args.iter().filter(|arg| matches!(arg, syn::GenericArgument::Type(_))).count();
+    let hasher_index = hasher_type_index(&path.path, type_arg_total);
+
     let mut arg_consts = Vec::new();
     let mut arg_refs = Vec::new();
     let mut arg_idx = 0usize;
@@ -1275,6 +1287,11 @@ fn generic_args_tokens_from_type(
         let syn::GenericArgument::Type(arg_ty) = arg else {
             continue;
         };
+
+        if hasher_index.is_some_and(|idx| idx == arg_idx) {
+            arg_idx += 1;
+            continue;
+        }
 
         // Classify the generic argument
         let kind = classify_generic_arg(arg, generics);

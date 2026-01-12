@@ -2,6 +2,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
@@ -30,18 +31,20 @@ where
 
 impl<T> ProtoWire for Box<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a Box<T>;
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        unsafe { T::encoded_len_impl_raw(&value.as_ref()) }
+        let input = T::encode_input_from_ref((*value).as_ref());
+        unsafe { T::encoded_len_impl_raw(&input) }
     }
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        T::encode_raw_unchecked(value, buf);
+        let input = T::encode_input_from_ref(value.as_ref());
+        T::encode_raw_unchecked(input, buf);
     }
     #[inline(always)]
     fn decode_into(w: WireType, v: &mut Self, b: &mut impl Buf, c: DecodeContext) -> Result<(), DecodeError> {
@@ -49,7 +52,8 @@ where
     }
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        T::is_default_impl(&value.as_ref())
+        let input = T::encode_input_from_ref((*value).as_ref());
+        T::is_default_impl(&input)
     }
     #[inline(always)]
     fn proto_default() -> Self {

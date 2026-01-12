@@ -2,6 +2,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
@@ -30,7 +31,7 @@ where
 
 impl<T> ProtoWire for std::sync::Mutex<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a std::sync::Mutex<T>;
     const KIND: ProtoKind = T::KIND;
@@ -38,13 +39,15 @@ where
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         let guard = value.lock().expect("Mutex lock poisoned");
-        unsafe { T::encoded_len_impl_raw(&(&*guard)) }
+        let input = T::encode_input_from_ref(&*guard);
+        unsafe { T::encoded_len_impl_raw(&input) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = value.lock().expect("Mutex lock poisoned");
-        T::encode_raw_unchecked(&*guard, buf);
+        let input = T::encode_input_from_ref(&*guard);
+        T::encode_raw_unchecked(input, buf);
     }
 
     #[inline(always)]
@@ -56,7 +59,8 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let guard = value.lock().expect("Mutex lock poisoned");
-        T::is_default_impl(&(&*guard))
+        let input = T::encode_input_from_ref(&*guard);
+        T::is_default_impl(&input)
     }
 
     #[inline(always)]
@@ -179,7 +183,7 @@ where
 #[cfg(feature = "parking_lot")]
 impl<T> ProtoWire for parking_lot::Mutex<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a parking_lot::Mutex<T>;
     const KIND: ProtoKind = T::KIND;
@@ -187,13 +191,15 @@ where
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         let guard = value.lock();
-        unsafe { T::encoded_len_impl_raw(&(&*guard)) }
+        let input = T::encode_input_from_ref(&*guard);
+        unsafe { T::encoded_len_impl_raw(&input) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = value.lock();
-        T::encode_raw_unchecked(&*guard, buf);
+        let input = T::encode_input_from_ref(&*guard);
+        T::encode_raw_unchecked(input, buf);
     }
 
     #[inline(always)]
@@ -205,7 +211,8 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let guard = value.lock();
-        T::is_default_impl(&(&*guard))
+        let input = T::encode_input_from_ref(&*guard);
+        T::is_default_impl(&input)
     }
 
     #[inline(always)]

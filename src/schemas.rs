@@ -6,6 +6,8 @@ use std::io;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::impl_proto_ident;
+
 mod proto_output;
 mod rust_client;
 mod utils;
@@ -120,6 +122,48 @@ pub trait ProtoIdentifiable {
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
 }
+
+impl_proto_ident!(bool);
+impl_proto_ident!(u8);
+impl_proto_ident!(u16);
+impl_proto_ident!(u32);
+impl_proto_ident!(u64);
+impl_proto_ident!(usize);
+impl_proto_ident!(i8);
+impl_proto_ident!(i16);
+impl_proto_ident!(i32);
+impl_proto_ident!(i64);
+impl_proto_ident!(isize);
+impl_proto_ident!(f32);
+impl_proto_ident!(f64);
+impl_proto_ident!(crate::bytes::Bytes);
+impl_proto_ident!(::std::string::String);
+impl_proto_ident!(::core::option::Option<T>);
+impl_proto_ident!(::std::vec::Vec<T>);
+impl_proto_ident!(::std::collections::VecDeque<T>);
+impl_proto_ident!(::std::boxed::Box<T>);
+impl_proto_ident!(::std::sync::Arc<T>);
+impl_proto_ident!(::std::sync::Mutex<T>);
+impl_proto_ident!(::std::collections::BTreeMap<K, V>);
+impl_proto_ident!(::std::collections::BTreeSet<T>);
+impl_proto_ident!(::std::collections::HashMap<K, V, S>);
+impl_proto_ident!(::std::collections::HashSet<T, S>);
+
+#[cfg(feature = "arc_swap")]
+impl_proto_ident!(arc_swap::ArcSwap<T>);
+#[cfg(feature = "arc_swap")]
+impl_proto_ident!(arc_swap::ArcSwapOption<T>);
+
+#[cfg(feature = "cache_padded")]
+impl_proto_ident!(crossbeam_utils::CachePadded<T>);
+
+#[cfg(feature = "parking_lot")]
+impl_proto_ident!(parking_lot::Mutex<T>);
+
+#[cfg(feature = "papaya")]
+impl_proto_ident!(papaya::HashMap<K, V, S>);
+#[cfg(feature = "papaya")]
+impl_proto_ident!(papaya::HashSet<T, S>);
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Attribute {
