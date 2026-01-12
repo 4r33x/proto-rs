@@ -689,10 +689,20 @@ fn build_service_method_tokens(
         let method_ident = service_method_const_ident(type_ident, suffix, idx);
         let method_name = to_pascal_case(&method.name.to_string());
         let request_ident = proto_ident_tokens_from_type(&method.request_type);
+        let request_wrapper = if type_references_generic_params(&method.request_type, generics) {
+            quote! { ::core::option::Option::None }
+        } else {
+            wrapper_ident_tokens(&method.request_type)
+        };
         let (request_generic_consts, request_generic_args) =
             generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type, generics, false);
         let response_type = method.inner_response_type.as_ref().unwrap_or(&method.response_type);
         let response_ident = proto_ident_tokens_from_type(response_type);
+        let response_wrapper = if type_references_generic_params(response_type, generics) {
+            quote! { ::core::option::Option::None }
+        } else {
+            wrapper_ident_tokens(response_type)
+        };
         let (response_generic_consts, response_generic_args) =
             generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type, generics, false);
         let server_streaming = method.is_streaming;
@@ -703,8 +713,10 @@ fn build_service_method_tokens(
                 name: #method_name,
                 request: #request_ident,
                 request_generic_args: #request_generic_args,
+                request_wrapper: #request_wrapper,
                 response: #response_ident,
                 response_generic_args: #response_generic_args,
+                response_wrapper: #response_wrapper,
                 client_streaming: false,
                 server_streaming: #server_streaming,
             };
@@ -1006,6 +1018,7 @@ fn build_variant_fields_tokens(
 struct FieldInfoTokens {
     proto_ident: TokenStream2,
     rust_proto_ident: TokenStream2,
+    wrapper: TokenStream2,
     generic_args: TokenStream2,
     label: TokenStream2,
     array_len: TokenStream2,
@@ -1051,13 +1064,19 @@ fn field_info_tokens(
     let parsed = parse_field_type(&inner_type);
     let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, assoc);
+    let wrapper = if type_references_generic_params(&ty, item_generics) {
+        quote! { ::core::option::Option::None }
+    } else {
+        wrapper_ident_tokens(&ty)
+    };
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &ty, item_generics, assoc);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty, assoc);
     let extra_consts = quote! { #generic_consts #array_consts };
 
     FieldInfoTokens {
         proto_ident,
         rust_proto_ident,
+        wrapper,
         generic_args,
         label,
         array_len,
@@ -1170,6 +1189,7 @@ fn build_field_const_tokens(
     let FieldInfoTokens {
         proto_ident,
         rust_proto_ident,
+        wrapper,
         generic_args,
         label,
         array_len,
@@ -1195,6 +1215,7 @@ fn build_field_const_tokens(
                 name: #name_tokens,
                 proto_ident: #proto_ident,
                 rust_proto_ident: #rust_proto_ident,
+                wrapper: #wrapper,
                 generic_args: #generic_args,
                 proto_label: #label,
                 tag: #tag,
@@ -1216,6 +1237,13 @@ fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
         quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT }
     } else {
         proto_ident_literal(&parsed.proto_type, "", "")
+    }
+}
+
+fn wrapper_ident_tokens(ty: &Type) -> TokenStream2 {
+    match ty {
+        Type::Path(_) => quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::WRAPPER },
+        _ => quote! { ::core::option::Option::None },
     }
 }
 
@@ -1275,6 +1303,11 @@ fn generic_args_tokens_from_type(
         let syn::GenericArgument::Type(arg_ty) = arg else {
             continue;
         };
+
+        if type_references_generic_params(arg_ty, generics) {
+            arg_idx += 1;
+            continue;
+        }
 
         // Classify the generic argument
         let kind = classify_generic_arg(arg, generics);

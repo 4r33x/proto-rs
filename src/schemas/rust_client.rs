@@ -24,6 +24,10 @@ use super::utils::parse_map_types;
 use super::utils::proto_scalar_type;
 use super::utils::resolve_transparent_ident;
 use super::utils::rust_type_name;
+use super::utils::wrapper_is_map;
+use super::utils::wrapper_kind_for;
+use super::utils::wrapper_label;
+use super::utils::WrapperKind;
 use super::utils::to_snake_case;
 
 #[derive(Clone, Debug)]
@@ -829,9 +833,10 @@ fn render_rust_service(
             let response_ident = resolve_transparent_ident(method.response, ident_index);
             let item_type = method_type_replacement(type_replacements, method.name, MethodTypeKind::Return).map_or_else(
                 || {
-                    render_proto_type_with_generics(
+                    render_method_type(
                         response_ident,
                         method.response_generic_args,
+                        method.response_wrapper,
                         package_name,
                         package_by_ident,
                         proto_type_index,
@@ -858,9 +863,10 @@ fn render_rust_service(
         let request_ident = resolve_transparent_ident(method.request, ident_index);
         let request_type = method_type_replacement(type_replacements, method.name, MethodTypeKind::Argument).map_or_else(
             || {
-                render_proto_type_with_generics(
+                render_method_type(
                     request_ident,
                     method.request_generic_args,
+                    method.request_wrapper,
                     package_name,
                     package_by_ident,
                     proto_type_index,
@@ -875,9 +881,10 @@ fn render_rust_service(
             method_type_replacement(type_replacements, method.name, MethodTypeKind::Return).map_or_else(
                 || {
                     let response_ident = resolve_transparent_ident(method.response, ident_index);
-                    render_proto_type_with_generics(
+                    render_method_type(
                         response_ident,
                         method.response_generic_args,
+                        method.response_wrapper,
                         package_name,
                         package_by_ident,
                         proto_type_index,
@@ -1304,21 +1311,111 @@ fn render_field_type(
     let base = if let Some(type_replacement) = type_replacement {
         type_replacement.to_string()
     } else {
-        let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
-        render_proto_type_with_generics(
-            ident,
-            field.generic_args,
+        render_wrapper_field_base_type(
+            field,
             package_name,
+            ident_index,
             package_by_ident,
             proto_type_index,
             client_imports,
         )
     };
-    match field.proto_label {
+    match wrapper_label(field.wrapper, field.proto_ident, field.proto_label) {
         ProtoLabel::None => base,
         ProtoLabel::Optional => format!("::core::option::Option<{base}>"),
         ProtoLabel::Repeated => format!("::proto_rs::alloc::vec::Vec<{base}>"),
     }
+}
+
+fn render_wrapper_field_base_type(
+    field: &Field,
+    package_name: &str,
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> String {
+    if wrapper_is_map(field.wrapper, field.proto_ident) {
+        if let Some(base) = render_map_wrapper_type(
+            field.generic_args,
+            package_name,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        ) {
+            return base;
+        }
+    }
+
+    if let Some(inner) = render_wrapper_inner_type(
+        field.wrapper,
+        field.proto_ident,
+        field.generic_args,
+        package_name,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    ) {
+        return inner;
+    }
+
+    let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+    render_proto_type_with_generics(
+        ident,
+        field.generic_args,
+        package_name,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    )
+}
+
+fn render_wrapper_inner_type(
+    wrapper: Option<ProtoIdent>,
+    fallback_ident: ProtoIdent,
+    generic_args: &[&ProtoIdent],
+    package_name: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> Option<String> {
+    let kind = wrapper_kind_for(wrapper, fallback_ident)?;
+    if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap) {
+        return None;
+    }
+
+    let inner = generic_args.first().copied().copied().map(|ident| {
+        render_proto_type(ident, package_name, package_by_ident, proto_type_index, client_imports)
+    });
+
+    match kind {
+        WrapperKind::Option
+        | WrapperKind::Vec
+        | WrapperKind::VecDeque
+        | WrapperKind::HashSet
+        | WrapperKind::BTreeSet
+        | WrapperKind::Box
+        | WrapperKind::Arc
+        | WrapperKind::Mutex
+        | WrapperKind::ArcSwap
+        | WrapperKind::ArcSwapOption
+        | WrapperKind::CachePadded => inner,
+        WrapperKind::HashMap | WrapperKind::BTreeMap => None,
+    }
+}
+
+fn render_map_wrapper_type(
+    generic_args: &[&ProtoIdent],
+    package_name: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> Option<String> {
+    let key = generic_args.get(0).copied().copied()?;
+    let value = generic_args.get(1).copied().copied()?;
+    let key_type = render_proto_type(key, package_name, package_by_ident, proto_type_index, client_imports);
+    let value_type = render_proto_type(value, package_name, package_by_ident, proto_type_index, client_imports);
+    Some(format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>"))
 }
 
 fn render_proto_type(
@@ -1379,6 +1476,36 @@ fn render_proto_type_with_generics(
         .map(|arg| render_proto_type(**arg, current_package, package_by_ident, proto_type_index, client_imports))
         .collect();
     format!("{base}<{}>", rendered_args.join(", "))
+}
+
+fn render_method_type(
+    ident: ProtoIdent,
+    generic_args: &[&ProtoIdent],
+    wrapper: Option<ProtoIdent>,
+    current_package: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> String {
+    if wrapper_is_map(wrapper, ident) {
+        if let Some(base) = render_map_wrapper_type(generic_args, current_package, package_by_ident, proto_type_index, client_imports) {
+            return base;
+        }
+    }
+
+    if let Some(inner) = render_wrapper_inner_type(
+        wrapper,
+        ident,
+        generic_args,
+        current_package,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    ) {
+        return inner;
+    }
+
+    render_proto_type_with_generics(ident, generic_args, current_package, package_by_ident, proto_type_index, client_imports)
 }
 
 fn render_map_type(
