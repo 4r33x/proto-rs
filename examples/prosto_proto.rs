@@ -132,6 +132,8 @@ impl<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP:
 type CustomMutex<T> = std::sync::Mutex<T>;
 type CustomArc<T> = std::sync::Arc<T>;
 type CustomBox<T> = Box<T>;
+type CustomMap<K, V, S> = HashMap<K, V, S>;
+type CustomOption<T> = Option<T>;
 
 #[proto_message]
 struct MEx;
@@ -150,6 +152,9 @@ struct CustomEx {
     box_copy: Box<u64>,
     boxed_custom: CustomBox<MEx>,
     box_copy_custom: CustomBox<u64>,
+    custom_map: CustomMap<u32, MEx, std::hash::RandomState>,
+    custom_option: Option<MEx>,
+    custom_option_copy: Option<u64>,
 }
 
 #[cfg(feature = "parking_lot")]
@@ -186,11 +191,13 @@ pub mod cache_padded {
 pub mod papaya_test {
     use proto_rs::proto_message;
 
-    type MapWithHasher<K, V> = papaya::HashMap<K, V, std::hash::RandomState>;
+    type MapWithHasher<K, V, S> = papaya::HashMap<K, V, S>;
+    type SetWithHasher<K, S> = papaya::HashSet<K, S>;
 
     #[proto_message]
-    pub struct ConcretePapayaMap2 {
-        inner: MapWithHasher<u32, u8>,
+    pub struct ConcretePapayaEx {
+        inner: MapWithHasher<u32, u8, std::hash::RandomState>,
+        inner2: SetWithHasher<u32, std::hash::RandomState>,
     }
 
     #[proto_message]
