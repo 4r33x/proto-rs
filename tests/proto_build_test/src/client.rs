@@ -1,4 +1,89 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
+pub mod custom_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct ArcMEx {
+        pub value: MEx,
+    }
+
+    #[proto_message]
+    pub struct BTreeMapMEx {
+        pub value: BTreeMap,
+    }
+
+    #[proto_message]
+    pub struct BTreeSetMEx {
+        pub value: BTreeSet,
+    }
+
+    #[proto_message]
+    pub struct BoxMEx {
+        pub value: MEx,
+    }
+
+    #[proto_message]
+    pub struct CustomEx {
+        pub mutex: MEx,
+        pub mutex_copy: u64,
+        pub mutex_custom: MEx<MEx>,
+        pub mutex_copy_custom: u64<u64>,
+        pub arc: MEx,
+        pub arc_copy: u64,
+        pub arc_custom: MEx<MEx>,
+        pub arc_copy_custom: u64<u64>,
+        pub boxed: MEx,
+        pub box_copy: u64,
+        pub boxed_custom: MEx<MEx>,
+        pub box_copy_custom: u64<u64>,
+        pub custom_map: HashMap<u32, MEx, std :: hash :: RandomState>,
+        pub custom_option: MEx<MEx>,
+        pub custom_option_copy: u64<u64>,
+        pub custom_vec_bytes: Vec<u32>,
+        pub custom_vec_deque_bytes: VecDeque<u32>,
+        pub custom_vec_copy: Vec<u64>,
+        pub custom_vec_deque_copy: VecDeque<u64>,
+        pub custom_vec: Vec<MEx>,
+        pub custom_vec_deque: VecDeque<MEx>,
+    }
+
+    #[proto_message]
+    pub struct HashMapMEx {
+        pub value: HashMap,
+    }
+
+    #[proto_message]
+    pub struct HashSetMEx {
+        pub value: HashSet,
+    }
+
+    #[proto_message]
+    pub struct MEx {
+        pub id: u64,
+    }
+
+    #[proto_message]
+    pub struct MutexMEx {
+        pub value: MEx,
+    }
+
+    #[proto_message]
+    pub struct OptionMEx {
+        pub value: MEx,
+    }
+
+    #[proto_message]
+    pub struct VecDequeMEx {
+        pub value: VecDeque,
+    }
+
+    #[proto_message]
+    pub struct VecMEx {
+        pub value: Vec,
+    }
+
+}
 #[allow(clippy::upper_case_acronyms)]
 pub mod extra_types {
     #[allow(unused_imports)]
@@ -97,6 +182,18 @@ pub mod rizz_types {
 pub mod sigma_rpc_simple {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
+    use crate::custom_types::ArcMEx;
+    use crate::custom_types::BTreeMapMEx;
+    use crate::custom_types::BTreeSetMEx;
+    use crate::custom_types::BoxMEx;
+    use crate::custom_types::CustomEx;
+    use crate::custom_types::HashMapMEx;
+    use crate::custom_types::HashSetMEx;
+    use crate::custom_types::MEx;
+    use crate::custom_types::MutexMEx;
+    use crate::custom_types::OptionMEx;
+    use crate::custom_types::VecDequeMEx;
+    use crate::custom_types::VecMEx;
     use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
@@ -144,6 +241,66 @@ pub mod sigma_rpc_simple {
             &self,
             request: ::tonic::Request<::core::primitive::u64>,
         ) -> ::core::result::Result<::tonic::Response<BuildResponse>, ::tonic::Status>;
+
+        async fn custom_ex_echo(
+            &self,
+            request: ::tonic::Request<CustomEx>,
+        ) -> ::core::result::Result<::tonic::Response<CustomEx>, ::tonic::Status>;
+
+        async fn mutex_echo(
+            &self,
+            request: ::tonic::Request<MutexMEx>,
+        ) -> ::core::result::Result<::tonic::Response<MutexMEx>, ::tonic::Status>;
+
+        async fn arc_echo(
+            &self,
+            request: ::tonic::Request<ArcMEx>,
+        ) -> ::core::result::Result<::tonic::Response<ArcMEx>, ::tonic::Status>;
+
+        async fn box_echo(
+            &self,
+            request: ::tonic::Request<BoxMEx>,
+        ) -> ::core::result::Result<::tonic::Response<BoxMEx>, ::tonic::Status>;
+
+        async fn option_echo(
+            &self,
+            request: ::tonic::Request<OptionMEx>,
+        ) -> ::core::result::Result<::tonic::Response<OptionMEx>, ::tonic::Status>;
+
+        async fn vec_echo(
+            &self,
+            request: ::tonic::Request<VecMEx>,
+        ) -> ::core::result::Result<::tonic::Response<VecMEx>, ::tonic::Status>;
+
+        async fn vec_deque_echo(
+            &self,
+            request: ::tonic::Request<VecDequeMEx>,
+        ) -> ::core::result::Result<::tonic::Response<VecDequeMEx>, ::tonic::Status>;
+
+        async fn hash_map_echo(
+            &self,
+            request: ::tonic::Request<HashMapMEx>,
+        ) -> ::core::result::Result<::tonic::Response<HashMapMEx>, ::tonic::Status>;
+
+        async fn btree_map_echo(
+            &self,
+            request: ::tonic::Request<BTreeMapMEx>,
+        ) -> ::core::result::Result<::tonic::Response<BTreeMapMEx>, ::tonic::Status>;
+
+        async fn hash_set_echo(
+            &self,
+            request: ::tonic::Request<HashSetMEx>,
+        ) -> ::core::result::Result<::tonic::Response<HashSetMEx>, ::tonic::Status>;
+
+        async fn btree_set_echo(
+            &self,
+            request: ::tonic::Request<BTreeSetMEx>,
+        ) -> ::core::result::Result<::tonic::Response<BTreeSetMEx>, ::tonic::Status>;
+
+        async fn mex_echo(
+            &self,
+            request: ::tonic::Request<MEx>,
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn test_decimals(
             &self,

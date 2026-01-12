@@ -79,6 +79,11 @@ message ComplexConversions {
   string name = 5;
 }
 
+message ConcreteStdMap {
+  CustomMapU32MExStdHashRandomState map_alias = 1;
+  map<uint32, uint32> map = 2;
+}
+
 message Empty {
 
 }
