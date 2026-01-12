@@ -39,7 +39,7 @@ where
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let inner: &T = *value;
+        let inner: &T = value;
         let input = T::encode_input_from_ref(inner);
         unsafe { T::encoded_len_impl_raw(&input) }
     }
@@ -59,7 +59,7 @@ where
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let inner: &T = *value;
+        let inner: &T = value;
         let input = T::encode_input_from_ref(inner);
         T::is_default_impl(&input)
     }
