@@ -1,0 +1,72 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package custom_types;
+
+message ArcMEx {
+  MEx value = 1;
+}
+
+message BTreeMapMEx {
+  map value = 1;
+}
+
+message BTreeSetMEx {
+  MEx value = 1;
+}
+
+message BoxMEx {
+  MEx value = 1;
+}
+
+message CustomEx {
+  MEx mutex = 1;
+  uint64 mutex_copy = 2;
+  MEx mutex_custom = 3;
+  uint64 mutex_copy_custom = 4;
+  MEx arc = 5;
+  uint64 arc_copy = 6;
+  MEx arc_custom = 7;
+  uint64 arc_copy_custom = 8;
+  MEx boxed = 9;
+  uint64 box_copy = 10;
+  MEx boxed_custom = 11;
+  uint64 box_copy_custom = 12;
+  map<uint32, MEx> custom_map = 13;
+  optional MEx custom_option = 14;
+  optional uint64 custom_option_copy = 15;
+  repeated uint32 custom_vec_bytes = 16;
+  repeated uint32 custom_vec_deque_bytes = 17;
+  repeated uint64 custom_vec_copy = 18;
+  repeated uint64 custom_vec_deque_copy = 19;
+  repeated MEx custom_vec = 20;
+  repeated MEx custom_vec_deque = 21;
+}
+
+message HashMapMEx {
+  map value = 1;
+}
+
+message HashSetMEx {
+  MEx value = 1;
+}
+
+message MEx {
+  uint64 id = 1;
+}
+
+message MutexMEx {
+  MEx value = 1;
+}
+
+message OptionMEx {
+  MEx value = 1;
+}
+
+message VecDequeMEx {
+  MEx value = 1;
+}
+
+message VecMEx {
+  MEx value = 1;
+}
+
