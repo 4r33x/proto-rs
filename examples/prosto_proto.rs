@@ -128,20 +128,74 @@ impl<K: std::hash::Hash + Eq, V, S: std::hash::BuildHasher + Default, const CAP:
         }
     }
 }
+
+type CustomMutex<T> = std::sync::Mutex<T>;
+type CustomArc<T> = std::sync::Arc<T>;
+type CustomBox<T> = Box<T>;
+
+#[proto_message]
+struct MEx;
+
+#[proto_message]
+struct CustomEx {
+    mutex: std::sync::Mutex<MEx>,
+    mutex_copy: std::sync::Mutex<u64>,
+    mutex_custom: CustomMutex<MEx>,
+    mutex_copy_custom: CustomMutex<u64>,
+    arc: std::sync::Arc<MEx>,
+    arc_copy: std::sync::Arc<u64>,
+    arc_custom: CustomArc<MEx>,
+    arc_copy_custom: CustomArc<u64>,
+    boxed: Box<MEx>,
+    box_copy: Box<u64>,
+    boxed_custom: CustomBox<MEx>,
+    box_copy_custom: CustomBox<u64>,
+}
+
+#[cfg(feature = "parking_lot")]
+pub mod parking_lot {
+    use proto_rs::proto_message;
+
+    type CustomMutex<T> = parking_lot::Mutex<T>;
+    #[proto_message]
+    struct MEx;
+
+    #[proto_message]
+    struct ExMutex {
+        a: CustomMutex<MEx>,
+        b: CustomMutex<u64>,
+    }
+}
+
+#[cfg(feature = "cache_padded")]
+pub mod cache_padded {
+    use proto_rs::proto_message;
+
+    type CustomCachePadded<T> = crossbeam_utils::CachePadded<T>;
+
+    #[proto_message]
+    struct Ex {
+        inner: CustomCachePadded<core::sync::atomic::AtomicU64>,
+        inner2: CustomCachePadded<super::MEx>,
+        inner3: crossbeam_utils::CachePadded<core::sync::atomic::AtomicU64>,
+        inner4: crossbeam_utils::CachePadded<super::MEx>,
+    }
+}
+
 #[cfg(feature = "papaya")]
 pub mod papaya_test {
     use proto_rs::proto_message;
-
-    #[proto_message]
-    pub struct GenericPapayaMap<K: std::hash::Hash + Eq, V> {
-        inner: papaya::HashMap<K, V>,
-    }
 
     type MapWithHasher<K, V> = papaya::HashMap<K, V, std::hash::RandomState>;
 
     #[proto_message]
     pub struct ConcretePapayaMap2 {
         inner: MapWithHasher<u32, u8>,
+    }
+
+    #[proto_message]
+    pub struct GenericPapayaMap<K: std::hash::Hash + Eq, V> {
+        inner: papaya::HashMap<K, V>,
     }
 
     #[proto_message]
