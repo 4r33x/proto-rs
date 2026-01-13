@@ -38,6 +38,7 @@ pub mod custom_types {
 pub mod extra_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
+    use crate::custom_types::MEx;
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
@@ -188,6 +189,11 @@ pub mod sigma_rpc_simple {
         ) -> ::core::result::Result<::tonic::Response<CustomEx>, ::tonic::Status>;
 
         async fn mutex_echo(
+            &self,
+            request: ::tonic::Request<MEx>,
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
+
+        async fn parking_log_mutex_echo(
             &self,
             request: ::tonic::Request<MEx>,
         ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
