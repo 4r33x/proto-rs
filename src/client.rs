@@ -17,7 +17,7 @@ pub mod custom_types {
         pub box_copy: u64,
         pub boxed_custom: MEx,
         pub box_copy_custom: u64,
-        pub custom_map: ::proto_rs::alloc::collections::BTreeMap<u32, MEx>,
+        pub custom_map: ::proto_rs::alloc::collections::HashMap<u32, MEx>,
         pub custom_option: ::core::option::Option<MEx>,
         pub custom_option_copy: ::core::option::Option<u64>,
         pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u32>,
@@ -189,18 +189,18 @@ pub mod sigma_rpc_simple {
 
         async fn mutex_echo(
             &self,
-            request: ::tonic::Request<::std::sync::Mutex<MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::std::sync::Mutex<MEx>>, ::tonic::Status>;
+            request: ::tonic::Request<MEx>,
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn arc_echo(
             &self,
             request: ::tonic::Request<::std::sync::Arc<MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::std::sync::Arc<MEx>>, ::tonic::Status>;
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn box_echo(
             &self,
             request: ::tonic::Request<::std::boxed::Box<MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::std::boxed::Box<MEx>>, ::tonic::Status>;
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn option_echo(
             &self,
@@ -219,8 +219,8 @@ pub mod sigma_rpc_simple {
 
         async fn hash_map_echo(
             &self,
-            request: ::tonic::Request<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::alloc::collections::HashMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::HashMap<u32, MEx>>, ::tonic::Status>;
 
         async fn btree_map_echo(
             &self,
@@ -237,9 +237,19 @@ pub mod sigma_rpc_simple {
             request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
         ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
 
+        async fn papaya_hash_map_echo(
+            &self,
+            request: ::tonic::Request<::proto_rs::alloc::collections::HashMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::HashMap<u32, MEx>>, ::tonic::Status>;
+
+        async fn papaya_hash_set_echo(
+            &self,
+            request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
+
         async fn mex_echo(
             &self,
-            request: ::tonic::Request<MEx>,
+            request: ::tonic::Request<CustomEx>,
         ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn test_decimals(

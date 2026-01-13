@@ -3,7 +3,6 @@ use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::EncodeInputFromRef;
-use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -12,6 +11,7 @@ use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for std::sync::Mutex<T>
 where
+    for<'a> T: 'a,
     T: ProtoShadow<T, OwnedSun = T>,
 {
     type Sun<'a> = T::Sun<'a>;
@@ -78,27 +78,31 @@ where
 
 pub struct StdMutexShadow<S>(pub S);
 
-impl<T> ProtoExt for std::sync::Mutex<T>
-where
-    T: ProtoExt,
-    for<'a> T: 'a,
-{
-    type Shadow<'a>
-        = StdMutexShadow<<T as ProtoExt>::Shadow<'a>>
-    where
-        T: 'a;
+// impl<T> ProtoExt for std::sync::Mutex<T>
+// where
+//     T: ProtoExt,
+//     for<'a> T: 'a,
+// {
+//     type Shadow<'a>
+//         = StdMutexShadow<<T as ProtoExt>::Shadow<'a>>
+//     where
+//         T: 'a;
 
-    #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        T::merge_field(&mut value.0, tag, wire, buf, ctx)
-    }
-}
+//     #[inline(always)]
+//     fn merge_field(
+//         value: &mut Self::Shadow<'_>,
+//         tag: u32,
+//         wire: WireType,
+//         buf: &mut impl Buf,
+//         ctx: DecodeContext,
+//     ) -> Result<(), DecodeError> {
+//         if tag == 1 {
+//             T::merge_field(&mut value.0, tag, wire, buf, ctx)
+//         } else {
+//             crate::encoding::skip_field(wire, tag, buf, ctx)
+//         }
+//     }
+// }
 
 impl<SHD> ProtoWire for StdMutexShadow<SHD>
 where
@@ -226,28 +230,32 @@ where
     }
 }
 
-#[cfg(feature = "parking_lot")]
-impl<T> ProtoExt for parking_lot::Mutex<T>
-where
-    T: ProtoExt,
-    for<'a> T: 'a,
-{
-    type Shadow<'a>
-        = ParkingLotMutexShadow<<T as ProtoExt>::Shadow<'a>>
-    where
-        T: 'a;
+// #[cfg(feature = "parking_lot")]
+// impl<T> ProtoExt for parking_lot::Mutex<T>
+// where
+//     T: ProtoExt,
+//     for<'a> T: ProtoShadow<T, OwnedSun = T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+// {
+//     type Shadow<'a>
+//         = ParkingLotMutexShadow<<T as ProtoExt>::Shadow<'a>>
+//     where
+//         T: 'a;
 
-    #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        T::merge_field(&mut value.0, tag, wire, buf, ctx)
-    }
-}
+//     #[inline(always)]
+//     fn merge_field(
+//         value: &mut Self::Shadow<'_>,
+//         tag: u32,
+//         wire: WireType,
+//         buf: &mut impl Buf,
+//         ctx: DecodeContext,
+//     ) -> Result<(), DecodeError> {
+//         if tag == 1 {
+//             T::merge_field(&mut value.0, tag, wire, buf, ctx)
+//         } else {
+//             crate::encoding::skip_field(wire, tag, buf, ctx)
+//         }
+//     }
+// }
 
 #[cfg(feature = "parking_lot")]
 impl<SHD> ProtoWire for ParkingLotMutexShadow<SHD>

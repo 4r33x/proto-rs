@@ -8,6 +8,42 @@ import "fastnum.proto";
 import "goon_types.proto";
 import "rizz_types.proto";
 
+message ArcMEx {
+  custom_types.MEx value = 1;
+}
+
+message BTreeMapU32MEx {
+  map<uint32, custom_types.MEx> value = 1;
+}
+
+message BTreeSetMEx {
+  repeated custom_types.MEx value = 1;
+}
+
+message BoxMEx {
+  custom_types.MEx value = 1;
+}
+
+message HashMapU32MEx {
+  map<uint32, custom_types.MEx> value = 1;
+}
+
+message HashSetMEx {
+  repeated custom_types.MEx value = 1;
+}
+
+message OptionMEx {
+  optional custom_types.MEx value = 1;
+}
+
+message VecDequeMEx {
+  repeated custom_types.MEx value = 1;
+}
+
+message VecMEx {
+  repeated custom_types.MEx value = 1;
+}
+
 service SigmaRpc {
   rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong);
   rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse);
@@ -16,16 +52,19 @@ service SigmaRpc {
   rpc Build2(extra_types.EnvelopeBuildRequest) returns (extra_types.EnvelopeBuildResponse);
   rpc OwnerLookup(goon_types.Id) returns (extra_types.BuildResponse);
   rpc CustomExEcho(custom_types.CustomEx) returns (custom_types.CustomEx);
-  rpc MutexEcho(MEx) returns (MEx);
-  rpc ArcEcho(MEx) returns (MEx);
-  rpc BoxEcho(MEx) returns (MEx);
-  rpc OptionEcho(MEx) returns (MEx);
-  rpc VecEcho(MEx) returns (MEx);
-  rpc VecDequeEcho(MEx) returns (MEx);
-  rpc HashMapEcho(custom_types.HashMapU32MEx) returns (custom_types.HashMapU32MEx);
-  rpc BtreeMapEcho(custom_types.BTreeMapU32MEx) returns (custom_types.BTreeMapU32MEx);
-  rpc HashSetEcho(custom_types.HashSetMEx) returns (custom_types.HashSetMEx);
-  rpc BtreeSetEcho(custom_types.BTreeSetMEx) returns (custom_types.BTreeSetMEx);
-  rpc MexEcho(custom_types.MEx) returns (custom_types.MEx);
+  rpc MutexEcho(extra_types.StdMutexHolder) returns (extra_types.StdMutexHolder);
+  rpc ParkingLogMutexEcho(extra_types.LotMutexHolder) returns (extra_types.LotMutexHolder);
+  rpc ArcEcho(ArcMEx) returns (custom_types.MEx);
+  rpc BoxEcho(BoxMEx) returns (custom_types.MEx);
+  rpc OptionEcho(OptionMEx) returns (OptionMEx);
+  rpc VecEcho(VecMEx) returns (VecMEx);
+  rpc VecDequeEcho(VecDequeMEx) returns (VecDequeMEx);
+  rpc HashMapEcho(HashMapU32MEx) returns (HashMapU32MEx);
+  rpc BtreeMapEcho(BTreeMapU32MEx) returns (BTreeMapU32MEx);
+  rpc HashSetEcho(HashSetMEx) returns (HashSetMEx);
+  rpc BtreeSetEcho(BTreeSetMEx) returns (BTreeSetMEx);
+  rpc PapayaHashMapEcho(HashMapU32MEx) returns (HashMapU32MEx);
+  rpc PapayaHashSetEcho(HashSetMEx) returns (HashSetMEx);
+  rpc MexEcho(custom_types.CustomEx) returns (custom_types.MEx);
   rpc TestDecimals(fastnum.UD128) returns (fastnum.D64);
 }

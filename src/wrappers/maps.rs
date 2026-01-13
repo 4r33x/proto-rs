@@ -5,6 +5,7 @@ use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::EncodeInputFromRef;
+use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -14,6 +15,7 @@ use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
+use crate::encoding::skip_field;
 use crate::traits::ProtoKind;
 
 #[inline(always)]
@@ -236,6 +238,29 @@ where
     }
 }
 
+impl<K, V> ProtoExt for BTreeMap<K, V>
+where
+    for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + Ord + 'a,
+    for<'a> V: ProtoShadow<V> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+{
+    type Shadow<'b> = BTreeMap<K, V>;
+
+    #[inline(always)]
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            <BTreeMap<K, V> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 mod hashmap_impl {
     use std::collections::HashMap;
@@ -246,6 +271,7 @@ mod hashmap_impl {
     use bytes::BufMut;
 
     use crate::DecodeError;
+    use crate::ProtoExt;
     use crate::ProtoShadow;
     use crate::ProtoWire;
     use crate::encoding::DecodeContext;
@@ -255,6 +281,7 @@ mod hashmap_impl {
     use crate::encoding::encode_varint;
     use crate::encoding::encoded_len_varint;
     use crate::encoding::key_len;
+    use crate::encoding::skip_field;
     use crate::traits::ProtoKind;
     use crate::wrappers::maps::EncodeInputFromRef;
 
@@ -452,6 +479,30 @@ mod hashmap_impl {
         #[inline]
         fn clear(&mut self) {
             HashMap::clear(self);
+        }
+    }
+
+    impl<K, V, S> ProtoExt for HashMap<K, V, S>
+    where
+        for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + Eq + Hash + 'a,
+        for<'a> V: ProtoShadow<V> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+        for<'a> S: BuildHasher + Default + 'a,
+    {
+        type Shadow<'b> = HashMap<K, V, S>;
+
+        #[inline(always)]
+        fn merge_field(
+            value: &mut Self::Shadow<'_>,
+            tag: u32,
+            wire_type: WireType,
+            buf: &mut impl Buf,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError> {
+            if tag == 1 {
+                <HashMap<K, V, S> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+            } else {
+                skip_field(wire_type, tag, buf, ctx)
+            }
         }
     }
 }
@@ -1045,6 +1096,34 @@ macro_rules! impl_copykey_map_btreemap {
     };
 }
 
+/// Implements `ProtoExt` for `BTreeMap<$K, V>` where `$K` is a copy key.
+macro_rules! impl_copykey_map_ext_btreemap {
+    ($K:ty) => {
+        impl<V> $crate::ProtoExt for alloc::collections::BTreeMap<$K, V>
+        where
+            for<'a> $K: $crate::ProtoShadow<$K> + $crate::ProtoWire<EncodeInput<'a> = $K> + Ord + 'a,
+            for<'a> V: $crate::ProtoShadow<V> + $crate::ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+        {
+            type Shadow<'b> = alloc::collections::BTreeMap<$K, V>;
+
+            #[inline(always)]
+            fn merge_field(
+                value: &mut Self::Shadow<'_>,
+                tag: u32,
+                wire_type: $crate::encoding::WireType,
+                buf: &mut impl bytes::Buf,
+                ctx: $crate::encoding::DecodeContext,
+            ) -> Result<(), $crate::DecodeError> {
+                if tag == 1 {
+                    <alloc::collections::BTreeMap<$K, V> as $crate::ProtoWire>::decode_into(wire_type, value, buf, ctx)
+                } else {
+                    $crate::encoding::skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+        }
+    };
+}
+
 /// Implements `ProtoWire` for `HashMap<$K, V, S>`
 /// where `$K` is a copy-primitive key (`EncodeInput<'a> = $K`)
 /// and `V` is any `ProtoWire`.
@@ -1230,6 +1309,35 @@ macro_rules! impl_copykey_map_hashmap {
     };
 }
 
+/// Implements `ProtoExt` for `HashMap<$K, V, S>` where `$K` is a copy key.
+macro_rules! impl_copykey_map_ext_hashmap {
+    ($K:ty) => {
+        impl<V, S> $crate::ProtoExt for std::collections::HashMap<$K, V, S>
+        where
+            for<'a> $K: $crate::ProtoShadow<$K> + $crate::ProtoWire<EncodeInput<'a> = $K> + Eq + std::hash::Hash + 'a,
+            for<'a> V: $crate::ProtoShadow<V> + $crate::ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+            for<'a> S: std::hash::BuildHasher + Default + 'a,
+        {
+            type Shadow<'b> = std::collections::HashMap<$K, V, S>;
+
+            #[inline(always)]
+            fn merge_field(
+                value: &mut Self::Shadow<'_>,
+                tag: u32,
+                wire_type: $crate::encoding::WireType,
+                buf: &mut impl bytes::Buf,
+                ctx: $crate::encoding::DecodeContext,
+            ) -> Result<(), $crate::DecodeError> {
+                if tag == 1 {
+                    <std::collections::HashMap<$K, V, S> as $crate::ProtoWire>::decode_into(wire_type, value, buf, ctx)
+                } else {
+                    $crate::encoding::skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+        }
+    };
+}
+
 impl_copykey_map_btreemap!(u8);
 impl_copykey_map_btreemap!(u16);
 impl_copykey_map_btreemap!(u32);
@@ -1240,6 +1348,16 @@ impl_copykey_map_btreemap!(i32);
 impl_copykey_map_btreemap!(i64);
 impl_copykey_map_btreemap!(bool);
 
+impl_copykey_map_ext_btreemap!(u8);
+impl_copykey_map_ext_btreemap!(u16);
+impl_copykey_map_ext_btreemap!(u32);
+impl_copykey_map_ext_btreemap!(u64);
+impl_copykey_map_ext_btreemap!(i8);
+impl_copykey_map_ext_btreemap!(i16);
+impl_copykey_map_ext_btreemap!(i32);
+impl_copykey_map_ext_btreemap!(i64);
+impl_copykey_map_ext_btreemap!(bool);
+
 impl_copykey_map_hashmap!(u8);
 impl_copykey_map_hashmap!(u16);
 impl_copykey_map_hashmap!(u32);
@@ -1249,6 +1367,16 @@ impl_copykey_map_hashmap!(i16);
 impl_copykey_map_hashmap!(i32);
 impl_copykey_map_hashmap!(i64);
 impl_copykey_map_hashmap!(bool);
+
+impl_copykey_map_ext_hashmap!(u8);
+impl_copykey_map_ext_hashmap!(u16);
+impl_copykey_map_ext_hashmap!(u32);
+impl_copykey_map_ext_hashmap!(u64);
+impl_copykey_map_ext_hashmap!(i8);
+impl_copykey_map_ext_hashmap!(i16);
+impl_copykey_map_ext_hashmap!(i32);
+impl_copykey_map_ext_hashmap!(i64);
+impl_copykey_map_ext_hashmap!(bool);
 
 #[cfg(test)]
 mod tests {

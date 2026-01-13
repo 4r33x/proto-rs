@@ -1,0 +1,28 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package sigma_rpc_simple;
+
+service SigmaRpc {
+  rpc RizzPing(RizzPing) returns (GoonPong) {}
+  rpc RizzUni(BarSub) returns (stream FooResponse) {}
+  rpc RizzUni2(BarSub) returns (stream FooResponse) {}
+  rpc Build(EnvelopeBuildRequest) returns (EnvelopeBuildResponse) {}
+  rpc Build2(EnvelopeBuildRequest) returns (EnvelopeBuildResponse) {}
+  rpc OwnerLookup(TransparentId) returns (BuildResponse) {}
+  rpc CustomExEcho(CustomEx) returns (CustomEx) {}
+  rpc MutexEcho(StdMutexHolder) returns (StdMutexHolder) {}
+  rpc ParkingLogMutexEcho(LotMutexHolder) returns (LotMutexHolder) {}
+  rpc ArcEcho(ArcMEx) returns (MEx) {}
+  rpc BoxEcho(BoxMEx) returns (MEx) {}
+  rpc OptionEcho(OptionMEx) returns (OptionMEx) {}
+  rpc VecEcho(VecMEx) returns (VecMEx) {}
+  rpc VecDequeEcho(VecDequeMEx) returns (VecDequeMEx) {}
+  rpc HashMapEcho(HashMapU32MEx) returns (HashMapU32MEx) {}
+  rpc BtreeMapEcho(BTreeMapU32MEx) returns (BTreeMapU32MEx) {}
+  rpc HashSetEcho(HashSetMEx) returns (HashSetMEx) {}
+  rpc BtreeSetEcho(BTreeSetMEx) returns (BTreeSetMEx) {}
+  rpc PapayaHashMapEcho(HashMapU32MEx) returns (HashMapU32MEx) {}
+  rpc PapayaHashSetEcho(HashSetMEx) returns (HashSetMEx) {}
+  rpc MexEcho(CustomEx) returns (MEx) {}
+  rpc TestDecimals(UD128) returns (D64) {}
+}

@@ -12,8 +12,10 @@ use crate::traits::ProtoKind;
 impl<T> ProtoShadow<Option<T>> for Option<T::Shadow<'_>>
 where
     T: ProtoExt,
+    for<'a> T: 'a,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T>,
 {
-    type Sun<'a> = Option<<T::Shadow<'a> as ProtoShadow<T>>::Sun<'a>>;
+    type Sun<'a> = &'a Option<T>;
     type OwnedSun = Option<T>;
     type View<'a> = Option<<T::Shadow<'a> as ProtoShadow<T>>::View<'a>>;
 
@@ -24,7 +26,7 @@ where
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.map(|v| <T::Shadow<'_> as ProtoShadow<T>>::from_sun(v))
+        value.as_ref().map(|v| <T::Shadow<'_> as ProtoShadow<T>>::from_sun(v))
     }
 }
 
@@ -77,6 +79,8 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
 impl<T> ProtoExt for Option<T>
 where
     T: ProtoExt,
+    for<'a> T: 'a,
+    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T>,
 {
     type Shadow<'a> = Option<<T as ProtoExt>::Shadow<'a>>;
 

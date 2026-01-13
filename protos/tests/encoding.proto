@@ -1,0 +1,73 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package encoding;
+
+enum SampleEnum {
+  ZERO = 0;
+  ONE = 1;
+  TWO = 2;
+  UNSPECIFIED = 3;
+}
+
+enum StatusWithDefaultAttribute {
+  ACTIVE = 0;
+  PENDING = 1;
+  INACTIVE = 2;
+  COMPLETED = 3;
+}
+
+message CollectionsMessage {
+  map<uint32, int64> hash_scores = 1;
+  map<string, NestedMessage> tree_messages = 2;
+  repeated string hash_tags = 3;
+  repeated int32 tree_ids = 4;
+}
+
+message NestedMessage {
+  int64 value = 1;
+}
+
+message SampleEnumList {
+  repeated SampleEnum values = 1;
+}
+
+message SampleMessage {
+  uint32 id = 1;
+  bool flag = 2;
+  string name = 3;
+  bytes data = 4;
+  optional NestedMessage nested = 5;
+  repeated NestedMessage nested_list = 6;
+  repeated int64 values = 7;
+  SampleEnum mode = 8;
+  optional SampleEnum optional_mode = 9;
+}
+
+message ZeroCopyContainer {
+  bytes bytes32 = 1;
+  repeated uint32 smalls = 2;
+  repeated NestedMessage nested_items = 3;
+  optional NestedMessage boxed = 4;
+  optional NestedMessage shared = 5;
+  map<string, SampleEnum> enum_lookup = 6;
+}
+
+message ZeroCopyEnumContainer {
+  SampleEnum direct = 1;
+  SampleEnum raw_direct = 2;
+  repeated SampleEnum repeated_direct = 3;
+  SampleEnumList raw_list = 4;
+  ZeroCopyEnumMessage nested = 5;
+  SampleMessage nested_message = 6;
+}
+
+message ZeroCopyEnumMessage {
+  SampleEnumList bag = 1;
+  SampleEnum status = 2;
+  repeated SampleEnum timeline = 3;
+}
+
+message ZeroCopyMessage {
+  NestedMessage payload = 1;
+}
+
