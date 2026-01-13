@@ -1,0 +1,17 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package sigma_rpc_complex;
+
+import "goon_types.proto";
+import "rizz_types.proto";
+
+service SigmaRpc {
+  rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc GoonPong(goon_types.GoonPong) returns (goon_types.RizzPing) {}
+  rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
+  rpc RizzUni2(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
+  rpc GenericUni(rizz_types.BarSub) returns (stream IdGenericU64) {}
+  rpc RizzUniOther(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
+  rpc WithGeneric(IdGenericU64) returns (IdGenericU32) {}
+  rpc WithGenericTransparent(IdGenericTransparentU64) returns (IdGenericTransparentU32) {}
+}

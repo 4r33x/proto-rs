@@ -1,0 +1,19 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package sigma_rpc;
+
+import "goon_types.proto";
+import "rizz_types.proto";
+
+service SigmaRpc {
+  rpc RizzUni(rizz_types.BarSub) returns (stream rizz_types.FooResponse) {}
+  rpc ZeroCopyPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc JustPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc InfallibleJustPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc InfallibleZeroCopyPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc InfalliblePing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzPingArcedResp(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc RizzPingBoxedResp(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+  rpc SyncRizzPing(goon_types.RizzPing) returns (goon_types.GoonPong) {}
+}

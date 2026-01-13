@@ -1,0 +1,7 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package test;
+
+import "common.types.proto";
+import "google.protobuf.timestamp.proto";
+

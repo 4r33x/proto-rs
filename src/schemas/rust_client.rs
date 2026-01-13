@@ -1496,7 +1496,7 @@ fn render_map_wrapper_type(
         })?;
     let key_type = render_proto_type(key, package_name, package_by_ident, proto_type_index, client_imports);
     let value_type = render_proto_type(value, package_name, package_by_ident, proto_type_index, client_imports);
-    Some(render_map_collection_type(kind, key_type, value_type))
+    Some(render_map_collection_type(kind, &key_type, &value_type))
 }
 
 fn render_proto_type(
@@ -1738,9 +1738,7 @@ fn render_map_type(
         proto_type_index,
         client_imports,
     )
-    .unwrap_or_else(|| {
-        return "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string();
-    })
+    .unwrap_or_else(|| "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string())
 }
 
 fn render_map_type_with_kind(
@@ -1754,14 +1752,15 @@ fn render_map_type_with_kind(
     let (key, value) = proto_map_types(proto_type)?;
     let key_type = proto_type_to_rust_type(key, current_package, package_by_ident, proto_type_index, client_imports);
     let value_type = proto_type_to_rust_type(value, current_package, package_by_ident, proto_type_index, client_imports);
-    Some(render_map_collection_type(kind, key_type, value_type))
+    Some(render_map_collection_type(kind, &key_type, &value_type))
 }
 
-fn render_map_collection_type(kind: WrapperKind, key_type: String, value_type: String) -> String {
+#[allow(clippy::match_same_arms)]
+fn render_map_collection_type(kind: WrapperKind, key_type: &str, value_type: &str) -> String {
     let collection = match kind {
         WrapperKind::HashMap => "::proto_rs::alloc::collections::HashMap",
         WrapperKind::BTreeMap => "::proto_rs::alloc::collections::BTreeMap",
-        _ => "::proto_rs::alloc::collections::BTreeMap",
+        _ => "::proto_rs::alloc::collections::HashMap",
     };
     format!("{collection}<{key_type}, {value_type}>")
 }

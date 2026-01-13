@@ -6,19 +6,19 @@ use super::ProtoEntry;
 use super::ProtoIdent;
 use super::ProtoLabel;
 use super::ProtoSchema;
-use super::ServiceMethod;
 use super::ProtoType;
+use super::ServiceMethod;
 use super::Variant;
 use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
+use super::utils::is_wrapper_schema;
 use super::utils::proto_ident_base_type_name;
 use super::utils::proto_map_types;
 use super::utils::proto_type_name;
 use super::utils::resolve_transparent_ident;
 use super::utils::to_snake_case;
-use super::utils::is_wrapper_schema;
-use super::utils::wrapper_kind_from_schema_name;
 use super::utils::wrapper_kind_for;
+use super::utils::wrapper_kind_from_schema_name;
 use super::utils::wrapper_prefix_from_schema_name;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -191,10 +191,7 @@ pub(crate) fn render_entries(
 #[derive(Clone, Copy)]
 enum WrapperInner {
     Single(ProtoIdent),
-    Map {
-        key: ProtoIdent,
-        value: ProtoIdent,
-    },
+    Map { key: ProtoIdent, value: ProtoIdent },
 }
 
 fn collect_wrapper_definitions(
@@ -224,12 +221,8 @@ fn collect_wrapper_definitions(
         {
             continue;
         }
-        let type_generics: Vec<&str> = entry
-            .generics
-            .iter()
-            .filter(|generic| matches!(generic.kind, super::GenericKind::Type))
-            .map(|generic| generic.name)
-            .collect();
+        let type_generics: Vec<&str> =
+            entry.generics.iter().filter(|generic| matches!(generic.kind, super::GenericKind::Type)).map(|generic| generic.name).collect();
         let has_type_generics = !type_generics.is_empty();
         if has_type_generics {
             if let Some(specs) = specializations.get(&entry.id) {
@@ -246,14 +239,7 @@ fn collect_wrapper_definitions(
                 }
             }
         } else {
-            collect_wrapper_definitions_for_entry(
-                entry,
-                package_name,
-                ident_index,
-                None,
-                &existing_names,
-                &mut definitions,
-            );
+            collect_wrapper_definitions_for_entry(entry, package_name, ident_index, None, &existing_names, &mut definitions);
         }
     }
 
@@ -271,40 +257,19 @@ fn collect_wrapper_definitions_for_entry(
     match entry.content {
         ProtoEntry::Struct { fields } => {
             for field in fields {
-                collect_wrapper_definition_for_field(
-                    field,
-                    package_name,
-                    ident_index,
-                    substitution,
-                    existing_names,
-                    definitions,
-                );
+                collect_wrapper_definition_for_field(field, package_name, ident_index, substitution, existing_names, definitions);
             }
         }
         ProtoEntry::ComplexEnum { variants } => {
             for variant in variants {
                 for field in variant.fields {
-                    collect_wrapper_definition_for_field(
-                        field,
-                        package_name,
-                        ident_index,
-                        substitution,
-                        existing_names,
-                        definitions,
-                    );
+                    collect_wrapper_definition_for_field(field, package_name, ident_index, substitution, existing_names, definitions);
                 }
             }
         }
         ProtoEntry::Service { methods, .. } => {
             for method in methods {
-                collect_wrapper_definition_for_method(
-                    method,
-                    package_name,
-                    ident_index,
-                    substitution,
-                    existing_names,
-                    definitions,
-                );
+                collect_wrapper_definition_for_method(method, package_name, ident_index, substitution, existing_names, definitions);
             }
         }
         ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } => {}
@@ -323,14 +288,7 @@ fn collect_wrapper_definition_for_field(
         return;
     };
     let inner = wrapper_inner_for_field(field, kind, substitution);
-    register_wrapper_definition(
-        kind,
-        inner,
-        package_name,
-        ident_index,
-        existing_names,
-        definitions,
-    );
+    register_wrapper_definition(kind, inner, package_name, ident_index, existing_names, definitions);
 }
 
 fn collect_wrapper_definition_for_method(
@@ -341,8 +299,8 @@ fn collect_wrapper_definition_for_method(
     existing_names: &BTreeSet<String>,
     definitions: &mut BTreeMap<String, String>,
 ) {
-    if let Some(kind) = wrapper_kind_for(method.request_wrapper, method.request)
-        .or_else(|| wrapper_kind_from_schema_name(method.request.name))
+    if let Some(kind) =
+        wrapper_kind_for(method.request_wrapper, method.request).or_else(|| wrapper_kind_from_schema_name(method.request.name))
     {
         let inner = wrapper_inner_for_method(
             method.request,
@@ -351,17 +309,10 @@ fn collect_wrapper_definition_for_method(
             kind,
             substitution,
         );
-        register_wrapper_definition(
-            kind,
-            inner,
-            package_name,
-            ident_index,
-            existing_names,
-            definitions,
-        );
+        register_wrapper_definition(kind, inner, package_name, ident_index, existing_names, definitions);
     }
-    if let Some(kind) = wrapper_kind_for(method.response_wrapper, method.response)
-        .or_else(|| wrapper_kind_from_schema_name(method.response.name))
+    if let Some(kind) =
+        wrapper_kind_for(method.response_wrapper, method.response).or_else(|| wrapper_kind_from_schema_name(method.response.name))
     {
         let inner = wrapper_inner_for_method(
             method.response,
@@ -370,22 +321,11 @@ fn collect_wrapper_definition_for_method(
             kind,
             substitution,
         );
-        register_wrapper_definition(
-            kind,
-            inner,
-            package_name,
-            ident_index,
-            existing_names,
-            definitions,
-        );
+        register_wrapper_definition(kind, inner, package_name, ident_index, existing_names, definitions);
     }
 }
 
-fn wrapper_inner_for_field(
-    field: &Field,
-    kind: WrapperKind,
-    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
-) -> Option<WrapperInner> {
+fn wrapper_inner_for_field(field: &Field, kind: WrapperKind, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> Option<WrapperInner> {
     match kind {
         WrapperKind::HashMap | WrapperKind::BTreeMap => {
             let (key, value) = wrapper_map_args(field.wrapper, field.generic_args)?;
@@ -438,7 +378,7 @@ fn register_wrapper_definition(
     if existing_names.contains(&name) || definitions.contains_key(&name) {
         return;
     }
-    let definition = render_wrapper_message(name.clone(), kind, inner, package_name, ident_index);
+    let definition = render_wrapper_message(&name, kind, inner, package_name, ident_index);
     definitions.insert(name, definition);
 }
 
@@ -481,7 +421,7 @@ fn wrapper_prefix_for_kind(kind: WrapperKind) -> &'static str {
 }
 
 fn render_wrapper_message(
-    name: String,
+    name: &str,
     kind: WrapperKind,
     inner: WrapperInner,
     package_name: &str,
@@ -731,13 +671,7 @@ fn method_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
-    if let Some(wrapper_type) = wrapper_message_type_name_for_method(
-        ident,
-        generic_args,
-        wrapper,
-        ident_index,
-        substitution,
-    ) {
+    if let Some(wrapper_type) = wrapper_message_type_name_for_method(ident, generic_args, wrapper, ident_index, substitution) {
         return wrapper_type;
     }
     if let Some(wrapper_name) = method_wrapper_schema_type_name(ident, package_name, ident_index) {
