@@ -1248,6 +1248,7 @@ version = "0.1.0"
 dependencies = [
  "fastnum",
  "inventory",
+ "papaya",
  "prost",
  "proto_rs",
  "tokio",

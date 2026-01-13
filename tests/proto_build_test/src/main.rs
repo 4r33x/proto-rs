@@ -5,6 +5,8 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
@@ -26,28 +28,6 @@ type CustomMap<K, V, S> = HashMap<K, V, S>;
 type CustomOption<T> = Option<T>;
 type CustomVec<T> = Vec<T>;
 type CustomVecDeq<T> = VecDeque<T>;
-
-macro_rules! define_wrapper_message {
-    ($name:ident, $inner:ty) => {
-        #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
-        #[derive(Debug)]
-        pub struct $name {
-            #[proto(tag = 1)]
-            pub value: $inner,
-        }
-    };
-}
-
-define_wrapper_message!(MutexMEx, std::sync::Mutex<MEx>);
-define_wrapper_message!(ArcMEx, std::sync::Arc<MEx>);
-define_wrapper_message!(BoxMEx, Box<MEx>);
-define_wrapper_message!(OptionMEx, Option<MEx>);
-define_wrapper_message!(VecMEx, Vec<MEx>);
-define_wrapper_message!(VecDequeMEx, VecDeque<MEx>);
-define_wrapper_message!(HashMapMEx, HashMap<u32, MEx>);
-define_wrapper_message!(BTreeMapMEx, BTreeMap<u32, MEx>);
-define_wrapper_message!(HashSetMEx, HashSet<MEx>);
-define_wrapper_message!(BTreeSetMEx, BTreeSet<MEx>);
 
 #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -209,27 +189,34 @@ pub trait SigmaRpc {
 
     async fn custom_ex_echo(&self, request: Request<CustomEx>) -> Result<Response<CustomEx>, Status>;
 
-    async fn mutex_echo(&self, request: Request<MutexMEx>) -> Result<Response<MutexMEx>, Status>;
+    async fn mutex_echo(&self, request: Request<Mutex<MEx>>) -> Result<Response<Mutex<MEx>>, Status>;
 
-    async fn arc_echo(&self, request: Request<ArcMEx>) -> Result<Response<ArcMEx>, Status>;
+    async fn arc_echo(&self, request: Request<Arc<MEx>>) -> Result<Response<Arc<MEx>>, Status>;
 
-    async fn box_echo(&self, request: Request<BoxMEx>) -> Result<Response<BoxMEx>, Status>;
+    async fn box_echo(&self, request: Request<Box<MEx>>) -> Result<Response<Box<MEx>>, Status>;
 
-    async fn option_echo(&self, request: Request<OptionMEx>) -> Result<Response<OptionMEx>, Status>;
+    async fn option_echo(&self, request: Request<Option<MEx>>) -> Result<Response<Option<MEx>>, Status>;
 
-    async fn vec_echo(&self, request: Request<VecMEx>) -> Result<Response<VecMEx>, Status>;
+    async fn vec_echo(&self, request: Request<Vec<MEx>>) -> Result<Response<Vec<MEx>>, Status>;
 
-    async fn vec_deque_echo(&self, request: Request<VecDequeMEx>) -> Result<Response<VecDequeMEx>, Status>;
+    async fn vec_deque_echo(&self, request: Request<VecDeque<MEx>>) -> Result<Response<VecDeque<MEx>>, Status>;
 
-    async fn hash_map_echo(&self, request: Request<HashMapMEx>) -> Result<Response<HashMapMEx>, Status>;
+    async fn hash_map_echo(&self, request: Request<HashMap<u32, MEx>>) -> Result<Response<HashMap<u32, MEx>>, Status>;
 
-    async fn btree_map_echo(&self, request: Request<BTreeMapMEx>) -> Result<Response<BTreeMapMEx>, Status>;
+    async fn btree_map_echo(&self, request: Request<BTreeMap<u32, MEx>>) -> Result<Response<BTreeMap<u32, MEx>>, Status>;
 
-    async fn hash_set_echo(&self, request: Request<HashSetMEx>) -> Result<Response<HashSetMEx>, Status>;
+    async fn hash_set_echo(&self, request: Request<HashSet<MEx>>) -> Result<Response<HashSet<MEx>>, Status>;
 
-    async fn btree_set_echo(&self, request: Request<BTreeSetMEx>) -> Result<Response<BTreeSetMEx>, Status>;
+    async fn btree_set_echo(&self, request: Request<BTreeSet<MEx>>) -> Result<Response<BTreeSet<MEx>>, Status>;
 
-    async fn mex_echo(&self, request: MEx) -> MEx;
+    async fn papaya_hash_map_echo(
+        &self,
+        request: Request<papaya::HashMap<u32, MEx>>,
+    ) -> Result<Response<papaya::HashMap<u32, MEx>>, Status>;
+
+    async fn papaya_hash_set_echo(&self, request: Request<papaya::HashSet<MEx>>) -> Result<Response<papaya::HashSet<MEx>>, Status>;
+
+    async fn mex_echo(&self, request: CustomEx) -> MEx;
 
     async fn test_decimals(&self, request: Request<fastnum::UD128>) -> Result<Response<fastnum::D64>, Status>;
 }
