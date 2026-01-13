@@ -36,6 +36,33 @@ pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> Token
     }
 }
 
+fn build_validator_const(type_tokens: TokenStream2) -> TokenStream2 {
+    quote! {
+        #[cfg(feature = "build-schemas")]
+        const _: () = <#type_tokens as ::proto_rs::schemas::ProtoIdentifiable>::_VALIDATOR;
+    }
+}
+
+fn concrete_type_tokens(
+    type_ident: &syn::Ident,
+    generics: &syn::Generics,
+    substitutions: &std::collections::BTreeMap<String, syn::Type>,
+) -> Option<TokenStream2> {
+    if generics.lifetimes().next().is_some() || generics.const_params().next().is_some() {
+        return None;
+    }
+    let type_params: Vec<_> = generics.type_params().collect();
+    if type_params.is_empty() {
+        return Some(quote! { #type_ident });
+    }
+    let mut args = Vec::with_capacity(type_params.len());
+    for param in type_params {
+        let ty = substitutions.get(&param.ident.to_string())?;
+        args.push(ty);
+    }
+    Some(quote! { #type_ident <#(#args),*> })
+}
+
 mod complex_enums;
 mod enums;
 mod generic_bounds;
@@ -70,6 +97,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         Data::Struct(ref data) => {
             let mut schema_tokens_col = quote! {};
             let mut inventory_tokens_col = quote! {};
+            let mut validator_tokens_col = quote! {};
 
             // Iterate over each proto name (from suns configuration)
             for proto_name in &proto_names {
@@ -104,17 +132,24 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
+                    if !has_type_params || !variant.substitutions.is_empty() {
+                        if let Some(type_tokens) = concrete_type_tokens(&input.ident, &input.generics, &variant.substitutions) {
+                            let validator_const = build_validator_const(type_tokens);
+                            validator_tokens_col = quote! { #validator_tokens_col #validator_const };
+                        }
+                    }
                 }
             }
 
             let item_struct: ItemStruct = syn::parse2(item_ts).expect("failed to parse struct");
             let type_tokens = generate_struct_impl(&input, &item_struct, data, &config);
-            quote! {#type_tokens #schema_tokens_col #inventory_tokens_col}
+            quote! {#type_tokens #schema_tokens_col #inventory_tokens_col #validator_tokens_col}
         }
         Data::Enum(ref data) => {
             let is_simple_enum = data.variants.iter().all(|variant| matches!(variant.fields, Fields::Unit));
             let mut schema_tokens_col = quote! {};
             let mut inventory_tokens_col = quote! {};
+            let mut validator_tokens_col = quote! {};
 
             // Iterate over each proto name (from suns configuration)
             for proto_name in &proto_names {
@@ -173,6 +208,12 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
+                    if !has_type_params || !variant.substitutions.is_empty() {
+                        if let Some(type_tokens) = concrete_type_tokens(&input.ident, &input.generics, &variant.substitutions) {
+                            let validator_const = build_validator_const(type_tokens);
+                            validator_tokens_col = quote! { #validator_tokens_col #validator_const };
+                        }
+                    }
                 }
             }
 
@@ -185,7 +226,7 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     Err(err) => return err.to_compile_error().into(),
                 }
             };
-            quote! {#type_tokens #schema_tokens_col #inventory_tokens_col}
+            quote! {#type_tokens #schema_tokens_col #inventory_tokens_col #validator_tokens_col}
         }
         Data::Union(_) => Error::new_spanned(&input.ident, "proto_message cannot be used on unions").to_compile_error(),
     };

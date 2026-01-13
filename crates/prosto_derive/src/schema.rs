@@ -1424,7 +1424,7 @@ fn generic_param_name(ty: &Type, generics: &syn::Generics) -> Option<String> {
 }
 
 /// Check if a type references any generic parameters from the parent type
-fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
+pub(crate) fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
     match ty {
         Type::Path(path) => {
             // Check if this is a bare generic parameter

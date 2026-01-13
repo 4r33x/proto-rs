@@ -303,6 +303,8 @@ macro_rules! impl_proto_ident_primitive {
             };
             const PROTO_TYPE: ProtoType = $proto_type;
         }
+        #[cfg(feature = "build-schemas")]
+        const _: () = <$ty as ProtoIdentifiable>::_VALIDATOR;
     };
 }
 

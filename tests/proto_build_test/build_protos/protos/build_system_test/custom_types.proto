@@ -2,6 +2,14 @@
 syntax = "proto3";
 package custom_types;
 
+message BTreeMapU32MEx {
+  map<uint32, MEx> value = 1;
+}
+
+message BTreeSetMEx {
+  repeated MEx value = 1;
+}
+
 message CustomEx {
   MEx mutex = 1;
   uint64 mutex_copy = 2;
@@ -24,6 +32,14 @@ message CustomEx {
   repeated uint64 custom_vec_deque_copy = 19;
   repeated MEx custom_vec = 20;
   repeated MEx custom_vec_deque = 21;
+}
+
+message HashMapU32MEx {
+  map<uint32, MEx> value = 1;
+}
+
+message HashSetMEx {
+  repeated MEx value = 1;
 }
 
 message MEx {
