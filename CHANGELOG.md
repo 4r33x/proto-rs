@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.4]
+- Fixed and optimized Mutex code
+
 ## [0.7.3]
 - Better .proto codegen
 - const proto schema validation and proper reflection
