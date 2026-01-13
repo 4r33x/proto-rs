@@ -5,3 +5,6 @@ impl_proto_ident!(std::hash::RandomState);
 
 #[cfg(feature = "solana_address_hash")]
 impl_proto_ident!(solana_address::AddressHasherBuilder);
+
+#[cfg(feature = "ahash")]
+impl_proto_ident!(ahash::RandomState);

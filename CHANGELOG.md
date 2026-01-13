@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.5]
+- Add AHash Hasher
+
 ## [0.7.4]
 - Fixed and optimized Mutex code
 

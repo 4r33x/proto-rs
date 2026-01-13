@@ -48,7 +48,7 @@ unsafe_code = { level = "forbid", priority = 0 }
 
 [package]
 name = "proto_rs"
-version = "0.7.4"
+version = "0.7.5"
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
@@ -64,6 +64,7 @@ categories.workspace = true
 all-features = true
 
 [dependencies]
+ahash = { version = "0.8.12", optional = true }
 prosto_derive.workspace = true
 bytes.workspace = true
 tonic = { workspace = true, optional = true }
@@ -103,6 +104,7 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 
 [features]
+ahash = ["dep:ahash"]
 std = ["bytes/std"]
 tonic = ["dep:tonic", "bytes/std", "std"]
 fastnum = ["dep:fastnum"]
