@@ -38,6 +38,17 @@ macro_rules! define_wrapper_message {
     };
 }
 
+define_wrapper_message!(MutexMEx, std::sync::Mutex<MEx>);
+define_wrapper_message!(ArcMEx, std::sync::Arc<MEx>);
+define_wrapper_message!(BoxMEx, Box<MEx>);
+define_wrapper_message!(OptionMEx, Option<MEx>);
+define_wrapper_message!(VecMEx, Vec<MEx>);
+define_wrapper_message!(VecDequeMEx, VecDeque<MEx>);
+define_wrapper_message!(HashMapMEx, HashMap<u32, MEx>);
+define_wrapper_message!(BTreeMapMEx, BTreeMap<u32, MEx>);
+define_wrapper_message!(HashSetMEx, HashSet<MEx>);
+define_wrapper_message!(BTreeSetMEx, BTreeSet<MEx>);
+
 #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MEx {
@@ -69,17 +80,6 @@ pub struct CustomEx {
     pub custom_vec: CustomVec<MEx>,
     pub custom_vec_deque: CustomVecDeq<MEx>,
 }
-
-define_wrapper_message!(MutexMEx, std::sync::Mutex<MEx>);
-define_wrapper_message!(ArcMEx, std::sync::Arc<MEx>);
-define_wrapper_message!(BoxMEx, Box<MEx>);
-define_wrapper_message!(OptionMEx, Option<MEx>);
-define_wrapper_message!(VecMEx, Vec<MEx>);
-define_wrapper_message!(VecDequeMEx, VecDeque<MEx>);
-define_wrapper_message!(HashMapMEx, HashMap<u32, MEx>);
-define_wrapper_message!(BTreeMapMEx, BTreeMap<u32, MEx>);
-define_wrapper_message!(HashSetMEx, HashSet<MEx>);
-define_wrapper_message!(BTreeSetMEx, BTreeSet<MEx>);
 
 #[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq, Copy)]
