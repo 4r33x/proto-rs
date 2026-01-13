@@ -1,9 +1,0 @@
-//CODEGEN BELOW - DO NOT TOUCH ME
-syntax = "proto3";
-package import_all_from_rpc;
-
-import "types.proto";
-
-service ImportAllFromRpc {
-  rpc GetUser(types.UserType) returns (types.UserType) {}
-}

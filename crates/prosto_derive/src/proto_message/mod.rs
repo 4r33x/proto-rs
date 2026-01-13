@@ -132,11 +132,11 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
-                    if !has_type_params || !variant.substitutions.is_empty() {
-                        if let Some(type_tokens) = concrete_type_tokens(&input.ident, &input.generics, &variant.substitutions) {
-                            let validator_const = build_validator_const(type_tokens);
-                            validator_tokens_col = quote! { #validator_tokens_col #validator_const };
-                        }
+                    if (!has_type_params || !variant.substitutions.is_empty())
+                        && let Some(type_tokens) = concrete_type_tokens(&input.ident, &input.generics, &variant.substitutions)
+                    {
+                        let validator_const = build_validator_const(type_tokens);
+                        validator_tokens_col = quote! { #validator_tokens_col #validator_const };
                     }
                 }
             }
@@ -208,11 +208,11 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
-                    if !has_type_params || !variant.substitutions.is_empty() {
-                        if let Some(type_tokens) = concrete_type_tokens(&input.ident, &input.generics, &variant.substitutions) {
-                            let validator_const = build_validator_const(type_tokens);
-                            validator_tokens_col = quote! { #validator_tokens_col #validator_const };
-                        }
+                    if (!has_type_params || !variant.substitutions.is_empty())
+                        && let Some(type_tokens) = concrete_type_tokens(&input.ident, &input.generics, &variant.substitutions)
+                    {
+                        let validator_const = build_validator_const(type_tokens);
+                        validator_tokens_col = quote! { #validator_tokens_col #validator_const };
                     }
                 }
             }
