@@ -160,6 +160,18 @@ pub struct BuildResponse {
     pub envelope: Envelope<GoonPong>,
 }
 
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
+#[derive(Debug)]
+struct StdMutexHolder {
+    pub stdd: Mutex<MEx>,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
+#[derive(Debug)]
+struct LotMutexHolder {
+    pub stdd: parking_lot::Mutex<MEx>,
+}
+
 // Define trait with the proto_rpc macro
 #[proto_rpc(
     rpc_package = "sigma_rpc",
@@ -189,7 +201,9 @@ pub trait SigmaRpc {
 
     async fn custom_ex_echo(&self, request: Request<CustomEx>) -> Result<Response<CustomEx>, Status>;
 
-    async fn mutex_echo(&self, request: Request<Mutex<MEx>>) -> Result<Response<Mutex<MEx>>, Status>;
+    async fn mutex_echo(&self, request: Request<StdMutexHolder>) -> Result<Response<StdMutexHolder>, Status>;
+
+    async fn parking_log_mutex_echo(&self, request: Request<LotMutexHolder>) -> Result<Response<LotMutexHolder>, Status>;
 
     async fn arc_echo(&self, request: Request<Arc<MEx>>) -> Result<Response<Arc<MEx>>, Status>;
 

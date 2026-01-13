@@ -18,3 +18,11 @@ message BuildResponse {
   EnvelopeGoonPong envelope = 2;
 }
 
+message LotMutexHolder {
+  MEx stdd = 1;
+}
+
+message StdMutexHolder {
+  MEx stdd = 1;
+}
+
