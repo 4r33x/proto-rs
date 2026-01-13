@@ -267,7 +267,7 @@ pub trait EncodeInputFromRef<'a>: ProtoWire {
     fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a>;
 }
 
-trait EncodeInputFromRefValue<'a, T: ?Sized> {
+pub(crate) trait EncodeInputFromRefValue<'a, T: ?Sized> {
     type Output;
     fn encode_input_from_ref(value: &'a T) -> Self::Output;
 }

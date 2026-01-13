@@ -7,7 +7,37 @@ use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::traits::EncodeInputFromRefValue;
 use crate::traits::ProtoKind;
+
+pub struct MutexGuardEncodeInput<G>(G);
+
+impl<G> MutexGuardEncodeInput<G> {
+    #[inline(always)]
+    fn new(guard: G) -> Self {
+        Self(guard)
+    }
+}
+
+#[inline(always)]
+fn encode_input_from_guard<'a, T, G>(guard: &'a G) -> T::EncodeInput<'a>
+where
+    T: ProtoWire + EncodeInputFromRef<'a> + 'a,
+    G: std::ops::Deref<Target = T>,
+{
+    T::encode_input_from_ref(&*guard)
+}
+
+type StdMutexEncodeInput<'a, T> = MutexGuardEncodeInput<std::sync::MutexGuard<'a, T>>;
+
+impl<'a, T> EncodeInputFromRefValue<'a, std::sync::Mutex<T>> for StdMutexEncodeInput<'a, T> {
+    type Output = StdMutexEncodeInput<'a, T>;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a std::sync::Mutex<T>) -> Self::Output {
+        MutexGuardEncodeInput::new(value.lock().expect("Mutex lock poisoned"))
+    }
+}
 
 impl<T> ProtoShadow<Self> for std::sync::Mutex<T>
 where
@@ -33,20 +63,18 @@ impl<T> ProtoWire for std::sync::Mutex<T>
 where
     for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
-    type EncodeInput<'a> = &'a std::sync::Mutex<T>;
+    type EncodeInput<'a> = StdMutexEncodeInput<'a, T>;
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let guard = value.lock().expect("Mutex lock poisoned");
-        let input = T::encode_input_from_ref(&*guard);
+        let input = encode_input_from_guard::<T, _>(&value.0);
         unsafe { T::encoded_len_impl_raw(&input) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        let guard = value.lock().expect("Mutex lock poisoned");
-        let input = T::encode_input_from_ref(&*guard);
+        let input = encode_input_from_guard::<T, _>(&value.0);
         T::encode_raw_unchecked(input, buf);
     }
 
@@ -58,8 +86,7 @@ where
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let guard = value.lock().expect("Mutex lock poisoned");
-        let input = T::encode_input_from_ref(&*guard);
+        let input = encode_input_from_guard::<T, _>(&value.0);
         T::is_default_impl(&input)
     }
 
@@ -165,6 +192,19 @@ where
 pub struct ParkingLotMutexShadow<S>(pub S);
 
 #[cfg(feature = "parking_lot")]
+type ParkingLotMutexEncodeInput<'a, T> = MutexGuardEncodeInput<parking_lot::MutexGuard<'a, T>>;
+
+#[cfg(feature = "parking_lot")]
+impl<'a, T> EncodeInputFromRefValue<'a, parking_lot::Mutex<T>> for ParkingLotMutexEncodeInput<'a, T> {
+    type Output = ParkingLotMutexEncodeInput<'a, T>;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a parking_lot::Mutex<T>) -> Self::Output {
+        MutexGuardEncodeInput::new(value.lock())
+    }
+}
+
+#[cfg(feature = "parking_lot")]
 impl<T> ProtoShadow<Self> for parking_lot::Mutex<T>
 where
     T: ProtoShadow<T, OwnedSun = T>,
@@ -189,20 +229,18 @@ impl<T> ProtoWire for parking_lot::Mutex<T>
 where
     for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
-    type EncodeInput<'a> = &'a parking_lot::Mutex<T>;
+    type EncodeInput<'a> = ParkingLotMutexEncodeInput<'a, T>;
     const KIND: ProtoKind = T::KIND;
 
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let guard = value.lock();
-        let input = T::encode_input_from_ref(&*guard);
+        let input = encode_input_from_guard::<T, _>(&value.0);
         unsafe { T::encoded_len_impl_raw(&input) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        let guard = value.lock();
-        let input = T::encode_input_from_ref(&*guard);
+        let input = encode_input_from_guard::<T, _>(&value.0);
         T::encode_raw_unchecked(input, buf);
     }
 
@@ -214,8 +252,7 @@ where
 
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let guard = value.lock();
-        let input = T::encode_input_from_ref(&*guard);
+        let input = encode_input_from_guard::<T, _>(&value.0);
         T::is_default_impl(&input)
     }
 
