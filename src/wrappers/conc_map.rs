@@ -10,6 +10,7 @@ use super::maps::encode_map_entry_component;
 use super::maps::map_entry_field_len;
 use crate::DecodeError;
 use crate::EncodeInputFromRef;
+use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -19,6 +20,7 @@ use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
+use crate::encoding::skip_field;
 use crate::traits::ProtoKind;
 
 #[cfg(feature = "std")]
@@ -299,5 +301,29 @@ where
     fn clear(&mut self) {
         let guard = self.pin();
         guard.clear();
+    }
+}
+
+impl<K, V, S> ProtoExt for HashMap<K, V, S>
+where
+    for<'a> K: ProtoShadow<K> + ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
+    for<'a> V: ProtoShadow<V> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> S: BuildHasher + Default + 'a,
+{
+    type Shadow<'b> = HashMap<K, V, S>;
+
+    #[inline(always)]
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            <HashMap<K, V, S> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
     }
 }

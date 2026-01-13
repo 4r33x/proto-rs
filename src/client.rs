@@ -195,12 +195,12 @@ pub mod sigma_rpc_simple {
         async fn arc_echo(
             &self,
             request: ::tonic::Request<::std::sync::Arc<MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::std::sync::Arc<MEx>>, ::tonic::Status>;
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn box_echo(
             &self,
             request: ::tonic::Request<::std::boxed::Box<MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::std::boxed::Box<MEx>>, ::tonic::Status>;
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn option_echo(
             &self,
@@ -237,9 +237,19 @@ pub mod sigma_rpc_simple {
             request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
         ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
 
+        async fn papaya_hash_map_echo(
+            &self,
+            request: ::tonic::Request<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::BTreeMap<u32, MEx>>, ::tonic::Status>;
+
+        async fn papaya_hash_set_echo(
+            &self,
+            request: ::tonic::Request<::proto_rs::alloc::vec::Vec<MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::vec::Vec<MEx>>, ::tonic::Status>;
+
         async fn mex_echo(
             &self,
-            request: ::tonic::Request<MEx>,
+            request: ::tonic::Request<CustomEx>,
         ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
         async fn test_decimals(

@@ -4,6 +4,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
 use crate::encoding::DecodeContext;
@@ -13,6 +14,7 @@ use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
+use crate::encoding::skip_field;
 use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for BTreeSet<T>
@@ -177,6 +179,28 @@ where
     }
 }
 
+impl<T> ProtoExt for BTreeSet<T>
+where
+    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + Ord + 'a,
+{
+    type Shadow<'b> = BTreeSet<T>;
+
+    #[inline(always)]
+    fn merge_field(
+        value: &mut Self::Shadow<'_>,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            <BTreeSet<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 mod hashset_impl {
     use std::collections::HashSet;
@@ -187,6 +211,7 @@ mod hashset_impl {
     use bytes::BufMut;
 
     use crate::DecodeError;
+    use crate::ProtoExt;
     use crate::ProtoShadow;
     use crate::ProtoWire;
     use crate::encoding::DecodeContext;
@@ -196,6 +221,7 @@ mod hashset_impl {
     use crate::encoding::encode_varint;
     use crate::encoding::encoded_len_varint;
     use crate::encoding::key_len;
+    use crate::encoding::skip_field;
     use crate::traits::ProtoKind;
 
     impl<T, S> ProtoShadow<Self> for HashSet<T, S>
@@ -358,6 +384,29 @@ mod hashset_impl {
         #[inline]
         fn clear(&mut self) {
             HashSet::clear(self);
+        }
+    }
+
+    impl<T, S> ProtoExt for HashSet<T, S>
+    where
+        for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + Eq + Hash + 'a,
+        for<'a> S: BuildHasher + Default + 'a,
+    {
+        type Shadow<'b> = HashSet<T, S>;
+
+        #[inline(always)]
+        fn merge_field(
+            value: &mut Self::Shadow<'_>,
+            tag: u32,
+            wire_type: WireType,
+            buf: &mut impl Buf,
+            ctx: DecodeContext,
+        ) -> Result<(), DecodeError> {
+            if tag == 1 {
+                <HashSet<T, S> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+            } else {
+                skip_field(wire_type, tag, buf, ctx)
+            }
         }
     }
 }
