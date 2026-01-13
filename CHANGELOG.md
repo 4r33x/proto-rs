@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.7.3]
+- Better .proto codegen
+- const proto schema validation and proper reflection
+
 ## [0.7.2]
 - Impl ProtoIdentifiable for AddressHasherBuilder under solana_address_hash feature gate
 
