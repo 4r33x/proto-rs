@@ -1402,6 +1402,7 @@ fn render_wrapper_field_base_type(
     if wrapper_is_map(field.wrapper, field.proto_ident)
         && let Some(base) = render_map_wrapper_type(
             field.wrapper,
+            field.proto_ident,
             field.generic_args,
             package_name,
             package_by_ident,
@@ -1475,12 +1476,14 @@ fn render_wrapper_inner_type(
 
 fn render_map_wrapper_type(
     wrapper: Option<ProtoIdent>,
+    fallback_ident: ProtoIdent,
     generic_args: &[&ProtoIdent],
     package_name: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> Option<String> {
+    let kind = wrapper_kind_for(wrapper, fallback_ident)?;
     let (key, value) = wrapper
         .and_then(|ident| match ident.generics {
             [key, value, ..] => Some((*key, *value)),
@@ -1493,7 +1496,7 @@ fn render_map_wrapper_type(
         })?;
     let key_type = render_proto_type(key, package_name, package_by_ident, proto_type_index, client_imports);
     let value_type = render_proto_type(value, package_name, package_by_ident, proto_type_index, client_imports);
-    Some(format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>"))
+    Some(render_map_collection_type(kind, key_type, value_type))
 }
 
 fn render_proto_type(
@@ -1611,6 +1614,7 @@ fn render_method_wrapper_type(
     if matches!(kind, WrapperKind::HashMap | WrapperKind::BTreeMap) {
         return render_map_wrapper_type(
             wrapper,
+            fallback_ident,
             generic_args,
             current_package,
             package_by_ident,
@@ -1632,7 +1636,7 @@ fn render_method_wrapper_type(
         }
         WrapperKind::Box => Some(format!("::std::boxed::Box<{inner_type}>")),
         WrapperKind::Arc => Some(format!("::std::sync::Arc<{inner_type}>")),
-        WrapperKind::Mutex => Some(format!("::std::sync::Mutex<{inner_type}>")),
+        WrapperKind::Mutex => Some(inner_type),
         WrapperKind::ArcSwap => Some(format!("::arc_swap::ArcSwap<{inner_type}>")),
         WrapperKind::CachePadded => Some(format!("::crossbeam_utils::CachePadded<{inner_type}>")),
         WrapperKind::HashMap | WrapperKind::BTreeMap => None,
@@ -1703,18 +1707,17 @@ fn render_wrapper_kind_type(
         WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet => {
             Some(format!("::proto_rs::alloc::vec::Vec<{inner_type}>"))
         }
-        WrapperKind::HashMap | WrapperKind::BTreeMap => proto_map_types(&inner_ident.proto_type).map(|_| {
-            render_map_type(
-                &inner_ident.proto_type,
-                current_package,
-                package_by_ident,
-                proto_type_index,
-                client_imports,
-            )
-        }),
+        WrapperKind::HashMap | WrapperKind::BTreeMap => render_map_type_with_kind(
+            kind,
+            &inner_ident.proto_type,
+            current_package,
+            package_by_ident,
+            proto_type_index,
+            client_imports,
+        ),
         WrapperKind::Box => Some(format!("::std::boxed::Box<{inner_type}>")),
         WrapperKind::Arc => Some(format!("::std::sync::Arc<{inner_type}>")),
-        WrapperKind::Mutex => Some(format!("::std::sync::Mutex<{inner_type}>")),
+        WrapperKind::Mutex => Some(inner_type),
         WrapperKind::ArcSwap => Some(format!("::arc_swap::ArcSwap<{inner_type}>")),
         WrapperKind::CachePadded => Some(format!("::crossbeam_utils::CachePadded<{inner_type}>")),
     }
@@ -1727,12 +1730,40 @@ fn render_map_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
-    let Some((key, value)) = proto_map_types(proto_type) else {
+    render_map_type_with_kind(
+        WrapperKind::BTreeMap,
+        proto_type,
+        current_package,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    )
+    .unwrap_or_else(|| {
         return "::proto_rs::alloc::collections::BTreeMap<::core::primitive::u32, ::core::primitive::u32>".to_string();
-    };
+    })
+}
+
+fn render_map_type_with_kind(
+    kind: WrapperKind,
+    proto_type: &super::ProtoType,
+    current_package: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> Option<String> {
+    let (key, value) = proto_map_types(proto_type)?;
     let key_type = proto_type_to_rust_type(key, current_package, package_by_ident, proto_type_index, client_imports);
     let value_type = proto_type_to_rust_type(value, current_package, package_by_ident, proto_type_index, client_imports);
-    format!("::proto_rs::alloc::collections::BTreeMap<{key_type}, {value_type}>")
+    Some(render_map_collection_type(kind, key_type, value_type))
+}
+
+fn render_map_collection_type(kind: WrapperKind, key_type: String, value_type: String) -> String {
+    let collection = match kind {
+        WrapperKind::HashMap => "::proto_rs::alloc::collections::HashMap",
+        WrapperKind::BTreeMap => "::proto_rs::alloc::collections::BTreeMap",
+        _ => "::proto_rs::alloc::collections::BTreeMap",
+    };
+    format!("{collection}<{key_type}, {value_type}>")
 }
 
 fn proto_type_to_rust_type(

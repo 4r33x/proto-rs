@@ -11,7 +11,8 @@ use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Option<T>> for Option<T::Shadow<'_>>
 where
-    T: ProtoExt + 'static,
+    T: ProtoExt,
+    for<'a> T: 'a,
     for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T>,
 {
     type Sun<'a> = &'a Option<T>;
@@ -77,7 +78,8 @@ impl<T: ProtoWire> ProtoWire for Option<T> {
 
 impl<T> ProtoExt for Option<T>
 where
-    T: ProtoExt + 'static,
+    T: ProtoExt,
+    for<'a> T: 'a,
     for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T>,
 {
     type Shadow<'a> = Option<<T as ProtoExt>::Shadow<'a>>;

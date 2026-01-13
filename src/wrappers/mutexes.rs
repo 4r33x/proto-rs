@@ -12,7 +12,8 @@ use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for std::sync::Mutex<T>
 where
-    T: ProtoShadow<T, OwnedSun = T> + 'static,
+    T: ProtoShadow<T, OwnedSun = T>,
+    for<'a> T: 'a,
 {
     type Sun<'a> = &'a std::sync::Mutex<T>;
     type OwnedSun = std::sync::Mutex<T>;
