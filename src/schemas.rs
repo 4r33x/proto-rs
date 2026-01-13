@@ -110,15 +110,452 @@ pub struct ProtoIdent {
     pub name: &'static str,
     pub proto_package_name: &'static str,
     pub proto_file_path: &'static str,
-    pub proto_type: &'static str,
+    pub proto_type: ProtoType,
+    pub generics: &'static [ProtoIdent],
 }
 
-pub trait ProtoIdentifiable {
-    const PROTO_IDENT: ProtoIdent;
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ProtoType {
+    Message(&'static str),
+    Optional(&'static ProtoType),
+    Repeated(&'static ProtoType),
+    Double,
+    Float,
+    Int32,
+    Int64,
+    Uint32,
+    Uint64,
+    Sint32,
+    Sint64,
+    Fixed32,
+    Fixed64,
+    Sfixed32,
+    Sfixed64,
+    Bool,
+    Bytes,
+    String,
+    Enum,
+    Map {
+        key: &'static ProtoType,
+        value: &'static ProtoType,
+    },
+    None,
 }
+impl ProtoType {
+    const fn is_allowed_as_key(&self) -> bool {
+        matches!(
+            self,
+            ProtoType::Int32
+                | ProtoType::Int64
+                | ProtoType::Uint32
+                | ProtoType::Uint64
+                | ProtoType::Sint32
+                | ProtoType::Sint64
+                | ProtoType::Fixed32
+                | ProtoType::Fixed64
+                | ProtoType::Sfixed32
+                | ProtoType::Sfixed64
+                | ProtoType::Bool
+                | ProtoType::String
+        )
+    }
+    const fn proto_type_validation(&self, mut ctx: TypeValidatorCtx) -> Result<(), &'static str> {
+        match self {
+            ProtoType::Optional(t) => {
+                if ctx.repeated {
+                    return Err("repeated optional is invalid");
+                }
+                if ctx.optional {
+                    return Err("optional optional is invalid");
+                }
+                if ctx.is_map() {
+                    return Err("optional map key/value is invalid");
+                }
+                ctx.optional = true;
+                t.proto_type_validation(ctx)
+            }
+            ProtoType::Repeated(t) => {
+                if ctx.repeated {
+                    return Err("repeated repeated is invalid");
+                }
+                if ctx.optional {
+                    return Err("optional repeated is invalid");
+                }
+                if ctx.map_key {
+                    return Err("repeated map key is invalid");
+                }
+                if ctx.map_value {
+                    return Err("repeated map value is invalid");
+                }
+                ctx.repeated = true;
+                t.proto_type_validation(ctx)
+            }
+            ProtoType::Map { key, value } => {
+                if ctx.repeated {
+                    return Err("repeated map is invalid");
+                }
+                if ctx.optional {
+                    return Err("optional map is invalid");
+                }
+                if ctx.is_map() {
+                    return Err("map in map is not allowed");
+                }
+                if !key.is_allowed_as_key() {
+                    return Err("type is not allowed as map key");
+                }
+
+                let mut ctx_key = ctx;
+                ctx_key.map_key = true;
+
+                if let Err(e) = key.proto_type_validation(ctx_key) {
+                    return Err(e);
+                }
+
+                let mut ctx_val = ctx;
+                ctx_val.map_value = true;
+                value.proto_type_validation(ctx_val)
+            }
+            ProtoType::Message(_) => {
+                if ctx.map_key {
+                    return Err("message as map key is invalid");
+                }
+                Ok(())
+            }
+            ProtoType::Double
+            | ProtoType::Float
+            | ProtoType::Int32
+            | ProtoType::Int64
+            | ProtoType::Uint32
+            | ProtoType::Uint64
+            | ProtoType::Sint32
+            | ProtoType::Sint64
+            | ProtoType::Fixed32
+            | ProtoType::Fixed64
+            | ProtoType::Sfixed32
+            | ProtoType::Sfixed64
+            | ProtoType::Bool
+            | ProtoType::Bytes
+            | ProtoType::String
+            | ProtoType::None
+            | ProtoType::Enum => Ok(()),
+        }
+    }
+}
+
+pub trait ProtoIdentifiable: Sized {
+    const PROTO_IDENT: ProtoIdent;
+    const PROTO_TYPE: ProtoType;
+    const _VALIDATOR: () = {
+        if let Err(e) = Self::PROTO_TYPE.proto_type_validation(TypeValidatorCtx::new()) {
+            proto_type_validation_fail::<Self>(e);
+        }
+    };
+}
+
+#[track_caller]
+#[allow(clippy::extra_unused_type_parameters)]
+pub const fn proto_type_validation_fail<T: ProtoIdentifiable>(e: &'static str) -> ! {
+    const_panic::concat_panic!("Error in validation ", T::PROTO_IDENT.name, ": ", e)
+}
+
+const B: ProtoType = ProtoType::Bool;
+const OPT_B: ProtoType = ProtoType::Optional(&B);
+const MY_FAV: ProtoType = ProtoType::Optional(&OPT_B);
 
 impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
     const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const PROTO_TYPE: ProtoType = MY_FAV;
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Copy)]
+struct TypeValidatorCtx {
+    optional: bool,
+    repeated: bool,
+    map_key: bool,
+    map_value: bool,
+}
+impl TypeValidatorCtx {
+    pub const fn new() -> Self {
+        Self {
+            optional: false,
+            repeated: false,
+            map_key: false,
+            map_value: false,
+        }
+    }
+    pub const fn is_map(self) -> bool {
+        self.map_key || self.map_value
+    }
+}
+
+macro_rules! impl_proto_ident_primitive {
+    ($ty:ty, $proto_type:expr) => {
+        #[cfg(feature = "build-schemas")]
+        impl ProtoIdentifiable for $ty {
+            const PROTO_IDENT: ProtoIdent = ProtoIdent {
+                module_path: module_path!(),
+                name: stringify!($ty),
+                proto_package_name: "",
+                proto_file_path: "",
+                proto_type: $proto_type,
+                generics: &[],
+            };
+            const PROTO_TYPE: ProtoType = $proto_type;
+        }
+        #[cfg(feature = "build-schemas")]
+        const _: () = <$ty as ProtoIdentifiable>::_VALIDATOR;
+    };
+}
+
+impl_proto_ident_primitive!(bool, ProtoType::Bool);
+impl_proto_ident_primitive!(u8, ProtoType::Uint32);
+impl_proto_ident_primitive!(u16, ProtoType::Uint32);
+impl_proto_ident_primitive!(u32, ProtoType::Uint32);
+impl_proto_ident_primitive!(u64, ProtoType::Uint64);
+impl_proto_ident_primitive!(usize, ProtoType::Uint64);
+impl_proto_ident_primitive!(i8, ProtoType::Int32);
+impl_proto_ident_primitive!(i16, ProtoType::Int32);
+impl_proto_ident_primitive!(i32, ProtoType::Int32);
+impl_proto_ident_primitive!(i64, ProtoType::Int64);
+impl_proto_ident_primitive!(isize, ProtoType::Int64);
+impl_proto_ident_primitive!(f32, ProtoType::Float);
+impl_proto_ident_primitive!(f64, ProtoType::Double);
+impl_proto_ident_primitive!(crate::bytes::Bytes, ProtoType::Bytes);
+impl_proto_ident_primitive!(::std::string::String, ProtoType::String);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicBool, ProtoType::Bool);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU8, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU16, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU32, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicU64, ProtoType::Uint64);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicUsize, ProtoType::Uint64);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI8, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI16, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI32, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicI64, ProtoType::Int64);
+impl_proto_ident_primitive!(::core::sync::atomic::AtomicIsize, ProtoType::Int64);
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable, const N: usize> ProtoIdentifiable for [T; N] {
+    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::core::option::Option<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "Option",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Optional(&T::PROTO_TYPE);
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::boxed::Box<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "Box",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Arc<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "Arc",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::sync::Mutex<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "Mutex",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::vec::Vec<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "Vec",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::VecDeque<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "VecDeque",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
+}
+
+#[cfg(feature = "build-schemas")]
+impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashMap<K, V, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashMap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[K::PROTO_IDENT, V::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Map {
+        key: &K::PROTO_TYPE,
+        value: &V::PROTO_TYPE,
+    };
+}
+
+#[cfg(feature = "build-schemas")]
+impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeMap<K, V> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "BTreeMap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[K::PROTO_IDENT, V::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Map {
+        key: &K::PROTO_TYPE,
+        value: &V::PROTO_TYPE,
+    };
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable, S> ProtoIdentifiable for ::std::collections::HashSet<T, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashSet",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
+}
+
+#[cfg(feature = "build-schemas")]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeSet<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "BTreeSet",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
+}
+
+#[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwap<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "ArcSwap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "arc_swap"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for arc_swap::ArcSwapOption<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "ArcSwapOption",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Optional(&T::PROTO_TYPE);
+}
+
+#[cfg(all(feature = "build-schemas", feature = "cache_padded"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for crossbeam_utils::CachePadded<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "CachePadded",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "parking_lot"))]
+impl<T: ProtoIdentifiable> ProtoIdentifiable for parking_lot::Mutex<T> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "Mutex",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+}
+
+#[cfg(all(feature = "build-schemas", feature = "papaya"))]
+impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashMap<K, V, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashMap",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[K::PROTO_IDENT, V::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Map {
+        key: &K::PROTO_TYPE,
+        value: &V::PROTO_TYPE,
+    };
+}
+
+#[cfg(all(feature = "build-schemas", feature = "papaya"))]
+impl<T: ProtoIdentifiable, S> ProtoIdentifiable for papaya::HashSet<T, S> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "HashSet",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[T::PROTO_IDENT],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::Repeated(&T::PROTO_TYPE);
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -228,6 +665,7 @@ pub struct Field {
     pub name: Option<&'static str>,
     pub proto_ident: ProtoIdent,
     pub rust_proto_ident: ProtoIdent,
+    pub wrapper: Option<ProtoIdent>,
     pub generic_args: &'static [&'static ProtoIdent],
     pub proto_label: ProtoLabel,
     pub tag: u32,
@@ -242,8 +680,10 @@ pub struct ServiceMethod {
     pub name: &'static str,
     pub request: ProtoIdent,
     pub request_generic_args: &'static [&'static ProtoIdent],
+    pub request_wrapper: Option<ProtoIdent>,
     pub response: ProtoIdent,
     pub response_generic_args: &'static [&'static ProtoIdent],
+    pub response_wrapper: Option<ProtoIdent>,
     pub client_streaming: bool,
     pub server_streaming: bool,
 }

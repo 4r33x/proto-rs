@@ -134,9 +134,19 @@ type CustomArc<T> = std::sync::Arc<T>;
 type CustomBox<T> = Box<T>;
 type CustomMap<K, V, S> = HashMap<K, V, S>;
 type CustomOption<T> = Option<T>;
+type CustomVec<T> = Vec<T>;
+type CustomVecDeq<T> = VecDeque<T>;
+
+#[proto_message(proto_path = "protos/showcase_proto/show.proto")]
+struct ConcreteStdMap {
+    map_alias: CustomMap<u32, MEx, std::hash::RandomState>,
+    map: HashMap<u16, u8, std::hash::RandomState>,
+}
 
 #[proto_message]
-struct MEx;
+struct MEx {
+    id: u64,
+}
 
 #[proto_message]
 struct CustomEx {
@@ -153,8 +163,14 @@ struct CustomEx {
     boxed_custom: CustomBox<MEx>,
     box_copy_custom: CustomBox<u64>,
     custom_map: CustomMap<u32, MEx, std::hash::RandomState>,
-    custom_option: Option<MEx>,
-    custom_option_copy: Option<u64>,
+    custom_option: CustomOption<MEx>,
+    custom_option_copy: CustomOption<u64>,
+    custom_vec_bytes: CustomVec<u8>,
+    custom_vec_deque_bytes: CustomVecDeq<u8>,
+    custom_vec_copy: CustomVec<u64>,
+    custom_vec_deque_copy: CustomVecDeq<u64>,
+    custom_vec: CustomVec<MEx>,
+    custom_vec_deque: CustomVecDeq<MEx>,
 }
 
 #[cfg(feature = "parking_lot")]

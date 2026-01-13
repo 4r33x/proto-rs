@@ -57,7 +57,8 @@ pub fn assoc_proto_ident_const(
                 name: #type_name_literal,
                 proto_package_name: #proto_package,
                 proto_file_path: #proto_file_path,
-                proto_type: #proto_name_literal,
+                proto_type: ::proto_rs::schemas::ProtoType::Message(#proto_name_literal),
+                generics: &[],
             }
         }
     };
@@ -68,6 +69,7 @@ pub fn assoc_proto_ident_const(
                 #[cfg(feature = "build-schemas")]
                 impl #impl_generics ::proto_rs::schemas::ProtoIdentifiable for #type_tokens #where_clause {
                     const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+                    const PROTO_TYPE: ::proto_rs::schemas::ProtoType = ::proto_rs::schemas::ProtoType::Message(#proto_name_literal);
                 }
             }
         };
@@ -110,10 +112,12 @@ fn build_sun_trait_impls(
         .map(|sun| {
             let sun_ty = &sun.ty;
             let proto_ident = proto_ident_literal(&sun.message_ident);
+            let sun_message_ident = sun.message_ident.clone();
             quote! {
                 #[cfg(feature = "build-schemas")]
                 impl #impl_generics ::proto_rs::schemas::ProtoIdentifiable for #sun_ty #where_clause {
                     const PROTO_IDENT: ::proto_rs::schemas::ProtoIdent = #proto_ident;
+                    const PROTO_TYPE: ::proto_rs::schemas::ProtoType = ::proto_rs::schemas::ProtoType::Message(#sun_message_ident);
                 }
             }
         })
@@ -396,7 +400,8 @@ pub fn schema_tokens_for_imports(type_ident: &str, file_name: &str, imports: &[S
                 name: #type_ident,
                 proto_package_name: #package_name,
                 proto_file_path: #file_name_literal,
-                proto_type: "Import",
+                proto_type: ::proto_rs::schemas::ProtoType::None,
+                generics: &[],
             },
             generics: &[],
             lifetimes: &[],
@@ -565,7 +570,8 @@ fn build_schema_tokens_impl(
                         name: stringify!(#type_ident),
                         proto_package_name: #proto_package,
                         proto_file_path: #proto_file_path,
-                        proto_type: #proto_type,
+                        proto_type: ::proto_rs::schemas::ProtoType::Message(#proto_type),
+                        generics: &[],
                     },
                     generics: #generics_refs,
                     lifetimes: #lifetime_refs,
@@ -589,7 +595,8 @@ fn build_schema_tokens_impl(
                             name: stringify!(#type_ident),
                             proto_package_name: #proto_package,
                             proto_file_path: #proto_file_path,
-                            proto_type: #proto_type,
+                            proto_type: ::proto_rs::schemas::ProtoType::Message(#proto_type),
+                            generics: &[],
                         },
                         generics: #generics_refs,
                         lifetimes: #lifetime_refs,
@@ -612,7 +619,8 @@ fn build_schema_tokens_impl(
                         name: stringify!(#type_ident),
                         proto_package_name: #proto_package,
                         proto_file_path: #proto_file_path,
-                        proto_type: #proto_type,
+                        proto_type: ::proto_rs::schemas::ProtoType::Message(#proto_type),
+                        generics: &[],
                     },
                     generics: #generics_refs,
                     lifetimes: #lifetime_refs,
@@ -689,10 +697,20 @@ fn build_service_method_tokens(
         let method_ident = service_method_const_ident(type_ident, suffix, idx);
         let method_name = to_pascal_case(&method.name.to_string());
         let request_ident = proto_ident_tokens_from_type(&method.request_type);
+        let request_wrapper = if type_references_generic_params(&method.request_type, generics) {
+            quote! { ::core::option::Option::None }
+        } else {
+            wrapper_ident_tokens(&method.request_type)
+        };
         let (request_generic_consts, request_generic_args) =
             generic_args_tokens_from_type(type_ident, suffix, idx, "REQUEST", &method.request_type, generics, false);
         let response_type = method.inner_response_type.as_ref().unwrap_or(&method.response_type);
         let response_ident = proto_ident_tokens_from_type(response_type);
+        let response_wrapper = if type_references_generic_params(response_type, generics) {
+            quote! { ::core::option::Option::None }
+        } else {
+            wrapper_ident_tokens(response_type)
+        };
         let (response_generic_consts, response_generic_args) =
             generic_args_tokens_from_type(type_ident, suffix, idx, "RESPONSE", response_type, generics, false);
         let server_streaming = method.is_streaming;
@@ -703,8 +721,10 @@ fn build_service_method_tokens(
                 name: #method_name,
                 request: #request_ident,
                 request_generic_args: #request_generic_args,
+                request_wrapper: #request_wrapper,
                 response: #response_ident,
                 response_generic_args: #response_generic_args,
+                response_wrapper: #response_wrapper,
                 client_streaming: false,
                 server_streaming: #server_streaming,
             };
@@ -1006,6 +1026,7 @@ fn build_variant_fields_tokens(
 struct FieldInfoTokens {
     proto_ident: TokenStream2,
     rust_proto_ident: TokenStream2,
+    wrapper: TokenStream2,
     generic_args: TokenStream2,
     label: TokenStream2,
     array_len: TokenStream2,
@@ -1051,13 +1072,19 @@ fn field_info_tokens(
     let parsed = parse_field_type(&inner_type);
     let proto_ident = proto_ident_tokens(&inner_type, config, &parsed, item_generics);
     let rust_proto_ident = rust_proto_ident_tokens(&inner_type, config, &parsed, item_generics);
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, assoc);
+    let wrapper = if type_references_generic_params(&ty, item_generics) {
+        quote! { ::core::option::Option::None }
+    } else {
+        wrapper_ident_tokens(&ty)
+    };
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &ty, item_generics, assoc);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty, assoc);
     let extra_consts = quote! { #generic_consts #array_consts };
 
     FieldInfoTokens {
         proto_ident,
         rust_proto_ident,
+        wrapper,
         generic_args,
         label,
         array_len,
@@ -1170,6 +1197,7 @@ fn build_field_const_tokens(
     let FieldInfoTokens {
         proto_ident,
         rust_proto_ident,
+        wrapper,
         generic_args,
         label,
         array_len,
@@ -1195,6 +1223,7 @@ fn build_field_const_tokens(
                 name: #name_tokens,
                 proto_ident: #proto_ident,
                 rust_proto_ident: #rust_proto_ident,
+                wrapper: #wrapper,
                 generic_args: #generic_args,
                 proto_label: #label,
                 tag: #tag,
@@ -1216,6 +1245,14 @@ fn proto_ident_tokens_from_type(ty: &Type) -> TokenStream2 {
         quote! { <#ty as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT }
     } else {
         proto_ident_literal(&parsed.proto_type, "", "")
+    }
+}
+
+fn wrapper_ident_tokens(ty: &Type) -> TokenStream2 {
+    if let Type::Path(_) = ty {
+        quote! { ::core::option::Option::Some(<#ty as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT) }
+    } else {
+        quote! { ::core::option::Option::None }
     }
 }
 
@@ -1275,6 +1312,11 @@ fn generic_args_tokens_from_type(
         let syn::GenericArgument::Type(arg_ty) = arg else {
             continue;
         };
+
+        if type_references_generic_params(arg_ty, generics) {
+            arg_idx += 1;
+            continue;
+        }
 
         // Classify the generic argument
         let kind = classify_generic_arg(arg, generics);
@@ -1382,7 +1424,7 @@ fn generic_param_name(ty: &Type, generics: &syn::Generics) -> Option<String> {
 }
 
 /// Check if a type references any generic parameters from the parent type
-fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
+pub(crate) fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
     match ty {
         Type::Path(path) => {
             // Check if this is a bare generic parameter
@@ -1458,19 +1500,64 @@ fn type_references_generic_params(ty: &Type, generics: &syn::Generics) -> bool {
 }
 
 fn proto_ident_literal(proto_type: &str, package: &str, file_path: &str) -> TokenStream2 {
-    let proto_type = proto_type.to_string();
+    let proto_type_literal = proto_type.to_string();
+    let proto_type_tokens = proto_type_tokens(proto_type);
     let package = package.to_string();
     let file_path = file_path.to_string();
 
     quote! {
         ::proto_rs::schemas::ProtoIdent {
             module_path: "",
-            name: #proto_type,
+            name: #proto_type_literal,
             proto_package_name: #package,
             proto_file_path: #file_path,
-            proto_type: #proto_type,
+            proto_type: #proto_type_tokens,
+            generics: &[],
         }
     }
+}
+
+fn proto_type_tokens(proto_type: &str) -> TokenStream2 {
+    match proto_type {
+        "double" => quote! { ::proto_rs::schemas::ProtoType::Double },
+        "float" => quote! { ::proto_rs::schemas::ProtoType::Float },
+        "int32" => quote! { ::proto_rs::schemas::ProtoType::Int32 },
+        "int64" => quote! { ::proto_rs::schemas::ProtoType::Int64 },
+        "uint32" => quote! { ::proto_rs::schemas::ProtoType::Uint32 },
+        "uint64" => quote! { ::proto_rs::schemas::ProtoType::Uint64 },
+        "sint32" => quote! { ::proto_rs::schemas::ProtoType::Sint32 },
+        "sint64" => quote! { ::proto_rs::schemas::ProtoType::Sint64 },
+        "fixed32" => quote! { ::proto_rs::schemas::ProtoType::Fixed32 },
+        "fixed64" => quote! { ::proto_rs::schemas::ProtoType::Fixed64 },
+        "sfixed32" => quote! { ::proto_rs::schemas::ProtoType::Sfixed32 },
+        "sfixed64" => quote! { ::proto_rs::schemas::ProtoType::Sfixed64 },
+        "bool" => quote! { ::proto_rs::schemas::ProtoType::Bool },
+        "string" => quote! { ::proto_rs::schemas::ProtoType::String },
+        "bytes" => quote! { ::proto_rs::schemas::ProtoType::Bytes },
+        _ => {
+            if let Some((key, value)) = parse_map_proto_type(proto_type) {
+                let key_tokens = proto_type_tokens(key);
+                let value_tokens = proto_type_tokens(value);
+                quote! {
+                    ::proto_rs::schemas::ProtoType::Map {
+                        key: &#key_tokens,
+                        value: &#value_tokens,
+                    }
+                }
+            } else {
+                let proto_type_literal = proto_type.to_string();
+                quote! { ::proto_rs::schemas::ProtoType::Message(#proto_type_literal) }
+            }
+        }
+    }
+}
+
+fn parse_map_proto_type(proto_type: &str) -> Option<(&str, &str)> {
+    let inner = proto_type.strip_prefix("map<")?.strip_suffix('>')?;
+    let mut parts = inner.splitn(2, ',');
+    let key = parts.next()?.trim();
+    let value = parts.next()?.trim();
+    Some((key, value))
 }
 
 fn proto_path_info(config: &UnifiedProtoConfig) -> (String, String) {

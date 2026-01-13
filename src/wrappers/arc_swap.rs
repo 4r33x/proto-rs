@@ -7,6 +7,7 @@ use bytes::BufMut;
 
 use super::arcs::ArcedShadow;
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
@@ -35,7 +36,7 @@ where
 
 impl<T> ProtoWire for ArcSwap<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a ArcSwap<T>;
     const KIND: ProtoKind = <T as ProtoWire>::KIND;
@@ -43,15 +44,15 @@ where
     #[inline(always)]
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         let guard = value.load();
-        let inner: &T = &guard;
-        unsafe { <T as ProtoWire>::encoded_len_impl_raw(&inner) }
+        let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(&guard);
+        unsafe { <T as ProtoWire>::encoded_len_impl_raw(&input) }
     }
 
     #[inline(always)]
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = value.load();
-        let inner: &T = &guard;
-        <T as ProtoWire>::encode_raw_unchecked(inner, buf);
+        let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(&guard);
+        <T as ProtoWire>::encode_raw_unchecked(input, buf);
     }
 
     #[inline(always)]
@@ -65,8 +66,8 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let guard = value.load();
-        let inner: &T = &guard;
-        <T as ProtoWire>::is_default_impl(&inner)
+        let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(&guard);
+        <T as ProtoWire>::is_default_impl(&input)
     }
 
     #[inline(always)]
@@ -143,7 +144,7 @@ where
 
 impl<T> ProtoWire for ArcSwapOption<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a ArcSwapOption<T>;
     const KIND: ProtoKind = <Arc<T> as ProtoWire>::KIND;
@@ -152,7 +153,10 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         let guard = value.load();
         match guard.as_ref() {
-            Some(inner) => unsafe { <Arc<T> as ProtoWire>::encoded_len_impl_raw(&inner) },
+            Some(inner) => {
+                let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(inner.as_ref());
+                unsafe { <T as ProtoWire>::encoded_len_impl_raw(&input) }
+            }
             None => unreachable!(),
         }
     }
@@ -161,7 +165,8 @@ where
     fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
         let guard = value.load();
         if let Some(inner) = guard.as_ref() {
-            <T as ProtoWire>::encode_raw_unchecked(inner, buf);
+            let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(inner.as_ref());
+            <T as ProtoWire>::encode_raw_unchecked(input, buf);
         }
     }
 
@@ -176,7 +181,10 @@ where
     #[inline(always)]
     fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
         let guard = value.load();
-        guard.as_ref().is_none_or(|inner| <T as ProtoWire>::is_default_impl(&&**inner))
+        guard.as_ref().is_none_or(|inner| {
+            let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(inner.as_ref());
+            <T as ProtoWire>::is_default_impl(&input)
+        })
     }
 
     #[inline(always)]
