@@ -25,8 +25,8 @@ categories = [
 ]
 
 [workspace.dependencies]
-prosto_derive = { version = "0.7.4", path = "crates/prosto_derive" }
-proto_rs = { version = "0.7.4", path = "./" }
+prosto_derive = { version = "0.7.6", path = "crates/prosto_derive" }
+proto_rs = { version = "0.7.6", path = "./" }
 prost = { version = "0.14", default-features = false }
 bytes = { version = "1.11.0", default-features = false }
 inventory = { version = "0.3" }
@@ -48,7 +48,7 @@ unsafe_code = { level = "forbid", priority = 0 }
 
 [package]
 name = "proto_rs"
-version = "0.7.5"
+version = "0.7.6"
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
@@ -106,7 +106,7 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 [features]
 ahash = ["dep:ahash"]
 std = ["bytes/std"]
-tonic = ["dep:tonic", "bytes/std", "std"]
+tonic = ["dep:tonic", "bytes/std", "std", "prosto_derive/tonic"]
 fastnum = ["dep:fastnum"]
 cache_padded = ["dep:crossbeam-utils"]
 solana = [

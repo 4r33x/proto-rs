@@ -18,22 +18,38 @@ use crate::schema::schema_tokens_for_complex_enum;
 use crate::schema::schema_tokens_for_simple_enum;
 
 pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
-    let Some(validator_fn) = &config.validator_with_ext else {
-        return quote! {};
-    };
-    let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
-    quote! {
-        const VALIDATE_WITH_EXT: bool = true;
+    let validate_with_ext_tokens: proc_macro2::TokenStream;
+    #[cfg(feature = "tonic")]
+    {
+        validate_with_ext_tokens = {
+            let Some(validator_fn) = &config.validator_with_ext else {
+                // no validator => generate nothing (or generate const false, your choice)
+                return quote! {};
+            };
 
-        #[cfg(feature = "tonic")]
-        #[inline(always)]
-        fn validate_with_ext(
-            value: &mut Self,
-            ext: &::tonic::Extensions,
-        ) -> Result<(), ::proto_rs::DecodeError> {
-            #validator_path(value, ext)
-        }
+            let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
+
+            quote! {
+                const VALIDATE_WITH_EXT: bool = true;
+
+                #[inline(always)]
+                fn validate_with_ext(
+                    value: &mut Self,
+                    ext: &::tonic::Extensions,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    #validator_path(value, ext)
+                }
+            }
+        };
     }
+
+    #[cfg(not(feature = "tonic"))]
+    {
+        validate_with_ext_tokens = quote! {
+            const VALIDATE_WITH_EXT: bool = false;
+        };
+    }
+    validate_with_ext_tokens
 }
 
 fn build_validator_const(type_tokens: TokenStream2) -> TokenStream2 {

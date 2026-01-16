@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.7.6]
+- Gate validate_with_ext codegen
+
 ## [0.7.5]
 - Add AHash Hasher
 
