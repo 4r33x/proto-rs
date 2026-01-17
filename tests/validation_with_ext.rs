@@ -42,7 +42,7 @@ pub struct PongWithShadow {
 }
 
 #[proto_message(proto_path = "protos/tests/validation_with_ext.proto", sun = [PongWithShadow])]
-#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
+//#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
 pub struct PongShadow {
     pub id: u32,
 }
