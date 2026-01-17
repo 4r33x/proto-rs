@@ -505,6 +505,12 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
 
 /// Generate delegating `ProtoWire` implementation for a sun type
 /// This eliminates code duplication across structs, enums, and complex enums
+///
+/// Important: The higher-level encoding methods (`encode_with_tag`, `encode_entrypoint`,
+/// `encode_length_delimited`, `encoded_len_impl`, `encoded_len_tagged_impl`) are overridden
+/// to perform the sun-to-shadow conversion only once at the entry point. This avoids
+/// expensive duplicate conversions that would otherwise occur when the default trait
+/// implementations call multiple low-level methods.
 pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoWire for #target_ty {
@@ -524,6 +530,7 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
                 *self = Self::proto_default();
             }
 
+            // Low-level methods that still need conversion (for direct calls)
             #[inline(always)]
             fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
                 let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
@@ -543,6 +550,37 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
             ) {
                 let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
                 <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf)
+            }
+
+            // Higher-level methods overridden to perform conversion only once
+            #[inline(always)]
+            fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl(&shadow)
+            }
+
+            #[inline(always)]
+            fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&shadow, tag)
+            }
+
+            #[inline(always)]
+            fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_with_tag(tag, shadow, buf)
+            }
+
+            #[inline(always)]
+            fn encode_entrypoint(value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_entrypoint(shadow, buf)
+            }
+
+            #[inline(always)]
+            fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_length_delimited(shadow, buf)
             }
 
             #[inline(always)]
