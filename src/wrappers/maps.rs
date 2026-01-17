@@ -63,7 +63,7 @@ where
 
 impl<K, V> ProtoWire for BTreeMap<K, V>
 where
-    for<'a> K: ProtoWire<EncodeInput<'a> = &'a K> + Ord + 'a,
+    for<'a> K: ProtoWire<EncodeInput<'a> = &'a K> + EncodeInputFromRef<'a> + Ord + 'a,
     for<'a> V: ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type EncodeInput<'a> = &'a BTreeMap<K, V>;
@@ -240,7 +240,7 @@ where
 
 impl<K, V> ProtoExt for BTreeMap<K, V>
 where
-    for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + Ord + 'a,
+    for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + EncodeInputFromRef<'a> + Ord + 'a,
     for<'a> V: ProtoShadow<V> + ProtoWire + EncodeInputFromRef<'a> + 'a,
 {
     type Shadow<'b> = BTreeMap<K, V>;
@@ -307,7 +307,7 @@ mod hashmap_impl {
 
     impl<K, V, S> ProtoWire for HashMap<K, V, S>
     where
-        for<'a> K: ProtoWire<EncodeInput<'a> = &'a K> + Eq + Hash + 'a,
+        for<'a> K: ProtoWire<EncodeInput<'a> = &'a K> + EncodeInputFromRef<'a> + Eq + Hash + 'a,
         for<'a> V: ProtoWire + EncodeInputFromRef<'a> + 'a,
         for<'a> S: BuildHasher + Default + 'a,
     {
@@ -484,7 +484,7 @@ mod hashmap_impl {
 
     impl<K, V, S> ProtoExt for HashMap<K, V, S>
     where
-        for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + Eq + Hash + 'a,
+        for<'a> K: ProtoShadow<K> + ProtoWire<EncodeInput<'a> = &'a K> + EncodeInputFromRef<'a> + Eq + Hash + 'a,
         for<'a> V: ProtoShadow<V> + ProtoWire + EncodeInputFromRef<'a> + 'a,
         for<'a> S: BuildHasher + Default + 'a,
     {
@@ -507,410 +507,9 @@ mod hashmap_impl {
     }
 }
 
-macro_rules! impl_primitive_map_btreemap {
-    ($K:ty, $V:ty) => {
-        impl $crate::ProtoWire for alloc::collections::BTreeMap<$K, $V> {
-            type EncodeInput<'a> = &'a alloc::collections::BTreeMap<$K, $V>;
-            const KIND: $crate::traits::ProtoKind = $crate::traits::ProtoKind::Repeated(&<$V as $crate::ProtoWire>::KIND);
-
-            #[inline(always)]
-            fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-                unsafe { Self::encoded_len_impl_raw(value) }
-            }
-
-            #[inline(always)]
-            fn encoded_len_tagged(&self, tag: u32) -> usize
-            where
-                for<'b> Self: $crate::ProtoWire<EncodeInput<'b> = &'b Self>,
-            {
-                let input: Self::EncodeInput<'_> = self;
-                Self::encoded_len_tagged_impl(&input, tag)
-            }
-
-            #[inline(always)]
-            fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-                if value.is_empty() {
-                    0
-                } else {
-                    value
-                        .iter()
-                        .map(|(k, v)| {
-                            let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
-                            let key_body = if key_default {
-                                0
-                            } else {
-                                unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                            };
-                            let key_len_total = if key_default {
-                                0
-                            } else {
-                                $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
-                            };
-                            let value_default = <$V as $crate::ProtoWire>::is_default_impl(&v);
-                            let value_body = if value_default {
-                                0
-                            } else {
-                                unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
-                            };
-                            let value_len_total = if value_default {
-                                0
-                            } else {
-                                $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body)
-                            };
-                            let entry_len = key_len_total + value_len_total;
-                            $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
-                        })
-                        .sum()
-                }
-            }
-
-            #[inline]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                value
-                    .iter()
-                    .map(|(k, v)| {
-                        let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
-                        let key_body = if key_default {
-                            0
-                        } else {
-                            unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                        };
-                        let key_len_total = if key_default {
-                            0
-                        } else {
-                            $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
-                        };
-                        let value_default = <$V as $crate::ProtoWire>::is_default_impl(&v);
-                        let value_body = if value_default {
-                            0
-                        } else {
-                            unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
-                        };
-                        let value_len_total = if value_default {
-                            0
-                        } else {
-                            $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body)
-                        };
-                        let entry_len = key_len_total + value_len_total;
-                        $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
-                    })
-                    .sum()
-            }
-
-            #[inline]
-            fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl bytes::BufMut) {
-                // Same as your hand-written impl: never called for maps.
-                panic!("Do not call encode_raw_unchecked on BTreeMap<K,V>");
-            }
-
-            #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
-                for (k, v) in map {
-                    let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
-                    let key_body = if key_default {
-                        0
-                    } else {
-                        unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                    };
-                    let key_len_total = if key_default {
-                        0
-                    } else {
-                        $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
-                    };
-                    let value_default = <$V as $crate::ProtoWire>::is_default_impl(&v);
-                    let value_body = if value_default {
-                        0
-                    } else {
-                        unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
-                    };
-                    let value_len_total = if value_default {
-                        0
-                    } else {
-                        $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body)
-                    };
-                    let entry_len = key_len_total + value_len_total;
-
-                    $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
-                    $crate::encoding::encode_varint(entry_len as u64, buf);
-
-                    if !key_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
-                    }
-                    if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf);
-                    }
-                }
-            }
-
-            #[inline]
-            fn decode_into(
-                _wire_type: $crate::encoding::WireType,
-                map: &mut Self,
-                buf: &mut impl bytes::Buf,
-                ctx: $crate::encoding::DecodeContext,
-            ) -> Result<(), $crate::DecodeError> {
-                // submessage per entry
-                let len = $crate::encoding::decode_varint(buf)? as usize;
-                let mut slice = buf.take(len);
-                let mut key = <$K as $crate::ProtoWire>::proto_default();
-                let mut value = <$V as $crate::ProtoWire>::proto_default();
-
-                while slice.has_remaining() {
-                    let (tag, wire) = $crate::encoding::decode_key(&mut slice)?;
-                    match tag {
-                        1 => <$K as $crate::ProtoWire>::decode_into(wire, &mut key, &mut slice, ctx)?,
-                        2 => <$V as $crate::ProtoWire>::decode_into(wire, &mut value, &mut slice, ctx)?,
-                        _ => $crate::encoding::skip_field(wire, tag, &mut slice, ctx)?,
-                    }
-                }
-
-                debug_assert!(!slice.has_remaining());
-                map.insert(key, value);
-                Ok(())
-            }
-
-            #[inline]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                value.is_empty()
-            }
-
-            #[inline]
-            fn proto_default() -> Self {
-                alloc::collections::BTreeMap::new()
-            }
-
-            #[inline]
-            fn clear(&mut self) {
-                alloc::collections::BTreeMap::clear(self);
-            }
-        }
-    };
-}
-
-macro_rules! impl_primitive_map_hashmap {
-    ($K:ty, $V:ty) => {
-        impl<S> $crate::ProtoWire for std::collections::HashMap<$K, $V, S>
-        where
-            for<'a> S: std::hash::BuildHasher + Default + 'a,
-            $K: Eq + std::hash::Hash,
-        {
-            type EncodeInput<'a> = &'a std::collections::HashMap<$K, $V, S>;
-            const KIND: $crate::traits::ProtoKind = $crate::traits::ProtoKind::Repeated(&<$V as $crate::ProtoWire>::KIND);
-
-            #[inline(always)]
-            fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-                unsafe { Self::encoded_len_impl_raw(value) }
-            }
-
-            #[inline(always)]
-            fn encoded_len_tagged(&self, tag: u32) -> usize
-            where
-                for<'b> Self: $crate::ProtoWire<EncodeInput<'b> = &'b Self>,
-            {
-                let input: Self::EncodeInput<'_> = self;
-                Self::encoded_len_tagged_impl(&input, tag)
-            }
-
-            #[inline(always)]
-            fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-                if value.is_empty() {
-                    0
-                } else {
-                    value
-                        .iter()
-                        .map(|(k, v)| {
-                            let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
-                            let key_body = if key_default {
-                                0
-                            } else {
-                                unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                            };
-                            let key_len_total = if key_default {
-                                0
-                            } else {
-                                $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
-                            };
-                            let value_default = <$V as $crate::ProtoWire>::is_default_impl(&v);
-                            let value_body = if value_default {
-                                0
-                            } else {
-                                unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
-                            };
-                            let value_len_total = if value_default {
-                                0
-                            } else {
-                                $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body)
-                            };
-                            let entry_len = key_len_total + value_len_total;
-                            $crate::encoding::key_len(tag) + $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
-                        })
-                        .sum()
-                }
-            }
-
-            #[inline]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                value
-                    .iter()
-                    .map(|(k, v)| {
-                        let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
-                        let key_body = if key_default {
-                            0
-                        } else {
-                            unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                        };
-                        let key_len_total = if key_default {
-                            0
-                        } else {
-                            $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
-                        };
-                        let value_default = <$V as $crate::ProtoWire>::is_default_impl(&v);
-                        let value_body = if value_default {
-                            0
-                        } else {
-                            unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
-                        };
-                        let value_len_total = if value_default {
-                            0
-                        } else {
-                            $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body)
-                        };
-                        let entry_len = key_len_total + value_len_total;
-                        $crate::encoding::encoded_len_varint(entry_len as u64) + entry_len
-                    })
-                    .sum()
-            }
-
-            #[inline]
-            fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl bytes::BufMut) {
-                // Same invariant as your code: do not call for maps.
-                panic!("Do not call encode_raw_unchecked on HashMap<K,V,S>");
-            }
-
-            #[inline]
-            fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl bytes::BufMut) {
-                for (k, v) in map {
-                    let key_default = <$K as $crate::ProtoWire>::is_default_impl(&k);
-                    let key_body = if key_default {
-                        0
-                    } else {
-                        unsafe { <$K as $crate::ProtoWire>::encoded_len_impl_raw(&k) }
-                    };
-                    let key_len_total = if key_default {
-                        0
-                    } else {
-                        $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
-                    };
-                    let value_default = <$V as $crate::ProtoWire>::is_default_impl(&v);
-                    let value_body = if value_default {
-                        0
-                    } else {
-                        unsafe { <$V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
-                    };
-                    let value_len_total = if value_default {
-                        0
-                    } else {
-                        $crate::wrappers::maps::map_entry_field_len(<$V as $crate::ProtoWire>::WIRE_TYPE, 2, value_body)
-                    };
-                    let entry_len = key_len_total + value_len_total;
-
-                    $crate::encoding::encode_key(tag, $crate::encoding::WireType::LengthDelimited, buf);
-                    $crate::encoding::encode_varint(entry_len as u64, buf);
-
-                    if !key_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
-                    }
-                    if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<$V>(2, value_body, *v, buf);
-                    }
-                }
-            }
-
-            #[inline]
-            fn decode_into(
-                _wire_type: $crate::encoding::WireType,
-                map: &mut Self,
-                buf: &mut impl bytes::Buf,
-                ctx: $crate::encoding::DecodeContext,
-            ) -> Result<(), $crate::DecodeError> {
-                let len = $crate::encoding::decode_varint(buf)? as usize;
-                let mut slice = buf.take(len);
-                let mut key = <$K as $crate::ProtoWire>::proto_default();
-                let mut value = <$V as $crate::ProtoWire>::proto_default();
-
-                while slice.has_remaining() {
-                    let (tag, wire) = $crate::encoding::decode_key(&mut slice)?;
-                    match tag {
-                        1 => <$K as $crate::ProtoWire>::decode_into(wire, &mut key, &mut slice, ctx)?,
-                        2 => <$V as $crate::ProtoWire>::decode_into(wire, &mut value, &mut slice, ctx)?,
-                        _ => $crate::encoding::skip_field(wire, tag, &mut slice, ctx)?,
-                    }
-                }
-
-                debug_assert!(!slice.has_remaining());
-                map.insert(key, value);
-                Ok(())
-            }
-
-            #[inline]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                value.is_empty()
-            }
-
-            #[inline]
-            fn proto_default() -> Self {
-                std::collections::HashMap::default()
-            }
-
-            #[inline]
-            fn clear(&mut self) {
-                std::collections::HashMap::clear(self);
-            }
-        }
-    };
-}
-
-macro_rules! impl_all_primitive_maps {
-    () => {
-        // values may be any primitive (your list)
-        macro_rules! __for_each_val {
-            ($mac:ident, $K:ty) => {
-                $mac!($K, bool);
-                $mac!($K, i8);
-                $mac!($K, i16);
-                $mac!($K, i32);
-                $mac!($K, i64);
-                $mac!($K, u8);
-                $mac!($K, u16);
-                $mac!($K, u32);
-                $mac!($K, u64);
-                $mac!($K, f32);
-                $mac!($K, f64);
-            };
-        }
-
-        // emit both container impls for one (K,V)
-        macro_rules! __emit_both {
-            ($K:ty, $V:ty) => {
-                impl_primitive_map_btreemap!($K, $V);
-                impl_primitive_map_hashmap!($K, $V);
-            };
-        }
-
-        // keys: restrict to protobuf-valid numeric keys that satisfy Eq/Hash/Ord
-        __for_each_val!(__emit_both, bool);
-        __for_each_val!(__emit_both, i8);
-        __for_each_val!(__emit_both, i16);
-        __for_each_val!(__emit_both, i32);
-        __for_each_val!(__emit_both, i64);
-        __for_each_val!(__emit_both, u8);
-        __for_each_val!(__emit_both, u16);
-        __for_each_val!(__emit_both, u32);
-        __for_each_val!(__emit_both, u64);
-    };
-}
-
-impl_all_primitive_maps!();
+// NOTE: specialized primitive map impls were removed because copy-key map
+// impls cover primitive values while supporting shadow encode inputs without
+// overlap.
 
 /// Implements `ProtoWire` for `BTreeMap<$K, V>`
 /// where `$K` is a copy-primitive key (`EncodeInput<'a> = $K`)
@@ -920,7 +519,7 @@ macro_rules! impl_copykey_map_btreemap {
         impl<V> $crate::ProtoWire for alloc::collections::BTreeMap<$K, V>
         where
             for<'a> $K: $crate::ProtoWire<EncodeInput<'a> = $K> + Ord + 'a,
-            for<'a> V: $crate::ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+            for<'a> V: $crate::ProtoWire + $crate::EncodeInputFromRef<'a> + 'a,
         {
             type EncodeInput<'a> = &'a alloc::collections::BTreeMap<$K, V>;
             const KIND: $crate::traits::ProtoKind = $crate::traits::ProtoKind::Repeated(&<V as $crate::ProtoWire>::KIND);
@@ -958,11 +557,12 @@ macro_rules! impl_copykey_map_btreemap {
                             } else {
                                 $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
                             };
-                            let value_default = <V as $crate::ProtoWire>::is_default_impl(&v);
+                            let value_input = <V as $crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                            let value_default = <V as $crate::ProtoWire>::is_default_impl(&value_input);
                             let value_body = if value_default {
                                 0
                             } else {
-                                unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
+                                unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&value_input) }
                             };
                             let value_len_total = if value_default {
                                 0
@@ -992,11 +592,12 @@ macro_rules! impl_copykey_map_btreemap {
                         } else {
                             $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
                         };
-                        let value_default = <V as $crate::ProtoWire>::is_default_impl(&v);
+                        let value_input = <V as $crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                        let value_default = <V as $crate::ProtoWire>::is_default_impl(&value_input);
                         let value_body = if value_default {
                             0
                         } else {
-                            unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
+                            unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&value_input) }
                         };
                         let value_len_total = if value_default {
                             0
@@ -1028,11 +629,12 @@ macro_rules! impl_copykey_map_btreemap {
                     } else {
                         $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
                     };
-                    let value_default = <V as $crate::ProtoWire>::is_default_impl(&v);
+                    let value_input = <V as $crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                    let value_default = <V as $crate::ProtoWire>::is_default_impl(&value_input);
                     let value_body = if value_default {
                         0
                     } else {
-                        unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
+                        unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&value_input) }
                     };
                     let value_len_total = if value_default {
                         0
@@ -1047,7 +649,7 @@ macro_rules! impl_copykey_map_btreemap {
                         $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
                     }
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf);
+                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, value_input, buf);
                     }
                 }
             }
@@ -1102,7 +704,7 @@ macro_rules! impl_copykey_map_ext_btreemap {
         impl<V> $crate::ProtoExt for alloc::collections::BTreeMap<$K, V>
         where
             for<'a> $K: $crate::ProtoShadow<$K> + $crate::ProtoWire<EncodeInput<'a> = $K> + Ord + 'a,
-            for<'a> V: $crate::ProtoShadow<V> + $crate::ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+            for<'a> V: $crate::ProtoShadow<V> + $crate::ProtoWire + $crate::EncodeInputFromRef<'a> + 'a,
         {
             type Shadow<'b> = alloc::collections::BTreeMap<$K, V>;
 
@@ -1133,7 +735,7 @@ macro_rules! impl_copykey_map_hashmap {
         where
             for<'a> S: std::hash::BuildHasher + Default + 'a,
             for<'a> $K: $crate::ProtoWire<EncodeInput<'a> = $K> + Eq + std::hash::Hash + 'a,
-            for<'a> V: $crate::ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+            for<'a> V: $crate::ProtoWire + $crate::EncodeInputFromRef<'a> + 'a,
         {
             type EncodeInput<'a> = &'a std::collections::HashMap<$K, V, S>;
             const KIND: $crate::traits::ProtoKind = $crate::traits::ProtoKind::Repeated(&<V as $crate::ProtoWire>::KIND);
@@ -1171,11 +773,12 @@ macro_rules! impl_copykey_map_hashmap {
                             } else {
                                 $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
                             };
-                            let value_default = <V as $crate::ProtoWire>::is_default_impl(&v);
+                            let value_input = <V as $crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                            let value_default = <V as $crate::ProtoWire>::is_default_impl(&value_input);
                             let value_body = if value_default {
                                 0
                             } else {
-                                unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
+                                unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&value_input) }
                             };
                             let value_len_total = if value_default {
                                 0
@@ -1205,11 +808,12 @@ macro_rules! impl_copykey_map_hashmap {
                         } else {
                             $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
                         };
-                        let value_default = <V as $crate::ProtoWire>::is_default_impl(&v);
+                        let value_input = <V as $crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                        let value_default = <V as $crate::ProtoWire>::is_default_impl(&value_input);
                         let value_body = if value_default {
                             0
                         } else {
-                            unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
+                            unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&value_input) }
                         };
                         let value_len_total = if value_default {
                             0
@@ -1241,11 +845,12 @@ macro_rules! impl_copykey_map_hashmap {
                     } else {
                         $crate::wrappers::maps::map_entry_field_len(<$K as $crate::ProtoWire>::WIRE_TYPE, 1, key_body)
                     };
-                    let value_default = <V as $crate::ProtoWire>::is_default_impl(&v);
+                    let value_input = <V as $crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                    let value_default = <V as $crate::ProtoWire>::is_default_impl(&value_input);
                     let value_body = if value_default {
                         0
                     } else {
-                        unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&v) }
+                        unsafe { <V as $crate::ProtoWire>::encoded_len_impl_raw(&value_input) }
                     };
                     let value_len_total = if value_default {
                         0
@@ -1260,7 +865,7 @@ macro_rules! impl_copykey_map_hashmap {
                         $crate::wrappers::maps::encode_map_entry_component::<$K>(1, key_body, *k, buf);
                     }
                     if !value_default {
-                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, v, buf);
+                        $crate::wrappers::maps::encode_map_entry_component::<V>(2, value_body, value_input, buf);
                     }
                 }
             }
@@ -1315,7 +920,7 @@ macro_rules! impl_copykey_map_ext_hashmap {
         impl<V, S> $crate::ProtoExt for std::collections::HashMap<$K, V, S>
         where
             for<'a> $K: $crate::ProtoShadow<$K> + $crate::ProtoWire<EncodeInput<'a> = $K> + Eq + std::hash::Hash + 'a,
-            for<'a> V: $crate::ProtoShadow<V> + $crate::ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+            for<'a> V: $crate::ProtoShadow<V> + $crate::ProtoWire + $crate::EncodeInputFromRef<'a> + 'a,
             for<'a> S: std::hash::BuildHasher + Default + 'a,
         {
             type Shadow<'b> = std::collections::HashMap<$K, V, S>;

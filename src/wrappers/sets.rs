@@ -4,6 +4,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
@@ -15,11 +16,13 @@ use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::encoding::skip_field;
+use crate::traits::BorrowedEncodeInput;
 use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for BTreeSet<T>
 where
-    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type Sun<'a> = &'a BTreeSet<T>;
     type OwnedSun = BTreeSet<T>;
@@ -37,7 +40,8 @@ where
 
 impl<T> ProtoWire for BTreeSet<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + Ord + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + Ord + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type EncodeInput<'a> = &'a BTreeSet<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
@@ -85,12 +89,19 @@ where
     unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
         match T::KIND {
             // packed: body only
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v: &T| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
+                .iter()
+                .map(|v: &T| {
+                    let input = T::encode_input_from_ref(v);
+                    unsafe { T::encoded_len_impl_raw(&input) }
+                })
+                .sum(),
             // messages/bytes/string: per element (len varint + body)
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                 .iter()
                 .map(|m| {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encoded_len_varint(len as u64) + len
                 })
                 .sum(),
@@ -113,18 +124,26 @@ where
                     return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
+                let body_len = value
+                    .iter()
+                    .map(|v: &T| {
+                        let input = T::encode_input_from_ref(v);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
-                    T::encode_raw_unchecked(v, buf);
+                    let input = T::encode_input_from_ref(v);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for m in value {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(m, buf);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
             ProtoKind::Repeated(_) => {
@@ -181,7 +200,8 @@ where
 
 impl<T> ProtoExt for BTreeSet<T>
 where
-    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + Ord + 'a,
+    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + Ord + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type Shadow<'b> = BTreeSet<T>;
 
@@ -211,9 +231,11 @@ mod hashset_impl {
     use bytes::BufMut;
 
     use crate::DecodeError;
+    use crate::EncodeInputFromRef;
     use crate::ProtoExt;
     use crate::ProtoShadow;
     use crate::ProtoWire;
+    use crate::traits::BorrowedEncodeInput;
     use crate::encoding::DecodeContext;
     use crate::encoding::WireType;
     use crate::encoding::decode_varint;
@@ -226,7 +248,8 @@ mod hashset_impl {
 
     impl<T, S> ProtoShadow<Self> for HashSet<T, S>
     where
-        for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+        for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+        for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
         for<'a> S: BuildHasher + 'a,
     {
         type Sun<'a> = &'a HashSet<T, S>;
@@ -245,7 +268,8 @@ mod hashset_impl {
 
     impl<T, S> ProtoWire for HashSet<T, S>
     where
-        for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + Eq + Hash + 'a,
+        for<'a> T: ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
+        for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
         for<'a> S: BuildHasher + Default + 'a,
     {
         type EncodeInput<'a> = &'a HashSet<T, S>;
@@ -293,12 +317,19 @@ mod hashset_impl {
         #[inline]
         unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
             match T::KIND {
-                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value.iter().map(|v: &T| unsafe { T::encoded_len_impl_raw(&v) }).sum(),
+                ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => value
+                    .iter()
+                    .map(|v: &T| {
+                        let input = T::encode_input_from_ref(v);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum(),
 
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                     .iter()
                     .map(|m| {
-                        let len = unsafe { T::encoded_len_impl_raw(&m) };
+                        let input = T::encode_input_from_ref(m);
+                        let len = unsafe { T::encoded_len_impl_raw(&input) };
                         encoded_len_varint(len as u64) + len
                     })
                     .sum(),
@@ -321,18 +352,26 @@ mod hashset_impl {
                         return;
                     }
                     encode_key(tag, WireType::LengthDelimited, buf);
-                    let body_len = value.iter().map(|v: &T| T::encoded_len_impl(&v)).sum::<usize>();
+                    let body_len = value
+                        .iter()
+                        .map(|v: &T| {
+                            let input = T::encode_input_from_ref(v);
+                            unsafe { T::encoded_len_impl_raw(&input) }
+                        })
+                        .sum::<usize>();
                     encode_varint(body_len as u64, buf);
                     for v in value {
-                        T::encode_raw_unchecked(v, buf);
+                        let input = T::encode_input_from_ref(v);
+                        T::encode_raw_unchecked(input, buf);
                     }
                 }
                 ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                     for m in value {
-                        let len = unsafe { T::encoded_len_impl_raw(&m) };
+                        let input = T::encode_input_from_ref(m);
+                        let len = unsafe { T::encoded_len_impl_raw(&input) };
                         encode_key(tag, WireType::LengthDelimited, buf);
                         encode_varint(len as u64, buf);
-                        T::encode_raw_unchecked(m, buf);
+                        T::encode_raw_unchecked(input, buf);
                     }
                 }
                 ProtoKind::Repeated(_) => {
@@ -389,7 +428,8 @@ mod hashset_impl {
 
     impl<T, S> ProtoExt for HashSet<T, S>
     where
-        for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + Eq + Hash + 'a,
+        for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
+        for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
         for<'a> S: BuildHasher + Default + 'a,
     {
         type Shadow<'b> = HashSet<T, S>;

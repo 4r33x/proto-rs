@@ -302,6 +302,17 @@ impl<'a, T> EncodeInputFromRefValue<'a, Option<T>> for Option<&'a T> {
     }
 }
 
+pub(crate) trait BorrowedEncodeInput<'a, T: ?Sized> {}
+
+impl<'a, T: ?Sized> BorrowedEncodeInput<'a, T> for &'a T {}
+
+impl<'a, T> BorrowedEncodeInput<'a, T> for ShadowEncodeInput<'a, T>
+where
+    T: ProtoExt,
+    for<'b> Shadow<'b, T>: ProtoShadow<T, Sun<'b> = &'b T>,
+{
+}
+
 
 impl<'a, T> EncodeInputFromRef<'a> for T
 where

@@ -4,6 +4,7 @@ use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::EncodeInputFromRef;
 use crate::ProtoExt;
 use crate::ProtoShadow;
 use crate::ProtoWire;
@@ -15,11 +16,13 @@ use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::encoding::skip_field;
+use crate::traits::BorrowedEncodeInput;
 use crate::traits::ProtoKind;
 
 impl<T> ProtoShadow<Self> for Vec<T>
 where
-    for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
+    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type Sun<'a> = &'a Vec<T>;
 
@@ -39,7 +42,8 @@ where
 
 impl<T> ProtoShadow<Self> for VecDeque<T>
 where
-    for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
+    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type Sun<'a> = &'a VecDeque<T>;
 
@@ -59,7 +63,8 @@ where
 
 impl<T: ProtoWire> ProtoWire for Vec<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type EncodeInput<'a> = &'a Vec<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
@@ -112,14 +117,21 @@ where
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>()
+                value
+                    .iter()
+                    .map(|value: &T| {
+                        let input = T::encode_input_from_ref(value);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum::<usize>()
             }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                 .iter()
                 .map(|m| {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encoded_len_varint(len as u64) + len
                 })
                 .sum(),
@@ -147,20 +159,28 @@ where
                     return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>();
+                let body_len = value
+                    .iter()
+                    .map(|value: &T| {
+                        let input = T::encode_input_from_ref(value);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
-                    T::encode_raw_unchecked(v, buf);
+                    let input = T::encode_input_from_ref(v);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
                 for m in value {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(m, buf);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
 
@@ -228,7 +248,8 @@ where
 impl<T> ProtoExt for Vec<T>
 where
     T: ProtoWire,
-    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type Shadow<'b> = Vec<T>;
 
@@ -250,7 +271,8 @@ where
 
 impl<T: ProtoWire> ProtoWire for VecDeque<T>
 where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type EncodeInput<'a> = &'a VecDeque<T>;
     const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
@@ -303,14 +325,21 @@ where
         match T::KIND {
             // ---- Packed numeric fields -------------------------------------
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>()
+                value
+                    .iter()
+                    .map(|value: &T| {
+                        let input = T::encode_input_from_ref(value);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum::<usize>()
             }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
                 .iter()
                 .map(|m| {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encoded_len_varint(len as u64) + len
                 })
                 .sum(),
@@ -338,20 +367,28 @@ where
                     return;
                 }
                 encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>();
+                let body_len = value
+                    .iter()
+                    .map(|value: &T| {
+                        let input = T::encode_input_from_ref(value);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum::<usize>();
                 encode_varint(body_len as u64, buf);
                 for v in value {
-                    T::encode_raw_unchecked(v, buf);
+                    let input = T::encode_input_from_ref(v);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
 
             // ---- Repeated messages -----------------------------------------
             ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
                 for m in value {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
+                    let input = T::encode_input_from_ref(m);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
                     encode_key(tag, WireType::LengthDelimited, buf);
                     encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(m, buf);
+                    T::encode_raw_unchecked(input, buf);
                 }
             }
 
@@ -419,7 +456,8 @@ where
 impl<T> ProtoExt for VecDeque<T>
 where
     T: ProtoWire,
-    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+    for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + 'a,
+    for<'a> T::EncodeInput<'a>: BorrowedEncodeInput<'a, T>,
 {
     type Shadow<'b> = VecDeque<T>;
 
