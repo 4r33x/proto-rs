@@ -508,7 +508,7 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
 pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoWire for #target_ty {
-            type EncodeInput<'a> = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::Sun<'a>;
+            type EncodeInput<'a> = ::proto_rs::ShadowEncodeInput<'a, #target_ty>;
             const KIND: ::proto_rs::ProtoKind = <#shadow_ty as ::proto_rs::ProtoWire>::KIND;
 
             #[inline(always)]
@@ -526,14 +526,12 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
 
             #[inline(always)]
             fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow)
+                <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&value.0)
             }
 
             #[inline(always)]
             unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow)
+                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&value.0)
             }
 
             #[inline(always)]
@@ -541,8 +539,7 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
                 value: Self::EncodeInput<'_>,
                 buf: &mut impl ::proto_rs::bytes::BufMut,
             ) {
-                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf)
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(value.0, buf)
             }
 
             #[inline(always)]

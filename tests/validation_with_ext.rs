@@ -25,7 +25,9 @@ fn validate_pong_with_ext(pong: &mut Pong, ext: &Extensions) -> Result<(), Decod
     Ok(())
 }
 
-fn validate_pong_shadow_with_ext(_pong: &mut PongShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+#[allow(clippy::unnecessary_wraps)]
+fn validate_pong_shadow_with_ext(pong: &mut PongWithShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+    pong.id += 1;
     Ok(())
 }
 
@@ -42,7 +44,7 @@ pub struct PongWithShadow {
 }
 
 #[proto_message(proto_path = "protos/tests/validation_with_ext.proto", sun = [PongWithShadow])]
-//#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
+#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
 pub struct PongShadow {
     pub id: u32,
 }

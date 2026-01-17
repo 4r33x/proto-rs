@@ -302,6 +302,7 @@ impl<'a, T> EncodeInputFromRefValue<'a, Option<T>> for Option<&'a T> {
     }
 }
 
+
 impl<'a, T> EncodeInputFromRef<'a> for T
 where
     T: ProtoWire,
@@ -318,6 +319,22 @@ pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
 pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::Sun<'a>;
 pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::OwnedSun;
 pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::View<'a>;
+
+#[repr(transparent)]
+pub struct ShadowEncodeInput<'a, T: ProtoExt>(pub ViewOf<'a, T>);
+
+impl<'a, T> EncodeInputFromRefValue<'a, T> for ShadowEncodeInput<'a, T>
+where
+    T: ProtoExt,
+    for<'b> Shadow<'b, T>: ProtoShadow<T, Sun<'b> = &'b T>,
+{
+    type Output = ShadowEncodeInput<'a, T>;
+
+    #[inline(always)]
+    fn encode_input_from_ref(value: &'a T) -> Self::Output {
+        ShadowEncodeInput(<Shadow<'a, T> as ProtoShadow<T>>::from_sun(value))
+    }
+}
 
 pub trait ProtoExt: Sized {
     /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
