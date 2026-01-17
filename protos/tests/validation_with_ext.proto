@@ -10,6 +10,25 @@ message PongWithShadow {
   uint32 id = 1;
 }
 
+message WithPongCached {
+  PongWithShadow pong7 = 1;
+}
+
+message WithPongPapaya {
+  map<uint32, PongWithShadow> pong8 = 1;
+  repeated PongWithShadow pong9 = 2;
+}
+
+message WithPongs {
+  repeated PongWithShadow pongs = 1;
+  map<uint32, PongWithShadow> pongs2 = 2;
+  PongWithShadow pong3 = 3;
+  repeated PongWithShadow pong4 = 4;
+  repeated PongWithShadow pong5 = 5;
+  PongWithShadow pong6 = 6;
+  repeated PongWithShadow pong_set = 7;
+}
+
 service ValidationWithExt {
   rpc Check(Pong) returns (Pong) {}
 }

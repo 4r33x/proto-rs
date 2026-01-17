@@ -1,6 +1,8 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use proto_rs::DecodeError;
@@ -46,9 +48,28 @@ struct WithPongs {
     pongs: Vec<PongWithShadow>,
     pongs2: HashMap<u32, PongWithShadow>,
     pong3: Arc<PongWithShadow>,
+    pong4: [PongWithShadow; 2],
+    pong5: VecDeque<PongWithShadow>,
+    pong6: Box<PongWithShadow>,
+    pong_set: HashSet<PongWithShadow>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg(feature = "cache_padded")]
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
+struct WithPongPapaya {
+    #[cfg(feature = "papaya")]
+    pong8: papaya::HashMap<u32, PongWithShadow>,
+    #[cfg(feature = "papaya")]
+    pong9: papaya::HashSet<PongWithShadow>,
+}
+
+#[cfg(feature = "cache_padded")]
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
+struct WithPongCached {
+    pong7: crossbeam_utils::CachePadded<PongWithShadow>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Hash, Eq)]
 pub struct PongWithShadow {
     pub id: u32,
 }
