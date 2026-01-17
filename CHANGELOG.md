@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.0]
+- Revert to [0.7.6]
+
+## [0.7.7]
+- Remove double to shadow conversion in some cases
+
 ## [0.7.6]
 - Gate validate_with_ext codegen
 
