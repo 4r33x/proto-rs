@@ -1,6 +1,9 @@
 # Changelog
 
 ## [0.7.6]
+- Optimize conversions for types with custom sun\whadow
+
+## [0.7.6]
 - Gate validate_with_ext codegen
 
 ## [0.7.5]
