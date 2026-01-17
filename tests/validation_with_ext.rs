@@ -2,6 +2,7 @@
 
 use proto_rs::DecodeError;
 use proto_rs::ProtoExt;
+use proto_rs::ProtoShadow;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tonic::Extensions;
@@ -24,11 +25,40 @@ fn validate_pong_with_ext(pong: &mut Pong, ext: &Extensions) -> Result<(), Decod
     Ok(())
 }
 
+fn validate_pong_shadow_with_ext(_pong: &mut PongShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+    Ok(())
+}
+
 #[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
 #[proto(validator_with_ext = validate_pong_with_ext)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pong {
     pub id: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PongWithShadow {
+    pub id: u32,
+}
+
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto", sun = [PongWithShadow])]
+#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
+pub struct PongShadow {
+    pub id: u32,
+}
+
+impl ProtoShadow<PongWithShadow> for PongShadow {
+    type Sun<'a> = &'a PongWithShadow;
+    type OwnedSun = PongWithShadow;
+    type View<'a> = Self;
+
+    fn to_sun(self) -> Result<Self::OwnedSun, proto_rs::DecodeError> {
+        Ok(PongWithShadow { id: self.id })
+    }
+
+    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+        Self { id: value.id }
+    }
 }
 
 #[proto_rpc(
