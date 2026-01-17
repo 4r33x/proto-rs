@@ -81,6 +81,7 @@ pub use crate::traits::ProtoKind;
 pub use crate::traits::ProtoShadow;
 pub use crate::traits::ProtoWire;
 pub use crate::traits::Shadow;
+pub use crate::traits::ShadowEncodeInput;
 pub use crate::traits::SunOf;
 pub use crate::traits::ViewOf;
 // pub use crate::traits::RepeatedCollection;
