@@ -1,5 +1,8 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use proto_rs::DecodeError;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
@@ -36,6 +39,13 @@ fn validate_pong_shadow_with_ext(pong: &mut PongWithShadow, _ext: &Extensions) -
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pong {
     pub id: u32,
+}
+
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
+struct WithPongs {
+    pongs: Vec<PongWithShadow>,
+    pongs2: HashMap<u32, PongWithShadow>,
+    pong3: Arc<PongWithShadow>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
