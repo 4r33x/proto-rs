@@ -1,5 +1,10 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
+use std::sync::Arc;
+
 use proto_rs::DecodeError;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadow;
@@ -25,7 +30,8 @@ fn validate_pong_with_ext(pong: &mut Pong, ext: &Extensions) -> Result<(), Decod
     Ok(())
 }
 
-fn validate_pong_shadow_with_ext(_pong: &mut PongShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+#[allow(clippy::unnecessary_wraps)]
+fn validate_pong_shadow_with_ext(_pong: &mut PongWithShadow, _ext: &Extensions) -> Result<(), DecodeError> {
     Ok(())
 }
 
@@ -36,13 +42,13 @@ pub struct Pong {
     pub id: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct PongWithShadow {
     pub id: u32,
 }
 
 #[proto_message(proto_path = "protos/tests/validation_with_ext.proto", sun = [PongWithShadow])]
-//#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
+#[proto(validator_with_ext = validate_pong_shadow_with_ext)]
 pub struct PongShadow {
     pub id: u32,
 }
@@ -59,6 +65,34 @@ impl ProtoShadow<PongWithShadow> for PongShadow {
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         Self { id: value.id }
     }
+}
+
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
+struct WithPongs {
+    pongs: Vec<PongWithShadow>,
+    pongs2: HashMap<u32, PongWithShadow>,
+    pong3: Arc<PongWithShadow>,
+    pong4: [PongWithShadow; 2],
+    pong5: VecDeque<PongWithShadow>,
+    pong6: Box<PongWithShadow>,
+    pong_set: HashSet<PongWithShadow>,
+}
+
+#[cfg(feature = "cache_padded")]
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
+struct WithPongPapaya {
+    #[cfg(feature = "papaya")]
+    pong8: papaya::HashMap<u32, PongWithShadow>,
+
+    #[cfg(feature = "papaya")]
+    pong9: papaya::HashSet<PongWithShadow>,
+}
+
+#[cfg(feature = "cache_padded")]
+#[proto_message(proto_path = "protos/tests/validation_with_ext.proto")]
+
+struct WithPongCached {
+    pong7: crossbeam_utils::CachePadded<PongWithShadow>,
 }
 
 #[proto_rpc(
