@@ -505,10 +505,14 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
 
 /// Generate delegating `ProtoWire` implementation for a sun type
 /// This eliminates code duplication across structs, enums, and complex enums
+///
+/// The EncodeInput is `&'a SunType` (not ShadowEncodeInput) so that sun types
+/// can be used in wrapper types like Vec<T>, HashMap<K,V>, Arc<T> which require
+/// `T: ProtoWire<EncodeInput<'a> = &'a T>`.
 pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoWire for #target_ty {
-            type EncodeInput<'a> = ::proto_rs::ShadowEncodeInput<'a, #target_ty>;
+            type EncodeInput<'a> = &'a #target_ty;
             const KIND: ::proto_rs::ProtoKind = <#shadow_ty as ::proto_rs::ProtoWire>::KIND;
 
             #[inline(always)]
@@ -526,12 +530,14 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
 
             #[inline(always)]
             fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&value.0)
+                let shadow_view = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow_view)
             }
 
             #[inline(always)]
             unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&value.0)
+                let shadow_view = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow_view)
             }
 
             #[inline(always)]
@@ -539,7 +545,8 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
                 value: Self::EncodeInput<'_>,
                 buf: &mut impl ::proto_rs::bytes::BufMut,
             ) {
-                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(value.0, buf)
+                let shadow_view = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow_view, buf)
             }
 
             #[inline(always)]
