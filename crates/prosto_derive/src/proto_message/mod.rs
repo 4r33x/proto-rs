@@ -52,6 +52,47 @@ pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> Token
     validate_with_ext_tokens
 }
 
+/// Build validate_with_ext impl for sun types - validates on shadow type
+pub(crate) fn build_validate_with_ext_impl_for_sun(
+    config: &UnifiedProtoConfig,
+    shadow_ty: &TokenStream2,
+) -> TokenStream2 {
+    let validate_with_ext_tokens: proc_macro2::TokenStream;
+    #[cfg(feature = "tonic")]
+    {
+        validate_with_ext_tokens = {
+            let Some(validator_fn) = &config.validator_with_ext else {
+                return quote! {};
+            };
+
+            let validator_path: syn::Path =
+                syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
+
+            quote! {
+                const VALIDATE_WITH_EXT: bool = true;
+
+                #[inline(always)]
+                fn validate_with_ext(
+                    value: &mut Self,
+                    ext: &::tonic::Extensions,
+                ) -> Result<(), ::proto_rs::DecodeError> {
+                    // Convert sun to shadow for validation
+                    let mut shadow = <#shadow_ty as ::proto_rs::ProtoShadow<Self>>::from_sun(value);
+                    #validator_path(&mut shadow, ext)
+                }
+            }
+        };
+    }
+
+    #[cfg(not(feature = "tonic"))]
+    {
+        validate_with_ext_tokens = quote! {
+            const VALIDATE_WITH_EXT: bool = false;
+        };
+    }
+    validate_with_ext_tokens
+}
+
 fn build_validator_const(type_tokens: TokenStream2) -> TokenStream2 {
     quote! {
         #[cfg(feature = "build-schemas")]

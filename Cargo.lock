@@ -1300,7 +1300,6 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-prost",
- "tonic_prost_test",
 ]
 
 [[package]]

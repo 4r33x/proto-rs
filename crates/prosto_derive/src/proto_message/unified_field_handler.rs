@@ -505,6 +505,10 @@ pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<
 
 /// Generate delegating `ProtoWire` implementation for a sun type
 /// This eliminates code duplication across structs, enums, and complex enums
+///
+/// Optimized to convert sun→shadow only once during encoding operations:
+/// - `encode_with_tag` converts once and uses shadow for is_default + encode
+/// - `encode_length_delimited` converts once and uses shadow for len + encode
 pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type) -> TokenStream2 {
     quote! {
         impl ::proto_rs::ProtoWire for #target_ty {
@@ -543,6 +547,41 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
             ) {
                 let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
                 <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf)
+            }
+
+            // Override encode_with_tag to convert sun→shadow only once
+            #[inline(always)]
+            fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
+                if <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow) {
+                    return;
+                }
+                ::proto_rs::encoding::encode_key(tag, Self::WIRE_TYPE, buf);
+                if Self::WIRE_TYPE == ::proto_rs::encoding::WireType::LengthDelimited {
+                    let body_len = unsafe { <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow) };
+                    ::proto_rs::encoding::encode_varint(body_len as u64, buf);
+                }
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf);
+            }
+
+            // Override encode_length_delimited to convert sun→shadow only once
+            #[inline(always)]
+            fn encode_length_delimited(value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
+                let body_len = unsafe { <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow) };
+                ::proto_rs::encoding::encode_varint(body_len as u64, buf);
+                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf);
+            }
+
+            // Override encoded_len_impl to convert sun→shadow only once (for default check + len)
+            #[inline(always)]
+            fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
+                if <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow) {
+                    0
+                } else {
+                    unsafe { <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow) }
+                }
             }
 
             #[inline(always)]

@@ -10,6 +10,7 @@ use syn::Type;
 use syn::parse_quote;
 
 use super::build_validate_with_ext_impl;
+use super::build_validate_with_ext_impl_for_sun;
 use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
@@ -478,20 +479,21 @@ fn generate_proto_ext_impl(
         }
     };
 
-    let validate_with_ext_impl = build_validate_with_ext_impl(config);
-
     if config.has_suns() {
         let impls: Vec<_> = config
             .suns
             .iter()
             .map(|sun| {
                 let target_ty = &sun.ty;
+                // For sun types, validation should run on shadow type
+                let validate_with_ext_impl = build_validate_with_ext_impl_for_sun(config, &shadow_ty);
                 generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &post_decode_impl, &validate_with_ext_impl)
             })
             .collect();
 
         quote! { #(#impls)* }
     } else {
+        let validate_with_ext_impl = build_validate_with_ext_impl(config);
         quote! {
             impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
                 type Shadow<'b> = #shadow_ty;

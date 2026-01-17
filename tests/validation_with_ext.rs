@@ -25,7 +25,16 @@ fn validate_pong_with_ext(pong: &mut Pong, ext: &Extensions) -> Result<(), Decod
     Ok(())
 }
 
-fn validate_pong_shadow_with_ext(_pong: &mut PongShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+fn validate_pong_shadow_with_ext(pong: &mut PongShadow, ext: &Extensions) -> Result<(), DecodeError> {
+    // This validator runs on the shadow type, not the sun type
+    if pong.id == 999 {
+        return Err(DecodeError::new("shadow id cannot be 999"));
+    }
+    if let Some(flag) = ext.get::<ValidationFlag>()
+        && flag.0 == 2
+    {
+        return Err(DecodeError::new("shadow blocked by extension flag 2"));
+    }
     Ok(())
 }
 
@@ -112,4 +121,52 @@ async fn server_validation_with_ext_accepts_clean_request() {
         .expect("request should succeed");
 
     assert_eq!(response.into_inner(), Pong { id: 7 });
+}
+
+// Tests for shadow type validation
+#[cfg(feature = "tonic")]
+#[test]
+fn shadow_validates_with_ext_flag_is_enabled() {
+    // Verify that PongWithShadow (the sun type) has VALIDATE_WITH_EXT enabled
+    const _: () = {
+        assert!(<PongWithShadow as ProtoExt>::VALIDATE_WITH_EXT);
+    };
+}
+
+#[cfg(feature = "tonic")]
+#[test]
+fn shadow_validator_receives_shadow_type() {
+    // This test verifies that the validator for sun types receives the shadow type
+    // The validate_pong_shadow_with_ext function takes &mut PongShadow, not &mut PongWithShadow
+    // If this compiles and runs, it means the validator is correctly receiving the shadow type
+    let mut sun = PongWithShadow { id: 42 };
+    let ext = Extensions::new();
+
+    // Call validate_with_ext on the sun type
+    let result = <PongWithShadow as ProtoExt>::validate_with_ext(&mut sun, &ext);
+    assert!(result.is_ok());
+}
+
+#[cfg(feature = "tonic")]
+#[test]
+fn shadow_validator_rejects_invalid_shadow_id() {
+    // Test that the shadow validator correctly rejects id = 999
+    let mut sun = PongWithShadow { id: 999 };
+    let ext = Extensions::new();
+
+    let result = <PongWithShadow as ProtoExt>::validate_with_ext(&mut sun, &ext);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("shadow id cannot be 999"));
+}
+
+#[cfg(feature = "tonic")]
+#[test]
+fn shadow_validator_checks_extensions() {
+    let mut sun = PongWithShadow { id: 42 };
+    let mut ext = Extensions::new();
+    ext.insert(ValidationFlag(2));
+
+    let result = <PongWithShadow as ProtoExt>::validate_with_ext(&mut sun, &ext);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("shadow blocked by extension flag 2"));
 }
