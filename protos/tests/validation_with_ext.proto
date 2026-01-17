@@ -6,6 +6,10 @@ message Pong {
   uint32 id = 1;
 }
 
+message PongWithShadow {
+  uint32 id = 1;
+}
+
 service ValidationWithExt {
   rpc Check(Pong) returns (Pong) {}
 }
