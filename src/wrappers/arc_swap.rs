@@ -18,10 +18,12 @@ use crate::traits::ProtoKind;
 impl<T> ProtoShadow<Self> for ArcSwap<T>
 where
     T: ProtoShadow<T, OwnedSun = T>,
+    for<'a> <T as ProtoShadow<T>>::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = <T as ProtoShadow<T>>::Sun<'a>>,
 {
-    type Sun<'a> = T::Sun<'a>;
+    type Sun<'a> = &'a ArcSwap<T>;
     type OwnedSun = ArcSwap<T>;
-    type View<'a> = T::View<'a>;
+    type View<'a> = &'a ArcSwap<T>;
+    type ProtoArchive = Box<T::ProtoArchive>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -30,7 +32,15 @@ where
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        T::from_sun(value)
+        value
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let guard = value.load();
+        let inner_sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(guard.as_ref());
+        let inner_view = T::from_sun(inner_sun);
+        Box::new(T::to_archive(inner_view))
     }
 }
 
@@ -126,10 +136,12 @@ where
 impl<T> ProtoShadow<Self> for ArcSwapOption<T>
 where
     T: ProtoShadow<T, OwnedSun = T>,
+    for<'a> <T as ProtoShadow<T>>::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = <T as ProtoShadow<T>>::Sun<'a>>,
 {
-    type Sun<'a> = Option<T::Sun<'a>>;
+    type Sun<'a> = &'a ArcSwapOption<T>;
     type OwnedSun = ArcSwapOption<T>;
-    type View<'a> = Option<T::View<'a>>;
+    type View<'a> = &'a ArcSwapOption<T>;
+    type ProtoArchive = Option<Box<T::ProtoArchive>>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -138,7 +150,17 @@ where
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.map(T::from_sun)
+        value
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let guard = value.load();
+        guard.as_ref().map(|inner| {
+            let inner_sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(inner.as_ref());
+            let inner_view = T::from_sun(inner_sun);
+            Box::new(T::to_archive(inner_view))
+        })
     }
 }
 
@@ -228,6 +250,7 @@ where
     type Sun<'a> = Option<SHD::Sun<'a>>;
     type View<'a> = Option<SHD::View<'a>>;
     type OwnedSun = ArcSwapOption<T>;
+    type ProtoArchive = Option<Box<SHD::ProtoArchive>>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -238,5 +261,10 @@ where
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         value.map(SHD::from_sun)
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        value.map(|inner| Box::new(SHD::to_archive(inner)))
     }
 }

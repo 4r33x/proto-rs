@@ -145,12 +145,15 @@ where
     #[inline(always)]
     fn from(value: &T) -> Self {
         let bytes = T::with_shadow(value, |shadow| {
-            let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            let archive = <T::Shadow<'_> as ProtoShadow<T>>::to_archive(shadow);
+            let archive_input =
+                <<T::Shadow<'_> as ProtoShadow<T>>::ProtoArchive as crate::EncodeInputFromRef>::encode_input_from_ref(&archive);
+            let len = <<T::Shadow<'_> as ProtoShadow<T>>::ProtoArchive as ProtoWire>::encoded_len_impl(&archive_input);
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
             let mut buf = ZeroCopyBuffer::with_capacity(len);
-            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
+            <<T::Shadow<'_> as ProtoShadow<T>>::ProtoArchive as ProtoWire>::encode_raw_unchecked(archive_input, buf.inner_mut());
             buf
         });
         Self {
@@ -168,12 +171,15 @@ where
     #[inline(always)]
     fn from(value: T) -> Self {
         let bytes = T::with_shadow(value, |shadow| {
-            let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            let archive = <T::Shadow<'_> as ProtoShadow<T>>::to_archive(shadow);
+            let archive_input =
+                <<T::Shadow<'_> as ProtoShadow<T>>::ProtoArchive as crate::EncodeInputFromRef>::encode_input_from_ref(&archive);
+            let len = <<T::Shadow<'_> as ProtoShadow<T>>::ProtoArchive as ProtoWire>::encoded_len_impl(&archive_input);
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
             let mut buf = ZeroCopyBuffer::with_capacity(len);
-            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
+            <<T::Shadow<'_> as ProtoShadow<T>>::ProtoArchive as ProtoWire>::encode_raw_unchecked(archive_input, buf.inner_mut());
             buf
         });
         Self {
@@ -211,6 +217,7 @@ impl<T: 'static> ProtoShadow<ZeroCopy<T>> for ZeroCopy<T> {
     type Sun<'a> = &'a ZeroCopy<T>;
     type OwnedSun = ZeroCopy<T>;
     type View<'a> = &'a ZeroCopy<T>;
+    type ProtoArchive = ZeroCopy<T>;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         Ok(self)
@@ -218,6 +225,10 @@ impl<T: 'static> ProtoShadow<ZeroCopy<T>> for ZeroCopy<T> {
 
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         value
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        value.clone()
     }
 }
 

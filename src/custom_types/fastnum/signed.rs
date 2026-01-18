@@ -27,6 +27,7 @@ impl ProtoShadow<D128> for D128Proto {
     type Sun<'a> = &'a D128;
     type OwnedSun = D128;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let digits = ((self.hi as u128) << 64) | (self.lo as u128);
@@ -58,12 +59,17 @@ impl ProtoShadow<D128> for D128Proto {
             is_negative: value.is_sign_negative(),
         }
     }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
+    }
 }
 
 impl ProtoShadow<D64> for D128Proto {
     type Sun<'a> = &'a D64;
     type OwnedSun = D64;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let mut result = D64::from_u64(self.lo);
@@ -90,6 +96,10 @@ impl ProtoShadow<D64> for D128Proto {
             fractional_digits_count: i32::from(value.fractional_digits_count()),
             is_negative: value.is_sign_negative(),
         }
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 

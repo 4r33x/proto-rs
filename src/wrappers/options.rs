@@ -13,11 +13,12 @@ impl<T> ProtoShadow<Option<T>> for Option<T::Shadow<'_>>
 where
     T: ProtoExt,
     for<'a> T: 'a,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T>,
 {
-    type Sun<'a> = &'a Option<T>;
+    type Sun<'a> = Option<<T::Shadow<'a> as ProtoShadow<T>>::Sun<'a>>;
     type OwnedSun = Option<T>;
     type View<'a> = Option<<T::Shadow<'a> as ProtoShadow<T>>::View<'a>>;
+    type ProtoArchive = Option<<T::Shadow<'static> as ProtoShadow<T>>::ProtoArchive>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -26,7 +27,12 @@ where
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.as_ref().map(|v| <T::Shadow<'_> as ProtoShadow<T>>::from_sun(v))
+        value.map(|v| <T::Shadow<'_> as ProtoShadow<T>>::from_sun(v))
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        value.map(<T::Shadow<'_> as ProtoShadow<T>>::to_archive)
     }
 }
 
@@ -80,7 +86,7 @@ impl<T> ProtoExt for Option<T>
 where
     T: ProtoExt,
     for<'a> T: 'a,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T>,
+    for<'a> T::Shadow<'a>: ProtoShadow<T>,
 {
     type Shadow<'a> = Option<<T as ProtoExt>::Shadow<'a>>;
 

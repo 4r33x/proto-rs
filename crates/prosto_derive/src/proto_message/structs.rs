@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use proc_macro2::TokenStream as TokenStream2;
+use quote::format_ident;
 use quote::quote;
 use syn::DeriveInput;
 use syn::GenericArgument;
@@ -13,7 +14,10 @@ use super::build_validate_with_ext_impl;
 use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
+use super::unified_field_handler::archive_field_ty;
 use super::unified_field_handler::assign_tags;
+use super::unified_field_handler::build_archive_encode_stmts;
+use super::unified_field_handler::build_archive_len_terms;
 use super::unified_field_handler::build_clear_stmts;
 use super::unified_field_handler::build_decode_match_arms;
 use super::unified_field_handler::build_encode_stmts;
@@ -98,7 +102,16 @@ pub(super) fn generate_struct_impl(
         let bounded_generics = add_proto_wire_bounds(generics, std::iter::once(&field));
         let bounded_generics = add_transparent_bounds(&bounded_generics, &field.field.ty);
         let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
-        let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
+        let archive_binding = super::unified_field_handler::encode_input_binding(&field, &quote! { value });
+        let archive_prelude: Vec<_> = archive_binding.prelude.into_iter().collect();
+        let archive_value = archive_binding.value;
+        let archive_ty = quote! { <#inner_ty as ::proto_rs::ProtoShadow<#inner_ty>>::ProtoArchive };
+        let archive_expr = quote! {{
+            #( #archive_prelude )*
+            let view = <#inner_ty as ::proto_rs::ProtoShadow<#inner_ty>>::from_sun(#archive_value);
+            <#inner_ty as ::proto_rs::ProtoShadow<#inner_ty>>::to_archive(view)
+        }};
+        let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics, &archive_ty, &archive_expr);
         let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
 
         return quote! {
@@ -113,13 +126,161 @@ pub(super) fn generate_struct_impl(
 
     let fields = assign_tags(fields);
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
+    let archive_name = format_ident!("{}ProtoArchive", name);
+    let archive_field_vars: Vec<_> =
+        fields.iter().map(|info| info.access.ident().cloned().unwrap_or_else(|| format_ident!("field_{}", info.index))).collect();
+    let archive_field_defs: Vec<_> = fields
+        .iter()
+        .map(|info| {
+            let ty = archive_field_ty(info);
+            match info.access {
+                FieldAccess::Named(ident) => quote! { #ident: #ty },
+                FieldAccess::Tuple(_) | FieldAccess::Direct(_) => quote! { #ty },
+            }
+        })
+        .collect();
+    let archive_field_inits: Vec<_> = fields
+        .iter()
+        .zip(archive_field_vars.iter())
+        .map(|(info, var)| {
+            let binding = super::unified_field_handler::encode_input_binding(info, &quote! { value });
+            let prelude = binding.prelude.into_iter();
+            let value = binding.value;
+            let proto_ty = &info.proto_ty;
+            quote! {
+                let #var = {
+                    #( #prelude )*
+                    let view = <#proto_ty as ::proto_rs::ProtoShadow<#proto_ty>>::from_sun(#value);
+                    <#proto_ty as ::proto_rs::ProtoShadow<#proto_ty>>::to_archive(view)
+                };
+            }
+        })
+        .collect();
+    let archive_struct_expr = match &data.fields {
+        syn::Fields::Named(_) => {
+            let assigns = fields.iter().zip(archive_field_vars.iter()).map(|(info, var)| {
+                let ident = info.access.ident().expect("named field missing ident");
+                quote! { #ident: #var }
+            });
+            quote! { #archive_name { #( #assigns, )* encoded_len: 0 } }
+        }
+        syn::Fields::Unnamed(_) => {
+            quote! { #archive_name( #( #archive_field_vars, )* 0 ) }
+        }
+        syn::Fields::Unit => quote! { #archive_name { encoded_len: 0 } },
+    };
+    let archive_default_expr = match &data.fields {
+        syn::Fields::Named(_) => {
+            let assigns = fields.iter().map(|info| {
+                let ident = info.access.ident().expect("named field missing ident");
+                let ty = archive_field_ty(info);
+                quote! { #ident: <#ty as ::proto_rs::ProtoWire>::proto_default() }
+            });
+            quote! { #archive_name { #( #assigns, )* encoded_len: 0 } }
+        }
+        syn::Fields::Unnamed(_) => {
+            let defaults = fields.iter().map(|info| {
+                let ty = archive_field_ty(info);
+                quote! { <#ty as ::proto_rs::ProtoWire>::proto_default() }
+            });
+            quote! { #archive_name( #( #defaults, )* 0 ) }
+        }
+        syn::Fields::Unit => quote! { #archive_name { encoded_len: 0 } },
+    };
+    let archive_len_terms = build_archive_len_terms(&fields, &quote! { archive });
+    let archive_encode_stmts = build_archive_encode_stmts(&fields, &quote! { value });
+
+    let archive_struct = match &data.fields {
+        syn::Fields::Named(_) => quote! {
+            struct #archive_name #generics {
+                #( #archive_field_defs, )*
+                encoded_len: usize,
+            }
+        },
+        syn::Fields::Unnamed(_) => quote! {
+            struct #archive_name #generics(
+                #( #archive_field_defs, )*
+                usize,
+            );
+        },
+        syn::Fields::Unit => quote! {
+            struct #archive_name #generics {
+                encoded_len: usize,
+            }
+        },
+    };
+    let archive_ctor = quote! {
+        impl #impl_generics #archive_name #ty_generics #where_clause {
+            fn from_shadow(value: &#name #ty_generics) -> Self {
+                #( #archive_field_inits )*
+                let mut archive = #archive_struct_expr;
+                let mut encoded_len = 0usize;
+                #( encoded_len += #archive_len_terms; )*
+                archive.encoded_len = encoded_len;
+                archive
+            }
+        }
+    };
+    let archive_wire_impl = quote! {
+        impl #impl_generics ::proto_rs::ProtoWire for #archive_name #ty_generics #where_clause {
+            type EncodeInput<'a> = &'a Self;
+            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+            const WIRE_TYPE: ::proto_rs::encoding::WireType = ::proto_rs::encoding::WireType::LengthDelimited;
+
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #archive_default_expr
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                self.encoded_len = 0;
+            }
+
+            #[inline(always)]
+            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+                value.encoded_len == 0
+            }
+
+            #[inline(always)]
+            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+                value.encoded_len
+            }
+
+            #[inline(always)]
+            fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                #( #archive_encode_stmts )*
+            }
+
+            #[inline(always)]
+            fn decode_into(
+                _wire_type: ::proto_rs::encoding::WireType,
+                _value: &mut Self,
+                _buf: &mut impl ::proto_rs::bytes::Buf,
+                _ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                Err(::proto_rs::DecodeError::new("ProtoArchive does not support decoding"))
+            }
+        }
+    };
+
+    let proto_shadow_impl = generate_proto_shadow_impl(
+        name,
+        &bounded_generics,
+        &quote! { #archive_name #ty_generics },
+        &quote! {
+            #archive_name::from_shadow(value)
+        },
+    );
 
     let proto_ext_impl = generate_proto_ext_impl(name, &impl_generics, &ty_generics, where_clause, &fields, config);
     let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields, config);
 
     quote! {
         #struct_item
+        #archive_struct
+        #archive_ctor
+        #archive_wire_impl
         #proto_shadow_impl
         #proto_ext_impl
         #proto_wire_impl

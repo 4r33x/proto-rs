@@ -31,11 +31,17 @@ pub trait ProtoShadow<T>: Sized {
     /// The *resulting* shadow type when constructed from a given Sun<'b>, it could be just zero-copy view so we can encode it to buffer
     type View<'a>;
 
+    /// Immutable archive form used for encoding.
+    type ProtoArchive: ProtoWire;
+
     /// Decoder to owned value
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError>;
 
     /// Build a shadow from an existing Sun (borrowed or owned).
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_>;
+
+    /// Build an immutable archive from an existing shadow view.
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive;
 }
 
 pub enum ProtoKind {
@@ -302,6 +308,32 @@ impl<'a, T> EncodeInputFromRefValue<'a, Option<T>> for Option<&'a T> {
     }
 }
 
+pub(crate) trait SunFromRefValue<'a, T: ?Sized> {
+    type Output;
+    fn sun_from_ref(value: &'a T) -> Self::Output;
+}
+
+impl<'a, T> SunFromRefValue<'a, T> for &'a T {
+    type Output = &'a T;
+
+    #[inline(always)]
+    fn sun_from_ref(value: &'a T) -> Self::Output {
+        value
+    }
+}
+
+impl<'a, T> SunFromRefValue<'a, T> for T
+where
+    T: Clone,
+{
+    type Output = T;
+
+    #[inline(always)]
+    fn sun_from_ref(value: &'a T) -> Self::Output {
+        value.clone()
+    }
+}
+
 impl<'a, T> EncodeInputFromRef<'a> for T
 where
     T: ProtoWire,
@@ -318,6 +350,7 @@ pub type Shadow<'a, T> = <T as ProtoExt>::Shadow<'a>;
 pub type SunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::Sun<'a>;
 pub type OwnedSunOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::OwnedSun;
 pub type ViewOf<'a, T> = <Shadow<'a, T> as ProtoShadow<T>>::View<'a>;
+pub type ProtoArchiveOf<T> = <T as ProtoShadow<T>>::ProtoArchive;
 
 pub trait ProtoExt: Sized {
     /// The shadow is the *actual codec unit*; it must also implement ProtoWire.
@@ -373,7 +406,10 @@ pub trait ProtoExt: Sized {
     #[inline(always)]
     fn encode(value: SunOf<'_, Self>, mut buf: &mut impl BufMut) -> Result<(), EncodeError> {
         Self::with_shadow(value, |shadow| {
-            let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            let archive = <Self::Shadow<'_> as ProtoShadow<Self>>::to_archive(shadow);
+            let archive_input =
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as EncodeInputFromRef>::encode_input_from_ref(&archive);
+            let len = <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encoded_len_impl(&archive_input);
             if len == 0 {
                 return Ok(());
             }
@@ -384,12 +420,12 @@ pub trait ProtoExt: Sized {
                 if total > remaining {
                     return Err(EncodeError::new(total, remaining));
                 }
-                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encode_with_tag(1, archive_input, &mut buf);
             } else {
                 if len > remaining {
                     return Err(EncodeError::new(len, remaining));
                 }
-                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encode_raw_unchecked(archive_input, &mut buf);
             }
             Ok(())
         })
@@ -398,7 +434,10 @@ pub trait ProtoExt: Sized {
     #[inline(always)]
     fn encode_to_vec(value: SunOf<'_, Self>) -> Vec<u8> {
         Self::with_shadow(value, |shadow| {
-            let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            let archive = <Self::Shadow<'_> as ProtoShadow<Self>>::to_archive(shadow);
+            let archive_input =
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as EncodeInputFromRef>::encode_input_from_ref(&archive);
+            let len = <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encoded_len_impl(&archive_input);
             if len == 0 {
                 return Vec::new();
             }
@@ -406,11 +445,11 @@ pub trait ProtoExt: Sized {
             if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
                 let total = key_len(1) + len;
                 let mut buf = Vec::with_capacity(total);
-                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, &mut buf);
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encode_with_tag(1, archive_input, &mut buf);
                 buf
             } else {
                 let mut buf = Vec::with_capacity(len);
-                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, &mut buf);
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encode_raw_unchecked(archive_input, &mut buf);
                 buf
             }
         })
@@ -418,7 +457,10 @@ pub trait ProtoExt: Sized {
     #[inline(always)]
     fn encode_to_zerocopy(value: SunOf<'_, Self>) -> ZeroCopyBuffer {
         Self::with_shadow(value, |shadow| {
-            let len = <Self::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
+            let archive = <Self::Shadow<'_> as ProtoShadow<Self>>::to_archive(shadow);
+            let archive_input =
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as EncodeInputFromRef>::encode_input_from_ref(&archive);
+            let len = <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encoded_len_impl(&archive_input);
             if len == 0 {
                 return ZeroCopyBuffer::new();
             }
@@ -426,11 +468,11 @@ pub trait ProtoExt: Sized {
             if matches!(<Self::Shadow<'_> as ProtoWire>::KIND, ProtoKind::SimpleEnum) {
                 let total = key_len(1) + len;
                 let mut buf = ZeroCopyBuffer::with_capacity(total);
-                <Self::Shadow<'_> as ProtoWire>::encode_with_tag(1, shadow, buf.inner_mut());
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encode_with_tag(1, archive_input, buf.inner_mut());
                 buf
             } else {
                 let mut buf = ZeroCopyBuffer::with_capacity(len);
-                <Self::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
+                <<Self::Shadow<'_> as ProtoShadow<Self>>::ProtoArchive as ProtoWire>::encode_raw_unchecked(archive_input, buf.inner_mut());
                 buf
             }
         })
@@ -454,6 +496,12 @@ struct ID<'b, K, V> {
     _pd: PhantomData<&'b ()>,
 }
 
+struct IDArchive<K, V> {
+    id: u64,
+    k: K,
+    v: V,
+}
+
 impl<'b, K, V> ProtoShadow<ID<'b, K, V>> for ID<'b, K, V>
 where
     K: ProtoShadow<K, OwnedSun = K>,
@@ -462,6 +510,7 @@ where
     type Sun<'a> = ID<'a, K, V>;
     type OwnedSun = ID<'b, K, V>;
     type View<'a> = ID<'a, K, V>;
+    type ProtoArchive = IDArchive<K::ProtoArchive, V::ProtoArchive>;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -471,6 +520,15 @@ where
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         value
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        IDArchive {
+            id: value.id,
+            k: K::to_archive(value.k),
+            v: V::to_archive(value.v),
+        }
     }
 }
 
@@ -563,5 +621,58 @@ where
         check_wire_type(WireType::LengthDelimited, wire_type)?;
         *value = ID::decode_length_delimited(buf, ctx)?;
         Ok(())
+    }
+}
+
+impl<K, V> ProtoWire for IDArchive<K, V>
+where
+    K: ProtoWire,
+    V: ProtoWire,
+{
+    type EncodeInput<'a> = &'a Self;
+
+    const KIND: ProtoKind = ProtoKind::Message;
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Self {
+            id: <u64 as ProtoWire>::proto_default(),
+            k: K::proto_default(),
+            v: V::proto_default(),
+        }
+    }
+
+    #[inline(always)]
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        <u64 as ProtoWire>::is_default_impl(&value.id) && K::is_default_impl(&value.k) && V::is_default_impl(&value.v)
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        self.id.clear();
+        self.k.clear();
+        self.v.clear();
+    }
+
+    #[inline(always)]
+    unsafe fn encoded_len_impl_raw(v: &Self::EncodeInput<'_>) -> usize {
+        let mut len = 0;
+        len += <u64 as ProtoWire>::encoded_len_tagged_impl(&v.id, 1);
+        len += K::encoded_len_tagged_impl(&v.k, 2);
+        len += V::encoded_len_tagged_impl(&v.v, 3);
+        len
+    }
+
+    #[inline(always)]
+    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        <u64 as ProtoWire>::encode_with_tag(1, value.id, buf);
+        K::encode_with_tag(2, <K as EncodeInputFromRef>::encode_input_from_ref(&value.k), buf);
+        V::encode_with_tag(3, <V as EncodeInputFromRef>::encode_input_from_ref(&value.v), buf);
+    }
+
+    #[inline(always)]
+    fn decode_into(_wire_type: WireType, _value: &mut Self, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+        Err(DecodeError::new("IDArchive does not support decoding"))
     }
 }

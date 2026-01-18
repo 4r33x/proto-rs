@@ -25,6 +25,7 @@ impl<T: ProtoShadow<T>, const N: usize> ProtoShadow<Self> for [T; N] {
     type Sun<'a> = [T::Sun<'a>; N];
     type OwnedSun = [T::OwnedSun; N];
     type View<'a> = [T::View<'a>; N];
+    type ProtoArchive = [T::ProtoArchive; N];
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -58,6 +59,15 @@ impl<T: ProtoShadow<T>, const N: usize> ProtoShadow<Self> for [T; N] {
             out[idx].write(T::from_sun(x));
         }
 
+        unsafe { assume_init_array(out) }
+    }
+
+    #[inline]
+    fn to_archive(v: Self::View<'_>) -> Self::ProtoArchive {
+        let mut out: [MaybeUninit<T::ProtoArchive>; N] = [const { MaybeUninit::uninit() }; N];
+        for (idx, x) in v.into_iter().enumerate() {
+            out[idx].write(T::to_archive(x));
+        }
         unsafe { assume_init_array(out) }
     }
 }

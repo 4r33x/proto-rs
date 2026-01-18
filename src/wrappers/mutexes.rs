@@ -34,10 +34,12 @@ impl<T> ProtoShadow<Self> for std::sync::Mutex<T>
 where
     for<'a> T: 'a,
     T: ProtoShadow<T, OwnedSun = T>,
+    for<'a> <T as ProtoShadow<T>>::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = <T as ProtoShadow<T>>::Sun<'a>>,
 {
-    type Sun<'a> = T::Sun<'a>;
+    type Sun<'a> = StdMutexEncodeInput<'a, T>;
     type OwnedSun = std::sync::Mutex<T>;
-    type View<'a> = T::View<'a>;
+    type View<'a> = StdMutexEncodeInput<'a, T>;
+    type ProtoArchive = T::ProtoArchive;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -46,7 +48,15 @@ where
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        T::from_sun(value)
+        value
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let inner: &T = &value.0;
+        let inner_sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(inner);
+        let inner_view = T::from_sun(inner_sun);
+        T::to_archive(inner_view)
     }
 }
 
@@ -111,10 +121,12 @@ impl<'a, T> EncodeInputFromRefValue<'a, parking_lot::Mutex<T>> for ParkingLotMut
 impl<T> ProtoShadow<Self> for parking_lot::Mutex<T>
 where
     T: ProtoShadow<T, OwnedSun = T>,
+    for<'a> <T as ProtoShadow<T>>::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = <T as ProtoShadow<T>>::Sun<'a>>,
 {
-    type Sun<'a> = T::Sun<'a>;
+    type Sun<'a> = ParkingLotMutexEncodeInput<'a, T>;
     type OwnedSun = parking_lot::Mutex<T>;
-    type View<'a> = T::View<'a>;
+    type View<'a> = ParkingLotMutexEncodeInput<'a, T>;
+    type ProtoArchive = T::ProtoArchive;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -123,7 +135,15 @@ where
 
     #[inline(always)]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        T::from_sun(value)
+        value
+    }
+
+    #[inline(always)]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let inner: &T = &value.0;
+        let inner_sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(inner);
+        let inner_view = T::from_sun(inner_sun);
+        T::to_archive(inner_view)
     }
 }
 

@@ -79,7 +79,13 @@ pub(super) fn generate_simple_enum_impl(
         })
         .collect();
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
+    let archive_ty = quote! { i32 };
+    let archive_expr = quote! {
+        match *value {
+            #(#raw_from_variant,)*
+        }
+    };
+    let proto_shadow_impl = generate_proto_shadow_impl(name, generics, &archive_ty, &archive_expr);
 
     let shadow_ty = quote! { #name #ty_generics };
 

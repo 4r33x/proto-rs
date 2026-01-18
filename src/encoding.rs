@@ -351,8 +351,11 @@ mod test {
         let mut s = String::new();
         let buf = b"\x02\x80\x80";
 
-        let r = string::merge(WireType::LengthDelimited, &mut s, &mut &buf[..], DecodeContext::default());
-        r.expect_err("must be an error");
+        let err = string::merge(WireType::LengthDelimited, &mut s, &mut &buf[..], DecodeContext::default())
+            .expect_err("must be an error");
+        assert!(err
+            .to_string()
+            .contains("invalid string value: data is not UTF-8 encoded"));
         assert!(s.is_empty());
     }
 

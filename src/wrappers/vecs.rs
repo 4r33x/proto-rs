@@ -17,14 +17,59 @@ use crate::encoding::key_len;
 use crate::encoding::skip_field;
 use crate::traits::ProtoKind;
 
+pub struct VecArchive<T> {
+    items: Vec<T>,
+    encoded_len: usize,
+    packed_len: usize,
+}
+
+impl<T> VecArchive<T>
+where
+    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T>,
+{
+    pub(crate) fn new(items: Vec<T>) -> Self {
+        let (encoded_len, packed_len) = match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                let packed_len = items
+                    .iter()
+                    .map(|value| {
+                        let input = <T as crate::EncodeInputFromRef>::encode_input_from_ref(value);
+                        unsafe { T::encoded_len_impl_raw(&input) }
+                    })
+                    .sum::<usize>();
+                (packed_len, packed_len)
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let encoded_len = items
+                    .iter()
+                    .map(|value| {
+                        let input = <T as crate::EncodeInputFromRef>::encode_input_from_ref(value);
+                        let len = unsafe { T::encoded_len_impl_raw(&input) };
+                        encoded_len_varint(len as u64) + len
+                    })
+                    .sum::<usize>();
+                (encoded_len, 0)
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
+        };
+        Self {
+            items,
+            encoded_len,
+            packed_len,
+        }
+    }
+}
+
 impl<T> ProtoShadow<Self> for Vec<T>
 where
     for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
+    for<'a> T::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = T::Sun<'a>>,
 {
     type Sun<'a> = &'a Vec<T>;
 
     type OwnedSun = Vec<T>;
     type View<'a> = &'a Vec<T>;
+    type ProtoArchive = VecArchive<T::ProtoArchive>;
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -34,17 +79,32 @@ where
     #[inline]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         value
+    }
+
+    #[inline]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let items = value
+            .iter()
+            .map(|item| {
+                let sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(item);
+                let view = T::from_sun(sun);
+                T::to_archive(view)
+            })
+            .collect::<Vec<_>>();
+        VecArchive::new(items)
     }
 }
 
 impl<T> ProtoShadow<Self> for VecDeque<T>
 where
     for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
+    for<'a> T::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = T::Sun<'a>>,
 {
     type Sun<'a> = &'a VecDeque<T>;
 
     type OwnedSun = VecDeque<T>;
     type View<'a> = &'a VecDeque<T>;
+    type ProtoArchive = VecArchive<T::ProtoArchive>;
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -54,6 +114,114 @@ where
     #[inline]
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         value
+    }
+
+    #[inline]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let items = value
+            .iter()
+            .map(|item| {
+                let sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(item);
+                let view = T::from_sun(sun);
+                T::to_archive(view)
+            })
+            .collect::<Vec<_>>();
+        VecArchive::new(items)
+    }
+}
+
+impl<T> ProtoWire for VecArchive<T>
+where
+    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
+{
+    type EncodeInput<'a> = &'a VecArchive<T>;
+    const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("VecArchive");
+
+    #[inline(always)]
+    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+        if value.items.is_empty() { 0 } else { value.encoded_len }
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if value.items.is_empty() {
+                    0
+                } else {
+                    key_len(tag) + encoded_len_varint(value.packed_len as u64) + value.packed_len
+                }
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let len = value.items.len();
+                if len == 0 { 0 } else { key_len(tag) * len + value.encoded_len }
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        value.encoded_len
+    }
+
+    #[inline]
+    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
+        panic!("Do not call encode_raw_unchecked on VecArchive<T>");
+    }
+
+    #[inline]
+    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if value.items.is_empty() {
+                    return;
+                }
+                encode_key(tag, WireType::LengthDelimited, buf);
+                encode_varint(value.packed_len as u64, buf);
+                for v in &value.items {
+                    let input = <T as crate::EncodeInputFromRef>::encode_input_from_ref(v);
+                    T::encode_raw_unchecked(input, buf);
+                }
+            }
+            ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
+                for item in &value.items {
+                    let input = <T as crate::EncodeInputFromRef>::encode_input_from_ref(item);
+                    let len = unsafe { T::encoded_len_impl_raw(&input) };
+                    encode_key(tag, WireType::LengthDelimited, buf);
+                    encode_varint(len as u64, buf);
+                    T::encode_raw_unchecked(input, buf);
+                }
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
+        }
+    }
+
+    #[inline]
+    fn decode_into(_wire_type: WireType, _values: &mut Self, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+        Err(DecodeError::new("VecArchive does not support decoding"))
+    }
+
+    #[inline]
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        value.items.is_empty()
+    }
+
+    #[inline]
+    fn proto_default() -> Self {
+        Self {
+            items: Vec::new(),
+            encoded_len: 0,
+            packed_len: 0,
+        }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.items.clear();
+        self.encoded_len = 0;
+        self.packed_len = 0;
     }
 }
 

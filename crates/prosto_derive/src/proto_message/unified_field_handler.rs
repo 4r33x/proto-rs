@@ -169,13 +169,19 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
     fields
 }
 
-pub fn generate_proto_shadow_impl(name: &Ident, generics: &syn::Generics) -> TokenStream2 {
+pub fn generate_proto_shadow_impl(
+    name: &Ident,
+    generics: &syn::Generics,
+    archive_ty: &TokenStream2,
+    archive_expr: &TokenStream2,
+) -> TokenStream2 {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     quote! {
         impl #impl_generics ::proto_rs::ProtoShadow<Self> for #name #ty_generics #where_clause {
             type Sun<'a> = &'a Self;
             type OwnedSun = Self;
             type View<'a> = &'a Self;
+            type ProtoArchive = #archive_ty;
 
             #[inline(always)]
             fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
@@ -186,8 +192,50 @@ pub fn generate_proto_shadow_impl(name: &Ident, generics: &syn::Generics) -> Tok
             fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
             }
+
+            #[inline(always)]
+            fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+                #archive_expr
+            }
         }
     }
+}
+
+pub fn archive_field_ty(field: &FieldInfo<'_>) -> TokenStream2 {
+    let ty = &field.proto_ty;
+    quote! { <#ty as ::proto_rs::ProtoShadow<#ty>>::ProtoArchive }
+}
+
+pub fn build_archive_len_terms(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
+    fields
+        .iter()
+        .filter_map(|info| {
+            let tag = info.tag?;
+            let access = info.access.access_tokens(base.clone());
+            let archive_ty = archive_field_ty(info);
+            Some(quote! {{
+                let input = <#archive_ty as ::proto_rs::EncodeInputFromRef>::encode_input_from_ref(&#access);
+                <#archive_ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&input, #tag)
+            }})
+        })
+        .collect()
+}
+
+pub fn build_archive_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
+    fields
+        .iter()
+        .filter_map(|info| {
+            let tag = info.tag?;
+            let access = info.access.access_tokens(base.clone());
+            let archive_ty = archive_field_ty(info);
+            Some(quote! {
+                {
+                    let input = <#archive_ty as ::proto_rs::EncodeInputFromRef>::encode_input_from_ref(&#access);
+                    <#archive_ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, input, buf)
+                }
+            })
+        })
+        .collect()
 }
 
 pub struct EncodeBinding {
@@ -527,13 +575,17 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
             #[inline(always)]
             fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
                 let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow)
+                let archive = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_archive(shadow);
+                let input = <<#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::ProtoArchive as ::proto_rs::EncodeInputFromRef>::encode_input_from_ref(&archive);
+                <<#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::ProtoArchive as ::proto_rs::ProtoWire>::is_default_impl(&input)
             }
 
             #[inline(always)]
             unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
                 let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow)
+                let archive = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_archive(shadow);
+                let input = <<#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::ProtoArchive as ::proto_rs::EncodeInputFromRef>::encode_input_from_ref(&archive);
+                <<#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::ProtoArchive as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&input)
             }
 
             #[inline(always)]
@@ -542,7 +594,9 @@ pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: 
                 buf: &mut impl ::proto_rs::bytes::BufMut,
             ) {
                 let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf)
+                let archive = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_archive(shadow);
+                let input = <<#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::ProtoArchive as ::proto_rs::EncodeInputFromRef>::encode_input_from_ref(&archive);
+                <<#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::ProtoArchive as ::proto_rs::ProtoWire>::encode_raw_unchecked(input, buf)
             }
 
             #[inline(always)]

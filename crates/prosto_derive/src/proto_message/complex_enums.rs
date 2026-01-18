@@ -6,6 +6,7 @@ use syn::DeriveInput;
 use syn::Ident;
 use syn::ItemEnum;
 use syn::Lit;
+use syn::parse_quote;
 use syn::spanned::Spanned;
 
 use super::build_validate_with_ext_impl;
@@ -37,7 +38,8 @@ pub(super) fn generate_complex_enum_impl(
     data: &syn::DataEnum,
     config: &UnifiedProtoConfig,
 ) -> syn::Result<TokenStream2> {
-    let enum_item = sanitize_enum(item_enum.clone());
+    let mut enum_item = sanitize_enum(item_enum.clone());
+    enum_item.attrs.push(parse_quote!(#[derive(Clone)]));
 
     let name = &input.ident;
     let generics = &input.generics;
@@ -59,7 +61,9 @@ pub(super) fn generate_complex_enum_impl(
     let bounded_generics = add_proto_wire_bounds(generics, bound_fields);
     let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
+    let archive_ty = quote! { Self };
+    let archive_expr = quote! { value.clone() };
+    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics, &archive_ty, &archive_expr);
 
     let shadow_ty = quote! { #name #ty_generics };
 

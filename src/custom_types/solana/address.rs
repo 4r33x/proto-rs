@@ -18,6 +18,7 @@ impl ProtoShadow<Address> for AddressProto {
     type Sun<'a> = &'a Address;
     type OwnedSun = Address;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -29,6 +30,10 @@ impl ProtoShadow<Address> for AddressProto {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());
         Self { inner }
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 

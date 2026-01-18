@@ -24,6 +24,7 @@ impl ProtoShadow<UD128> for UD128Proto {
     type Sun<'a> = &'a UD128;
     type OwnedSun = UD128;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let digits = ((self.hi as u128) << 64) | (self.lo as u128);
@@ -49,6 +50,10 @@ impl ProtoShadow<UD128> for UD128Proto {
             hi,
             fractional_digits_count: i32::from(value.fractional_digits_count()),
         }
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 

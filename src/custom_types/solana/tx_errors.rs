@@ -126,6 +126,7 @@ impl ProtoShadow<InstructionError> for InstructionErrorProto {
     type Sun<'a> = &'a InstructionError;
     type OwnedSun = InstructionError;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let value = match self {
@@ -190,6 +191,10 @@ impl ProtoShadow<InstructionError> for InstructionErrorProto {
 
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         instruction_error_from_native(value)
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 
@@ -291,6 +296,7 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
     type Sun<'a> = &'a TransactionError;
     type OwnedSun = TransactionError;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         let value = match self {
@@ -345,6 +351,10 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
 
     fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
         transaction_error_from_native(value)
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 

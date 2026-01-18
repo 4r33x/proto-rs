@@ -95,15 +95,18 @@ use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
 use crate::encoding::skip_field;
 use crate::traits::ProtoKind;
+use crate::wrappers::vecs::VecArchive;
 
 impl<T, S> ProtoShadow<Self> for HashSet<T, S>
 where
     for<'a> T: ProtoShadow<T> + ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
     for<'a> S: BuildHasher + Default + 'a,
+    for<'a> T::Sun<'a>: crate::traits::SunFromRefValue<'a, T, Output = T::Sun<'a>>,
 {
     type Sun<'a> = &'a HashSet<T, S>;
     type OwnedSun = HashSet<T, S>;
     type View<'a> = PapayaSetShadow<'a, T, S>;
+    type ProtoArchive = VecArchive<T::ProtoArchive>;
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -113,6 +116,19 @@ where
     #[inline]
     fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
         PapayaSetShadow::new(v)
+    }
+
+    #[inline]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let items = value
+            .iter()
+            .map(|item| {
+                let sun = <<T as ProtoShadow<T>>::Sun<'_> as crate::traits::SunFromRefValue<'_, T>>::sun_from_ref(item);
+                let view = T::from_sun(sun);
+                T::to_archive(view)
+            })
+            .collect::<Vec<_>>();
+        VecArchive::new(items)
     }
 }
 

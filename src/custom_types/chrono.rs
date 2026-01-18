@@ -31,6 +31,7 @@ impl ProtoShadow<TimeDelta> for TimeDeltaProto {
     type OwnedSun = TimeDelta;
 
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         TimeDelta::new(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
@@ -51,12 +52,17 @@ impl ProtoShadow<TimeDelta> for TimeDeltaProto {
             }
         }
     }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
+    }
 }
 
 impl ProtoShadow<DateTime<Utc>> for DateTimeProto {
     type Sun<'a> = &'a DateTime<Utc>;
     type OwnedSun = DateTime<Utc>;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         DateTime::from_timestamp(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
@@ -67,6 +73,10 @@ impl ProtoShadow<DateTime<Utc>> for DateTimeProto {
             secs: value.timestamp(),
             ns: value.timestamp_subsec_nanos(),
         }
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 

@@ -6,6 +6,7 @@ use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashMap;
 
+use super::maps::MapArchive;
 use super::maps::encode_map_entry_component;
 use super::maps::map_entry_field_len;
 use crate::DecodeError;
@@ -97,10 +98,13 @@ where
     for<'a> K: ProtoShadow<K> + ProtoWire + Eq + Hash + 'a,
     for<'a> V: ProtoShadow<V> + ProtoWire + 'a,
     for<'a> S: BuildHasher + Default + 'a,
+    for<'a> K::Sun<'a>: crate::traits::SunFromRefValue<'a, K, Output = K::Sun<'a>>,
+    for<'a> V::Sun<'a>: crate::traits::SunFromRefValue<'a, V, Output = V::Sun<'a>>,
 {
     type Sun<'a> = &'a HashMap<K, V, S>;
     type OwnedSun = HashMap<K, V, S>;
     type View<'a> = PapayaMapShadow<'a, K, V, S>;
+    type ProtoArchive = MapArchive<K::ProtoArchive, V::ProtoArchive>;
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -110,6 +114,21 @@ where
     #[inline]
     fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
         PapayaMapShadow::new(v)
+    }
+
+    #[inline]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let entries = value
+            .iter()
+            .map(|(k, v)| {
+                let key_sun = <<K as ProtoShadow<K>>::Sun<'_> as crate::traits::SunFromRefValue<'_, K>>::sun_from_ref(k);
+                let key_view = K::from_sun(key_sun);
+                let value_sun = <<V as ProtoShadow<V>>::Sun<'_> as crate::traits::SunFromRefValue<'_, V>>::sun_from_ref(v);
+                let value_view = V::from_sun(value_sun);
+                (K::to_archive(key_view), V::to_archive(value_view))
+            })
+            .collect();
+        MapArchive::new(entries)
     }
 }
 

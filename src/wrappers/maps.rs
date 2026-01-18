@@ -42,14 +42,158 @@ pub(crate) fn map_entry_field_len(wire: WireType, tag: u32, body_len: usize) -> 
     }
 }
 
+pub struct MapArchive<K, V> {
+    entries: Vec<(K, V)>,
+    entry_lens: Vec<usize>,
+    encoded_len: usize,
+}
+
+impl<K, V> MapArchive<K, V>
+where
+    for<'a> K: ProtoWire<EncodeInput<'a> = &'a K>,
+    for<'a> V: ProtoWire<EncodeInput<'a> = &'a V>,
+{
+    pub(crate) fn new(entries: Vec<(K, V)>) -> Self {
+        let mut entry_lens = Vec::with_capacity(entries.len());
+        let mut encoded_len = 0usize;
+        for (k, v) in &entries {
+            let key_input = <K as EncodeInputFromRef>::encode_input_from_ref(k);
+            let key_default = K::is_default_impl(&key_input);
+            let key_body = if key_default {
+                0
+            } else {
+                unsafe { K::encoded_len_impl_raw(&key_input) }
+            };
+            let key_len_total = if key_default {
+                0
+            } else {
+                map_entry_field_len(K::WIRE_TYPE, 1, key_body)
+            };
+            let value_input = <V as EncodeInputFromRef>::encode_input_from_ref(v);
+            let value_default = V::is_default_impl(&value_input);
+            let value_body = if value_default {
+                0
+            } else {
+                unsafe { V::encoded_len_impl_raw(&value_input) }
+            };
+            let value_len_total = if value_default {
+                0
+            } else {
+                map_entry_field_len(V::WIRE_TYPE, 2, value_body)
+            };
+            let entry_len = key_len_total + value_len_total;
+            entry_lens.push(entry_len);
+            encoded_len += encoded_len_varint(entry_len as u64) + entry_len;
+        }
+        Self {
+            entries,
+            entry_lens,
+            encoded_len,
+        }
+    }
+}
+
+impl<K, V> ProtoWire for MapArchive<K, V>
+where
+    for<'a> K: ProtoWire<EncodeInput<'a> = &'a K> + 'a,
+    for<'a> V: ProtoWire<EncodeInput<'a> = &'a V> + 'a,
+{
+    type EncodeInput<'a> = &'a MapArchive<K, V>;
+    const KIND: ProtoKind = ProtoKind::Repeated(&V::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("MapArchive");
+
+    #[inline(always)]
+    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
+        if value.entries.is_empty() { 0 } else { value.encoded_len }
+    }
+
+    #[inline(always)]
+    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+        if value.entries.is_empty() {
+            0
+        } else {
+            value.entry_lens.iter().map(|entry_len| key_len(tag) + encoded_len_varint(*entry_len as u64) + entry_len).sum()
+        }
+    }
+
+    #[inline]
+    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+        value.encoded_len
+    }
+
+    #[inline]
+    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
+        panic!("Do not call encode_raw_unchecked on MapArchive<K,V>");
+    }
+
+    #[inline]
+    fn encode_with_tag(tag: u32, map: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
+        for ((k, v), entry_len) in map.entries.iter().zip(map.entry_lens.iter()) {
+            encode_key(tag, WireType::LengthDelimited, buf);
+            encode_varint(*entry_len as u64, buf);
+
+            let key_input = <K as EncodeInputFromRef>::encode_input_from_ref(k);
+            let key_default = K::is_default_impl(&key_input);
+            let key_body = if key_default {
+                0
+            } else {
+                unsafe { K::encoded_len_impl_raw(&key_input) }
+            };
+            if !key_default {
+                encode_map_entry_component::<K>(1, key_body, key_input, buf);
+            }
+
+            let value_input = <V as EncodeInputFromRef>::encode_input_from_ref(v);
+            let value_default = V::is_default_impl(&value_input);
+            let value_body = if value_default {
+                0
+            } else {
+                unsafe { V::encoded_len_impl_raw(&value_input) }
+            };
+            if !value_default {
+                encode_map_entry_component::<V>(2, value_body, value_input, buf);
+            }
+        }
+    }
+
+    #[inline]
+    fn decode_into(_wire_type: WireType, _value: &mut Self, _buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
+        Err(DecodeError::new("MapArchive does not support decoding"))
+    }
+
+    #[inline]
+    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
+        value.entries.is_empty()
+    }
+
+    #[inline]
+    fn proto_default() -> Self {
+        Self {
+            entries: Vec::new(),
+            entry_lens: Vec::new(),
+            encoded_len: 0,
+        }
+    }
+
+    #[inline]
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.entry_lens.clear();
+        self.encoded_len = 0;
+    }
+}
+
 impl<K, V> ProtoShadow<Self> for BTreeMap<K, V>
 where
     for<'a> K: ProtoShadow<K> + ProtoWire + 'a,
     for<'a> V: ProtoShadow<V> + ProtoWire + 'a,
+    for<'a> K::Sun<'a>: crate::traits::SunFromRefValue<'a, K, Output = K::Sun<'a>>,
+    for<'a> V::Sun<'a>: crate::traits::SunFromRefValue<'a, V, Output = V::Sun<'a>>,
 {
     type Sun<'a> = &'a BTreeMap<K, V>;
     type OwnedSun = BTreeMap<K, V>;
     type View<'a> = &'a BTreeMap<K, V>;
+    type ProtoArchive = MapArchive<K::ProtoArchive, V::ProtoArchive>;
 
     #[inline]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -58,6 +202,21 @@ where
     #[inline]
     fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
         v
+    }
+
+    #[inline]
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        let entries = value
+            .iter()
+            .map(|(k, v)| {
+                let key_sun = <<K as ProtoShadow<K>>::Sun<'_> as crate::traits::SunFromRefValue<'_, K>>::sun_from_ref(k);
+                let key_view = K::from_sun(key_sun);
+                let value_sun = <<V as ProtoShadow<V>>::Sun<'_> as crate::traits::SunFromRefValue<'_, V>>::sun_from_ref(v);
+                let value_view = V::from_sun(value_sun);
+                (K::to_archive(key_view), V::to_archive(value_view))
+            })
+            .collect();
+        MapArchive::new(entries)
     }
 }
 
@@ -284,16 +443,20 @@ mod hashmap_impl {
     use crate::encoding::skip_field;
     use crate::traits::ProtoKind;
     use crate::wrappers::maps::EncodeInputFromRef;
+    use crate::wrappers::maps::MapArchive;
 
     impl<K, V, S> ProtoShadow<Self> for HashMap<K, V, S>
     where
         for<'a> K: ProtoShadow<K> + ProtoWire + 'a,
         for<'a> V: ProtoShadow<V> + ProtoWire + 'a,
         for<'a> S: BuildHasher + 'a,
+        for<'a> K::Sun<'a>: crate::traits::SunFromRefValue<'a, K, Output = K::Sun<'a>>,
+        for<'a> V::Sun<'a>: crate::traits::SunFromRefValue<'a, V, Output = V::Sun<'a>>,
     {
         type Sun<'a> = &'a HashMap<K, V, S>;
         type OwnedSun = HashMap<K, V, S>;
         type View<'a> = &'a HashMap<K, V, S>;
+        type ProtoArchive = MapArchive<K::ProtoArchive, V::ProtoArchive>;
 
         #[inline]
         fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -302,6 +465,21 @@ mod hashmap_impl {
         #[inline]
         fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
             v
+        }
+
+        #[inline]
+        fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+            let entries = value
+                .iter()
+                .map(|(k, v)| {
+                    let key_sun = <<K as ProtoShadow<K>>::Sun<'_> as crate::traits::SunFromRefValue<'_, K>>::sun_from_ref(k);
+                    let key_view = K::from_sun(key_sun);
+                    let value_sun = <<V as ProtoShadow<V>>::Sun<'_> as crate::traits::SunFromRefValue<'_, V>>::sun_from_ref(v);
+                    let value_view = V::from_sun(value_sun);
+                    (K::to_archive(key_view), V::to_archive(value_view))
+                })
+                .collect();
+            MapArchive::new(entries)
         }
     }
 

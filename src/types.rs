@@ -56,12 +56,18 @@ macro_rules! impl_google_wrapper {
             type Sun<'a> = impl_google_wrapper!(@sun_ty, $mode, $ty);
             type OwnedSun = $ty;
             type View<'a> = impl_google_wrapper!(@view_ty, $mode, $ty);
+            type ProtoArchive = impl_google_wrapper!(@archive_ty, $mode, $ty);
 
             #[inline(always)]
             fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> { Ok(self) }
 
             #[inline(always)]
             fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> { value }
+
+            #[inline(always)]
+            fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+                impl_google_wrapper!(@archive_value, $mode, value)
+            }
         }
 
         impl crate::traits::ProtoWire for $ty {
@@ -180,10 +186,15 @@ macro_rules! impl_google_wrapper {
     (@sun_ty, by_value, $ty:ty) => { $ty };
     (@view_ty, by_value, $ty:ty) => { $ty };
     (@encode_ty, by_value, $ty:ty) => { $ty };
+    (@archive_ty, by_value, $ty:ty) => { $ty };
 
     (@sun_ty, by_ref, $ty:ty) => { &'a $ty };
     (@view_ty, by_ref, $ty:ty) => { &'a $ty };
     (@encode_ty, by_ref, $ty:ty) => { &'b $ty };
+    (@archive_ty, by_ref, $ty:ty) => { $ty };
+
+    (@archive_value, by_value, $value:ident) => { $value };
+    (@archive_value, by_ref, $value:ident) => { $value.clone() };
 
     (@len_total, by_value, $module:ident, $v:ident) => {
         $module::encoded_len(*$v)
@@ -397,6 +408,8 @@ macro_rules! impl_atomic_primitive {
             type Sun<'a> = &'a $ty;
             type OwnedSun = $ty;
             type View<'a> = &'a $ty;
+            type ProtoArchive = $narrow;
+            type ProtoArchive = $base;
 
             #[inline(always)]
             fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -406,6 +419,11 @@ macro_rules! impl_atomic_primitive {
             #[inline(always)]
             fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
+            }
+
+            #[inline(always)]
+            fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+                ($load)(value)
             }
         }
 
@@ -535,6 +553,11 @@ macro_rules! impl_atomic_narrow_primitive {
             #[inline(always)]
             fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
                 value
+            }
+
+            #[inline(always)]
+            fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+                ($load)(value)
             }
         }
 
@@ -767,11 +790,18 @@ impl ProtoShadow<Self> for () {
     type Sun<'a> = Self;
     type OwnedSun = Self;
     type View<'a> = Self;
+    type ProtoArchive = Self;
 
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
         Ok(())
     }
-    fn from_sun<'a>(_value: Self::Sun<'_>) -> Self::View<'_> {}
+    fn from_sun<'a>(_value: Self::Sun<'_>) -> Self::View<'_> {
+        ()
+    }
+
+    fn to_archive(_value: Self::View<'_>) -> Self::ProtoArchive {
+        ()
+    }
 }
 
 impl ProtoExt for () {
@@ -901,6 +931,7 @@ macro_rules! impl_narrow_varint {
             type Sun<'a> = Self;
             type OwnedSun = Self;
             type View<'a> = Self;
+            type ProtoArchive = Self;
 
             #[inline(always)]
             fn to_sun(self) -> Result<Self::OwnedSun, crate::DecodeError> {
@@ -909,6 +940,10 @@ macro_rules! impl_narrow_varint {
 
             #[inline(always)]
             fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+                value
+            }
+
+            fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
                 value
             }
         }

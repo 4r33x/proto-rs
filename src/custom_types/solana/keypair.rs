@@ -18,6 +18,7 @@ impl ProtoShadow<Keypair> for KeypairProto {
     type Sun<'a> = &'a Keypair;
     type OwnedSun = Keypair;
     type View<'a> = Self;
+    type ProtoArchive = <Self as ProtoShadow<Self>>::ProtoArchive;
 
     #[inline(always)]
     fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
@@ -29,6 +30,10 @@ impl ProtoShadow<Keypair> for KeypairProto {
         Self {
             inner: *value.secret_bytes(),
         }
+    }
+
+    fn to_archive(value: Self::View<'_>) -> Self::ProtoArchive {
+        <Self as ProtoShadow<Self>>::to_archive(value)
     }
 }
 
