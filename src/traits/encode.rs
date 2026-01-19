@@ -1,5 +1,6 @@
 use bytes::BufMut;
 
+use crate::DecodeError;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::error::EncodeError;
@@ -17,8 +18,8 @@ pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
 // Identity conversion for “no-shadow” types.
 impl<'a, T> ProtoShadowEncode<'a, T> for T {
     #[inline(always)]
-    fn from_sun(&'a self) -> Result<&'a self, DecodeError> {
-        Ok(self)
+    fn from_sun(value: &'a T) -> Result<&'a T, DecodeError> {
+        Ok(value)
     }
 }
 
