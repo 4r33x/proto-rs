@@ -7,6 +7,7 @@ use tonic::codec::Encoder;
 mod req;
 mod resp;
 use bytes::BufMut;
+use crate::encoding::DecodeContext;
 pub use req::ProtoRequest;
 pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
@@ -14,7 +15,8 @@ pub use resp::ZeroCopyResponse;
 pub use resp::map_proto_response;
 pub use resp::map_proto_stream_result;
 
-use crate::ProtoExt;
+use crate::ProtoDecode;
+use crate::ProtoEncode;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
 use crate::coders::AsBytes;
@@ -36,7 +38,7 @@ pub trait ToZeroCopyRequest<T> {
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
 where
     Encode: Send + 'static,
-    Decode: ProtoExt + Send + 'static,
+    Decode: ProtoDecode + Send + 'static,
     Mode: Send + Sync + 'static,
     ProtoEncoder<Encode, Mode>: EncoderExt<Encode, Mode>,
 {
@@ -73,42 +75,38 @@ where
 // Case 1: Sun<'a> = T  (owned)
 impl<T> EncoderExt<T, SunByVal> for ProtoEncoder<T, SunByVal>
 where
-    T: ProtoExt + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
+    T: ProtoEncode + 'static,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        T::encode(item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 
 // Case 2: Sun<'a> = &'a T (borrowed)
 impl<T> EncoderExt<T, SunByRef> for ProtoEncoder<T, SunByRef>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        T::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 
 impl<T> EncoderExt<Arc<T>, SunByRefDeref> for ProtoEncoder<Arc<T>, SunByRefDeref>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     fn encode_sun(&mut self, item: Arc<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        T::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 
 impl<T> EncoderExt<Box<T>, SunByRefDeref> for ProtoEncoder<Box<T>, SunByRefDeref>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     fn encode_sun(&mut self, item: Box<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        T::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 
@@ -129,14 +127,14 @@ where
 
 impl<T> Decoder for ProtoDecoder<T>
 where
-    T: ProtoExt,
+    T: ProtoDecode,
 {
     type Item = T;
     type Error = Status;
 
     fn decode(&mut self, src: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
         // Always attempt to decode: tonic gives full frames, even empty ones
-        match T::decode(src) {
+        match T::decode(src, DecodeContext::default()) {
             Ok(msg) => Ok(Some(msg)),
             Err(err) => Err(Status::data_loss(format!("failed to decode message: {err}"))),
         }

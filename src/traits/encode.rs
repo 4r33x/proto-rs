@@ -56,7 +56,7 @@ pub trait ProtoEncode: Sized {
     #[inline(always)]
     fn encode_to_zerocopy(&self) -> ZeroCopyBuffer {
         let shadow = Self::Shadow::from_sun(self);
-        let value = match ArchivedProtoMessage::new(&shadow) {
+        let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
             Some(v) => v,
             None => return ZeroCopyBuffer::new(),
         };

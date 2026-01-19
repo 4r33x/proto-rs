@@ -3,10 +3,8 @@
 //! This module provides implementations of the new proto traits for Rust standard library types which
 //! correspond to a Protobuf well-known wrapper type.
 
-use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::string::String;
-use alloc::vec::Vec;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicI8;
 use core::sync::atomic::AtomicI16;
@@ -265,11 +263,7 @@ impl_proto_primitive_by_value!(f64, double, "DoubleValue", ProtoKind::Primitive(
 
 impl_proto_primitive_by_ref!(String, string, "StringValue", ProtoKind::String);
 
-impl_proto_primitive_by_ref!(Vec<u8>, bytes, "BytesValue", ProtoKind::Bytes);
-
 impl_proto_primitive_by_ref!(Bytes, bytes, "BytesValue", ProtoKind::Bytes);
-
-impl_proto_primitive_by_ref!(VecDeque<u8>, bytes, "BytesValue", ProtoKind::Bytes);
 
 // ============================================================================
 // Narrow primitives (u8, u16, i8, i16)

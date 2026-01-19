@@ -11,10 +11,14 @@ use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
 use crate::encoding::key_len;
 use crate::error::DecodeError;
+use crate::traits::ProtoArchive;
+use crate::traits::ProtoDecode;
+use crate::traits::ProtoDecoder;
+use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
-
-//const ZERO_COPY_SIZE: usize = 64;
+use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoShadowEncode;
 
 pub type ZeroCopyBufferInner = Vec<u8>;
 
@@ -57,10 +61,38 @@ impl ZeroCopyBuffer {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
+unsafe impl BufMut for ZeroCopyBuffer {
+    #[inline(always)]
+    fn remaining_mut(&self) -> usize {
+        BufMut::remaining_mut(&self.inner)
+    }
+
+    #[inline(always)]
+    unsafe fn advance_mut(&mut self, cnt: usize) {
+        unsafe {
+            BufMut::advance_mut(&mut self.inner, cnt);
+        }
+    }
+
+    #[inline(always)]
+    fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
+        BufMut::chunk_mut(&mut self.inner)
+    }
+}
+
+#[derive(PartialEq, Eq)]
 pub struct ZeroCopy<T> {
     inner: ZeroCopyBuffer,
     _marker: PhantomData<T>,
+}
+
+impl<T> Clone for ZeroCopy<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<T> Default for ZeroCopy<T> {
@@ -102,8 +134,8 @@ impl<T> ZeroCopy<T> {
     #[inline(always)]
     pub fn decode(&self) -> Result<T, DecodeError>
     where
-        T: ProtoExt,
-        for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
+        T: ProtoDecode + ProtoExt,
+        T::ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<T>,
     {
         decode_zero_copy_bytes::<T>(self.as_bytes())
     }
@@ -111,47 +143,30 @@ impl<T> ZeroCopy<T> {
 
 fn decode_zero_copy_bytes<T>(mut buf: impl Buf) -> Result<T, DecodeError>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, OwnedSun = T>,
+    T: ProtoDecode + ProtoExt,
+    T::ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<T>,
 {
     if !buf.has_remaining() {
-        let shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
-        return <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow);
+        let shadow = <T::ShadowDecoded as ProtoDecoder>::proto_default();
+        return <T::ShadowDecoded as ProtoShadowDecode<T>>::to_sun(shadow);
     }
 
-    if let ProtoKind::Message = <T::Shadow<'static> as ProtoWire>::KIND {
-        // For messages, the buffer contains raw field data - use T::decode to loop through fields
-        T::decode(buf)
+    if let ProtoKind::Message = T::KIND {
+        T::decode(buf, DecodeContext::default())
     } else {
-        // For all other types (SimpleEnum, primitives, strings, bytes),
-        // decode the raw value with its wire type
-        let mut shadow = <T::Shadow<'static> as ProtoWire>::proto_default();
-        <T::Shadow<'static> as ProtoWire>::decode_into(
-            <T::Shadow<'static> as ProtoWire>::WIRE_TYPE,
-            &mut shadow,
-            &mut buf,
-            DecodeContext::default(),
-        )?;
-        <T::Shadow<'static> as ProtoShadow<T>>::to_sun(shadow)
+        let mut shadow = <T::ShadowDecoded as ProtoDecoder>::proto_default();
+        <T::ShadowDecoded as ProtoDecoder>::merge(&mut shadow, T::WIRE_TYPE, &mut buf, DecodeContext::default())?;
+        <T::ShadowDecoded as ProtoShadowDecode<T>>::to_sun(shadow)
     }
 }
 
 impl<T> From<&T> for ZeroCopy<T>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline(always)]
     fn from(value: &T) -> Self {
-        let bytes = T::with_shadow(value, |shadow| {
-            let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
-            if len == 0 {
-                return ZeroCopyBuffer::new();
-            }
-            let mut buf = ZeroCopyBuffer::with_capacity(len);
-            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
-            buf
-        });
+        let bytes = value.encode_to_zerocopy();
         Self {
             inner: bytes,
             _marker: PhantomData,
@@ -161,20 +176,11 @@ where
 
 impl<T> From<T> for ZeroCopy<T>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline(always)]
     fn from(value: T) -> Self {
-        let bytes = T::with_shadow(value, |shadow| {
-            let len = <T::Shadow<'_> as ProtoWire>::encoded_len_impl(&shadow);
-            if len == 0 {
-                return ZeroCopyBuffer::new();
-            }
-            let mut buf = ZeroCopyBuffer::with_capacity(len);
-            <T::Shadow<'_> as ProtoWire>::encode_raw_unchecked(shadow, buf.inner_mut());
-            buf
-        });
+        let bytes = value.encode_to_zerocopy();
         Self {
             inner: bytes,
             _marker: PhantomData,
@@ -188,8 +194,7 @@ pub trait ToZeroCopy<T> {
 
 impl<T> ToZeroCopy<T> for &T
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     fn to_zero_copy(self) -> ZeroCopy<T> {
         ZeroCopy::from(self)
@@ -198,91 +203,104 @@ where
 
 impl<T> ToZeroCopy<T> for T
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     fn to_zero_copy(self) -> ZeroCopy<T> {
         ZeroCopy::from(self)
     }
 }
 
-impl<T: 'static> ProtoShadow<ZeroCopy<T>> for ZeroCopy<T> {
-    type Sun<'a> = &'a ZeroCopy<T>;
-    type OwnedSun = ZeroCopy<T>;
-    type View<'a> = &'a ZeroCopy<T>;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value
-    }
+impl<T> ProtoExt for ZeroCopy<T>
+where
+    T: ProtoExt,
+{
+    const KIND: ProtoKind = T::KIND;
 }
 
-impl<T> ProtoWire for ZeroCopy<T>
+impl<T> ProtoDecoder for ZeroCopy<T>
 where
-    T: ProtoWire + 'static,
+    T: ProtoExt,
 {
-    type EncodeInput<'a> = &'a ZeroCopy<T>;
-    const KIND: ProtoKind = T::KIND;
-    const WIRE_TYPE: WireType = T::WIRE_TYPE;
-
+    #[inline(always)]
     fn proto_default() -> Self {
         Self::new()
     }
 
+    #[inline(always)]
     fn clear(&mut self) {
         self.inner.clear();
     }
 
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.inner.is_empty()
-    }
-
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        value.inner.len()
-    }
-
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        value.inner.len()
-    }
-
-    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-        if value.inner.is_empty() {
-            0
+    #[inline(always)]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if let ProtoKind::Message = T::KIND {
+            append_field(tag, wire_type, buf, &mut value.inner, ctx)
+        } else if tag == 1 {
+            copy_value_payload(wire_type, buf, &mut value.inner, ctx)
         } else {
-            let payload_len = value.inner.len();
-            key_len(tag) + payload_len
+            crate::encoding::skip_field(wire_type, tag, buf, ctx)
         }
     }
 
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        buf.put_slice(&value.inner);
-    }
-
-    fn decode_into(wire_type: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        check_wire_type(Self::WIRE_TYPE, wire_type)?;
-
-        copy_value_payload(wire_type, buf, &mut value.inner, ctx)
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if let ProtoKind::Message = T::KIND {
+            check_wire_type(WireType::LengthDelimited, wire_type)?;
+        }
+        copy_value_payload(wire_type, buf, &mut self.inner, ctx)
     }
 }
 
-impl<T> ProtoExt for ZeroCopy<T>
+impl<T> ProtoDecode for ZeroCopy<T>
 where
-    T: ProtoWire + 'static,
+    T: ProtoExt,
 {
-    type Shadow<'b> = ZeroCopy<T>;
+    type ShadowDecoded = ZeroCopy<T>;
+}
 
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire_type: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        append_field(tag, wire_type, buf, &mut value.inner, ctx)
+impl<T> ProtoShadowDecode<ZeroCopy<T>> for ZeroCopy<T> {
+    #[inline(always)]
+    fn to_sun(self) -> Result<ZeroCopy<T>, DecodeError> {
+        Ok(self)
     }
+}
+
+impl<'a, T> ProtoShadowEncode<'a, ZeroCopy<T>> for ZeroCopy<T> {
+    #[inline(always)]
+    fn from_sun(value: &'a ZeroCopy<T>) -> Self {
+        value.clone()
+    }
+}
+
+impl<T> ProtoArchive for ZeroCopy<T> {
+    type Archived<'a> = &'a [u8];
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        buf.put_slice(archived);
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        self.inner.as_slice()
+    }
+}
+
+impl<T> ProtoEncode for ZeroCopy<T>
+where
+    T: ProtoExt,
+{
+    type Shadow<'a> = ZeroCopy<T>;
 }
 
 /// Decodes varint from a contiguous slice. Returns (value, bytes_consumed).
@@ -323,16 +341,13 @@ fn push_key(out: &mut ZeroCopyBuffer, tag: u32, wire_type: WireType) {
 fn peek_varint_prefix(buf: &impl Buf) -> Result<(u64, usize), DecodeError> {
     let bytes = buf.chunk();
 
-    // Empty buffer
     if bytes.is_empty() {
         return Err(DecodeError::new("buffer exhausted"));
     }
 
-    // decode_varint_slice handles all cases correctly
     decode_varint_slice(bytes)
 }
 
-/// Copy payload bytes directly without double-scanning
 #[inline]
 fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCopyBuffer, ctx: DecodeContext) -> Result<(), DecodeError> {
     ctx.limit_reached()?;
@@ -340,7 +355,6 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCo
 
     match wire_type {
         WireType::Varint => {
-            // Direct slice access - single scan, no loops
             let bytes = buf.chunk();
             let (_, len) = decode_varint_slice(bytes)?;
 
@@ -378,7 +392,6 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCo
                 return Err(DecodeError::new("buffer underflow"));
             }
 
-            // Skip the length prefix, only copy the payload
             buf.advance(len_len);
             into.resize(payload_len, 0);
             if payload_len > 0 {
@@ -390,7 +403,6 @@ fn copy_value_payload(wire_type: WireType, buf: &mut impl Buf, into: &mut ZeroCo
     }
 }
 
-/// Append full field (key + payload) with minimized scanning
 #[inline]
 fn append_field(
     tag: u32,
@@ -403,12 +415,10 @@ fn append_field(
 
     match wire_type {
         WireType::Varint => {
-            // Reserve space for key + max varint size
             let key_len = key_len(tag);
             out.reserve(key_len + 10);
             push_key(out, tag, wire_type);
 
-            // Direct slice access - no byte-by-byte loop
             let bytes = buf.chunk();
             let (_, varint_len) = decode_varint_slice(bytes)?;
 
@@ -452,7 +462,6 @@ fn append_field(
             Ok(())
         }
         WireType::LengthDelimited => {
-            // Peek length prefix
             let (len_value, len_len) = peek_varint_prefix(buf)?;
             let payload_len = len_value as usize;
 
@@ -460,12 +469,10 @@ fn append_field(
                 return Err(DecodeError::new("buffer underflow"));
             }
 
-            // Reserve and copy key + length + payload
             let key_len = key_len(tag);
             out.reserve(key_len + len_len + payload_len);
             push_key(out, tag, wire_type);
 
-            // Copy length prefix and payload
             let total_len = len_len + payload_len;
             let start = out.len();
             out.resize(start + total_len, 0);

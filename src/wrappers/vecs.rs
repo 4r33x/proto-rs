@@ -1,760 +1,304 @@
 use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 
 use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
-use crate::ProtoExt;
-use crate::ProtoShadow;
-use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
-use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
-use crate::encoding::key_len;
 use crate::encoding::skip_field;
+use crate::traits::ProtoArchive;
+use crate::traits::ProtoDecode;
+use crate::traits::ProtoDecoder;
+use crate::traits::ProtoEncode;
+use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
+use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoShadowEncode;
 
-impl<T> ProtoShadow<Self> for Vec<T>
-where
-    for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
-{
-    type Sun<'a> = &'a Vec<T>;
+#[doc(hidden)]
+pub struct ArchivedRepeated<'a, T: ProtoArchive + ProtoExt> {
+    items: Vec<T::Archived<'a>>,
+    len: usize,
+}
 
-    type OwnedSun = Vec<T>;
-    type View<'a> = &'a Vec<T>;
-
-    #[inline]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    #[inline]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value
+fn repeated_payload_len<T: ProtoArchive + ProtoExt>(archived: &T::Archived<'_>) -> usize {
+    let item_len = T::len(archived);
+    match T::KIND {
+        ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => item_len,
+        ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => encoded_len_varint(item_len as u64) + item_len,
+        ProtoKind::Repeated(_) => unreachable!(),
     }
 }
 
-impl<T> ProtoShadow<Self> for VecDeque<T>
-where
-    for<'a> T: ProtoShadow<T> + 'a + ProtoWire<EncodeInput<'a> = &'a T>,
-{
-    type Sun<'a> = &'a VecDeque<T>;
-
-    type OwnedSun = VecDeque<T>;
-    type View<'a> = &'a VecDeque<T>;
-
-    #[inline]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    #[inline]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value
+fn encode_repeated_value<T: ProtoArchive + ProtoExt>(archived: T::Archived<'_>, buf: &mut impl BufMut) {
+    match T::KIND {
+        ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => unsafe {
+            T::encode(archived, buf);
+        },
+        ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+            let len = T::len(&archived);
+            encode_varint(len as u64, buf);
+            unsafe { T::encode(archived, buf) };
+        }
+        ProtoKind::Repeated(_) => unreachable!(),
     }
 }
 
-impl<T: ProtoWire> ProtoWire for Vec<T>
-where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
-{
-    type EncodeInput<'a> = &'a Vec<T>;
-    const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
+impl<T: ProtoExt> ProtoExt for Vec<T> {
+    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
     const _REPEATED_SUPPORT: Option<&'static str> = Some("Vec");
+}
 
+impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        unsafe { Self::encoded_len_impl_raw(value) }
-    }
-
-    #[inline(always)]
-    fn encoded_len_tagged(&self, tag: u32) -> usize
-    where
-        for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
-    {
-        Self::encoded_len_tagged_impl(&self, tag)
-    }
-
-    #[inline(always)]
-    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-        match T::KIND {
-            // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if value.is_empty() {
-                    0
-                } else {
-                    let len = unsafe { Self::encoded_len_impl_raw(value) };
-                    key_len(tag) + encoded_len_varint(len as u64) + len
-                }
-            }
-
-            // ---- Repeated messages -----------------------------------------
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let len = value.len();
-                if len == 0 {
-                    0
-                } else {
-                    key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) }
-                }
-            }
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    #[inline]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        match T::KIND {
-            // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>()
-            }
-
-            // ---- Repeated messages -----------------------------------------
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
-                .iter()
-                .map(|m| {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
-                    encoded_len_varint(len as u64) + len
-                })
-                .sum(),
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // encode_raw
-    // -------------------------------------------------------------------------
-    #[inline]
-    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
-        panic!("Do not call encode_raw_unchecked on Vec<T>")
-    }
-
-    #[inline]
-    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        match T::KIND {
-            // ---- Packed numeric --------------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if value.is_empty() {
-                    return;
-                }
-                encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>();
-                encode_varint(body_len as u64, buf);
-                for v in value {
-                    T::encode_raw_unchecked(v, buf);
-                }
-            }
-
-            // ---- Repeated messages -----------------------------------------
-            ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
-                for m in value {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
-                    encode_key(tag, WireType::LengthDelimited, buf);
-                    encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(m, buf);
-                }
-            }
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // decode_into
-    // -------------------------------------------------------------------------
-    #[inline]
-    fn decode_into(wire_type: WireType, values: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        match T::KIND {
-            // ---- Packed numeric or enum ------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    let mut slice = buf.take(len);
-                    while slice.has_remaining() {
-                        let mut v = T::proto_default();
-                        T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
-                        values.push(v);
-                    }
-                    debug_assert!(!slice.has_remaining());
-                } else {
-                    let mut v = T::proto_default();
-                    T::decode_into(wire_type, &mut v, buf, ctx)?;
-                    values.push(v);
-                }
-                Ok(())
-            }
-
-            // ---- Repeated message ------------------------------------------
-            ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
-                let mut v = T::proto_default();
-                T::decode_into(wire_type, &mut v, buf, ctx)?;
-                values.push(v);
-                Ok(())
-            }
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    #[inline]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.is_empty()
-    }
-
-    #[inline]
     fn proto_default() -> Self {
         Vec::new()
     }
 
-    #[inline]
+    #[inline(always)]
     fn clear(&mut self) {
         Vec::clear(self);
     }
-}
-
-impl<T> ProtoExt for Vec<T>
-where
-    T: ProtoWire,
-    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
-{
-    type Shadow<'b> = Vec<T>;
 
     #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire_type: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            <Vec<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+            Self::merge(value, wire_type, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
         }
     }
-}
-
-impl<T: ProtoWire> ProtoWire for VecDeque<T>
-where
-    for<'a> T: ProtoWire<EncodeInput<'a> = &'a T> + 'a,
-{
-    type EncodeInput<'a> = &'a VecDeque<T>;
-    const KIND: ProtoKind = ProtoKind::for_vec(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("VecDeque");
 
     #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        unsafe { Self::encoded_len_impl_raw(value) }
-    }
-
-    #[inline(always)]
-    fn encoded_len_tagged(&self, tag: u32) -> usize
-    where
-        for<'b> Self: ProtoWire<EncodeInput<'b> = &'b Self>,
-    {
-        Self::encoded_len_tagged_impl(&self, tag)
-    }
-
-    #[inline(always)]
-    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         match T::KIND {
-            // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if value.is_empty() {
-                    0
-                } else {
-                    let len = unsafe { Self::encoded_len_impl_raw(value) };
-                    key_len(tag) + encoded_len_varint(len as u64) + len
-                }
-            }
-
-            // ---- Repeated messages -----------------------------------------
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let len = value.len();
-                if len == 0 {
-                    0
-                } else {
-                    key_len(tag) * len + unsafe { Self::encoded_len_impl_raw(value) }
-                }
-            }
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    #[inline]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        match T::KIND {
-            // ---- Packed numeric fields -------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>()
-            }
-
-            // ---- Repeated messages -----------------------------------------
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => value
-                .iter()
-                .map(|m| {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
-                    encoded_len_varint(len as u64) + len
-                })
-                .sum(),
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // encode_raw
-    // -------------------------------------------------------------------------
-    #[inline]
-    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
-        panic!("Do not call encode_raw_unchecked on VecDeque<T>")
-    }
-
-    #[inline]
-    fn encode_with_tag(tag: u32, value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        match T::KIND {
-            // ---- Packed numeric --------------------------------------------
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if value.is_empty() {
-                    return;
-                }
-                encode_key(tag, WireType::LengthDelimited, buf);
-                let body_len = value.iter().map(|value: &T| unsafe { T::encoded_len_impl_raw(&value) }).sum::<usize>();
-                encode_varint(body_len as u64, buf);
-                for v in value {
-                    T::encode_raw_unchecked(v, buf);
-                }
-            }
-
-            // ---- Repeated messages -----------------------------------------
-            ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
-                for m in value {
-                    let len = unsafe { T::encoded_len_impl_raw(&m) };
-                    encode_key(tag, WireType::LengthDelimited, buf);
-                    encode_varint(len as u64, buf);
-                    T::encode_raw_unchecked(m, buf);
-                }
-            }
-
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // decode_into
-    // -------------------------------------------------------------------------
-    #[inline]
-    fn decode_into(wire_type: WireType, values: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        match T::KIND {
-            // ---- Packed numeric or enum ------------------------------------
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
                     let len = decode_varint(buf)? as usize;
                     let mut slice = buf.take(len);
                     while slice.has_remaining() {
                         let mut v = T::proto_default();
-                        T::decode_into(T::WIRE_TYPE, &mut v, &mut slice, ctx)?;
-                        values.push_back(v);
+                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        self.push(v);
                     }
                     debug_assert!(!slice.has_remaining());
                 } else {
                     let mut v = T::proto_default();
-                    T::decode_into(wire_type, &mut v, buf, ctx)?;
-                    values.push_back(v);
+                    T::merge(&mut v, wire_type, buf, ctx)?;
+                    self.push(v);
                 }
                 Ok(())
             }
-
-            // ---- Repeated message ------------------------------------------
-            ProtoKind::Bytes | ProtoKind::String | ProtoKind::Message => {
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 let mut v = T::proto_default();
-                T::decode_into(wire_type, &mut v, buf, ctx)?;
-                values.push_back(v);
+                T::merge(&mut v, wire_type, buf, ctx)?;
+                self.push(v);
                 Ok(())
             }
+            ProtoKind::Repeated(_) => unreachable!(),
+        }
+    }
+}
 
-            ProtoKind::Repeated(_) => {
-                unreachable!()
-            }
+impl<T: ProtoDecode> ProtoDecode for Vec<T>
+where
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
+{
+    type ShadowDecoded = Vec<T::ShadowDecoded>;
+}
+
+impl<T, U> ProtoShadowDecode<Vec<U>> for Vec<T>
+where
+    T: ProtoShadowDecode<U>,
+{
+    #[inline]
+    fn to_sun(self) -> Result<Vec<U>, DecodeError> {
+        self.into_iter().map(T::to_sun).collect()
+    }
+}
+
+impl<'a, T> ProtoArchive for Vec<T>
+where
+    T: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = ArchivedRepeated<'x, T>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        for item in archived.items {
+            encode_repeated_value::<T>(item, buf);
         }
     }
 
-    #[inline]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.is_empty()
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut items = Vec::with_capacity(self.len());
+        let mut len = 0;
+        for item in self {
+            let archived = item.archive();
+            len += repeated_payload_len::<T>(&archived);
+            items.push(archived);
+        }
+        ArchivedRepeated { items, len }
     }
+}
 
+impl<T: ProtoEncode> ProtoEncode for Vec<T>
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
+{
+    type Shadow<'a> = Vec<T::Shadow<'a>>;
+}
+
+impl<'a, T, S> ProtoShadowEncode<'a, Vec<T>> for Vec<S>
+where
+    S: ProtoShadowEncode<'a, T>,
+    T: ProtoEncode,
+{
     #[inline]
+    fn from_sun(value: &'a Vec<T>) -> Self {
+        value.iter().map(S::from_sun).collect()
+    }
+}
+
+impl<T: ProtoExt> ProtoExt for VecDeque<T> {
+    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("VecDeque");
+}
+
+impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
+    #[inline(always)]
     fn proto_default() -> Self {
         VecDeque::new()
     }
 
-    #[inline]
+    #[inline(always)]
     fn clear(&mut self) {
         VecDeque::clear(self);
     }
-}
-
-impl<T> ProtoExt for VecDeque<T>
-where
-    T: ProtoWire,
-    for<'a> T: ProtoShadow<T> + ProtoWire<EncodeInput<'a> = &'a T> + 'a,
-{
-    type Shadow<'b> = VecDeque<T>;
 
     #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire_type: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            <VecDeque<T> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+            Self::merge(value, wire_type, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
         }
     }
-}
 
-macro_rules! impl_proto_wire_vec_for_copy {
-    ($($ty:ty => $kind:expr),* $(,)?) => {
-        $(
-            impl crate::ProtoWire for Vec<$ty> {
-                type EncodeInput<'a> = &'a Vec<$ty>;
-                const KIND: crate::traits::ProtoKind = $kind;
-                const _REPEATED_SUPPORT: Option<&'static str> = Some("Vec");
-
-                #[inline(always)]
-                fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-                    unsafe { Self::encoded_len_impl_raw(value) }
-                }
-
-                #[inline(always)]
-                fn encoded_len_tagged(&self, tag: u32) -> usize
-                where
-                    for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self>,
-                {
-                    Self::encoded_len_tagged_impl(&self, tag)
-                }
-
-                #[inline(always)]
-                fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-                    if value.is_empty() {
-                        0
-                    } else {
-                        let len = unsafe { Self::encoded_len_impl_raw(value) };
-                        crate::encoding::key_len(tag)
-                            + crate::encoding::encoded_len_varint(len as u64)
-                            + len
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if wire_type == WireType::LengthDelimited {
+                    let len = decode_varint(buf)? as usize;
+                    let mut slice = buf.take(len);
+                    while slice.has_remaining() {
+                        let mut v = T::proto_default();
+                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        self.push_back(v);
                     }
+                    debug_assert!(!slice.has_remaining());
+                } else {
+                    let mut v = T::proto_default();
+                    T::merge(&mut v, wire_type, buf, ctx)?;
+                    self.push_back(v);
                 }
-
-                #[inline(always)]
-                unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                    value
-                        .iter()
-                        .map(|v| unsafe { <$ty as crate::ProtoWire>::encoded_len_impl_raw(&v) })
-                        .sum::<usize>()
-                }
-
-                // -------------------------------------------------------------------------
-                // encode_raw
-                // -------------------------------------------------------------------------
-                #[inline(always)]
-                fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl bytes::BufMut) {
-                    panic!("Do not call encode_raw_unchecked on Vec<$ty>");
-                }
-
-                #[inline(always)]
-                fn encode_with_tag(
-                    tag: u32,
-                    value: Self::EncodeInput<'_>,
-                    buf: &mut impl bytes::BufMut,
-                )  {
-                    use crate::encoding::{encode_key, encode_varint, WireType};
-                    use crate::ProtoWire;
-
-                    if value.is_empty() {
-                        return ;
-                    }
-
-                    encode_key(tag, WireType::LengthDelimited, buf);
-                    let body_len = value
-                        .iter()
-                        .map(|v| unsafe { <$ty as ProtoWire>::encoded_len_impl_raw(&v) })
-                        .sum::<usize>();
-                    encode_varint(body_len as u64, buf);
-
-                    for v in value {
-                        <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
-                    }
-
-
-                }
-
-                // -------------------------------------------------------------------------
-                // decode_into
-                // -------------------------------------------------------------------------
-                #[inline(always)]
-                fn decode_into(
-                    wire_type: crate::encoding::WireType,
-                    values: &mut Self,
-                    buf: &mut impl bytes::Buf,
-                    ctx: crate::encoding::DecodeContext,
-                ) -> Result<(), crate::DecodeError> {
-                    use crate::encoding::{WireType, decode_varint};
-                    use crate::ProtoWire;
-                    use bytes::Buf;
-
-                    match wire_type {
-                        WireType::LengthDelimited => {
-                            let len = decode_varint(buf)? as usize;
-                            let mut slice = buf.take(len);
-                            while slice.has_remaining() {
-                                let mut v = <$ty>::default();
-                                <$ty as ProtoWire>::decode_into(
-                                    <$ty as ProtoWire>::WIRE_TYPE,
-                                    &mut v,
-                                    &mut slice,
-                                    ctx.clone(),
-                                )?;
-                                values.push(v);
-                            }
-                            debug_assert!(!slice.has_remaining());
-                            Ok(())
-                        }
-                        other => {
-                            let mut v = <$ty>::default();
-                            <$ty as ProtoWire>::decode_into(other, &mut v, buf, ctx)?;
-                            values.push(v);
-                            Ok(())
-                        }
-                    }
-                }
-
-                // -------------------------------------------------------------------------
-                // defaults
-                // -------------------------------------------------------------------------
-                #[inline(always)]
-                #[allow(clippy::float_cmp)]
-                fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                    value.is_empty()
-                }
-
-                #[inline(always)]
-                fn proto_default() -> Self {
-                    Vec::new()
-                }
-
-                #[inline(always)]
-                fn clear(&mut self) {
-                    self.clear();
-                }
+                Ok(())
             }
-        )*
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Apply for all Prost-compatible primitive numeric types
-// -----------------------------------------------------------------------------
-impl_proto_wire_vec_for_copy! {
-    bool  => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool),
-    i8    => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I8),
-    u16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U16),
-    i16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I16),
-    u32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32),
-    i32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I32),
-    u64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U64),
-    i64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I64),
-    f32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F32),
-    f64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F64),
-}
-
-macro_rules! impl_proto_wire_vecdeque_for_copy {
-    ($($ty:ty => $kind:expr),* $(,)?) => {
-        $(
-            impl crate::ProtoWire for VecDeque<$ty> {
-                type EncodeInput<'a> = &'a VecDeque<$ty>;
-                const KIND: crate::traits::ProtoKind = $kind;
-                const _REPEATED_SUPPORT: Option<&'static str> = Some("VecDeque");
-
-                #[inline(always)]
-                fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-                    unsafe { Self::encoded_len_impl_raw(value) }
-                }
-
-                #[inline(always)]
-                fn encoded_len_tagged(&self, tag: u32) -> usize
-                where
-                    for<'b> Self: crate::ProtoWire<EncodeInput<'b> = &'b Self>,
-                {
-                    Self::encoded_len_tagged_impl(&self, tag)
-                }
-
-                #[inline(always)]
-                fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-                    if value.is_empty() {
-                        0
-                    } else {
-                        let len = unsafe { Self::encoded_len_impl_raw(value) };
-                        crate::encoding::key_len(tag)
-                            + crate::encoding::encoded_len_varint(len as u64)
-                            + len
-                    }
-                }
-
-                #[inline(always)]
-                unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                    value
-                        .iter()
-                        .map(|v| unsafe { <$ty as crate::ProtoWire>::encoded_len_impl_raw(&v) })
-                        .sum::<usize>()
-                }
-
-                #[inline(always)]
-                fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl bytes::BufMut) {
-                    panic!("Do not call encode_raw_unchecked on VecDeque<$ty>");
-                }
-
-                #[inline(always)]
-                fn encode_with_tag(
-                    tag: u32,
-                    value: Self::EncodeInput<'_>,
-                    buf: &mut impl bytes::BufMut,
-                )  {
-                    use crate::encoding::{encode_key, encode_varint, WireType};
-                    use crate::ProtoWire;
-
-                    if value.is_empty() {
-                        return ;
-                    }
-
-                    encode_key(tag, WireType::LengthDelimited, buf);
-                    let body_len = value
-                        .iter()
-                        .map(|v| unsafe { <$ty as ProtoWire>::encoded_len_impl_raw(&v) })
-                        .sum::<usize>();
-                    encode_varint(body_len as u64, buf);
-
-                    for v in value {
-                        <$ty as ProtoWire>::encode_raw_unchecked(*v, buf);
-                    }
-
-
-                }
-
-                #[inline(always)]
-                fn decode_into(
-                    wire_type: crate::encoding::WireType,
-                    values: &mut Self,
-                    buf: &mut impl bytes::Buf,
-                    ctx: crate::encoding::DecodeContext,
-                ) -> Result<(), crate::DecodeError> {
-                    use crate::encoding::{WireType, decode_varint};
-                    use crate::ProtoWire;
-                    use bytes::Buf;
-
-                    match wire_type {
-                        WireType::LengthDelimited => {
-                            let len = decode_varint(buf)? as usize;
-                            let mut slice = buf.take(len);
-                            while slice.has_remaining() {
-                                let mut v = <$ty>::default();
-                                <$ty as ProtoWire>::decode_into(
-                                    <$ty as ProtoWire>::WIRE_TYPE,
-                                    &mut v,
-                                    &mut slice,
-                                    ctx.clone(),
-                                )?;
-                                values.push_back(v);
-                            }
-                            debug_assert!(!slice.has_remaining());
-                            Ok(())
-                        }
-                        other => {
-                            let mut v = <$ty>::default();
-                            <$ty as ProtoWire>::decode_into(other, &mut v, buf, ctx)?;
-                            values.push_back(v);
-                            Ok(())
-                        }
-                    }
-                }
-
-                #[inline(always)]
-                #[allow(clippy::float_cmp)]
-                fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                    value.is_empty()
-                }
-
-                #[inline(always)]
-                fn proto_default() -> Self {
-                    VecDeque::new()
-                }
-
-                #[inline(always)]
-                fn clear(&mut self) {
-                    self.clear();
-                }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let mut v = T::proto_default();
+                T::merge(&mut v, wire_type, buf, ctx)?;
+                self.push_back(v);
+                Ok(())
             }
-        )*
+            ProtoKind::Repeated(_) => unreachable!(),
+        }
     }
 }
 
-impl_proto_wire_vecdeque_for_copy! {
-    bool  => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::Bool),
-    i8    => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I8),
-    u16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U16),
-    i16   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I16),
-    u32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U32),
-    i32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I32),
-    u64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::U64),
-    i64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::I64),
-    f32   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F32),
-    f64   => crate::traits::ProtoKind::Primitive(crate::traits::PrimitiveKind::F64),
+impl<T: ProtoDecode> ProtoDecode for VecDeque<T>
+where
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
+{
+    type ShadowDecoded = VecDeque<T::ShadowDecoded>;
 }
 
-#[cfg(test)]
-mod test {
-    use std::collections::VecDeque;
-
-    use prosto_derive::proto_message;
-
-    #[allow(dead_code)]
-    #[proto_message(proto_path = "protos/vec_test.proto")]
-    struct VecWrapper {
-        inner1: Vec<u8>,
-        inner2: Vec<u16>,
-        inner3: Vec<u64>,
+impl<T, U> ProtoShadowDecode<VecDeque<U>> for VecDeque<T>
+where
+    T: ProtoShadowDecode<U>,
+{
+    #[inline]
+    fn to_sun(self) -> Result<VecDeque<U>, DecodeError> {
+        self.into_iter().map(T::to_sun).collect()
     }
-    #[allow(dead_code)]
-    #[proto_message(proto_path = "protos/vec_test.proto")]
-    struct VecDWrapper {
-        inner1: VecDeque<u8>,
-        inner2: VecDeque<u16>,
-        inner3: VecDeque<u64>,
+}
+
+impl<'a, T> ProtoArchive for VecDeque<T>
+where
+    T: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = ArchivedRepeated<'x, T>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        for item in archived.items {
+            encode_repeated_value::<T>(item, buf);
+        }
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut items = Vec::with_capacity(self.len());
+        let mut len = 0;
+        for item in self {
+            let archived = item.archive();
+            len += repeated_payload_len::<T>(&archived);
+            items.push(archived);
+        }
+        ArchivedRepeated { items, len }
+    }
+}
+
+impl<T: ProtoEncode> ProtoEncode for VecDeque<T>
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
+{
+    type Shadow<'a> = VecDeque<T::Shadow<'a>>;
+}
+
+impl<'a, T, S> ProtoShadowEncode<'a, VecDeque<T>> for VecDeque<S>
+where
+    S: ProtoShadowEncode<'a, T>,
+    T: ProtoEncode,
+{
+    #[inline]
+    fn from_sun(value: &'a VecDeque<T>) -> Self {
+        value.iter().map(S::from_sun).collect()
     }
 }
