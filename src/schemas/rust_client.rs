@@ -1253,7 +1253,7 @@ fn find_entry_field_matches<'a>(entry: &'a ProtoSchema, field_name: &str, varian
     }
 }
 
-fn find_entry_methods(entry: &ProtoSchema) -> Option<&[&ServiceMethod]> {
+const fn find_entry_methods(entry: &ProtoSchema) -> Option<&[&ServiceMethod]> {
     match entry.content {
         ProtoEntry::Service { methods, .. } => Some(methods),
         _ => None,

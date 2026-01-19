@@ -155,6 +155,11 @@ pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
 #restriction = { level = "warn", priority = -1 }
 style = { level = "deny", priority = -1 }
+too_many_arguments = "allow"
+unused_async = "deny"
+await_holding_lock = "deny"
+missing_const_for_fn = "warn"
+trivially_copy_pass_by_ref = "warn"
 
 
 

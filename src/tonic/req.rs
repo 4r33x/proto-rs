@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use tonic::Request;
 
-use crate::ProtoExt;
+use crate::ProtoEncode;
 use crate::ToZeroCopyRequest;
 use crate::coders::BytesMode;
 use crate::coders::SunByRef;
@@ -18,7 +18,7 @@ pub struct ZeroCopyRequest<T> {
 
 impl<T> ZeroCopyRequest<T> {
     #[inline]
-    pub fn from_zerocopy_request(request: Request<ZeroCopyBuffer>) -> Self {
+    pub const fn from_zerocopy_request(request: Request<ZeroCopyBuffer>) -> Self {
         Self {
             inner: request,
             _marker: PhantomData,
@@ -36,12 +36,12 @@ impl<T> ZeroCopyRequest<T> {
     }
 
     #[inline]
-    pub fn as_request(&self) -> &Request<ZeroCopyBuffer> {
+    pub const fn as_request(&self) -> &Request<ZeroCopyBuffer> {
         &self.inner
     }
 
     #[inline]
-    pub fn as_request_mut(&mut self) -> &mut Request<ZeroCopyBuffer> {
+    pub const fn as_request_mut(&mut self) -> &mut Request<ZeroCopyBuffer> {
         &mut self.inner
     }
 }
@@ -55,34 +55,31 @@ impl<T> From<ZeroCopyRequest<T>> for Request<ZeroCopyBuffer> {
 
 impl<T> From<Request<T>> for ZeroCopyRequest<T>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn from(request: Request<T>) -> Self {
         let (metadata, extensions, message) = request.into_parts();
-        let encoded = T::encode_to_zerocopy(&message);
+        let encoded = ProtoEncode::encode_to_zerocopy(&message);
         ZeroCopyRequest::from_zerocopy_request(Request::from_parts(metadata, extensions, encoded))
     }
 }
 
 impl<'a, T> From<Request<&'a T>> for ZeroCopyRequest<T>
 where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn from(request: Request<&'a T>) -> Self {
         let (metadata, extensions, message) = request.into_parts();
-        let encoded = T::encode_to_zerocopy(message);
+        let encoded = ProtoEncode::encode_to_zerocopy(message);
         ZeroCopyRequest::from_zerocopy_request(Request::from_parts(metadata, extensions, encoded))
     }
 }
 
 impl<T> ZeroCopyRequest<T>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     pub fn from_message(message: T) -> Self {
@@ -98,8 +95,7 @@ pub trait ProtoRequest<T>: Sized {
 
 impl<T> ProtoRequest<T> for Request<T>
 where
-    T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode + Send + Sync + 'static,
 {
     type Encode = T;
     type Mode = SunByRef;
@@ -111,8 +107,7 @@ where
 
 impl<T> ProtoRequest<T> for T
 where
-    T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode + Send + Sync + 'static,
 {
     type Encode = T;
     type Mode = SunByRef;
@@ -132,25 +127,23 @@ impl<T> ProtoRequest<T> for ZeroCopyRequest<T> {
 }
 impl<T> ToZeroCopyRequest<T> for &T
 where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {
-        let encoded = T::encode_to_zerocopy(self);
+        let encoded = ProtoEncode::encode_to_zerocopy(self);
         ZeroCopyRequest::from_zerocopy(encoded)
     }
 }
 
 impl<T> ToZeroCopyRequest<T> for Request<&T>
 where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {
         let (meta, ext, t) = self.into_parts();
-        let encoded = T::encode_to_zerocopy(t);
+        let encoded = ProtoEncode::encode_to_zerocopy(t);
         ZeroCopyRequest::from_zerocopy_request(Request::from_parts(meta, ext, encoded))
     }
 }

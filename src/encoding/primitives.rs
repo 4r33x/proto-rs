@@ -124,17 +124,17 @@ macro_rules! varint {
             merge_repeated_numeric!($ty, WireType::Varint, merge, merge_repeated);
 
             #[inline(always)]
-            pub fn encoded_len_tagged(tag: u32, $v: $ty) -> usize {
+            pub const  fn encoded_len_tagged(tag: u32, $v: $ty) -> usize {
                 key_len(tag) + encoded_len_varint($to_uint64)
             }
 
             #[inline(always)]
-            pub fn encoded_len($v: $ty) -> usize {
+            pub const  fn encoded_len($v: $ty) -> usize {
                 encoded_len_varint($to_uint64)
             }
 
             #[inline(always)]
-            pub(crate) fn _encoded_len_by_ref_tagged(tag: u32, value: &$ty) -> usize {
+            pub(crate)  const  fn _encoded_len_by_ref_tagged(tag: u32, value: &$ty) -> usize {
                 encoded_len_tagged(tag, *value)
             }
 
@@ -157,7 +157,7 @@ macro_rules! varint {
     };
 }
 varint!(bool, bool,
-        to_uint64(value) u64::from(value),
+        to_uint64(value) value as u64,
         from_uint64(value) value != 0);
 varint!(i32, int32);
 varint!(i64, int64);
@@ -234,25 +234,25 @@ macro_rules! fixed_width {
             merge_repeated_numeric!($ty, $wire_type, merge, merge_repeated);
 
             #[inline(always)]
-            pub fn encoded_len(_value: $ty) -> usize {
+            pub const fn encoded_len(_value: $ty) -> usize {
                 $width
             }
             #[inline(always)]
-            pub fn encoded_len_tagged(tag: u32, _value: $ty) -> usize {
+            pub const fn encoded_len_tagged(tag: u32, _value: $ty) -> usize {
                 key_len(tag) + $width
             }
             #[inline(always)]
-            pub(crate) fn _encoded_len_by_ref_tagged(tag: u32, _value: &$ty) -> usize {
+            pub(crate) const fn _encoded_len_by_ref_tagged(tag: u32, _value: &$ty) -> usize {
                 encoded_len_tagged(tag, *_value)
             }
 
             #[inline(always)]
-            pub fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
+            pub const fn encoded_len_repeated(tag: u32, values: &[$ty]) -> usize {
                 (key_len(tag) + $width) * values.len()
             }
 
             #[inline(always)]
-            pub fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
+            pub const fn encoded_len_packed(tag: u32, values: &[$ty]) -> usize {
                 if values.is_empty() {
                     0
                 } else {
@@ -493,8 +493,8 @@ pub mod bytes {
         Ok(())
     }
 
-    length_delimited_encode!(impl BytesAdapterEncode);
-    length_delimited_decode!(impl BytesAdapterDecode);
+    length_delimited_encode!(impl BytesAdapterEncode + std::default::Default);
+    length_delimited_decode!(impl BytesAdapterDecode + std::default::Default);
 
     #[cfg(test)]
     mod test {

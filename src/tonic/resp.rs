@@ -4,7 +4,7 @@ use tonic::Response;
 use tonic::Status;
 
 use crate::BytesMode;
-use crate::ProtoExt;
+use crate::ProtoEncode;
 use crate::SunByRef;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
@@ -19,7 +19,7 @@ pub struct ZeroCopyResponse<T> {
 
 impl<T> ZeroCopyResponse<T> {
     #[inline]
-    pub fn from_zerocopy_response(response: Response<ZeroCopyBuffer>) -> Self {
+    pub const fn from_zerocopy_response(response: Response<ZeroCopyBuffer>) -> Self {
         Self {
             inner: response,
             _marker: PhantomData,
@@ -37,12 +37,12 @@ impl<T> ZeroCopyResponse<T> {
     }
 
     #[inline]
-    pub fn as_response(&self) -> &Response<ZeroCopyBuffer> {
+    pub const fn as_response(&self) -> &Response<ZeroCopyBuffer> {
         &self.inner
     }
 
     #[inline]
-    pub fn as_response_mut(&mut self) -> &mut Response<ZeroCopyBuffer> {
+    pub const fn as_response_mut(&mut self) -> &mut Response<ZeroCopyBuffer> {
         &mut self.inner
     }
 }
@@ -56,34 +56,31 @@ impl<T> From<ZeroCopyResponse<T>> for Response<ZeroCopyBuffer> {
 
 impl<T> From<Response<T>> for ZeroCopyResponse<T>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn from(request: Response<T>) -> Self {
         let (metadata, message, extensions) = request.into_parts();
-        let encoded = T::encode_to_zerocopy(&message);
+        let encoded = ProtoEncode::encode_to_zerocopy(&message);
         ZeroCopyResponse::from_zerocopy_response(Response::from_parts(metadata, encoded, extensions))
     }
 }
 
 impl<'a, T> From<Response<&'a T>> for ZeroCopyResponse<T>
 where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn from(request: Response<&'a T>) -> Self {
         let (metadata, message, extensions) = request.into_parts();
-        let encoded = T::encode_to_zerocopy(message);
+        let encoded = ProtoEncode::encode_to_zerocopy(message);
         ZeroCopyResponse::from_zerocopy_response(Response::from_parts(metadata, encoded, extensions))
     }
 }
 
 impl<T> ZeroCopyResponse<T>
 where
-    T: ProtoExt,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     pub fn from_message(message: T) -> Self {
@@ -100,8 +97,7 @@ pub trait ProtoResponse<T>: Sized {
 
 impl<T> ProtoResponse<T> for Response<T>
 where
-    T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode + Send + Sync + 'static,
 {
     type Encode = T;
     type Mode = SunByRef;
@@ -113,8 +109,7 @@ where
 
 impl<T> ProtoResponse<T> for Response<Arc<T>>
 where
-    T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode + Send + Sync + 'static,
 {
     type Encode = Arc<T>;
     type Mode = crate::coders::SunByRefDeref;
@@ -127,8 +122,7 @@ where
 
 impl<T> ProtoResponse<T> for Response<Box<T>>
 where
-    T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode + Send + Sync + 'static,
 {
     type Encode = Box<T>;
     type Mode = crate::coders::SunByRefDeref;
@@ -141,8 +135,7 @@ where
 
 impl<T> ProtoResponse<T> for T
 where
-    T: ProtoExt + Send + Sync + 'static,
-    for<'a> T::Shadow<'a>: ProtoShadow<T, Sun<'a> = &'a T, OwnedSun = T>,
+    T: ProtoEncode + Send + Sync + 'static,
 {
     type Encode = T;
     type Mode = SunByRef;
@@ -165,7 +158,7 @@ impl<T> ProtoResponse<T> for ZeroCopyResponse<T> {
 pub fn map_proto_response<R, P>(value: R) -> <R as ProtoResponse<P>>::Encode
 where
     R: ProtoResponse<P>,
-    P: ProtoExt,
+    P: ProtoEncode,
 {
     <R as ProtoResponse<P>>::into_response(value).into_inner()
 }
@@ -174,32 +167,30 @@ where
 pub fn map_proto_stream_result<R, P>(result: Result<R, Status>) -> Result<<R as ProtoResponse<P>>::Encode, Status>
 where
     R: ProtoResponse<P>,
-    P: ProtoExt,
+    P: ProtoEncode,
 {
     result.map(map_proto_response::<R, P>)
 }
 
 impl<T> ToZeroCopyResponse<T> for &T
 where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyResponse<T> {
-        let encoded = T::encode_to_zerocopy(self);
+        let encoded = ProtoEncode::encode_to_zerocopy(self);
         ZeroCopyResponse::from_zerocopy(encoded)
     }
 }
 
 impl<T> ToZeroCopyResponse<T> for Response<&T>
 where
-    T: ProtoExt,
-    for<'b> T::Shadow<'b>: ProtoShadow<T, Sun<'b> = &'b T, OwnedSun = T>,
+    T: ProtoEncode,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyResponse<T> {
         let (meta, t, ext) = self.into_parts();
-        let encoded = T::encode_to_zerocopy(t);
+        let encoded = ProtoEncode::encode_to_zerocopy(t);
         ZeroCopyResponse::from_zerocopy_response(Response::from_parts(meta, encoded, ext))
     }
 }

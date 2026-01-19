@@ -16,6 +16,7 @@ pub enum ProtoKind {
 }
 
 pub enum PrimitiveKind {
+    AtomicU8, //special handling
     Bool,
     I8,
     I16,
@@ -55,11 +56,17 @@ impl ProtoKind {
     pub const fn is_packable(&self) -> bool {
         matches!(self, ProtoKind::Primitive(_) | ProtoKind::SimpleEnum)
     }
+
+    #[inline]
+    pub const fn is_bytes_kind(&self) -> bool {
+        matches!(self, ProtoKind::Primitive(PrimitiveKind::U8))
+    }
     #[inline(always)]
     pub const fn wire_type(&self) -> WireType {
         match self {
             ProtoKind::Primitive(p) => match p {
-                PrimitiveKind::Bool
+                PrimitiveKind::AtomicU8
+                | PrimitiveKind::Bool
                 | PrimitiveKind::I8
                 | PrimitiveKind::I16
                 | PrimitiveKind::I32

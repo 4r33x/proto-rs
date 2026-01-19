@@ -81,7 +81,7 @@ impl DecodeContext {
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
     #[must_use]
-    pub fn enter_recursion(&self) -> DecodeContext {
+    pub const fn enter_recursion(&self) -> DecodeContext {
         DecodeContext {}
     }
 
@@ -103,7 +103,7 @@ impl DecodeContext {
     #[allow(clippy::unnecessary_wraps)]
     #[cfg(feature = "no-recursion-limit")]
     #[inline]
-    pub fn limit_reached(&self) -> Result<(), DecodeError> {
+    pub const fn limit_reached(&self) -> Result<(), DecodeError> {
         Ok(())
     }
 }

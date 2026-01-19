@@ -3,10 +3,8 @@
 //! This module provides implementations of the new proto traits for Rust standard library types which
 //! correspond to a Protobuf well-known wrapper type.
 
-use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::string::String;
-use alloc::vec::Vec;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicI8;
 use core::sync::atomic::AtomicI16;
@@ -199,10 +197,6 @@ macro_rules! impl_proto_primitive_by_ref {
             type ShadowDecoded = Self;
         }
 
-        impl<'a> ProtoExt for &'a $ty {
-            const KIND: ProtoKind = $kind;
-        }
-
         impl<'a> ProtoArchive for &'a $ty {
             type Archived<'x> = &'x $ty;
 
@@ -265,11 +259,7 @@ impl_proto_primitive_by_value!(f64, double, "DoubleValue", ProtoKind::Primitive(
 
 impl_proto_primitive_by_ref!(String, string, "StringValue", ProtoKind::String);
 
-impl_proto_primitive_by_ref!(Vec<u8>, bytes, "BytesValue", ProtoKind::Bytes);
-
 impl_proto_primitive_by_ref!(Bytes, bytes, "BytesValue", ProtoKind::Bytes);
-
-impl_proto_primitive_by_ref!(VecDeque<u8>, bytes, "BytesValue", ProtoKind::Bytes);
 
 // ============================================================================
 // Narrow primitives (u8, u16, i8, i16)
@@ -465,11 +455,6 @@ macro_rules! impl_atomic_primitive {
             type Shadow<'a> = &'a $ty;
         }
 
-        // We also need ProtoExt and ProtoArchive for &'a $ty for encoding through references
-        impl<'a> ProtoExt for &'a $ty {
-            const KIND: ProtoKind = ProtoKind::Primitive($prim);
-        }
-
         impl<'a> ProtoArchive for &'a $ty {
             type Archived<'x> = $base;
 
@@ -594,10 +579,6 @@ macro_rules! impl_atomic_narrow_primitive {
             type Shadow<'a> = &'a $ty;
         }
 
-        impl<'a> ProtoExt for &'a $ty {
-            const KIND: ProtoKind = ProtoKind::Primitive(PrimitiveKind::$prim_kind);
-        }
-
         impl<'a> ProtoArchive for &'a $ty {
             type Archived<'x> = $wide;
 
@@ -698,7 +679,7 @@ impl_atomic_narrow_primitive!(
 
 impl_atomic_narrow_primitive!(
     AtomicU8,
-    U8,
+    AtomicU8,
     0u8,
     narrow = u8,
     wide = u32,
@@ -803,6 +784,15 @@ impl ProtoEncode for () {
 
 impl Name for () {
     const NAME: &'static str = "Empty";
+    const PACKAGE: &'static str = "google.protobuf";
+
+    fn type_url() -> String {
+        format!("type.googleapis.com/{}.{}", Self::PACKAGE, Self::NAME)
+    }
+}
+
+impl Name for Vec<u8> {
+    const NAME: &'static str = "BytesValue";
     const PACKAGE: &'static str = "google.protobuf";
 
     fn type_url() -> String {

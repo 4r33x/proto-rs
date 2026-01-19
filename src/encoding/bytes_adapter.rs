@@ -12,7 +12,7 @@ pub trait BytesAdapterEncode {
     }
 }
 
-pub trait BytesAdapterDecode: BytesAdapterEncode + Default {
+pub trait BytesAdapterDecode: BytesAdapterEncode {
     fn replace_with(&mut self, buf: impl Buf);
 }
 
@@ -32,6 +32,34 @@ impl BytesAdapterDecode for Bytes {
     }
 }
 
+impl BytesAdapterEncode for &mut [u8] {
+    #[inline]
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    #[inline]
+    fn append_to(&self, buf: &mut impl BufMut) {
+        buf.put_slice(self);
+    }
+}
+
+impl BytesAdapterDecode for &mut [u8] {
+    #[inline]
+    fn replace_with(&mut self, mut buf: impl Buf) {
+        let n = buf.remaining();
+        assert!(n <= self.len(), "replace_with overflow: src={} dst={}", n, self.len());
+        // Copy in as chunks to avoid needing `Buf::copy_to_slice` on older `bytes` versions.
+        let mut written = 0usize;
+        while buf.has_remaining() {
+            let chunk = buf.chunk();
+            let m = chunk.len();
+            self[written..written + m].copy_from_slice(chunk);
+            written += m;
+            buf.advance(m);
+        }
+    }
+}
 impl BytesAdapterEncode for Vec<u8> {
     fn len(&self) -> usize {
         Vec::len(self)

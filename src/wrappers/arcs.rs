@@ -87,11 +87,7 @@ where
     }
 }
 
-impl<'a, T: ProtoExt> ProtoExt for &'a Arc<T> {
-    const KIND: ProtoKind = T::KIND;
-}
-
-impl<'a, T> ProtoArchive for &'a Arc<T>
+impl<T> ProtoArchive for &Arc<T>
 where
     T: ProtoArchive,
 {

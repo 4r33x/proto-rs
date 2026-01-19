@@ -402,7 +402,7 @@ fn wrapper_type_segment(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'
     proto_type_segment(&ident.proto_type)
 }
 
-fn wrapper_prefix_for_kind(kind: WrapperKind) -> &'static str {
+const fn wrapper_prefix_for_kind(kind: WrapperKind) -> &'static str {
     match kind {
         WrapperKind::Option => "Option",
         WrapperKind::Vec => "Vec",
@@ -602,7 +602,7 @@ fn render_field(
     format!("  {label}{proto_type} {name} = {};", field.tag)
 }
 
-fn proto_label_for_field(field: &Field) -> ProtoLabel {
+const fn proto_label_for_field(field: &Field) -> ProtoLabel {
     field.proto_label
 }
 

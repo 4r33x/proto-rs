@@ -66,7 +66,7 @@ where
     }
 }
 
-impl<'a, T> ProtoArchive for Option<T>
+impl<T> ProtoArchive for Option<T>
 where
     T: ProtoArchive,
 {
@@ -94,7 +94,7 @@ where
 
     #[inline(always)]
     fn archive(&self) -> Self::Archived<'_> {
-        self.as_ref().map(|v| v.archive())
+        self.as_ref().map(ProtoArchive::archive)
     }
 }
 
@@ -115,11 +115,7 @@ where
     }
 }
 
-impl<'a, T: ProtoExt> ProtoExt for &'a Option<T> {
-    const KIND: ProtoKind = T::KIND;
-}
-
-impl<'a, T> ProtoArchive for &'a Option<T>
+impl<T> ProtoArchive for &Option<T>
 where
     T: ProtoArchive,
 {
@@ -147,6 +143,6 @@ where
 
     #[inline(always)]
     fn archive(&self) -> Self::Archived<'_> {
-        self.as_ref().map(|v| v.archive())
+        self.as_ref().map(ProtoArchive::archive)
     }
 }

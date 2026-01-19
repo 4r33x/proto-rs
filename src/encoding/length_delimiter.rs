@@ -30,7 +30,7 @@ pub fn encode_length_delimiter(length: usize, buf: &mut impl BufMut) -> Result<(
 ///
 /// Applications may use this method to ensure sufficient buffer capacity before calling
 /// `encode_length_delimiter`. The returned size will be between 1 and 10, inclusive.
-pub fn length_delimiter_len(length: usize) -> usize {
+pub const fn length_delimiter_len(length: usize) -> usize {
     encoded_len_varint(length as u64)
 }
 
