@@ -4,8 +4,13 @@
 use bytes::Buf;
 use bytes::BufMut;
 pub use decode::ProtoDecode;
+pub use decode::ProtoDecoder;
+pub use decode::ProtoShadowDecode;
 pub use encode::ArchivedProtoInner;
 pub use encode::ProtoArchive;
+pub use encode::ProtoEncode;
+pub use encode::ProtoShadowEncode;
+pub use utils::PrimitiveKind;
 pub use utils::ProtoKind;
 pub use utils::const_test_validate_with_ext;
 pub use utils::const_unreachable;
@@ -19,8 +24,6 @@ use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::error::DecodeError;
 use crate::error::EncodeError;
-use crate::traits::decode::ProtoShadowDecode;
-use crate::traits::encode::ProtoEncode;
 use crate::traits::utils::VarintConst;
 use crate::traits::utils::encode_varint_const;
 

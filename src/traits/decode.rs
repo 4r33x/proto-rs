@@ -7,18 +7,9 @@ use crate::encoding::decode_varint;
 use crate::error::DecodeError;
 use crate::traits::ProtoExt;
 
-// ---------- conversion trait users implement (optional) ----------
 pub trait ProtoShadowDecode<T>: Sized {
     /// Convert shadow -> final owned type.
     fn to_sun(self) -> Result<T, DecodeError>;
-}
-
-// Identity conversion for “no-shadow” types.
-impl<T> ProtoShadowDecode<T> for T {
-    #[inline(always)]
-    fn to_sun(self) -> Result<T, DecodeError> {
-        Ok(self)
-    }
 }
 
 pub trait ProtoDecoder: Sized + ProtoExt {

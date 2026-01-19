@@ -13,7 +13,7 @@ use crate::encoding::key_len;
 use crate::error::DecodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
-use crate::traits::ProtoShadow;
+
 //const ZERO_COPY_SIZE: usize = 64;
 
 pub type ZeroCopyBufferInner = Vec<u8>;

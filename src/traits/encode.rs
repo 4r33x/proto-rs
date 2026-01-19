@@ -1,6 +1,5 @@
 use bytes::BufMut;
 
-use crate::DecodeError;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::error::EncodeError;
@@ -10,17 +9,8 @@ use crate::traits::utils::VarintConst;
 use crate::traits::utils::encode_varint_const;
 use crate::zero_copy::ZeroCopyBuffer;
 
-// ---------- conversion trait users implement ----------
 pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
     fn from_sun(value: &'a T) -> Self;
-}
-
-// Identity conversion for “no-shadow” types.
-impl<'a, T> ProtoShadowEncode<'a, T> for &'a T {
-    #[inline(always)]
-    fn from_sun(value: &'a T) -> Self {
-        value
-    }
 }
 
 pub trait ProtoArchive: Sized {
