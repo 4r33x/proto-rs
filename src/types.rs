@@ -45,7 +45,6 @@ use crate::encoding::string;
 use crate::encoding::uint32;
 use crate::encoding::uint64;
 use crate::encoding::wire_type::WireType;
-use crate::traits::ProtoShadow;
 
 macro_rules! impl_google_wrapper {
     // ---------- Main entry ----------

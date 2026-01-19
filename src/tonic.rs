@@ -15,7 +15,6 @@ pub use resp::map_proto_response;
 pub use resp::map_proto_stream_result;
 
 use crate::ProtoExt;
-use crate::ProtoShadow;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
 use crate::coders::AsBytes;

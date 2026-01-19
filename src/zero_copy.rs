@@ -6,15 +6,14 @@ use core::ops::DerefMut;
 use bytes::Buf;
 use bytes::BufMut;
 
-use crate::DecodeError;
-use crate::ProtoExt;
-use crate::ProtoKind;
-use crate::ProtoShadow;
-use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
 use crate::encoding::key_len;
+use crate::error::DecodeError;
+use crate::traits::ProtoExt;
+use crate::traits::ProtoKind;
+use crate::traits::ProtoShadow;
 //const ZERO_COPY_SIZE: usize = 64;
 
 pub type ZeroCopyBufferInner = Vec<u8>;

@@ -3,7 +3,6 @@ use core::marker::PhantomData;
 use tonic::Request;
 
 use crate::ProtoExt;
-use crate::ProtoShadow;
 use crate::ToZeroCopyRequest;
 use crate::coders::BytesMode;
 use crate::coders::SunByRef;

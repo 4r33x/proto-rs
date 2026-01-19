@@ -5,7 +5,6 @@ use tonic::Status;
 
 use crate::BytesMode;
 use crate::ProtoExt;
-use crate::ProtoShadow;
 use crate::SunByRef;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;

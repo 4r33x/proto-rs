@@ -5,10 +5,8 @@ use alloc::format;
 #[cfg(not(feature = "std"))]
 use alloc::string::String;
 
-use crate::ProtoExt;
-
 /// Associate a type name with a [`Message`] type.
-pub trait Name: ProtoExt {
+pub trait Name {
     /// Simple name for this [`Message`].
     /// This name is the same as it appears in the source .proto file, e.g. `FooBar`.
     const NAME: &'static str;

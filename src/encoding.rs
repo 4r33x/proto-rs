@@ -10,8 +10,6 @@ use alloc::vec::Vec;
 use ::bytes::Buf;
 use ::bytes::BufMut;
 
-use crate::DecodeError;
-
 mod bytes_adapter;
 mod map;
 mod primitives;
@@ -31,6 +29,8 @@ pub use length_delimiter::length_delimiter_len;
 pub mod wire_type;
 pub use wire_type::WireType;
 pub use wire_type::check_wire_type;
+
+use crate::error::DecodeError;
 
 pub const MIN_TAG: u32 = 1;
 pub const MAX_TAG: u32 = (1 << 29) - 1;

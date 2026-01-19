@@ -1,6 +1,6 @@
 use alloc::format;
 
-use crate::DecodeError;
+use crate::error::DecodeError;
 
 /// Represent the wire type for protobuf encoding.
 ///
@@ -14,6 +14,15 @@ pub enum WireType {
     StartGroup = 3,
     EndGroup = 4,
     ThirtyTwoBit = 5,
+}
+impl WireType {
+    #[inline(always)]
+    pub const fn is_length_delimited(&self) -> bool {
+        match self {
+            WireType::LengthDelimited => true,
+            WireType::Varint | WireType::SixtyFourBit | WireType::ThirtyTwoBit | WireType::StartGroup | WireType::EndGroup => false,
+        }
+    }
 }
 
 impl TryFrom<u64> for WireType {

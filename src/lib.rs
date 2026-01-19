@@ -23,8 +23,6 @@ pub mod utils;
 #[cfg(not(feature = "no-recursion-limit"))]
 const RECURSION_LIMIT: u32 = 100;
 
-mod custom_types;
-
 #[doc(hidden)]
 pub extern crate alloc;
 
@@ -32,17 +30,23 @@ pub extern crate alloc;
 pub use bytes;
 
 mod coders;
-mod error;
-mod name;
+//mod custom_types;
 #[cfg(feature = "tonic")]
 mod tonic;
-mod traits;
 mod types;
 mod wrappers;
 mod zero_copy;
 
 #[doc(hidden)]
 pub mod encoding;
+mod error;
+mod name;
+mod traits;
+
+/// Build-time proto schema registry
+/// Only available when "build-schemas" feature is enabled
+#[cfg(all(feature = "build-schemas", feature = "std"))]
+pub mod schemas;
 
 pub use crate::coders::BytesMode;
 pub use crate::coders::ProtoCodec;
@@ -74,15 +78,10 @@ pub use crate::tonic::ZeroCopyResponse;
 pub use crate::tonic::map_proto_response;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_stream_result;
-pub use crate::traits::EncodeInputFromRef;
-pub use crate::traits::OwnedSunOf;
+pub use crate::traits::ProtoArchive;
+pub use crate::traits::ProtoDecode;
 pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoKind;
-pub use crate::traits::ProtoShadow;
-pub use crate::traits::ProtoWire;
-pub use crate::traits::Shadow;
-pub use crate::traits::SunOf;
-pub use crate::traits::ViewOf;
 // pub use crate::traits::RepeatedCollection;
 #[cfg(feature = "papaya")]
 pub use crate::wrappers::conc_map::papaya_map_encode_input;
@@ -90,11 +89,6 @@ pub use crate::wrappers::conc_map::papaya_map_encode_input;
 pub use crate::wrappers::conc_set::papaya_set_encode_input;
 pub use crate::zero_copy::ToZeroCopy;
 pub use crate::zero_copy::ZeroCopy;
-
-/// Build-time proto schema registry
-/// Only available when "build-schemas" feature is enabled
-#[cfg(all(feature = "build-schemas", feature = "std"))]
-pub mod schemas;
 
 // Example build.rs that users can copy:
 #[cfg(all(feature = "build-schemas", feature = "std", doc))]

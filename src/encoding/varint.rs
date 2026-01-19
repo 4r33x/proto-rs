@@ -4,7 +4,7 @@ use core::num::NonZeroU64;
 use ::bytes::Buf;
 use ::bytes::BufMut;
 
-use crate::DecodeError;
+use crate::error::DecodeError;
 
 /// Encodes an integer value into LEB128 variable length format, and writes it to the buffer.
 /// The buffer must have enough remaining space (maximum 10 bytes).

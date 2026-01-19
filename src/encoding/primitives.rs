@@ -1,4 +1,3 @@
-use crate::DecodeError;
 use crate::bytes::Buf;
 use crate::bytes::BufMut;
 use crate::encoding::DecodeContext;
@@ -329,7 +328,6 @@ pub mod string {
     use super::Buf;
     use super::BufMut;
     use super::DecodeContext;
-    use super::DecodeError;
     use super::WireType;
     use super::bytes;
     use super::check_wire_type;
@@ -337,6 +335,7 @@ pub mod string {
     use super::encode_varint;
     use super::encoded_len_varint;
     use super::key_len;
+    use crate::error::DecodeError;
     #[inline(always)]
     pub fn encode_tagged(tag: u32, value: &String, buf: &mut impl BufMut) {
         encode_key(tag, WireType::LengthDelimited, buf);
@@ -420,7 +419,6 @@ pub mod bytes {
     use super::Buf;
     use super::BufMut;
     use super::DecodeContext;
-    use super::DecodeError;
     use super::WireType;
     use super::check_wire_type;
     use super::decode_varint;
@@ -430,6 +428,7 @@ pub mod bytes {
     use super::key_len;
     use crate::encoding::BytesAdapterDecode;
     use crate::encoding::BytesAdapterEncode;
+    use crate::error::DecodeError;
 
     #[inline(always)]
     pub fn encode_tagged(tag: u32, value: &impl BytesAdapterEncode, buf: &mut impl BufMut) {
