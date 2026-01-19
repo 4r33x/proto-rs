@@ -3,67 +3,23 @@ use bytes::BufMut;
 use crossbeam_utils::CachePadded;
 
 use crate::DecodeError;
-use crate::EncodeInputFromRef;
-use crate::ProtoExt;
-use crate::ProtoShadow;
-use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::encoding::skip_field;
+use crate::traits::ProtoArchive;
+use crate::traits::ProtoDecode;
+use crate::traits::ProtoDecoder;
+use crate::traits::ProtoEncode;
+use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
+use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoShadowEncode;
 
-impl<T> ProtoShadow<Self> for CachePadded<T>
-where
-    T: ProtoShadow<T, OwnedSun = T>,
-{
-    type Sun<'a> = T::Sun<'a>;
-    type OwnedSun = CachePadded<T>;
-    type View<'a> = T::View<'a>;
-
-    #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        T::from_sun(value)
-    }
+impl<T: ProtoExt> ProtoExt for CachePadded<T> {
+    const KIND: ProtoKind = T::KIND;
 }
 
-impl<T> ProtoWire for CachePadded<T>
-where
-    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
-{
-    type EncodeInput<'a> = &'a CachePadded<T>;
-    const KIND: ProtoKind = T::KIND;
-
-    #[inline(always)]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let inner: &T = value;
-        let input = T::encode_input_from_ref(inner);
-        unsafe { T::encoded_len_impl_raw(&input) }
-    }
-
-    #[inline(always)]
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        let inner: &T = value;
-        let input = T::encode_input_from_ref(inner);
-        T::encode_raw_unchecked(input, buf);
-    }
-
-    #[inline(always)]
-    fn decode_into(w: WireType, v: &mut Self, b: &mut impl Buf, c: DecodeContext) -> Result<(), DecodeError> {
-        let inner: &mut T = v;
-        T::decode_into(w, inner, b, c)
-    }
-
-    #[inline(always)]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let inner: &T = value;
-        let input = T::encode_input_from_ref(inner);
-        T::is_default_impl(&input)
-    }
-
+impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for CachePadded<T> {
     #[inline(always)]
     fn proto_default() -> Self {
         CachePadded::new(T::proto_default())
@@ -71,94 +27,111 @@ where
 
     #[inline(always)]
     fn clear(&mut self) {
-        let inner: &mut T = self;
-        T::clear(inner);
+        T::clear(self);
+    }
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge(wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        T::merge(self, wire_type, buf, ctx)
     }
 }
 
-impl<T> ProtoExt for CachePadded<T>
+impl<T: ProtoDecode> ProtoDecode for CachePadded<T>
 where
-    T: ProtoExt,
-    for<'a> T: 'a,
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
+    CachePadded<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
-    type Shadow<'a>
-        = CachePaddedShadow<<T as ProtoExt>::Shadow<'a>>
-    where
-        T: 'a;
+    type ShadowDecoded = CachePadded<T::ShadowDecoded>;
+}
 
-    #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        let inner: &mut <T as ProtoExt>::Shadow<'_> = &mut value.0;
-        T::merge_field(inner, tag, wire, buf, ctx)
+impl<T, U> ProtoShadowDecode<CachePadded<U>> for CachePadded<T>
+where
+    T: ProtoShadowDecode<U>,
+{
+    #[inline]
+    fn to_sun(self) -> Result<CachePadded<U>, DecodeError> {
+        let inner = self.into_inner();
+        Ok(CachePadded::new(inner.to_sun()?))
     }
 }
 
-pub struct CachePaddedShadow<S>(pub CachePadded<S>);
-
-impl<SHD> ProtoWire for CachePaddedShadow<SHD>
+impl<T> ProtoArchive for CachePadded<T>
 where
-    SHD: ProtoWire,
+    T: ProtoArchive,
 {
-    type EncodeInput<'b> = <SHD as ProtoWire>::EncodeInput<'b>;
-    const KIND: ProtoKind = SHD::KIND;
+    type Archived<'a> = T::Archived<'a>;
 
     #[inline(always)]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        unsafe { SHD::encoded_len_impl_raw(value) }
+    fn is_default(&self) -> bool {
+        T::is_default(self)
     }
 
     #[inline(always)]
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        SHD::encode_raw_unchecked(value, buf);
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        T::len(archived)
     }
 
     #[inline(always)]
-    fn decode_into(wt: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner: &mut SHD = &mut value.0;
-        SHD::decode_into(wt, inner, buf, ctx)
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { T::encode(archived, buf) };
     }
 
     #[inline(always)]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        SHD::is_default_impl(value)
-    }
-
-    #[inline(always)]
-    fn proto_default() -> Self {
-        CachePaddedShadow(CachePadded::new(SHD::proto_default()))
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        let inner: &mut SHD = &mut self.0;
-        SHD::clear(inner);
+    fn archive(&self) -> Self::Archived<'_> {
+        T::archive(self)
     }
 }
 
-impl<SHD, T> ProtoShadow<CachePadded<T>> for CachePaddedShadow<SHD>
+impl<T: ProtoEncode> ProtoEncode for CachePadded<T>
 where
-    SHD: ProtoShadow<T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
-    type Sun<'a> = SHD::Sun<'a>;
-    type View<'a> = SHD::View<'a>;
-    type OwnedSun = CachePadded<T>;
+    type Shadow<'a> = T::Shadow<'a>;
+}
+
+impl<'a, T, S> ProtoShadowEncode<'a, CachePadded<T>> for S
+where
+    S: ProtoShadowEncode<'a, T>,
+{
+    #[inline]
+    fn from_sun(value: &'a CachePadded<T>) -> Self {
+        S::from_sun(value)
+    }
+}
+
+impl<T> ProtoArchive for &CachePadded<T>
+where
+    T: ProtoArchive,
+{
+    type Archived<'x> = T::Archived<'x>;
 
     #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let inner_shadow = self.0.into_inner();
-        let value = inner_shadow.to_sun()?;
-        Ok(CachePadded::new(value))
+    fn is_default(&self) -> bool {
+        T::is_default(self)
     }
 
     #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        SHD::from_sun(value)
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        T::len(archived)
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { T::encode(archived, buf) };
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        T::archive(self)
     }
 }
 

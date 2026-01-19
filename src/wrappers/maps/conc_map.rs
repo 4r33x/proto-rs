@@ -1,297 +1,100 @@
+use alloc::vec::Vec;
 use core::hash::BuildHasher;
 use core::hash::Hash;
-use core::ops::Deref;
 
 use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashMap;
 
-use super::maps::encode_map_entry_component;
-use super::maps::map_entry_field_len;
 use crate::DecodeError;
-use crate::EncodeInputFromRef;
-use crate::ProtoExt;
-use crate::ProtoShadow;
-use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
-use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
-use crate::encoding::key_len;
 use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoInner;
+use crate::traits::ProtoArchive;
+use crate::traits::ProtoDecode;
+use crate::traits::ProtoDecoder;
+use crate::traits::ProtoEncode;
+use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
+use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoShadowEncode;
+use crate::wrappers::maps::MapEntryDecoded;
 
-#[cfg(feature = "std")]
-pub type PapayaMapGuard<'a, K, V, S> = papaya::HashMapRef<'a, K, V, S, papaya::LocalGuard<'a>>;
-
-#[cfg(feature = "std")]
-pub struct PapayaMapShadow<'a, K, V, S>
+impl<'a, K, V, S> ProtoShadowEncode<'a, HashMap<K, V, S>> for &'a HashMap<K, V, S>
 where
-    K: Eq + Hash,
-    S: BuildHasher + Default + 'a,
-{
-    map: &'a papaya::HashMap<K, V, S>,
-    guard: Option<PapayaMapGuard<'a, K, V, S>>,
-}
-
-#[cfg(feature = "std")]
-impl<'a, K, V, S> PapayaMapShadow<'a, K, V, S>
-where
-    K: Eq + Hash,
-    S: BuildHasher + Default + 'a,
+    K: ProtoEncode + Eq + Hash,
+    V: ProtoEncode,
 {
     #[inline]
-    pub fn new(map: &'a papaya::HashMap<K, V, S>) -> Self {
-        Self {
-            map,
-            guard: Some(map.pin()),
-        }
-    }
-
-    #[inline]
-    fn guard(&self) -> &PapayaMapGuard<'a, K, V, S> {
-        self.guard.as_ref().expect("papaya map guard initialized")
-    }
-
-    #[inline]
-    pub fn into_guard(self) -> PapayaMapGuard<'a, K, V, S> {
-        let PapayaMapShadow { map, guard } = self;
-        guard.unwrap_or_else(|| map.pin())
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.guard().is_empty()
-    }
-}
-
-#[cfg(feature = "std")]
-impl<'a, K, V, S> Deref for PapayaMapShadow<'a, K, V, S>
-where
-    K: Eq + Hash,
-    S: BuildHasher + Default + 'a,
-{
-    type Target = PapayaMapGuard<'a, K, V, S>;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.guard()
-    }
-}
-
-#[cfg(feature = "std")]
-#[inline]
-#[allow(dead_code)]
-pub fn papaya_map_encode_input<'a, K, V, S>(map: &'a papaya::HashMap<K, V, S>) -> PapayaMapShadow<'a, K, V, S>
-where
-    K: Eq + Hash,
-    S: BuildHasher + Default + 'a,
-{
-    PapayaMapShadow::new(map)
-}
-
-impl<K, V, S> ProtoShadow<Self> for HashMap<K, V, S>
-where
-    for<'a> K: ProtoShadow<K> + ProtoWire + Eq + Hash + 'a,
-    for<'a> V: ProtoShadow<V> + ProtoWire + 'a,
-    for<'a> S: BuildHasher + Default + 'a,
-{
-    type Sun<'a> = &'a HashMap<K, V, S>;
-    type OwnedSun = HashMap<K, V, S>;
-    type View<'a> = PapayaMapShadow<'a, K, V, S>;
-
-    #[inline]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    #[inline]
-    fn from_sun(v: Self::Sun<'_>) -> Self::View<'_> {
-        PapayaMapShadow::new(v)
-    }
-}
-
-impl<'a, K, V, S> EncodeInputFromRef<'a> for HashMap<K, V, S>
-where
-    for<'b> K: ProtoWire + EncodeInputFromRef<'b> + Eq + Hash + 'b,
-    for<'b> V: ProtoWire + EncodeInputFromRef<'b> + 'b,
-    for<'b> S: BuildHasher + Default + 'b,
-{
-    #[inline]
-    fn encode_input_from_ref(value: &'a Self) -> Self::EncodeInput<'a> {
-        PapayaMapShadow::new(value)
-    }
-}
-
-impl<K, V, S> ProtoWire for HashMap<K, V, S>
-where
-    for<'a> K: ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
-    for<'a> V: ProtoWire + EncodeInputFromRef<'a> + 'a,
-    for<'a> S: BuildHasher + Default + 'a,
-{
-    type EncodeInput<'a> = crate::wrappers::conc_map::PapayaMapShadow<'a, K, V, S>;
-    const KIND: ProtoKind = ProtoKind::Repeated(&V::KIND);
-
-    #[inline(always)]
-    fn encoded_len_impl(value: &Self::EncodeInput<'_>) -> usize {
-        unsafe { Self::encoded_len_impl_raw(value) }
-    }
-
-    #[inline(always)]
-    fn encoded_len_tagged(&self, tag: u32) -> usize {
-        let shadow = PapayaMapShadow::new(self);
-        Self::encoded_len_tagged_impl(&shadow, tag)
-    }
-
-    #[inline(always)]
-    fn encoded_len_tagged_impl(value: &Self::EncodeInput<'_>, tag: u32) -> usize {
-        if value.is_empty() {
-            0
-        } else {
-            value
-                .iter()
-                .map(|(k, v)| {
-                    let key_input = K::encode_input_from_ref(k);
-                    let key_default = K::is_default_impl(&key_input);
-                    let key_body = if key_default {
-                        0
-                    } else {
-                        unsafe { K::encoded_len_impl_raw(&key_input) }
-                    };
-                    let key_len_total = if key_default {
-                        0
-                    } else {
-                        map_entry_field_len(K::WIRE_TYPE, 1, key_body)
-                    };
-                    let value_input = V::encode_input_from_ref(v);
-                    let value_default = V::is_default_impl(&value_input);
-                    let value_body = if value_default {
-                        0
-                    } else {
-                        unsafe { V::encoded_len_impl_raw(&value_input) }
-                    };
-                    let value_len_total = if value_default {
-                        0
-                    } else {
-                        map_entry_field_len(V::WIRE_TYPE, 2, value_body)
-                    };
-                    let entry_len = key_len_total + value_len_total;
-                    key_len(tag) + encoded_len_varint(entry_len as u64) + entry_len
-                })
-                .sum()
-        }
-    }
-
-    #[inline]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
+    fn from_sun(value: &'a HashMap<K, V, S>) -> Self {
         value
-            .iter()
-            .map(|(k, v)| {
-                let key_input = K::encode_input_from_ref(k);
-                let key_default = K::is_default_impl(&key_input);
-                let key_body = if key_default {
-                    0
-                } else {
-                    unsafe { K::encoded_len_impl_raw(&key_input) }
-                };
-                let key_len_total = if key_default {
-                    0
-                } else {
-                    map_entry_field_len(K::WIRE_TYPE, 1, key_body)
-                };
-                let value_input = V::encode_input_from_ref(v);
-                let value_default = V::is_default_impl(&value_input);
-                let value_body = if value_default {
-                    0
-                } else {
-                    unsafe { V::encoded_len_impl_raw(&value_input) }
-                };
-                let value_len_total = if value_default {
-                    0
-                } else {
-                    map_entry_field_len(V::WIRE_TYPE, 2, value_body)
-                };
-                let entry_len = key_len_total + value_len_total;
-                encoded_len_varint(entry_len as u64) + entry_len
-            })
-            .sum()
+    }
+}
+
+impl<K, V, S> ProtoArchive for &HashMap<K, V, S>
+where
+    K: ProtoEncode + Eq + Hash,
+    V: ProtoEncode + ProtoExt,
+    for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+    for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = Vec<u8>;
+
+    #[inline]
+    fn is_default(&self) -> bool {
+        self.is_empty()
     }
 
     #[inline]
-    fn encode_raw_unchecked(_value: Self::EncodeInput<'_>, _buf: &mut impl BufMut) {
-        panic!("Do not call encode_raw_unchecked on papaya::HashMap<K,V,S>");
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
     }
 
     #[inline]
-    fn encode_with_tag(tag: u32, shadow: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        let guard = shadow.into_guard();
-        for (k, v) in &guard {
-            let key_input = K::encode_input_from_ref(k);
-            let key_default = K::is_default_impl(&key_input);
-            let key_body = if key_default {
-                0
-            } else {
-                unsafe { K::encoded_len_impl_raw(&key_input) }
-            };
-            let key_len_total = if key_default {
-                0
-            } else {
-                map_entry_field_len(K::WIRE_TYPE, 1, key_body)
-            };
-            let value_input = V::encode_input_from_ref(v);
-            let value_default = V::is_default_impl(&value_input);
-            let value_body = if value_default {
-                0
-            } else {
-                unsafe { V::encoded_len_impl_raw(&value_input) }
-            };
-            let value_len_total = if value_default {
-                0
-            } else {
-                map_entry_field_len(V::WIRE_TYPE, 2, value_body)
-            };
-            let entry_len = key_len_total + value_len_total;
-            encode_key(tag, WireType::LengthDelimited, buf);
-            encode_varint(entry_len as u64, buf);
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        buf.put_slice(archived.as_slice());
+    }
 
-            if !key_default {
-                encode_map_entry_component::<K>(1, key_body, key_input, buf);
-            }
-            if !value_default {
-                encode_map_entry_component::<V>(2, value_body, value_input, buf);
-            }
+    #[inline]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut bytes = Vec::new();
+        let guard = self.pin();
+        for entry in &guard {
+            let key = <K as ProtoEncode>::Shadow::from_sun(entry.0);
+            let key_archived = ArchivedProtoInner::<1, <K as ProtoEncode>::Shadow<'_>>::new(&key);
+            let value = <V as ProtoEncode>::Shadow::from_sun(entry.1);
+            let value_archived = ArchivedProtoInner::<2, <V as ProtoEncode>::Shadow<'_>>::new(&value);
+            let entry_len = key_archived.len() + value_archived.len();
+            bytes.reserve(encoded_len_varint(entry_len as u64) + entry_len);
+            encode_varint(entry_len as u64, &mut bytes);
+            key_archived.encode(&mut bytes);
+            value_archived.encode(&mut bytes);
         }
+        bytes
     }
+}
 
-    #[inline]
-    fn decode_into(_wire_type: WireType, map: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let len = decode_varint(buf)? as usize;
-        let mut slice = buf.take(len);
-        let mut key = K::proto_default();
-        let mut value = V::proto_default();
+impl<K, V, S> ProtoExt for HashMap<K, V, S>
+where
+    V: ProtoExt,
+{
+    const KIND: ProtoKind = ProtoKind::Repeated(&V::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("papaya::HashMap");
+}
 
-        while slice.has_remaining() {
-            let (tag, wire) = crate::encoding::decode_key(&mut slice)?;
-            match tag {
-                1 => K::decode_into(wire, &mut key, &mut slice, ctx)?,
-                2 => V::decode_into(wire, &mut value, &mut slice, ctx)?,
-                _ => crate::encoding::skip_field(wire, tag, &mut slice, ctx)?,
-            }
-        }
-
-        debug_assert!(!slice.has_remaining());
-        let guard = map.pin();
-        guard.insert(key, value);
-        Ok(())
-    }
-
-    #[inline]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        value.is_empty()
-    }
-
+impl<K, V, S> ProtoDecoder for HashMap<K, V, S>
+where
+    K: ProtoDecode + Eq + Hash,
+    V: ProtoDecode + ProtoExt,
+    S: BuildHasher + Default,
+    K::ShadowDecoded: ProtoDecoder + ProtoExt,
+    V::ShadowDecoded: ProtoDecoder + ProtoExt,
+    MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>: ProtoDecoder + ProtoExt,
+{
     #[inline]
     fn proto_default() -> Self {
         HashMap::default()
@@ -302,28 +105,71 @@ where
         let guard = self.pin();
         guard.clear();
     }
-}
 
-impl<K, V, S> ProtoExt for HashMap<K, V, S>
-where
-    for<'a> K: ProtoShadow<K> + ProtoWire + EncodeInputFromRef<'a> + Eq + Hash + 'a,
-    for<'a> V: ProtoShadow<V> + ProtoWire + EncodeInputFromRef<'a> + 'a,
-    for<'a> S: BuildHasher + Default + 'a,
-{
-    type Shadow<'b> = HashMap<K, V, S>;
-
-    #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire_type: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
+    #[inline]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            <HashMap<K, V, S> as ProtoWire>::decode_into(wire_type, value, buf, ctx)
+            Self::merge(value, wire_type, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
         }
     }
+
+    #[inline]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if wire_type != WireType::LengthDelimited {
+            return Err(DecodeError::new("map entry must be length-delimited"));
+        }
+        let len = decode_varint(buf)? as usize;
+        let mut slice = buf.take(len);
+        let guard = self.pin();
+        while slice.has_remaining() {
+            let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
+            MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_into(&mut entry, &mut slice, ctx)?;
+            let (key, value) = entry.to_sun()?;
+            guard.insert(key, value);
+        }
+        Ok(())
+    }
+}
+
+impl<K, V, S> ProtoDecode for HashMap<K, V, S>
+where
+    K: ProtoDecode + Eq + Hash,
+    V: ProtoDecode,
+    S: BuildHasher + Default,
+    K::ShadowDecoded: Ord,
+    Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>: ProtoDecoder + ProtoExt,
+    Vec<MapEntryDecoded<<K as ProtoDecode>::ShadowDecoded, <V as ProtoDecode>::ShadowDecoded>>: ProtoShadowDecode<HashMap<K, V, S>>,
+{
+    type ShadowDecoded = Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>;
+}
+
+impl<K, V, S> ProtoShadowDecode<HashMap<K, V, S>> for Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>
+where
+    K: ProtoDecode + Eq + Hash,
+    V: ProtoDecode,
+    S: BuildHasher + Default,
+    K::ShadowDecoded: ProtoShadowDecode<K>,
+    V::ShadowDecoded: ProtoShadowDecode<V>,
+{
+    #[inline]
+    fn to_sun(self) -> Result<HashMap<K, V, S>, DecodeError> {
+        let mut out = HashMap::default();
+        let guard = out.pin();
+        for entry in self {
+            let (key, value) = entry.to_sun()?;
+            guard.insert(key, value);
+        }
+        Ok(out)
+    }
+}
+
+impl<K, V, S> ProtoEncode for HashMap<K, V, S>
+where
+    for<'b> K: 'b + ProtoEncode + Eq + Hash,
+    for<'b> V: 'b + ProtoEncode + ProtoExt,
+    for<'b> S: 'b,
+{
+    type Shadow<'a> = &'a HashMap<K, V, S>;
 }

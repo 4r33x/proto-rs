@@ -1,5 +1,31 @@
-enum ArchivedVecDeque<'a, T: ProtoArchive + ProtoExt> {
-    Bytes { a: &'a [u8], b: &'a [u8] },
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use core::ptr;
+
+use bytes::Buf;
+use bytes::BufMut;
+
+use crate::DecodeError;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
+use crate::encoding::bytes as bytes_encoding;
+use crate::encoding::decode_varint;
+use crate::encoding::skip_field;
+use crate::traits::PrimitiveKind;
+use crate::traits::ProtoArchive;
+use crate::traits::ProtoDecode;
+use crate::traits::ProtoDecoder;
+use crate::traits::ProtoEncode;
+use crate::traits::ProtoExt;
+use crate::traits::ProtoKind;
+use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoShadowEncode;
+use crate::wrappers::lists::ArchivedRepeated;
+use crate::wrappers::lists::encode_repeated_value;
+use crate::wrappers::lists::repeated_payload_len;
+
+pub enum ArchivedVecDeque<'a, T: ProtoArchive + ProtoExt> {
+    Bytes(&'a VecDeque<u8>),
     Owned(ArchivedRepeated<'a, T>),
 }
 
@@ -36,9 +62,9 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if is_bytes_kind::<T>() {
+        if T::KIND.is_bytes_kind() {
             // SAFETY: only exercised for VecDeque<u8> which implements BytesAdapterDecode.
-            let bytes = unsafe { &mut *(self as *mut VecDeque<T> as *mut VecDeque<u8>) };
+            let bytes = unsafe { &mut *(ptr::from_mut(self).cast::<VecDeque<u8>>()) };
             return bytes_encoding::merge(wire_type, bytes, buf, ctx);
         }
         match T::KIND {
@@ -88,7 +114,7 @@ where
     }
 }
 
-impl<'a, T> ProtoArchive for VecDeque<T>
+impl<T> ProtoArchive for VecDeque<T>
 where
     T: ProtoArchive + ProtoExt,
 {
@@ -103,15 +129,15 @@ where
     fn len(archived: &Self::Archived<'_>) -> usize {
         match archived {
             ArchivedVecDeque::Bytes(bytes) => bytes.len(),
-            ArchivedVecDeque::Repeated(repeated) => repeated.len,
+            ArchivedVecDeque::Owned(repeated) => repeated.len,
         }
     }
 
     #[inline(always)]
     unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         match archived {
-            ArchivedVecDeque::Bytes(bytes) => bytes_encoding::encode(&bytes.as_slice(), buf),
-            ArchivedVecDeque::Repeated(repeated) => {
+            ArchivedVecDeque::Bytes(bytes) => bytes_encoding::encode(bytes, buf),
+            ArchivedVecDeque::Owned(repeated) => {
                 for item in repeated.items {
                     encode_repeated_value::<T>(item, buf);
                 }
@@ -121,14 +147,10 @@ where
 
     #[inline(always)]
     fn archive(&self) -> Self::Archived<'_> {
-        if is_bytes_kind::<T>() {
-            // SAFETY: only exercised for VecDeque<u8>.
-            let bytes = unsafe { &*(self as *const VecDeque<T> as *const VecDeque<u8>) };
-            let (left, right) = bytes.as_slices();
-            let mut output = Vec::with_capacity(bytes.len());
-            output.extend_from_slice(left);
-            output.extend_from_slice(right);
-            return ArchivedVecDeque::Bytes(output);
+        if T::KIND.is_bytes_kind() {
+            // SAFETY: only executed for VecDeque<u8>.
+            let bytes = unsafe { &*(ptr::from_ref(self).cast::<VecDeque<u8>>()) };
+            return ArchivedVecDeque::Bytes(bytes);
         }
 
         let mut items = Vec::with_capacity(self.len());
@@ -138,7 +160,7 @@ where
             len += repeated_payload_len::<T>(&archived);
             items.push(archived);
         }
-        ArchivedVecDeque::Repeated(ArchivedRepeated { items, len })
+        ArchivedVecDeque::Owned(ArchivedRepeated { items, len })
     }
 }
 
