@@ -8,6 +8,8 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
+use crate::encoding::encode_varint;
+use crate::encoding::encoded_len_varint;
 use crate::encoding::skip_field;
 use crate::traits::ArchivedProtoInner;
 use crate::traits::ProtoArchive;
@@ -37,12 +39,26 @@ pub struct MapEntryDecoded<K, V> {
     value: V,
 }
 
+#[doc(hidden)]
+pub struct MapShadow<'a, K: ProtoEncode + Ord, V: ProtoEncode> {
+    entries: Vec<MapEntryShadow<'a, K, V>>,
+}
+
 impl<'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> ProtoExt for MapEntryShadow<'a, K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
 }
 
 impl<K, V> ProtoExt for MapEntryDecoded<K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
+}
+
+impl<'a, K, V> ProtoExt for MapShadow<'a, K, V>
+where
+    K: ProtoEncode + Ord,
+    V: ProtoEncode + ProtoExt,
+{
+    const KIND: ProtoKind = ProtoKind::Repeated(&V::KIND);
+    const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeMap");
 }
 
 impl<'a, K, V> ProtoShadowEncode<'a, (K, V)> for MapEntryShadow<'a, K, V>
@@ -56,6 +72,24 @@ where
             key: <K as ProtoEncode>::Shadow::from_sun(&value.0),
             value: <V as ProtoEncode>::Shadow::from_sun(&value.1),
         }
+    }
+}
+
+impl<'a, K, V> ProtoShadowEncode<'a, BTreeMap<K, V>> for MapShadow<'a, K, V>
+where
+    K: ProtoEncode + Ord,
+    V: ProtoEncode,
+{
+    #[inline]
+    fn from_sun(value: &'a BTreeMap<K, V>) -> Self {
+        let entries = value
+            .iter()
+            .map(|(key, value)| MapEntryShadow {
+                key: <K as ProtoEncode>::Shadow::from_sun(key),
+                value: <V as ProtoEncode>::Shadow::from_sun(value),
+            })
+            .collect();
+        Self { entries }
     }
 }
 
@@ -92,6 +126,46 @@ where
         key.encode(&mut bytes);
         value.encode(&mut bytes);
         MapEntryArchived { bytes, len }
+    }
+}
+
+impl<'a, K, V> ProtoArchive for MapShadow<'a, K, V>
+where
+    K: ProtoEncode + Ord,
+    V: ProtoEncode + ProtoExt,
+    for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+    for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = Vec<u8>;
+
+    #[inline]
+    fn is_default(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    #[inline]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        buf.put_slice(&archived);
+    }
+
+    #[inline]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut bytes = Vec::new();
+        for entry in &self.entries {
+            let key_archived = ArchivedProtoInner::<1, <K as ProtoEncode>::Shadow<'_>>::new(&entry.key);
+            let value_archived = ArchivedProtoInner::<2, <V as ProtoEncode>::Shadow<'_>>::new(&entry.value);
+            let entry_len = key_archived.len() + value_archived.len();
+            bytes.reserve(encoded_len_varint(entry_len as u64) + entry_len);
+            encode_varint(entry_len as u64, &mut bytes);
+            key_archived.encode(&mut bytes);
+            value_archived.encode(&mut bytes);
+        }
+        bytes
     }
 }
 
@@ -196,6 +270,7 @@ where
     K: ProtoDecode + Ord,
     V: ProtoDecode,
     K::ShadowDecoded: Ord,
+    Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>: ProtoDecoder + ProtoExt,
 {
     type ShadowDecoded = Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>;
 }
@@ -221,26 +296,9 @@ where
 impl<K, V> ProtoEncode for BTreeMap<K, V>
 where
     K: ProtoEncode + Ord,
-    V: ProtoEncode,
+    V: ProtoEncode + ProtoExt,
     for<'a> <K as ProtoEncode>::Shadow<'a>: ProtoArchive + ProtoExt,
     for<'a> <V as ProtoEncode>::Shadow<'a>: ProtoArchive + ProtoExt,
 {
-    type Shadow<'a> = Vec<MapEntryShadow<'a, K, V>>;
-}
-
-impl<'a, K, V> ProtoShadowEncode<'a, BTreeMap<K, V>> for Vec<MapEntryShadow<'a, K, V>>
-where
-    K: ProtoEncode + Ord,
-    V: ProtoEncode,
-{
-    #[inline]
-    fn from_sun(value: &'a BTreeMap<K, V>) -> Self {
-        value
-            .iter()
-            .map(|(k, v)| MapEntryShadow {
-                key: <K as ProtoEncode>::Shadow::from_sun(k),
-                value: <V as ProtoEncode>::Shadow::from_sun(v),
-            })
-            .collect()
-    }
+    type Shadow<'a> = MapShadow<'a, K, V>;
 }
