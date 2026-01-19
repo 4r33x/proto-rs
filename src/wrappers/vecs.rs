@@ -7,6 +7,7 @@ use bytes::BufMut;
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::encoding::bytes as bytes_encoding;
 use crate::encoding::decode_varint;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
@@ -16,6 +17,7 @@ use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::PrimitiveKind;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -25,6 +27,24 @@ pub struct ArchivedRepeated<'a, T: ProtoArchive + ProtoExt> {
     items: Vec<T::Archived<'a>>,
     len: usize,
 }
+
+#[doc(hidden)]
+pub enum ArchivedVec<'a, T: ProtoArchive + ProtoExt> {
+    Bytes(&'a [u8]),
+    Repeated(ArchivedRepeated<'a, T>),
+}
+
+#[doc(hidden)]
+pub enum ArchivedVecDeque<'a, T: ProtoArchive + ProtoExt> {
+    Bytes(Vec<u8>),
+    Repeated(ArchivedRepeated<'a, T>),
+}
+
+#[inline]
+fn is_bytes_kind<T: ProtoExt>() -> bool {
+    matches!(T::KIND, ProtoKind::Primitive(PrimitiveKind::U8))
+}
+
 
 fn repeated_payload_len<T: ProtoArchive + ProtoExt>(archived: &T::Archived<'_>) -> usize {
     let item_len = T::len(archived);
@@ -50,8 +70,14 @@ fn encode_repeated_value<T: ProtoArchive + ProtoExt>(archived: T::Archived<'_>, 
 }
 
 impl<T: ProtoExt> ProtoExt for Vec<T> {
-    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("Vec");
+    const KIND: ProtoKind = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
+        _ => ProtoKind::Repeated(&T::KIND),
+    };
+    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => None,
+        _ => Some("Vec"),
+    };
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
@@ -76,6 +102,11 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if is_bytes_kind::<T>() {
+            // SAFETY: only exercised for Vec<u8> which implements BytesAdapterDecode.
+            let bytes = unsafe { &mut *(self as *mut Vec<T> as *mut Vec<u8>) };
+            return bytes_encoding::merge(wire_type, bytes, buf, ctx);
+        }
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
@@ -108,6 +139,7 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
 impl<T: ProtoDecode> ProtoDecode for Vec<T>
 where
     T::ShadowDecoded: ProtoDecoder + ProtoExt,
+    Vec<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
     type ShadowDecoded = Vec<T::ShadowDecoded>;
 }
@@ -126,7 +158,7 @@ impl<'a, T> ProtoArchive for Vec<T>
 where
     T: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = ArchivedRepeated<'x, T>;
+    type Archived<'x> = ArchivedVec<'x, T>;
 
     #[inline(always)]
     fn is_default(&self) -> bool {
@@ -135,18 +167,32 @@ where
 
     #[inline(always)]
     fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes.len(),
+            ArchivedVec::Repeated(repeated) => repeated.len,
+        }
     }
 
     #[inline(always)]
     unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        for item in archived.items {
-            encode_repeated_value::<T>(item, buf);
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes_encoding::encode(&bytes, buf),
+            ArchivedVec::Repeated(repeated) => {
+                for item in repeated.items {
+                    encode_repeated_value::<T>(item, buf);
+                }
+            }
         }
     }
 
     #[inline(always)]
     fn archive(&self) -> Self::Archived<'_> {
+        if is_bytes_kind::<T>() {
+            // SAFETY: only exercised for Vec<u8>.
+            let bytes = unsafe { &*(self as *const Vec<T> as *const Vec<u8>) };
+            return ArchivedVec::Bytes(bytes.as_slice());
+        }
+
         let mut items = Vec::with_capacity(self.len());
         let mut len = 0;
         for item in self {
@@ -154,16 +200,18 @@ where
             len += repeated_payload_len::<T>(&archived);
             items.push(archived);
         }
-        ArchivedRepeated { items, len }
+        ArchivedVec::Repeated(ArchivedRepeated { items, len })
     }
 }
 
 impl<T: ProtoEncode> ProtoEncode for Vec<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
+    for<'a> Vec<T::Shadow<'a>>: ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = Vec<T::Shadow<'a>>;
 }
+
 
 impl<'a, T, S> ProtoShadowEncode<'a, Vec<T>> for Vec<S>
 where
@@ -176,9 +224,43 @@ where
     }
 }
 
+impl<'a> ProtoExt for &'a [u8] {
+    const KIND: ProtoKind = ProtoKind::Bytes;
+}
+
+impl<'a> ProtoArchive for &'a [u8] {
+    type Archived<'x> = &'x [u8];
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        bytes_encoding::encode(&archived, buf);
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        self
+    }
+}
+
 impl<T: ProtoExt> ProtoExt for VecDeque<T> {
-    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("VecDeque");
+    const KIND: ProtoKind = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
+        _ => ProtoKind::Repeated(&T::KIND),
+    };
+    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => None,
+        _ => Some("VecDeque"),
+    };
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
@@ -203,6 +285,11 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if is_bytes_kind::<T>() {
+            // SAFETY: only exercised for VecDeque<u8> which implements BytesAdapterDecode.
+            let bytes = unsafe { &mut *(self as *mut VecDeque<T> as *mut VecDeque<u8>) };
+            return bytes_encoding::merge(wire_type, bytes, buf, ctx);
+        }
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
@@ -235,6 +322,7 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
 impl<T: ProtoDecode> ProtoDecode for VecDeque<T>
 where
     T::ShadowDecoded: ProtoDecoder + ProtoExt,
+    VecDeque<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
     type ShadowDecoded = VecDeque<T::ShadowDecoded>;
 }
@@ -253,7 +341,7 @@ impl<'a, T> ProtoArchive for VecDeque<T>
 where
     T: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = ArchivedRepeated<'x, T>;
+    type Archived<'x> = ArchivedVecDeque<'x, T>;
 
     #[inline(always)]
     fn is_default(&self) -> bool {
@@ -262,18 +350,36 @@ where
 
     #[inline(always)]
     fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len
+        match archived {
+            ArchivedVecDeque::Bytes(bytes) => bytes.len(),
+            ArchivedVecDeque::Repeated(repeated) => repeated.len,
+        }
     }
 
     #[inline(always)]
     unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        for item in archived.items {
-            encode_repeated_value::<T>(item, buf);
+        match archived {
+            ArchivedVecDeque::Bytes(bytes) => bytes_encoding::encode(&bytes.as_slice(), buf),
+            ArchivedVecDeque::Repeated(repeated) => {
+                for item in repeated.items {
+                    encode_repeated_value::<T>(item, buf);
+                }
+            }
         }
     }
 
     #[inline(always)]
     fn archive(&self) -> Self::Archived<'_> {
+        if is_bytes_kind::<T>() {
+            // SAFETY: only exercised for VecDeque<u8>.
+            let bytes = unsafe { &*(self as *const VecDeque<T> as *const VecDeque<u8>) };
+            let (left, right) = bytes.as_slices();
+            let mut output = Vec::with_capacity(bytes.len());
+            output.extend_from_slice(left);
+            output.extend_from_slice(right);
+            return ArchivedVecDeque::Bytes(output);
+        }
+
         let mut items = Vec::with_capacity(self.len());
         let mut len = 0;
         for item in self {
@@ -281,16 +387,19 @@ where
             len += repeated_payload_len::<T>(&archived);
             items.push(archived);
         }
-        ArchivedRepeated { items, len }
+        ArchivedVecDeque::Repeated(ArchivedRepeated { items, len })
     }
 }
+
 
 impl<T: ProtoEncode> ProtoEncode for VecDeque<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
+    for<'a> VecDeque<T::Shadow<'a>>: ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = VecDeque<T::Shadow<'a>>;
 }
+
 
 impl<'a, T, S> ProtoShadowEncode<'a, VecDeque<T>> for VecDeque<S>
 where
