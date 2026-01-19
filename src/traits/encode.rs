@@ -14,6 +14,14 @@ pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
     fn from_sun(value: &'a T) -> Self;
 }
 
+// Identity conversion for “no-shadow” types.
+impl<'a, T> ProtoShadowEncode<T> for T {
+    #[inline(always)]
+    fn from_sun(&'a self) -> Result<&'a self, DecodeError> {
+        Ok(self)
+    }
+}
+
 pub trait ProtoArchive: Sized {
     type Archived<'a>;
 
