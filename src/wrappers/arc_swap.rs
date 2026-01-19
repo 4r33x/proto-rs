@@ -3,73 +3,37 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use arc_swap::ArcSwapOption;
 use bytes::Buf;
-use bytes::BufMut;
 
-use super::arcs::ArcedShadow;
 use crate::DecodeError;
-use crate::EncodeInputFromRef;
-use crate::ProtoExt;
-use crate::ProtoShadow;
-use crate::ProtoWire;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::encoding::skip_field;
+use crate::traits::ProtoArchive;
+use crate::traits::ProtoDecode;
+use crate::traits::ProtoDecoder;
+use crate::traits::ProtoEncode;
+use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
+use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoShadowEncode;
 
-impl<T> ProtoShadow<Self> for ArcSwap<T>
-where
-    T: ProtoShadow<T, OwnedSun = T>,
-{
-    type Sun<'a> = T::Sun<'a>;
-    type OwnedSun = ArcSwap<T>;
-    type View<'a> = T::View<'a>;
-
-    #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        T::from_sun(value)
-    }
+pub struct ArcSwapShadow<T> {
+    bytes: Vec<u8>,
+    is_default: bool,
+    _marker: core::marker::PhantomData<T>,
 }
 
-impl<T> ProtoWire for ArcSwap<T>
-where
-    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
-{
-    type EncodeInput<'a> = &'a ArcSwap<T>;
-    const KIND: ProtoKind = <T as ProtoWire>::KIND;
+pub struct ArcSwapOptionShadow<T> {
+    bytes: Vec<u8>,
+    is_default: bool,
+    _marker: core::marker::PhantomData<T>,
+}
 
-    #[inline(always)]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let guard = value.load();
-        let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(&guard);
-        unsafe { <T as ProtoWire>::encoded_len_impl_raw(&input) }
-    }
+impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
+    const KIND: ProtoKind = T::KIND;
+}
 
-    #[inline(always)]
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        let guard = value.load();
-        let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(&guard);
-        <T as ProtoWire>::encode_raw_unchecked(input, buf);
-    }
-
-    #[inline(always)]
-    fn decode_into(wire: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = <Arc<T> as ProtoWire>::proto_default();
-        <Arc<T> as ProtoWire>::decode_into(wire, &mut inner, buf, ctx)?;
-        value.store(inner);
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let guard = value.load();
-        let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(&guard);
-        <T as ProtoWire>::is_default_impl(&input)
-    }
-
+impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwap<T> {
     #[inline(always)]
     fn proto_default() -> Self {
         ArcSwap::from_pointee(T::proto_default())
@@ -77,166 +41,222 @@ where
 
     #[inline(always)]
     fn clear(&mut self) {
-        self.store(<Arc<T> as ProtoWire>::proto_default());
-    }
-}
-
-impl<T> ProtoExt for ArcSwap<T>
-where
-    T: ProtoExt,
-    for<'a> T: 'a,
-{
-    type Shadow<'a>
-        = ArcedShadow<<T as ProtoExt>::Shadow<'a>>
-    where
-        T: 'a;
-
-    #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        T::merge_field(value.0.as_mut(), tag, wire, buf, ctx)
-    }
-}
-
-impl<SHD, T> ProtoShadow<ArcSwap<T>> for ArcedShadow<SHD>
-where
-    SHD: ProtoShadow<T, OwnedSun = T>,
-{
-    type Sun<'a> = SHD::Sun<'a>;
-    type View<'a> = SHD::View<'a>;
-    type OwnedSun = ArcSwap<T>;
-
-    #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let arc_value = <ArcedShadow<SHD> as ProtoShadow<Arc<T>>>::to_sun(self)?;
-        Ok(ArcSwap::new(arc_value))
+        self.store(Arc::new(T::proto_default()));
     }
 
     #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        SHD::from_sun(value)
-    }
-}
-
-impl<T> ProtoShadow<Self> for ArcSwapOption<T>
-where
-    T: ProtoShadow<T, OwnedSun = T>,
-{
-    type Sun<'a> = Option<T::Sun<'a>>;
-    type OwnedSun = ArcSwapOption<T>;
-    type View<'a> = Option<T::View<'a>>;
-
-    #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(self)
-    }
-
-    #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.map(T::from_sun)
-    }
-}
-
-impl<T> ProtoWire for ArcSwapOption<T>
-where
-    for<'a> T: ProtoWire + EncodeInputFromRef<'a> + 'a,
-{
-    type EncodeInput<'a> = &'a ArcSwapOption<T>;
-    const KIND: ProtoKind = <Arc<T> as ProtoWire>::KIND;
-
-    #[inline(always)]
-    unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-        let guard = value.load();
-        match guard.as_ref() {
-            Some(inner) => {
-                let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(inner.as_ref());
-                unsafe { <T as ProtoWire>::encoded_len_impl_raw(&input) }
-            }
-            None => unreachable!(),
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge(wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
         }
     }
 
     #[inline(always)]
-    fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl BufMut) {
-        let guard = value.load();
-        if let Some(inner) = guard.as_ref() {
-            let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(inner.as_ref());
-            <T as ProtoWire>::encode_raw_unchecked(input, buf);
-        }
-    }
-
-    #[inline(always)]
-    fn decode_into(wire: WireType, value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = None;
-        Option::<Arc<T>>::decode_into(wire, &mut inner, buf, ctx)?;
-        value.store(inner);
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut inner = T::proto_default();
+        T::merge(&mut inner, wire_type, buf, ctx)?;
+        self.store(Arc::new(inner));
         Ok(())
     }
+}
+
+impl<T: ProtoDecode> ProtoDecode for ArcSwap<T>
+where
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
+    ArcSwap<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
+{
+    type ShadowDecoded = ArcSwap<T::ShadowDecoded>;
+}
+
+impl<T, U> ProtoShadowDecode<ArcSwap<U>> for ArcSwap<T>
+where
+    T: ProtoShadowDecode<U>,
+{
+    #[inline]
+    fn to_sun(self) -> Result<ArcSwap<U>, DecodeError> {
+        let arc = ArcSwap::into_inner(self);
+        let inner = Arc::try_unwrap(arc).map_err(|_| DecodeError::new("ArcSwap shadow has extra references"))?;
+        let value = inner.to_sun()?;
+        Ok(ArcSwap::from_pointee(value))
+    }
+}
+
+impl<T> ProtoExt for ArcSwapShadow<T>
+where
+    T: ProtoExt,
+{
+    const KIND: ProtoKind = T::KIND;
+}
+
+impl<T> ProtoArchive for ArcSwapShadow<T> {
+    type Archived<'a> = &'a [u8];
 
     #[inline(always)]
-    fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-        let guard = value.load();
-        guard.as_ref().is_none_or(|inner| {
-            let input = <T as EncodeInputFromRef<'_>>::encode_input_from_ref(inner.as_ref());
-            <T as ProtoWire>::is_default_impl(&input)
-        })
+    fn is_default(&self) -> bool {
+        self.is_default
     }
 
     #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl bytes::BufMut) {
+        buf.put_slice(archived);
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        self.bytes.as_slice()
+    }
+}
+
+impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for ArcSwap<T>
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
+{
+    type Shadow<'a> = ArcSwapShadow<T>;
+}
+
+impl<'a, T> ProtoShadowEncode<'a, ArcSwap<T>> for ArcSwapShadow<T>
+where
+    T: ProtoEncode + ProtoArchive + ProtoExt,
+{
+    #[inline]
+    fn from_sun(value: &'a ArcSwap<T>) -> Self {
+        let guard = value.load_full();
+        let is_default = T::is_default(guard.as_ref());
+        let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
+        Self {
+            bytes,
+            is_default,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
+    const KIND: ProtoKind = T::KIND;
+}
+
+impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwapOption<T> {
+    #[inline(always)]
     fn proto_default() -> Self {
-        ArcSwapOption::new(None)
+        ArcSwapOption::from_pointee(None)
     }
 
     #[inline(always)]
     fn clear(&mut self) {
         self.store(None);
     }
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge(wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let mut inner = T::proto_default();
+        T::merge(&mut inner, wire_type, buf, ctx)?;
+        self.store(Some(Arc::new(inner)));
+        Ok(())
+    }
 }
 
-impl<T> ProtoExt for ArcSwapOption<T>
+impl<T: ProtoDecode> ProtoDecode for ArcSwapOption<T>
+where
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
+    ArcSwapOption<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
+{
+    type ShadowDecoded = ArcSwapOption<T::ShadowDecoded>;
+}
+
+impl<T, U> ProtoShadowDecode<ArcSwapOption<U>> for ArcSwapOption<T>
+where
+    T: ProtoShadowDecode<U>,
+{
+    #[inline]
+    fn to_sun(self) -> Result<ArcSwapOption<U>, DecodeError> {
+        let inner = ArcSwapOption::into_inner(self);
+        let value = match inner {
+            Some(arc) => {
+                let inner = Arc::try_unwrap(arc).map_err(|_| DecodeError::new("ArcSwapOption shadow has extra references"))?;
+                Some(inner.to_sun()?)
+            }
+            None => None,
+        };
+        Ok(ArcSwapOption::from_pointee(value))
+    }
+}
+
+impl<T> ProtoExt for ArcSwapOptionShadow<T>
 where
     T: ProtoExt,
-    for<'a> T: 'a,
 {
-    type Shadow<'a>
-        = Option<ArcedShadow<<T as ProtoExt>::Shadow<'a>>>
-    where
-        T: 'a;
+    const KIND: ProtoKind = T::KIND;
+}
+
+impl<T> ProtoArchive for ArcSwapOptionShadow<T> {
+    type Archived<'a> = &'a [u8];
 
     #[inline(always)]
-    fn merge_field(
-        value: &mut Self::Shadow<'_>,
-        tag: u32,
-        wire: WireType,
-        buf: &mut impl Buf,
-        ctx: DecodeContext,
-    ) -> Result<(), DecodeError> {
-        let inner = value.get_or_insert_with(ArcedShadow::proto_default);
-        T::merge_field(inner.0.as_mut(), tag, wire, buf, ctx)
+    fn is_default(&self) -> bool {
+        self.is_default
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl bytes::BufMut) {
+        buf.put_slice(archived);
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        self.bytes.as_slice()
     }
 }
 
-impl<SHD, T> ProtoShadow<ArcSwapOption<T>> for Option<ArcedShadow<SHD>>
+impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for ArcSwapOption<T>
 where
-    SHD: ProtoShadow<T, OwnedSun = T>,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
-    type Sun<'a> = Option<SHD::Sun<'a>>;
-    type View<'a> = Option<SHD::View<'a>>;
-    type OwnedSun = ArcSwapOption<T>;
+    type Shadow<'a> = ArcSwapOptionShadow<T>;
+}
 
-    #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        let value = self.map(<ArcedShadow<SHD> as ProtoShadow<Arc<T>>>::to_sun).transpose()?;
-        Ok(ArcSwapOption::new(value))
-    }
-
-    #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        value.map(SHD::from_sun)
+impl<'a, T> ProtoShadowEncode<'a, ArcSwapOption<T>> for ArcSwapOptionShadow<T>
+where
+    T: ProtoEncode + ProtoArchive + ProtoExt,
+{
+    #[inline]
+    fn from_sun(value: &'a ArcSwapOption<T>) -> Self {
+        let guard = value.load_full();
+        match guard.as_ref() {
+            Some(inner) => {
+                let is_default = T::is_default(inner.as_ref());
+                let bytes = if is_default { Vec::new() } else { inner.encode_to_vec() };
+                Self {
+                    bytes,
+                    is_default,
+                    _marker: core::marker::PhantomData,
+                }
+            }
+            None => Self {
+                bytes: Vec::new(),
+                is_default: true,
+                _marker: core::marker::PhantomData,
+            },
+        }
     }
 }

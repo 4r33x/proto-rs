@@ -8,10 +8,11 @@ use crate::encoding::encoded_len_varint;
 
 mod arrays;
 mod btree;
+#[cfg(feature = "papaya")]
+mod conc_set;
+mod deque;
 mod hash_set;
 mod vec;
-// #[cfg(feature = "papaya")]
-// pub(crate) mod conc_set;
 
 #[doc(hidden)]
 pub struct ArchivedRepeated<'a, T: ProtoArchive + ProtoExt> {

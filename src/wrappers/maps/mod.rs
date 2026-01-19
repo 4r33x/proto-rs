@@ -11,9 +11,9 @@ use crate::encoding::skip_field;
 use crate::traits::ProtoShadowDecode;
 
 mod btree;
+#[cfg(feature = "papaya")]
+mod conc_map;
 mod hash_map;
-// #[cfg(feature = "papaya")]
-// pub(crate) mod conc_map;
 
 pub struct MapEntryDecoded<K, V> {
     key: K,

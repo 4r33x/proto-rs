@@ -7,7 +7,6 @@ use tonic::codec::Encoder;
 mod req;
 mod resp;
 use bytes::BufMut;
-use crate::encoding::DecodeContext;
 pub use req::ProtoRequest;
 pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
@@ -27,6 +26,7 @@ use crate::coders::ProtoEncoder;
 use crate::coders::SunByRef;
 use crate::coders::SunByRefDeref;
 use crate::coders::SunByVal;
+use crate::encoding::DecodeContext;
 
 pub trait ToZeroCopyResponse<T> {
     fn to_zero_copy(self) -> ZeroCopyResponse<T>;

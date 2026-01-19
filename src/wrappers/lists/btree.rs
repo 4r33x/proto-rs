@@ -8,6 +8,7 @@ use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
+use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoEncode;
@@ -92,7 +93,7 @@ where
 
 impl<T: ProtoEncode + Ord> ProtoEncode for BTreeSet<T>
 where
-    for<'a> T::Shadow<'a>: ProtoShadowEncode<'a, T>,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
     for<'a> Vec<T::Shadow<'a>>: crate::traits::ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = Vec<T::Shadow<'a>>;
