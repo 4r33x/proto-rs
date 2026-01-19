@@ -16,10 +16,10 @@ pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
 }
 
 // Identity conversion for “no-shadow” types.
-impl<'a, T> ProtoShadowEncode<'a, T> for T {
+impl<'a, T> ProtoShadowEncode<'a, T> for &'a T {
     #[inline(always)]
-    fn from_sun(value: &'a T) -> Result<&'a T, DecodeError> {
-        Ok(value)
+    fn from_sun(value: &'a T) -> Self {
+        value
     }
 }
 
