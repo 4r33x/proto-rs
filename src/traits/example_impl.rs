@@ -51,7 +51,7 @@ pub struct IDArchived<'x, 'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> 
 
 // ---------------- ProtoExt glue ----------------
 
-impl<'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> ProtoExt for IDShadow<'a, K, V> {
+impl<K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> ProtoExt for IDShadow<'_, K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
 }
 
@@ -77,7 +77,7 @@ where
     }
 }
 
-impl<'b, K, V> ProtoEncode for ID<'b, K, V>
+impl<K, V> ProtoEncode for ID<'_, K, V>
 where
     K: ProtoEncode,
     V: ProtoEncode,
@@ -86,8 +86,6 @@ where
 {
     type Shadow<'a> = IDShadow<'a, K, V>;
 }
-
-// ---------------- Encoding: Shadow archiving ----------------
 
 impl<'a, K, V> ProtoArchive for IDShadow<'a, K, V>
 where
@@ -190,7 +188,7 @@ where
     }
 }
 
-impl<'b, K, V> ProtoDecode for ID<'b, K, V>
+impl<K, V> ProtoDecode for ID<'_, K, V>
 where
     K: ProtoDecode,
     V: ProtoDecode,

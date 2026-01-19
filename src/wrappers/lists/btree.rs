@@ -16,9 +16,6 @@ use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
 
-#[cfg(feature = "std")]
-use std::collections::HashSet;
-
 impl<T: ProtoExt + Ord> ProtoExt for BTreeSet<T> {
     const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
     const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeSet");
@@ -108,105 +105,6 @@ where
 {
     #[inline]
     fn from_sun(value: &'a BTreeSet<T>) -> Self {
-        value.iter().map(S::from_sun).collect()
-    }
-}
-
-#[cfg(feature = "std")]
-impl<T: ProtoExt + Eq + core::hash::Hash> ProtoExt for HashSet<T> {
-    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("HashSet");
-}
-
-#[cfg(feature = "std")]
-impl<T: ProtoDecoder + ProtoExt + Eq + core::hash::Hash> ProtoDecoder for HashSet<T> {
-    #[inline(always)]
-    fn proto_default() -> Self {
-        HashSet::new()
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        HashSet::clear(self);
-    }
-
-    #[inline(always)]
-    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if tag == 1 {
-            Self::merge(value, wire_type, buf, ctx)
-        } else {
-            skip_field(wire_type, tag, buf, ctx)
-        }
-    }
-
-    #[inline(always)]
-    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    let mut slice = buf.take(len);
-                    while slice.has_remaining() {
-                        let mut v = T::proto_default();
-                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
-                        self.insert(v);
-                    }
-                    debug_assert!(!slice.has_remaining());
-                } else {
-                    let mut v = T::proto_default();
-                    T::merge(&mut v, wire_type, buf, ctx)?;
-                    self.insert(v);
-                }
-                Ok(())
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = T::proto_default();
-                T::merge(&mut v, wire_type, buf, ctx)?;
-                self.insert(v);
-                Ok(())
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl<T: ProtoDecode + Eq + core::hash::Hash> ProtoDecode for HashSet<T>
-where
-    T::ShadowDecoded: ProtoDecoder + ProtoExt + Eq + core::hash::Hash,
-{
-    type ShadowDecoded = HashSet<T::ShadowDecoded>;
-}
-
-#[cfg(feature = "std")]
-impl<T, U> ProtoShadowDecode<HashSet<U>> for HashSet<T>
-where
-    T: ProtoShadowDecode<U>,
-    U: Eq + core::hash::Hash,
-{
-    #[inline]
-    fn to_sun(self) -> Result<HashSet<U>, DecodeError> {
-        self.into_iter().map(T::to_sun).collect()
-    }
-}
-
-#[cfg(feature = "std")]
-impl<T: ProtoEncode + Eq + core::hash::Hash> ProtoEncode for HashSet<T>
-where
-    for<'a> T::Shadow<'a>: ProtoShadowEncode<'a, T>,
-    for<'a> Vec<T::Shadow<'a>>: crate::traits::ProtoArchive + ProtoExt,
-{
-    type Shadow<'a> = Vec<T::Shadow<'a>>;
-}
-
-#[cfg(feature = "std")]
-impl<'a, T, S> ProtoShadowEncode<'a, HashSet<T>> for Vec<S>
-where
-    S: ProtoShadowEncode<'a, T>,
-    T: Eq + core::hash::Hash,
-{
-    #[inline]
-    fn from_sun(value: &'a HashSet<T>) -> Self {
         value.iter().map(S::from_sun).collect()
     }
 }

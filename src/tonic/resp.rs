@@ -19,7 +19,7 @@ pub struct ZeroCopyResponse<T> {
 
 impl<T> ZeroCopyResponse<T> {
     #[inline]
-    pub fn from_zerocopy_response(response: Response<ZeroCopyBuffer>) -> Self {
+    pub const fn from_zerocopy_response(response: Response<ZeroCopyBuffer>) -> Self {
         Self {
             inner: response,
             _marker: PhantomData,
@@ -37,12 +37,12 @@ impl<T> ZeroCopyResponse<T> {
     }
 
     #[inline]
-    pub fn as_response(&self) -> &Response<ZeroCopyBuffer> {
+    pub const fn as_response(&self) -> &Response<ZeroCopyBuffer> {
         &self.inner
     }
 
     #[inline]
-    pub fn as_response_mut(&mut self) -> &mut Response<ZeroCopyBuffer> {
+    pub const fn as_response_mut(&mut self) -> &mut Response<ZeroCopyBuffer> {
         &mut self.inner
     }
 }

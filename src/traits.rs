@@ -33,3 +33,6 @@ pub trait ProtoExt: Sized {
         }
     };
 }
+impl<T: ProtoExt> ProtoExt for &T {
+    const KIND: ProtoKind = T::KIND;
+}

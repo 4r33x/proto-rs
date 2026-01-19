@@ -30,7 +30,7 @@ pub struct RustClientCtx<'a> {
 }
 
 impl<'a> RustClientCtx<'a> {
-    pub fn disabled() -> Self {
+    pub const fn disabled() -> Self {
         Self {
             output_path: None,
             imports: &[],
@@ -41,7 +41,7 @@ impl<'a> RustClientCtx<'a> {
         }
     }
 
-    pub fn enabled(output_path: &'a str) -> Self {
+    pub const fn enabled(output_path: &'a str) -> Self {
         Self {
             output_path: Some(output_path),
             imports: &[],
@@ -52,7 +52,7 @@ impl<'a> RustClientCtx<'a> {
         }
     }
     #[must_use]
-    pub fn with_imports(mut self, imports: &'a [&'a str]) -> Self {
+    pub const fn with_imports(mut self, imports: &'a [&'a str]) -> Self {
         self.imports = imports;
         self
     }
@@ -606,7 +606,7 @@ pub enum TypeReplace {
 }
 
 impl TypeReplace {
-    pub fn target_ident(&self) -> ProtoIdent {
+    pub const fn target_ident(&self) -> ProtoIdent {
         match self {
             TypeReplace::Trait { id, .. } | TypeReplace::Type { id, .. } => *id,
         }

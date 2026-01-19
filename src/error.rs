@@ -80,17 +80,17 @@ pub struct EncodeError {
 
 impl EncodeError {
     /// Creates a new `EncodeError`.
-    pub(crate) fn new(required: usize, remaining: usize) -> EncodeError {
+    pub(crate) const fn new(required: usize, remaining: usize) -> EncodeError {
         EncodeError { required, remaining }
     }
 
     /// Returns the required buffer capacity to encode the message.
-    pub fn required_capacity(&self) -> usize {
+    pub const fn required_capacity(&self) -> usize {
         self.required
     }
 
     /// Returns the remaining length in the provided buffer at the time of encoding.
-    pub fn remaining(&self) -> usize {
+    pub const fn remaining(&self) -> usize {
         self.remaining
     }
 }

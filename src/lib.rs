@@ -30,7 +30,7 @@ pub extern crate alloc;
 pub use bytes;
 
 mod coders;
-mod custom_types;
+// mod custom_types;
 #[cfg(feature = "tonic")]
 mod tonic;
 mod types;
@@ -84,10 +84,10 @@ pub use crate::traits::ProtoDecoder;
 pub use crate::traits::ProtoEncode;
 pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoKind;
-#[cfg(feature = "papaya")]
-pub use crate::wrappers::conc_map::papaya_map_encode_input;
-#[cfg(feature = "papaya")]
-pub use crate::wrappers::conc_set::papaya_set_encode_input;
+// #[cfg(feature = "papaya")]
+// pub use crate::wrappers::conc_map::papaya_map_encode_input;
+// #[cfg(feature = "papaya")]
+// pub use crate::wrappers::conc_set::papaya_set_encode_input;
 pub use crate::zero_copy::ToZeroCopy;
 pub use crate::zero_copy::ZeroCopy;
 

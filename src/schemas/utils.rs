@@ -47,7 +47,7 @@ pub(crate) fn rust_type_name(ident: ProtoIdent) -> String {
     strip_proto_suffix(ident.name)
 }
 
-pub(crate) fn proto_scalar_type(proto_type: &ProtoType) -> Option<&'static str> {
+pub(crate) const fn proto_scalar_type(proto_type: &ProtoType) -> Option<&'static str> {
     match proto_type {
         ProtoType::Double => Some("f64"),
         ProtoType::Float => Some("f32"),
@@ -62,7 +62,7 @@ pub(crate) fn proto_scalar_type(proto_type: &ProtoType) -> Option<&'static str> 
     }
 }
 
-pub(crate) fn proto_map_types(proto_type: &ProtoType) -> Option<(&ProtoType, &ProtoType)> {
+pub(crate) const fn proto_map_types(proto_type: &ProtoType) -> Option<(&ProtoType, &ProtoType)> {
     match proto_type {
         ProtoType::Map { key, value } => Some((key, value)),
         _ => None,

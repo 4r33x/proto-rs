@@ -111,11 +111,7 @@ where
     }
 }
 
-impl<'a, T: ProtoExt> ProtoExt for &'a Box<T> {
-    const KIND: ProtoKind = T::KIND;
-}
-
-impl<'a, T> ProtoArchive for &'a Box<T>
+impl<T> ProtoArchive for &Box<T>
 where
     T: ProtoArchive,
 {

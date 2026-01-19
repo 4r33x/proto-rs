@@ -18,7 +18,7 @@ pub struct ZeroCopyRequest<T> {
 
 impl<T> ZeroCopyRequest<T> {
     #[inline]
-    pub fn from_zerocopy_request(request: Request<ZeroCopyBuffer>) -> Self {
+    pub const fn from_zerocopy_request(request: Request<ZeroCopyBuffer>) -> Self {
         Self {
             inner: request,
             _marker: PhantomData,
@@ -36,12 +36,12 @@ impl<T> ZeroCopyRequest<T> {
     }
 
     #[inline]
-    pub fn as_request(&self) -> &Request<ZeroCopyBuffer> {
+    pub const fn as_request(&self) -> &Request<ZeroCopyBuffer> {
         &self.inner
     }
 
     #[inline]
-    pub fn as_request_mut(&mut self) -> &mut Request<ZeroCopyBuffer> {
+    pub const fn as_request_mut(&mut self) -> &mut Request<ZeroCopyBuffer> {
         &mut self.inner
     }
 }

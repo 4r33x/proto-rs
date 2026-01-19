@@ -1,5 +1,3 @@
-//! `ProtoExt` implementations for fixed-size arrays using new trait system
-
 use core::array;
 use core::mem::MaybeUninit;
 
@@ -10,9 +8,8 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
-use crate::encoding::encode_varint;
-use crate::encoding::encoded_len_varint;
 use crate::encoding::skip_field;
+use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -21,6 +18,8 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::wrappers::lists::encode_repeated_value;
+use crate::wrappers::lists::repeated_payload_len;
 
 #[cfg(feature = "stable")]
 #[inline]
@@ -43,30 +42,15 @@ pub struct ArchivedArray<'a, T: ProtoArchive + ProtoExt, const N: usize> {
     len: usize,
 }
 
-fn repeated_payload_len<T: ProtoArchive + ProtoExt>(archived: &T::Archived<'_>) -> usize {
-    let item_len = T::len(archived);
-    match T::KIND {
-        ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => item_len,
-        ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => encoded_len_varint(item_len as u64) + item_len,
-        ProtoKind::Repeated(_) => unreachable!(),
-    }
-}
-
-fn encode_repeated_value<T: ProtoArchive + ProtoExt>(archived: T::Archived<'_>, buf: &mut impl BufMut) {
-    match T::KIND {
-        ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => unsafe { T::encode(archived, buf) },
-        ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-            let len = T::len(&archived);
-            encode_varint(len as u64, buf);
-            unsafe { T::encode(archived, buf) };
-        }
-        ProtoKind::Repeated(_) => unreachable!(),
-    }
-}
-
 impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
-    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("Array");
+    const KIND: ProtoKind = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
+        _ => ProtoKind::Repeated(&T::KIND),
+    };
+    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => None,
+        _ => Some("Array"),
+    };
 }
 
 impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
@@ -93,6 +77,11 @@ impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if T::KIND.is_bytes_kind() {
+            // SAFETY: only executed for [u8]
+            let mut bytes: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr().cast::<u8>(), self.len()) };
+            return super::bytes_encoding::merge(wire_type, &mut bytes, buf, ctx);
+        }
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
@@ -194,20 +183,15 @@ where
 impl<T: ProtoEncode, const N: usize> ProtoEncode for [T; N]
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
+    for<'a> T: 'a + ProtoExt,
+    for<'a> &'a [T]: ProtoArchive + ProtoExt,
 {
-    type Shadow<'a> = [T::Shadow<'a>; N];
+    type Shadow<'a> = &'a [T];
 }
 
-impl<'a, T, S, const N: usize> ProtoShadowEncode<'a, [T; N]> for [S; N]
-where
-    S: ProtoShadowEncode<'a, T>,
-{
+impl<'a, T, const N: usize> ProtoShadowEncode<'a, [T; N]> for &'a [T] {
     #[inline]
     fn from_sun(value: &'a [T; N]) -> Self {
-        let mut out: [MaybeUninit<S>; N] = [const { MaybeUninit::uninit() }; N];
-        for (idx, item) in value.iter().enumerate() {
-            out[idx].write(S::from_sun(item));
-        }
-        unsafe { assume_init_array(out) }
+        value
     }
 }

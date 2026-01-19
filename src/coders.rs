@@ -56,7 +56,7 @@ impl<Encode, Decode, Mode> Default for ProtoCodec<Encode, Decode, Mode> {
 }
 
 impl<Encode, Decode, Mode> ProtoCodec<Encode, Decode, Mode> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { _marker: PhantomData }
     }
 }

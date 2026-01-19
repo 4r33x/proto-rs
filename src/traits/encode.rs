@@ -18,6 +18,9 @@ pub trait ProtoArchive: Sized {
 
     fn is_default(&self) -> bool;
     fn len(archived: &Self::Archived<'_>) -> usize;
+    /// # Safety
+    ///
+    /// DO NOT CALL IT, ONLY IMPLEMENTATION ALLOWED
     unsafe fn encode(arhived: Self::Archived<'_>, buf: &mut impl BufMut);
     fn archive(&self) -> Self::Archived<'_>;
 }
@@ -73,7 +76,7 @@ where
     inner: <<T as ProtoEncode>::Shadow<'s> as ProtoArchive>::Archived<'a>, //None when default
     len: usize,                                                            // 0 when inner=None
 }
-impl<'a, 's, T: ProtoEncode> ProtoExt for ArchivedProtoMessage<'a, 's, T> {
+impl<T: ProtoEncode> ProtoExt for ArchivedProtoMessage<'_, '_, T> {
     const KIND: ProtoKind = T::Shadow::KIND;
 }
 
@@ -92,13 +95,13 @@ where
     }
 
     #[inline(always)]
-    pub fn is_default(&self) -> bool {
+    pub const fn is_default(&self) -> bool {
         self.len == 0
     }
 
     //used for preallocating buffers
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len
     }
     #[inline(always)]
@@ -148,13 +151,13 @@ impl<'a, const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoInner<'a, TAG,
     }
 
     #[inline(always)]
-    pub fn is_default(&self) -> bool {
+    pub const fn is_default(&self) -> bool {
         self.inner.is_none()
     }
 
     //used for preallocating buffers
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.len + encoded_len_varint(self.len as u64) + Self::TAG_LEN
     }
 
