@@ -46,11 +46,12 @@ where
 {
     #[inline]
     fn to_sun(self) -> Result<HashSet<U, S>, DecodeError> {
-        let mut out = HashSet::default();
+        let out = HashSet::default();
         let guard = out.pin();
         for item in self {
             guard.insert(item.to_sun()?);
         }
+        drop(guard);
         Ok(out)
     }
 }
@@ -77,7 +78,8 @@ where
 
 impl<T, S> ProtoArchive for &HashSet<T, S>
 where
-    T: ProtoArchive + ProtoExt,
+    T: ProtoArchive + ProtoExt + Eq + Hash,
+    S: BuildHasher,
 {
     type Archived<'x> = Vec<u8>;
 

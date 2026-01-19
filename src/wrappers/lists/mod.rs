@@ -62,7 +62,7 @@ fn repeated_payload_len<T: ProtoArchive + ProtoExt>(archived: &T::Archived<'_>) 
         ProtoKind::Repeated(_) => unreachable!(),
     }
 }
-
+//this fn should probably use tag for ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message branch
 #[inline(always)]
 fn encode_repeated_value<T: ProtoArchive + ProtoExt>(archived: T::Archived<'_>, buf: &mut impl BufMut) {
     match T::KIND {

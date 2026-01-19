@@ -39,6 +39,7 @@ impl<K, V, S> ProtoArchive for &HashMap<K, V, S>
 where
     K: ProtoEncode + Eq + Hash,
     V: ProtoEncode + ProtoExt,
+    S: BuildHasher,
     for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
     for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
 {
@@ -155,12 +156,13 @@ where
 {
     #[inline]
     fn to_sun(self) -> Result<HashMap<K, V, S>, DecodeError> {
-        let mut out = HashMap::default();
+        let out = HashMap::default();
         let guard = out.pin();
         for entry in self {
             let (key, value) = entry.to_sun()?;
             guard.insert(key, value);
         }
+        drop(guard);
         Ok(out)
     }
 }
@@ -169,7 +171,7 @@ impl<K, V, S> ProtoEncode for HashMap<K, V, S>
 where
     for<'b> K: 'b + ProtoEncode + Eq + Hash,
     for<'b> V: 'b + ProtoEncode + ProtoExt,
-    for<'b> S: 'b,
+    for<'b> S: 'b + BuildHasher,
 {
     type Shadow<'a> = &'a HashMap<K, V, S>;
 }
