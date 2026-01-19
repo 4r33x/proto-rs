@@ -4,10 +4,12 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 use syn::GenericArgument;
+use syn::Ident;
 use syn::ItemStruct;
 use syn::PathArguments;
 use syn::Type;
 use syn::parse_quote;
+use syn::spanned::Spanned;
 
 use super::build_validate_with_ext_impl;
 use super::generic_bounds::add_proto_wire_bounds;
@@ -16,16 +18,12 @@ use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_clear_stmts;
 use super::unified_field_handler::build_decode_match_arms;
-use super::unified_field_handler::build_encode_stmts;
-use super::unified_field_handler::build_encoded_len_terms;
-use super::unified_field_handler::build_is_default_checks;
 use super::unified_field_handler::build_post_decode_hooks;
 use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
-use super::unified_field_handler::generate_delegating_proto_wire_impl;
-use super::unified_field_handler::generate_proto_shadow_impl;
-use super::unified_field_handler::generate_sun_proto_ext_impl;
+use super::unified_field_handler::encode_conversion_expr;
+use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
@@ -98,12 +96,10 @@ pub(super) fn generate_struct_impl(
         let bounded_generics = add_proto_wire_bounds(generics, std::iter::once(&field));
         let bounded_generics = add_transparent_bounds(&bounded_generics, &field.field.ty);
         let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
-        let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
         let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
 
         return quote! {
             #struct_item
-            #proto_shadow_impl
             #transparent_impl
         };
     }
@@ -113,14 +109,11 @@ pub(super) fn generate_struct_impl(
 
     let fields = assign_tags(fields);
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
-
     let proto_ext_impl = generate_proto_ext_impl(name, &impl_generics, &ty_generics, where_clause, &fields, config);
-    let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields, config);
+    let proto_wire_impl = generate_proto_wire_impl(name, &impl_generics, &ty_generics, where_clause, &fields, &data.fields, config, &bounded_generics);
 
     quote! {
         #struct_item
-        #proto_shadow_impl
         #proto_ext_impl
         #proto_wire_impl
     }
@@ -128,18 +121,11 @@ pub(super) fn generate_struct_impl(
 
 fn add_transparent_bounds(generics: &syn::Generics, inner_ty: &Type) -> syn::Generics {
     let mut generics = generics.clone();
-    let type_params: BTreeSet<_> = generics.type_params().map(|param| param.ident.clone()).collect();
+    let _type_params: BTreeSet<_> = generics.type_params().map(|param| param.ident.clone()).collect();
     let where_clause = generics.make_where_clause();
-    where_clause.predicates.push(parse_quote!(#inner_ty: ::proto_rs::ProtoWire));
-    where_clause.predicates.push(parse_quote!(for<'a> #inner_ty: ::proto_rs::ProtoExt<Shadow<'a> = #inner_ty>));
-    where_clause.predicates.push(parse_quote!(for<'a> #inner_ty: ::proto_rs::EncodeInputFromRef<'a>));
-    if !type_params.is_empty() {
-        let mut used = BTreeSet::new();
-        collect_type_params(inner_ty, &type_params, &mut used);
-        for ident in used {
-            where_clause.predicates.push(parse_quote!(#ident: ::proto_rs::ProtoShadow<#ident>));
-        }
-    }
+    where_clause.predicates.push(parse_quote!(#inner_ty: ::proto_rs::ProtoEncode));
+    where_clause.predicates.push(parse_quote!(#inner_ty: ::proto_rs::ProtoDecode));
+    where_clause.predicates.push(parse_quote!(#inner_ty: ::proto_rs::ProtoExt));
     generics
 }
 
@@ -256,8 +242,9 @@ fn generate_transparent_struct_impl(
     original_fields: &syn::Fields,
 ) -> TokenStream2 {
     let inner_ty = &field.field.ty;
-    let mut_value_access = field.access.access_tokens(quote! { value });
     let mut_self_access = field.access.access_tokens(quote! { self });
+    let self_access = field.access.access_tokens(quote! { self });
+    let value_access = field.access.access_tokens(quote! { value });
 
     let wrap_expr = match original_fields {
         syn::Fields::Unnamed(_) => quote! { Self(inner) },
@@ -269,114 +256,20 @@ fn generate_transparent_struct_impl(
     };
 
     let default_expr = match original_fields {
-        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoWire>::proto_default()) },
+        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoDecoder>::proto_default()) },
         syn::Fields::Named(_) => {
             let ident = field.access.ident().expect("expected named field ident for transparent struct");
-            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoWire>::proto_default() } }
+            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoDecoder>::proto_default() } }
         }
         syn::Fields::Unit => quote! { Self },
     };
 
-    let is_default_binding = super::unified_field_handler::encode_input_binding(field, &quote! { value });
-    let is_default_prelude: Vec<_> = is_default_binding.prelude.into_iter().collect();
-    let is_default_value = is_default_binding.value;
-
-    let encoded_len_binding = super::unified_field_handler::encode_input_binding(field, &quote! { value });
-    let encoded_len_prelude: Vec<_> = encoded_len_binding.prelude.into_iter().collect();
-    let encoded_len_value = encoded_len_binding.value;
-
-    let encode_raw_binding = super::unified_field_handler::encode_input_binding(field, &quote! { value });
-    let encode_raw_prelude: Vec<_> = encode_raw_binding.prelude.into_iter().collect();
-    let encode_raw_value = encode_raw_binding.value;
-
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-            type Shadow<'b> = #name #ty_generics;
-
-            #[inline(always)]
-            fn merge_field(
-                _value: &mut Self::Shadow<'_>,
-                tag: u32,
-                wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
-            }
-
-            #[inline(always)]
-            fn decode(mut buf: impl ::proto_rs::bytes::Buf) -> Result<Self, ::proto_rs::DecodeError> {
-                if ::core::matches!(
-                    <#inner_ty as ::proto_rs::ProtoWire>::KIND,
-                    ::proto_rs::ProtoKind::Message
-                ) {
-                    let inner = <#inner_ty as ::proto_rs::ProtoExt>::decode(buf)?;
-                    Ok(#wrap_expr)
-                } else {
-                    let mut inner = <#inner_ty as ::proto_rs::ProtoWire>::proto_default();
-                    <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
-                        <#inner_ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
-                        &mut inner,
-                        &mut buf,
-                        ::proto_rs::encoding::DecodeContext::default(),
-                    )?;
-                    Ok(#wrap_expr)
-                }
-            }
-
-            #[inline(always)]
-            fn decode_length_delimited(
-                mut buf: impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<Self, ::proto_rs::DecodeError> {
-                if ::core::matches!(
-                    <#inner_ty as ::proto_rs::ProtoWire>::KIND,
-                    ::proto_rs::ProtoKind::Message
-                ) {
-                    let inner = <#inner_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
-                    Ok(#wrap_expr)
-                } else {
-                    let mut inner = <#inner_ty as ::proto_rs::ProtoWire>::proto_default();
-                    <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
-                        <#inner_ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
-                        &mut inner,
-                        &mut buf,
-                        ctx,
-                    )?;
-                    Ok(#wrap_expr)
-                }
-            }
-
-            #[inline(always)]
-            fn merge_length_delimited<B: ::proto_rs::bytes::Buf>(
-                value: &mut Self::Shadow<'_>,
-                buf: &mut B,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                if ::core::matches!(
-                    <#inner_ty as ::proto_rs::ProtoWire>::KIND,
-                    ::proto_rs::ProtoKind::Message
-                ) {
-                    <#inner_ty as ::proto_rs::ProtoExt>::merge_length_delimited(
-                        &mut #mut_value_access,
-                        buf,
-                        ctx,
-                    )
-                } else {
-                    <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
-                        <#inner_ty as ::proto_rs::ProtoWire>::WIRE_TYPE,
-                        &mut #mut_value_access,
-                        buf,
-                        ctx,
-                    )
-                }
-            }
+            const KIND: ::proto_rs::ProtoKind = <#inner_ty as ::proto_rs::ProtoExt>::KIND;
         }
 
-        impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
-            type EncodeInput<'b> = &'b Self;
-            const KIND: ::proto_rs::ProtoKind = <#inner_ty as ::proto_rs::ProtoWire>::KIND;
-
+        impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
             fn proto_default() -> Self {
                 #default_expr
@@ -384,40 +277,172 @@ fn generate_transparent_struct_impl(
 
             #[inline(always)]
             fn clear(&mut self) {
-                <#inner_ty as ::proto_rs::ProtoWire>::clear(&mut #mut_self_access);
+                <#inner_ty as ::proto_rs::ProtoDecoder>::clear(&mut #mut_self_access);
             }
 
             #[inline(always)]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                #( #is_default_prelude )*
-                <#inner_ty as ::proto_rs::ProtoWire>::is_default_impl(&#is_default_value)
-            }
-
-            #[inline(always)]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                #( #encoded_len_prelude )*
-                <#inner_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encoded_len_value)
-            }
-
-            #[inline(always)]
-            fn encode_raw_unchecked(value: Self::EncodeInput<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                #( #encode_raw_prelude )*
-                <#inner_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(#encode_raw_value, buf);
-            }
-
-            #[inline(always)]
-            fn decode_into(
-                wire_type: ::proto_rs::encoding::WireType,
+            fn merge_field(
                 value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                <#inner_ty as ::proto_rs::ProtoWire>::decode_into(
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field(
+                    &mut #value_access,
+                    tag,
                     wire_type,
-                    &mut #mut_value_access,
                     buf,
                     ctx,
                 )
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoShadowDecode<Self> for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn to_sun(self) -> Result<Self, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
+            type ShadowDecoded = Self;
+        }
+
+        impl<'__proto_a> #impl_generics ::proto_rs::ProtoShadowEncode<'__proto_a, #name #ty_generics> for &'__proto_a #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn from_sun(value: &'__proto_a #name #ty_generics) -> Self {
+                value
+            }
+        }
+
+        impl<'__proto_a> #impl_generics ::proto_rs::ProtoArchive for &'__proto_a #name #ty_generics #where_clause {
+            type Archived<'__proto_x> = <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'__proto_a> as ::proto_rs::ProtoArchive>::Archived<'__proto_x>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                let inner = <#inner_ty as ::proto_rs::ProtoEncode>::Shadow::from_sun(&#self_access);
+                <_ as ::proto_rs::ProtoArchive>::is_default(&inner)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'__proto_a> as ::proto_rs::ProtoArchive>::len(archived)
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'__proto_a> as ::proto_rs::ProtoArchive>::encode(archived, buf)
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                let inner = <#inner_ty as ::proto_rs::ProtoEncode>::Shadow::from_sun(&#self_access);
+                inner.archive()
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
+            type Shadow<'__proto_a> = &'__proto_a Self;
+        }
+    }
+}
+
+fn generate_proto_archive_impl_for_ref(
+    name: &syn::Ident,
+    _impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    fields: &[FieldInfo<'_>],
+    generics: &syn::Generics,
+) -> TokenStream2 {
+    // Generate field archiving expressions
+    let field_archives: Vec<_> = fields.iter().filter_map(|info| {
+        let tag = info.tag?;
+        let field_name = Ident::new(&format!("f{}", tag), info.field.span());
+        let access = info.access.access_tokens(quote! { self });
+        let proto_ty = &info.proto_ty;
+
+        let converted_value = if needs_encode_conversion(&info.config, &info.parsed) {
+            encode_conversion_expr(info, &access)
+        } else {
+            access.clone()
+        };
+
+        Some(quote! {
+            let #field_name = ::proto_rs::ArchivedProtoInner::<#tag, #proto_ty>::new(&#converted_value);
+        })
+    }).collect();
+
+    let field_names: Vec<_> = fields.iter().filter_map(|info| {
+        info.tag.map(|tag| Ident::new(&format!("f{}", tag), info.field.span()))
+    }).collect();
+
+    let len_sum = if field_names.is_empty() {
+        quote! { 0 }
+    } else {
+        quote! { #(#field_names.len())+* }
+    };
+
+    let field_inits: Vec<_> = field_names.iter().map(|name| {
+        quote! { #name }
+    }).collect();
+
+    let field_encodes: Vec<_> = field_names.iter().map(|name| {
+        quote! { #name.encode(buf); }
+    }).collect();
+
+    let archived_struct_name = Ident::new(&format!("{}Archived", name), name.span());
+
+    // Create generics for ProtoArchive impl with lifetime
+    let mut archive_generics = generics.clone();
+    archive_generics.params.insert(0, syn::parse_quote!('__proto_a));
+    let (archive_impl_generics, _, archive_where_clause) = archive_generics.split_for_impl();
+
+    // Generate the Archived struct
+    let archived_struct_fields: Vec<_> = fields.iter().filter_map(|info| {
+        let tag = info.tag?;
+        let field_name = Ident::new(&format!("f{}", tag), info.field.span());
+        let proto_ty = &info.proto_ty;
+        Some(quote! { #field_name: ::proto_rs::ArchivedProtoInner<'__proto_a, #tag, #proto_ty> })
+    }).collect();
+
+    let archived_struct_def = quote! {
+        #[allow(non_camel_case_types)]
+        struct #archived_struct_name<'__proto_a> #archive_where_clause {
+            #(#archived_struct_fields),*
+        }
+    };
+
+    quote! {
+        #archived_struct_def
+
+        impl #archive_impl_generics ::proto_rs::ProtoArchive for &'__proto_a #name #ty_generics #archive_where_clause {
+            type Archived<'__proto_x> = #archived_struct_name<'__proto_x>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                // A message is default if all fields are default
+                #(#field_archives)*
+                #(if !#field_names.is_default() { return false; })*
+                true
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                #len_sum
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                #(archived.#field_encodes)*
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                #(#field_archives)*
+                #archived_struct_name {
+                    #(#field_inits),*
+                }
             }
         }
     }
@@ -446,73 +471,13 @@ fn generate_proto_ext_impl(
     impl_generics: &syn::ImplGenerics,
     ty_generics: &syn::TypeGenerics,
     where_clause: Option<&syn::WhereClause>,
-    fields: &[FieldInfo<'_>],
-    config: &UnifiedProtoConfig,
+    _fields: &[FieldInfo<'_>],
+    _config: &UnifiedProtoConfig,
 ) -> TokenStream2 {
-    let decode_arms = build_decode_match_arms(fields, &quote! { value });
-
-    let shadow_ty = quote! { #name #ty_generics };
-    let post_decode_hooks = build_post_decode_hooks(fields);
-
-    // Generate message-level validation if validator is specified
-    let message_validation = if let Some(validator_fn) = &config.validator {
-        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
-        quote! {
-            #validator_path(&mut shadow)?;
-        }
-    } else {
-        quote! {}
-    };
-
-    let has_validation = config.validator.is_some();
-    let post_decode_impl = if post_decode_hooks.is_empty() && !has_validation {
-        quote! {}
-    } else {
-        quote! {
-            #[inline(always)]
-            fn post_decode(mut shadow: Self::Shadow<'_>) -> Result<Self, ::proto_rs::DecodeError> {
-                #(#post_decode_hooks)*
-                #message_validation
-                ::proto_rs::ProtoShadow::to_sun(shadow)
-            }
-        }
-    };
-
-    let validate_with_ext_impl = build_validate_with_ext_impl(config);
-
-    if config.has_suns() {
-        let impls: Vec<_> = config
-            .suns
-            .iter()
-            .map(|sun| {
-                let target_ty = &sun.ty;
-                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &post_decode_impl, &validate_with_ext_impl)
-            })
-            .collect();
-
-        quote! { #(#impls)* }
-    } else {
-        quote! {
-            impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty;
-
-                #[inline(always)]
-                fn merge_field(
-                    value: &mut Self::Shadow<'_>,
-                    tag: u32,
-                    wire_type: ::proto_rs::encoding::WireType,
-                    buf: &mut impl ::proto_rs::bytes::Buf,
-                    ctx: ::proto_rs::encoding::DecodeContext,
-                ) -> Result<(), ::proto_rs::DecodeError> {
-                    match tag {
-                        #(#decode_arms,)*
-                        _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                    }
-                }
-
-                #post_decode_impl
-                #validate_with_ext_impl
-            }
+    // New ProtoExt trait only has KIND constant
+    quote! {
+        impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
         }
     }
 }
@@ -525,28 +490,41 @@ fn generate_proto_wire_impl(
     fields: &[FieldInfo<'_>],
     original_fields: &syn::Fields,
     config: &UnifiedProtoConfig,
+    bounded_generics: &syn::Generics,
 ) -> TokenStream2 {
     let proto_default_expr = build_proto_default_expr(fields, original_fields);
     let self_tokens = quote! { self };
     let clear_stmts = build_clear_stmts(fields, &self_tokens);
-    let encode_input_tokens = quote! { value };
-    let is_default_checks = build_is_default_checks(fields, &encode_input_tokens);
-    let encoded_len_terms = build_encoded_len_terms(fields, &encode_input_tokens);
-    let encode_stmts = build_encode_stmts(fields, &encode_input_tokens);
-    let wire_decode_arms = build_decode_match_arms(fields, &quote! { msg });
+    let decode_arms = build_decode_match_arms(fields, &quote! { value });
 
-    let encode_input_ty = if let Some(sun) = config.suns.first() {
-        let target_ty = &sun.ty;
-        quote! { <Self as ::proto_rs::ProtoShadow<#target_ty>>::View<'b> }
+    let post_decode_hooks = build_post_decode_hooks(fields);
+    let message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(&mut value)?;
+        }
     } else {
-        quote! { <Self as ::proto_rs::ProtoShadow<Self>>::View<'b> }
+        quote! {}
     };
 
-    let shadow_impl = quote! {
-        impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
-            type EncodeInput<'b> = #encode_input_ty;
-            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+    let post_decode_impl = if post_decode_hooks.is_empty() && config.validator.is_none() {
+        quote! {}
+    } else {
+        quote! {
+            #[inline(always)]
+            fn post_decode(mut value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
+                #(#post_decode_hooks)*
+                #message_validation
+                Ok(value)
+            }
+        }
+    };
 
+    let validate_with_ext_impl = build_validate_with_ext_impl(config);
+
+    // ProtoDecoder implementation (for the struct itself as ShadowDecoded)
+    let proto_decoder_impl = quote! {
+        impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
             fn proto_default() -> Self {
                 #proto_default_expr
@@ -558,58 +536,72 @@ fn generate_proto_wire_impl(
             }
 
             #[inline(always)]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                #(#is_default_checks;)*
-                true
-            }
-
-            #[inline(always)]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                0 #(+ #encoded_len_terms)*
-            }
-
-            #[inline(always)]
-            fn encode_raw_unchecked(
-                value: Self::EncodeInput<'_>,
-                buf: &mut impl ::proto_rs::bytes::BufMut,
-            ) {
-                #(#encode_stmts)*
-            }
-
-            #[inline(always)]
-            fn decode_into(
-                wire_type: ::proto_rs::encoding::WireType,
+            fn merge_field(
                 value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                ::proto_rs::encoding::check_wire_type(
-                    ::proto_rs::encoding::WireType::LengthDelimited,
-                    wire_type,
-                )?;
-                ctx.limit_reached()?;
-                ::proto_rs::encoding::merge_loop(
-                    value,
-                    buf,
-                    ctx.enter_recursion(),
-                    |msg: &mut Self, buf, ctx| {
-                        let (tag, wire_type) = ::proto_rs::encoding::decode_key(buf)?;
-                        match tag {
-                            #(#wire_decode_arms,)*
-                            _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                        }
-                    },
-                )
+                match tag {
+                    #(#decode_arms,)*
+                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                }
             }
         }
     };
 
-    if config.has_suns() {
-        let shadow_ty = quote! { #name #ty_generics };
-        let delegating_impls: Vec<_> = config.suns.iter().map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty)).collect();
+    // ProtoShadowDecode implementation (Self decodes to Self)
+    let proto_shadow_decode_impl = quote! {
+        impl #impl_generics ::proto_rs::ProtoShadowDecode<Self> for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn to_sun(self) -> Result<Self, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+        }
+    };
 
-        quote! { #shadow_impl #(#delegating_impls)* }
-    } else {
-        quote! { #shadow_impl }
+    // ProtoDecode implementation
+    let proto_decode_impl = quote! {
+        impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
+            type ShadowDecoded = Self;
+
+            #post_decode_impl
+            #validate_with_ext_impl
+        }
+    };
+
+    // ProtoShadowEncode implementation (&Self encodes from &Self)
+    // Need to merge the lifetime with existing impl_generics
+    let mut shadow_encode_generics = bounded_generics.clone();
+    shadow_encode_generics.params.insert(0, syn::parse_quote!('__proto_a));
+    let (shadow_encode_impl_generics, _, _) = shadow_encode_generics.split_for_impl();
+
+    let proto_shadow_encode_impl = quote! {
+        impl #shadow_encode_impl_generics ::proto_rs::ProtoShadowEncode<'__proto_a, #name #ty_generics> for &'__proto_a #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn from_sun(value: &'__proto_a #name #ty_generics) -> Self {
+                value
+            }
+        }
+    };
+
+    // ProtoArchive implementation (for &Self)
+    let proto_archive_impl = generate_proto_archive_impl_for_ref(name, impl_generics, ty_generics, fields, &bounded_generics);
+
+    // ProtoEncode implementation
+    let proto_encode_impl = quote! {
+        impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
+            type Shadow<'__proto_a> = &'__proto_a Self;
+        }
+    };
+
+    quote! {
+        #proto_decoder_impl
+        #proto_shadow_decode_impl
+        #proto_decode_impl
+        #proto_shadow_encode_impl
+        #proto_archive_impl
+        #proto_encode_impl
     }
 }
