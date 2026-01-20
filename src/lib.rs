@@ -18,6 +18,9 @@ pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
 pub use prosto_derive::proto_rpc;
+pub use traits::ArchivedProtoInner;
+pub use traits::ProtoShadowDecode;
+pub use traits::ProtoShadowEncode;
 pub use traits::const_test_validate_with_ext;
 
 #[cfg(not(feature = "no-recursion-limit"))]

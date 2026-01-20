@@ -169,27 +169,6 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
     fields
 }
 
-pub fn generate_proto_shadow_impl(name: &Ident, generics: &syn::Generics) -> TokenStream2 {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    quote! {
-        impl #impl_generics ::proto_rs::ProtoShadow<Self> for #name #ty_generics #where_clause {
-            type Sun<'a> = &'a Self;
-            type OwnedSun = Self;
-            type View<'a> = &'a Self;
-
-            #[inline(always)]
-            fn to_sun(self) -> Result<Self::OwnedSun, ::proto_rs::DecodeError> {
-                Ok(self)
-            }
-
-            #[inline(always)]
-            fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-                value
-            }
-        }
-    }
-}
-
 pub struct EncodeBinding {
     pub prelude: Option<TokenStream2>,
     pub value: TokenStream2,
@@ -235,35 +214,9 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
         }
     } else {
         let init_expr = if is_option_type(&field.field.ty) {
-            if field.config.getter.is_some() {
-                if is_value_encode_type(&field.parsed.elem_type) {
-                    quote! { (#access_expr).clone() }
-                } else {
-                    quote! { (#access_expr).as_ref().map(|inner| inner) }
-                }
-            } else {
-                let inner_ty = &field.parsed.elem_type;
-                quote! {
-                    (#access_expr).as_ref().map(|inner| {
-                        <#inner_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(inner)
-                    })
-                }
-            }
-        } else if field.config.getter.is_some() {
-            if is_value_encode_type(proto_ty) {
-                quote! {{
-                    let borrowed: &#proto_ty = #access_expr;
-                    *borrowed
-                }}
-            } else {
-                quote! {
-                    <#proto_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(&(#access_expr))
-                }
-            }
+            quote! { (#access_expr).as_ref() }
         } else {
-            quote! {
-                <#proto_ty as ::proto_rs::EncodeInputFromRef<'_>>::encode_input_from_ref(&(#access_expr))
-            }
+            quote! { #access_expr }
         };
         EncodeBinding {
             prelude: None,
@@ -312,21 +265,21 @@ pub fn build_proto_default_expr(fields: &[FieldInfo<'_>], original: &syn::Fields
 pub fn field_proto_default_expr(info: &FieldInfo<'_>) -> TokenStream2 {
     if uses_proto_wire_directly(info) {
         let ty = &info.field.ty;
-        quote! { <#ty as ::proto_rs::ProtoWire>::proto_default() }
+        quote! { <#ty as ::proto_rs::ProtoDecoder>::proto_default() }
     } else {
         quote! { ::core::default::Default::default() }
     }
 }
 
-fn encode_conversion_expr(field: &FieldInfo<'_>, access: &TokenStream2) -> TokenStream2 {
+pub fn encode_conversion_expr(field: &FieldInfo<'_>, access: &TokenStream2) -> TokenStream2 {
     if is_numeric_enum(&field.config, &field.parsed) {
-        quote! { (#access) as i32 }
+        quote! { (*(#access)) as i32 }
     } else if let Some(fun) = &field.config.into_fn {
         let fun_path = parse_path_string(field.field, fun);
-        quote! { #fun_path(&(#access)) }
+        quote! { #fun_path(#access) }
     } else if field.config.into_type.is_some() {
         let ty = &field.proto_ty;
-        quote! { <#ty as ::core::convert::From<_>>::from((#access).clone()) }
+        quote! { <#ty as ::core::convert::From<_>>::from((*(#access)).clone()) }
     } else {
         access.clone()
     }
@@ -400,13 +353,8 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                 let assign = decode_conversion_assign(info, &access, &tmp_ident);
                 Some(quote! {
                     #tag => {
-                        let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
-                        <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
-                            wire_type,
-                            &mut #tmp_ident,
-                            buf,
-                            ctx,
-                        )?;
+                        let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                        <#decode_ty as ::proto_rs::ProtoDecoder>::merge(&mut #tmp_ident, wire_type, buf, ctx)?;
                         #assign
                         #validation
                         Ok(())
@@ -416,12 +364,7 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                 let field_ty = &info.field.ty;
                 Some(quote! {
                     #tag => {
-                        <#field_ty as ::proto_rs::ProtoWire>::decode_into(
-                            wire_type,
-                            &mut #access,
-                            buf,
-                            ctx,
-                        )?;
+                        <#field_ty as ::proto_rs::ProtoDecoder>::merge(&mut #access, wire_type, buf, ctx)?;
                         #validation
                         Ok(())
                     }
@@ -438,7 +381,7 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
             let access = info.access.access_tokens(self_tokens.clone());
             if uses_proto_wire_directly(info) {
                 let ty = &info.field.ty;
-                quote! { <#ty as ::proto_rs::ProtoWire>::clear(&mut #access) }
+                quote! { <#ty as ::proto_rs::ProtoDecoder>::clear(&mut #access) }
             } else {
                 quote! { #access = ::core::default::Default::default() }
             }
@@ -446,153 +389,6 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
         .collect()
 }
 
-pub fn build_is_default_checks(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
-    fields
-        .iter()
-        .filter_map(|info| {
-            info.tag?;
-            let ty = &info.proto_ty;
-            let binding = encode_input_binding(info, base);
-            let prelude = binding.prelude.into_iter();
-            let value = binding.value;
-            Some(quote! {
-                {
-                    #( #prelude )*
-                    if !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&#value) {
-                        return false;
-                    }
-                }
-            })
-        })
-        .collect()
-}
-
-pub fn build_encoded_len_terms(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
-    fields
-        .iter()
-        .filter_map(|info| {
-            let tag = info.tag?;
-            let ty = &info.proto_ty;
-            let binding = encode_input_binding(info, base);
-            let prelude = binding.prelude.into_iter();
-            let value = binding.value;
-            Some(quote! {{
-                #( #prelude )*
-                <#ty as ::proto_rs::ProtoWire>::encoded_len_tagged_impl(&#value, #tag)
-            }})
-        })
-        .collect()
-}
-
-pub fn build_encode_stmts(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
-    fields
-        .iter()
-        .filter_map(|info| {
-            let tag = info.tag?;
-            let ty = &info.proto_ty;
-            let binding = encode_input_binding(info, base);
-            let prelude = binding.prelude.into_iter();
-            let value = binding.value;
-            Some(quote! {
-                {
-                    #( #prelude )*
-                   <#ty as ::proto_rs::ProtoWire>::encode_with_tag(#tag, #value, buf)
-                }
-            })
-        })
-        .collect()
-}
-
-/// Generate delegating `ProtoWire` implementation for a sun type
-/// This eliminates code duplication across structs, enums, and complex enums
-pub fn generate_delegating_proto_wire_impl(shadow_ty: &TokenStream2, target_ty: &syn::Type) -> TokenStream2 {
-    quote! {
-        impl ::proto_rs::ProtoWire for #target_ty {
-            type EncodeInput<'a> = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::Sun<'a>;
-            const KIND: ::proto_rs::ProtoKind = <#shadow_ty as ::proto_rs::ProtoWire>::KIND;
-
-            #[inline(always)]
-            fn proto_default() -> Self {
-                <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_sun(
-                    <#shadow_ty as ::proto_rs::ProtoWire>::proto_default(),
-                )
-                .expect("default shadow must be decodable")
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = Self::proto_default();
-            }
-
-            #[inline(always)]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::is_default_impl(&shadow)
-            }
-
-            #[inline(always)]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(*value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&shadow)
-            }
-
-            #[inline(always)]
-            fn encode_raw_unchecked(
-                value: Self::EncodeInput<'_>,
-                buf: &mut impl ::proto_rs::bytes::BufMut,
-            ) {
-                let shadow = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(value);
-                <#shadow_ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(shadow, buf)
-            }
-
-            #[inline(always)]
-            fn decode_into(
-                wire_type: ::proto_rs::encoding::WireType,
-                value: &mut Self,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                let mut shadow = <#shadow_ty as ::proto_rs::ProtoWire>::proto_default();
-                <#shadow_ty as ::proto_rs::ProtoWire>::decode_into(wire_type, &mut shadow, buf, ctx)?;
-                *value = <#shadow_ty as ::proto_rs::ProtoShadow<#target_ty>>::to_sun(shadow)?;
-                Ok(())
-            }
-        }
-    }
-}
-
-/// Generate sun-based `ProtoExt` implementation
-/// This eliminates code duplication across different type handlers
-pub fn generate_sun_proto_ext_impl(
-    shadow_ty: &TokenStream2,
-    target_ty: &syn::Type,
-    decode_arms: &[TokenStream2],
-    post_decode_impl: &TokenStream2,
-    validate_with_ext_impl: &TokenStream2,
-) -> TokenStream2 {
-    quote! {
-        impl ::proto_rs::ProtoExt for #target_ty {
-            type Shadow<'b> = #shadow_ty;
-
-            #[inline(always)]
-            fn merge_field(
-                value: &mut Self::Shadow<'_>,
-                tag: u32,
-                wire_type: ::proto_rs::encoding::WireType,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                match tag {
-                    #(#decode_arms,)*
-                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
-                }
-            }
-
-            #post_decode_impl
-            #validate_with_ext_impl
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

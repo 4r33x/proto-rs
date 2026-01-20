@@ -6,6 +6,7 @@ use syn::DeriveInput;
 use syn::Ident;
 use syn::ItemEnum;
 use syn::Lit;
+use syn::parse_quote;
 use syn::spanned::Spanned;
 
 use super::build_validate_with_ext_impl;
@@ -13,17 +14,13 @@ use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
-use super::unified_field_handler::build_encode_stmts;
-use super::unified_field_handler::build_encoded_len_terms;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
+use super::unified_field_handler::encode_conversion_expr;
 use super::unified_field_handler::decode_conversion_assign;
-use super::unified_field_handler::encode_input_binding;
 use super::unified_field_handler::field_proto_default_expr;
-use super::unified_field_handler::generate_delegating_proto_wire_impl;
-use super::unified_field_handler::generate_proto_shadow_impl;
-use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::needs_decode_conversion;
+use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::parse_path_string;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
@@ -59,87 +56,134 @@ pub(super) fn generate_complex_enum_impl(
     let bounded_generics = add_proto_wire_bounds(generics, bound_fields);
     let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, &bounded_generics);
-
-    let shadow_ty = quote! { #name #ty_generics };
-
     let merge_field_arms = variants.iter().map(|variant| build_variant_merge_arm(name, variant)).collect::<Vec<_>>();
-
-    let default_expr = build_variant_default_expr(&variants[default_index]);
-    let is_default_match_arms = variants.iter().map(build_variant_is_default_arm).collect::<Vec<_>>();
-    let encoded_len_arms = variants.iter().map(build_variant_encoded_len_arm).collect::<Vec<_>>();
-    let encode_arms = variants.iter().map(build_variant_encode_arm).collect::<Vec<_>>();
-
-    let decode_into_body = if let Some(sun) = config.suns.first() {
-        let target_ty = &sun.ty;
-        if sun.by_ref {
-            quote! {
-                let decoded = <#target_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
-                *value = <Self as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(&decoded);
-                Ok(())
-            }
-        } else {
-            quote! {
-                let decoded = <#target_ty as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
-                *value = <Self as ::proto_rs::ProtoShadow<#target_ty>>::from_sun(decoded);
-                Ok(())
-            }
-        }
-    } else {
-        quote! {
-            *value = <Self as ::proto_rs::ProtoExt>::decode_length_delimited(buf, ctx)?;
-            Ok(())
-        }
-    };
+    let default_expr = build_variant_default_expr(&variants[default_index], name);
+    let is_default_arms = variants
+        .iter()
+        .map(|variant| build_variant_is_default_arm(variant, name))
+        .collect::<Vec<_>>();
+    let encode_arms = variants
+        .iter()
+        .map(|variant| build_variant_encode_arm(variant, name))
+        .collect::<Vec<_>>();
 
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
-
-    let proto_ext_impl = if config.has_suns() {
-        let impls: Vec<_> = config
-            .suns
-            .iter()
-            .map(|sun| {
-                let target_ty = &sun.ty;
-                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &merge_field_arms, &quote! {}, &validate_with_ext_impl)
-            })
-            .collect();
-        quote! { #(#impls)* }
+    let validate_with_ext_proto_impl = if config.has_suns() {
+        TokenStream2::new()
     } else {
-        quote! {
-            impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty;
+        validate_with_ext_impl.clone()
+    };
 
-                #[inline(always)]
-                fn merge_field(
-                    value: &mut Self::Shadow<'_>,
-                    tag: u32,
-                    wire_type: ::proto_rs::encoding::WireType,
-                    buf: &mut impl ::proto_rs::bytes::Buf,
-                    ctx: ::proto_rs::encoding::DecodeContext,
-                ) -> Result<(), ::proto_rs::DecodeError> {
-                    match tag {
-                        #(#merge_field_arms,)*
-                        _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+    let mut shadow_generics = bounded_generics.clone();
+    shadow_generics.params.insert(0, parse_quote!('a));
+    let (shadow_impl_generics, _shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
+
+    let sun_impls = if config.has_suns() {
+        let sun_impls = config.suns.iter().map(|sun| {
+            let target_ty = &sun.ty;
+            quote! {
+                impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
+                    const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+                    #validate_with_ext_impl
+                }
+
+                impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
+                    type Shadow<'a> = #name #ty_generics;
+                }
+
+                impl #impl_generics ::proto_rs::ProtoDecode for #target_ty #where_clause {
+                    type ShadowDecoded = #name #ty_generics;
+
+                    #[inline(always)]
+                    fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
+                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(value)
+                    }
+
+                    #validate_with_ext_impl
+                }
+
+                impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                    #[inline(always)]
+                    fn proto_default() -> Self {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
+                            .expect("failed to build default sun value")
+                    }
+
+                    #[inline(always)]
+                    fn clear(&mut self) {
+                        *self = Self::proto_default();
+                    }
+
+                    #[inline(always)]
+                    fn merge_field(
+                        value: &mut Self,
+                        tag: u32,
+                        wire_type: ::proto_rs::encoding::WireType,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+                        *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
+                    }
+
+                    #[inline(always)]
+                    fn merge(
+                        &mut self,
+                        wire_type: ::proto_rs::encoding::WireType,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
+                        *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
                     }
                 }
 
-                #validate_with_ext_impl
+                impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
+                    type Archived<'a> = <#name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'a>;
+
+                    #[inline(always)]
+                    fn is_default(&self) -> bool {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
+                    }
+
+                    #[inline(always)]
+                    fn len(archived: &Self::Archived<'_>) -> usize {
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::len(archived)
+                    }
+
+                    #[inline(always)]
+                    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode(archived, buf);
+                    }
+
+                    #[inline(always)]
+                    fn archive(&self) -> Self::Archived<'_> {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive(&shadow)
+                    }
+                }
             }
-        }
-    };
-
-    let encode_input_ty = if let Some(sun) = config.suns.first() {
-        let target_ty = &sun.ty;
-        quote! { <Self as ::proto_rs::ProtoShadow<#target_ty>>::View<'b> }
+        });
+        quote! { #( #sun_impls )* }
     } else {
-        quote! { <Self as ::proto_rs::ProtoShadow<Self>>::View<'b> }
+        quote! {}
     };
 
-    let proto_wire_impl = quote! {
-        impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
-            type EncodeInput<'b> = #encode_input_ty;
-            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+    Ok(quote! {
+        #enum_item
 
+        impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+            #validate_with_ext_proto_impl
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
             fn proto_default() -> Self {
                 #default_expr
@@ -151,62 +195,104 @@ pub(super) fn generate_complex_enum_impl(
             }
 
             #[inline(always)]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                match &*value {
-                    #(#is_default_match_arms,)*
-                }
-            }
-
-            #[inline(always)]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                match &*value {
-                    #(#encoded_len_arms,)*
-                }
-            }
-
-            #[inline(always)]
-            fn encode_raw_unchecked(
-                value: Self::EncodeInput<'_>,
-                buf: &mut impl ::proto_rs::bytes::BufMut,
-            ) {
-                match value {
-                    #(#encode_arms,)*
-                }
-            }
-
-            #[inline(always)]
-            fn decode_into(
-                wire_type: ::proto_rs::encoding::WireType,
+            fn merge_field(
                 value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                ::proto_rs::encoding::check_wire_type(
-                    ::proto_rs::encoding::WireType::LengthDelimited,
-                    wire_type,
-                )?;
-                #decode_into_body
+                match tag {
+                    #(#merge_field_arms,)*
+                    _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+                }
             }
         }
-    };
 
-    let delegating_impls = if config.has_suns() {
-        let shadow_ty = quote! { #name #ty_generics };
-        let impls: Vec<_> = config.suns.iter().map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty)).collect();
+        impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
+            type ShadowDecoded = Self;
+            #validate_with_ext_proto_impl
+        }
 
-        quote! { #(#impls)* }
-    } else {
-        quote! {}
-    };
+        impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+        }
 
-    Ok(quote! {
-        #enum_item
-        #proto_shadow_impl
-        #proto_ext_impl
-        #proto_wire_impl
-        #delegating_impls
+        impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for &'a #name #ty_generics #shadow_where_clause {
+            #[inline(always)]
+            fn from_sun(value: &'a #name #ty_generics) -> Self {
+                value
+            }
+        }
+
+        impl #shadow_impl_generics ::proto_rs::ProtoArchive for &'a #name #ty_generics #shadow_where_clause {
+            type Archived<'x> = Vec<u8>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                match *self {
+                    #(#is_default_arms,)*
+                }
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                archived.len()
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                ::proto_rs::bytes::BufMut::put_slice(buf, archived.as_slice());
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                if <Self as ::proto_rs::ProtoArchive>::is_default(self) {
+                    return Vec::new();
+                }
+                let mut buf = Vec::new();
+                match *self {
+                    #(#encode_arms,)*
+                }
+                buf
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+            type Archived<'x> = Vec<u8>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                archived.len()
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                ::proto_rs::bytes::BufMut::put_slice(buf, archived.as_slice());
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                <&Self as ::proto_rs::ProtoArchive>::archive(&self)
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
+            type Shadow<'a> = &'a #name #ty_generics;
+        }
+
+        #sun_impls
     })
 }
+
 
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -398,15 +484,10 @@ fn build_empty_variant_encode_body(tag: u32) -> TokenStream2 {
         ::proto_rs::encoding::encode_key(
             #tag,
             ::proto_rs::encoding::WireType::LengthDelimited,
-            buf,
+            &mut buf,
         );
-        ::proto_rs::encoding::encode_varint(0, buf);
+        ::proto_rs::encoding::encode_varint(0, &mut buf);
     }
-}
-
-// Helper: Generate encoded length for empty variants (Unit or empty Struct)
-fn build_empty_variant_encoded_len(tag: u32) -> TokenStream2 {
-    quote! { ::proto_rs::encoding::key_len(#tag) + 1 }
 }
 
 // Helper: Generate binding patterns for struct fields (handles skip attributes)
@@ -421,148 +502,98 @@ fn build_struct_field_bindings<'a>(fields: &'a [FieldInfo<'a>]) -> impl Iterator
     })
 }
 
-fn build_variant_default_expr(variant: &VariantInfo<'_>) -> TokenStream2 {
+fn build_variant_default_expr(variant: &VariantInfo<'_>, enum_ident: &Ident) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
-        VariantKind::Unit => quote! { Self::#ident },
+        VariantKind::Unit => quote! { #enum_ident::#ident },
         VariantKind::Tuple { field } => {
             let default_expr = field_proto_default_expr(&field.field);
-            quote! { Self::#ident(#default_expr) }
+            quote! { #enum_ident::#ident(#default_expr) }
         }
         VariantKind::Struct { fields } => {
             if fields.is_empty() {
-                quote! { Self::#ident }
+                quote! { #enum_ident::#ident }
             } else {
                 let inits = fields.iter().map(|info| {
                     let field_ident = info.field.ident.as_ref().expect("named field");
                     let expr = field_proto_default_expr(info);
                     quote! { #field_ident: #expr }
                 });
-                quote! { Self::#ident { #(#inits),* } }
+                quote! { #enum_ident::#ident { #(#inits),* } }
             }
         }
     }
 }
 
-fn build_variant_is_default_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
+fn build_variant_is_default_arm(variant: &VariantInfo<'_>, enum_ident: &Ident) -> TokenStream2 {
     let ident = variant.ident;
     match &variant.kind {
         VariantKind::Unit => {
             if variant.is_default {
-                quote! { Self::#ident => true }
+                quote! { #enum_ident::#ident => true }
             } else {
-                quote! { Self::#ident => false }
+                quote! { #enum_ident::#ident => false }
             }
         }
         VariantKind::Tuple { field } => {
-            if variant.is_default {
-                if field.field.config.skip {
-                    quote! { Self::#ident(..) => true }
-                } else {
-                    let binding_ident = &field.binding_ident;
-                    let binding = encode_input_binding(&field.field, &quote! { #binding_ident });
-                    let prelude = binding.prelude.into_iter();
-                    let value = binding.value;
-                    let ty = &field.field.proto_ty;
-                    quote! {
-                        Self::#ident(#binding_ident) => {
-                            #( #prelude )*
-                            <#ty as ::proto_rs::ProtoWire>::is_default_impl(&#value)
-                        }
-                    }
-                }
-            } else {
-                quote! { Self::#ident(..) => false }
+            if !variant.is_default {
+                return quote! { #enum_ident::#ident(..) => false };
             }
-        }
-        VariantKind::Struct { fields } => {
-            if variant.is_default {
-                if fields.is_empty() {
-                    quote! { Self::#ident { .. } => true }
-                } else {
-                    let bindings = build_struct_field_bindings(fields);
-
-                    let checks = fields.iter().filter_map(|info| {
-                        let ty = &info.proto_ty;
-                        let tag = info.tag?;
-                        let field_ident = info.field.ident.as_ref().expect("named field");
-                        let binding = encode_input_binding(info, &quote! { #field_ident });
-                        let prelude = binding.prelude.into_iter();
-                        let value = binding.value;
-                        Some(quote! {
-                            {
-                                let _ = #tag;
-                                #( #prelude )*
-                                if !<#ty as ::proto_rs::ProtoWire>::is_default_impl(&#value) {
-                                    return false;
-                                }
-                            }
-                        })
-                    });
-
-                    quote! {
-                        Self::#ident { #(#bindings),* } => {
-                            #(#checks;)*
-                            true
-                        }
-                    }
-                }
-            } else {
-                quote! { Self::#ident { .. } => false }
-            }
-        }
-    }
-}
-
-fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
-    let ident = variant.ident;
-    let tag = variant.tag;
-    match &variant.kind {
-        VariantKind::Unit => {
-            let len_expr = build_empty_variant_encoded_len(tag);
-            quote! { Self::#ident => #len_expr }
-        }
-        VariantKind::Tuple { field } => {
             if field.field.config.skip {
-                quote! { Self::#ident(..) => 0 }
+                quote! { #enum_ident::#ident(..) => true }
             } else {
                 let binding_ident = &field.binding_ident;
-                let binding = encode_input_binding(&field.field, &TokenStream2::new());
-                let encode_prelude = binding.prelude.into_iter();
-                let encode_value = binding.value;
-                let ty = &field.field.proto_ty;
-                quote! {
-                    Self::#ident(#binding_ident) => {
-                        #( #encode_prelude )*
-                        let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
-                        let body_len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_value) };
-                        let key_len = ::proto_rs::encoding::key_len(#tag);
-                        let len = match wire {
-                            ::proto_rs::encoding::WireType::LengthDelimited => {
-                                body_len + ::proto_rs::encoding::encoded_len_varint(body_len as u64)
-                            }
-                            _ => body_len,
-                        };
-                        key_len + len
+                let field_ty = &field.field.field.ty;
+                let ref_expr = quote! { &#binding_ident };
+                let check_expr = if needs_encode_conversion(&field.field.config, &field.field.parsed) {
+                    let converted = encode_conversion_expr(&field.field, &ref_expr);
+                    quote! { ::proto_rs::ProtoArchive::is_default(&#converted) }
+                } else {
+                    let shadow_ty = quote! { <#field_ty as ::proto_rs::ProtoEncode>::Shadow<'_> };
+                    quote! {
+                        {
+                            let shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #field_ty>>::from_sun(#ref_expr);
+                            ::proto_rs::ProtoArchive::is_default(&shadow)
+                        }
                     }
+                };
+                quote! {
+                    #enum_ident::#ident(#binding_ident) => { #check_expr }
                 }
             }
         }
         VariantKind::Struct { fields } => {
+            if !variant.is_default {
+                return quote! { #enum_ident::#ident { .. } => false };
+            }
             if fields.is_empty() {
-                let len_expr = build_empty_variant_encoded_len(tag);
-                quote! {
-                    Self::#ident { .. } => #len_expr
-                }
+                quote! { #enum_ident::#ident { .. } => true }
             } else {
                 let bindings = build_struct_field_bindings(fields);
-                let terms = build_encoded_len_terms(fields, &TokenStream2::new());
+                let checks = fields.iter().filter_map(|info| {
+                    if info.config.skip {
+                        return None;
+                    }
+                    let field_ident = info.field.ident.as_ref().expect("named field");
+                    let field_ty = &info.field.ty;
+                    let ref_expr = quote! { &#field_ident };
+                    let check_expr = if needs_encode_conversion(&info.config, &info.parsed) {
+                        let converted = encode_conversion_expr(info, &ref_expr);
+                        quote! { ::proto_rs::ProtoArchive::is_default(&#converted) }
+                    } else {
+                        let shadow_ty = quote! { <#field_ty as ::proto_rs::ProtoEncode>::Shadow<'_> };
+                        quote! {
+                            {
+                                let shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #field_ty>>::from_sun(#ref_expr);
+                                ::proto_rs::ProtoArchive::is_default(&shadow)
+                            }
+                        }
+                    };
+                    Some(check_expr)
+                });
                 quote! {
-                    Self::#ident { #(#bindings),* } => {
-                        let msg_len = 0 #(+ #terms)*;
-                        ::proto_rs::encoding::key_len(#tag)
-                            + ::proto_rs::encoding::encoded_len_varint(msg_len as u64)
-                            + msg_len
+                    #enum_ident::#ident { #(#bindings),* } => {
+                        true #(&& #checks)*
                     }
                 }
             }
@@ -570,72 +601,82 @@ fn build_variant_encoded_len_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
     }
 }
 
-fn build_variant_encode_arm(variant: &VariantInfo<'_>) -> TokenStream2 {
+fn build_variant_encode_arm(variant: &VariantInfo<'_>, enum_ident: &Ident) -> TokenStream2 {
     let ident = variant.ident;
     let tag = variant.tag;
     match &variant.kind {
         VariantKind::Unit => {
             let encode_body = build_empty_variant_encode_body(tag);
             quote! {
-                Self::#ident => {
+                #enum_ident::#ident => {
                     #encode_body
                 }
             }
         }
         VariantKind::Tuple { field } => {
             let binding_ident = &field.binding_ident;
-            let encode_binding = encode_input_binding(&field.field, &TokenStream2::new());
-            let encode_prelude = encode_binding.prelude.into_iter();
-            let encode_value = encode_binding.value;
-            let ty = &field.field.proto_ty;
-            let encode_body = if field.field.config.skip {
-                quote! {}
+            if field.field.config.skip {
+                return quote! {
+                    #enum_ident::#ident(..) => {}
+                };
+            }
+            let field_ty = &field.field.field.ty;
+            let ref_expr = quote! { &#binding_ident };
+            let shadow_ty = if needs_encode_conversion(&field.field.config, &field.field.parsed) {
+                let proto_ty = &field.field.proto_ty;
+                quote! { #proto_ty }
             } else {
-                quote! {
-                    #( #encode_prelude )*
-                    let wire = <#ty as ::proto_rs::ProtoWire>::WIRE_TYPE;
-                    ::proto_rs::encoding::encode_key(#tag, wire, buf);
-                    if wire == ::proto_rs::encoding::WireType::LengthDelimited {
-                        let len = unsafe { <#ty as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&#encode_value) };
-                        ::proto_rs::encoding::encode_varint(len as u64, buf);
-                    }
-                    <#ty as ::proto_rs::ProtoWire>::encode_raw_unchecked(#encode_value, buf);
-                }
+                quote! { <#field_ty as ::proto_rs::ProtoEncode>::Shadow<'_> }
             };
-            let binding_pattern = if field.field.config.skip {
-                quote! { .. }
+            let shadow_expr = if needs_encode_conversion(&field.field.config, &field.field.parsed) {
+                encode_conversion_expr(&field.field, &ref_expr)
             } else {
-                quote! { #binding_ident }
+                quote! { <#shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #field_ty>>::from_sun(#ref_expr) }
             };
             quote! {
-                Self::#ident(#binding_pattern) => {
-                    #encode_body
+                #enum_ident::#ident(#binding_ident) => {
+                    let __proto_rs_shadow = #shadow_expr;
+                    let archived = ::proto_rs::ArchivedProtoInner::<#tag, #shadow_ty>::new(&__proto_rs_shadow);
+                    archived.encode(&mut buf);
                 }
             }
         }
         VariantKind::Struct { fields } => {
-            if fields.is_empty() {
-                let encode_body = build_empty_variant_encode_body(tag);
-                quote! {
-                    Self::#ident { .. } => {
-                        #encode_body
-                    }
+            let bindings = build_struct_field_bindings(fields);
+            let field_encodes = fields.iter().filter_map(|info| {
+                if info.config.skip {
+                    return None;
                 }
-            } else {
-                let bindings = build_struct_field_bindings(fields);
-                let terms = build_encoded_len_terms(fields, &TokenStream2::new());
-                let encode_stmts = build_encode_stmts(fields, &TokenStream2::new());
-                quote! {
-                    Self::#ident { #(#bindings),* } => {
-                        let msg_len = 0 #(+ #terms)*;
-                        ::proto_rs::encoding::encode_key(
-                            #tag,
-                            ::proto_rs::encoding::WireType::LengthDelimited,
-                            buf,
-                        );
-                        ::proto_rs::encoding::encode_varint(msg_len as u64, buf);
-                        #(#encode_stmts)*
-                    }
+                let field_ident = info.field.ident.as_ref().expect("named field");
+                let field_tag = info.tag.expect("tag required");
+                let field_ty = &info.field.ty;
+                let ref_expr = quote! { &#field_ident };
+                let shadow_ty = if needs_encode_conversion(&info.config, &info.parsed) {
+                    let proto_ty = &info.proto_ty;
+                    quote! { #proto_ty }
+                } else {
+                    quote! { <#field_ty as ::proto_rs::ProtoEncode>::Shadow<'_> }
+                };
+                let shadow_expr = if needs_encode_conversion(&info.config, &info.parsed) {
+                    encode_conversion_expr(info, &ref_expr)
+                } else {
+                    quote! { <#shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #field_ty>>::from_sun(#ref_expr) }
+                };
+                let shadow_ident = syn::Ident::new(&format!("__proto_rs_variant_{}_shadow_{}", ident.to_string().to_lowercase(), info.index), info.field.span());
+                let archived_ident = syn::Ident::new(&format!("__proto_rs_variant_{}_archived_{}", ident.to_string().to_lowercase(), info.index), info.field.span());
+                Some(quote! {
+                    let #shadow_ident = #shadow_expr;
+                    let #archived_ident = ::proto_rs::ArchivedProtoInner::<#field_tag, #shadow_ty>::new(&#shadow_ident);
+                    #archived_ident.encode(&mut inner_buf);
+                })
+            });
+            quote! {
+                #enum_ident::#ident { #(#bindings),* } => {
+                    let mut inner_buf = Vec::new();
+                    #(#field_encodes)*
+                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, &mut buf);
+                    ::proto_rs::encoding::encode_varint(inner_buf.len() as u64, &mut buf);
+                    ::proto_rs::bytes::BufMut::put_slice(&mut buf, inner_buf.as_slice());
                 }
             }
         }
@@ -682,24 +723,14 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 let decode_ty = &field.field.decode_ty;
                 let assign = decode_conversion_assign(&field.field, &quote! { #binding_ident }, &tmp_ident);
                 quote! {
-                    let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
-                    <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
-                        wire_type,
-                        &mut #tmp_ident,
-                        buf,
-                        ctx,
-                    )?;
+                    let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                    <#decode_ty as ::proto_rs::ProtoDecoder>::merge(&mut #tmp_ident, wire_type, buf, ctx)?;
                     #assign
                 }
             } else {
                 let ty = &field.field.field.ty;
                 quote! {
-                    <#ty as ::proto_rs::ProtoWire>::decode_into(
-                        wire_type,
-                        &mut #binding_ident,
-                        buf,
-                        ctx,
-                    )?;
+                    <#ty as ::proto_rs::ProtoDecoder>::merge(&mut #binding_ident, wire_type, buf, ctx)?;
                 }
             };
 
@@ -761,13 +792,8 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let assign = decode_conversion_assign(info, &access, &tmp_ident);
                         Some(quote! {
                             #field_tag => {
-                                let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoWire>::proto_default();
-                                <#decode_ty as ::proto_rs::ProtoWire>::decode_into(
-                                    field_wire_type,
-                                    &mut #tmp_ident,
-                                    buf,
-                                    inner_ctx,
-                                )?;
+                                let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                                <#decode_ty as ::proto_rs::ProtoDecoder>::merge(&mut #tmp_ident, field_wire_type, buf, inner_ctx)?;
                                 #assign
                             }
                         })
@@ -775,12 +801,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let ty = &info.field.ty;
                         Some(quote! {
                             #field_tag => {
-                                <#ty as ::proto_rs::ProtoWire>::decode_into(
-                                    field_wire_type,
-                                    &mut #field_ident,
-                                    buf,
-                                    inner_ctx,
-                                )?;
+                                <#ty as ::proto_rs::ProtoDecoder>::merge(&mut #field_ident, field_wire_type, buf, inner_ctx)?;
                             }
                         })
                     }

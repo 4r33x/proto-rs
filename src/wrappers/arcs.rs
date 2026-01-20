@@ -17,16 +17,16 @@ impl<T: ProtoExt> ProtoExt for Arc<T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T: ProtoDecode + Clone> ProtoDecode for Arc<T>
+impl<T: ProtoDecode> ProtoDecode for Arc<T>
 where
-    T::ShadowDecoded: ProtoDecoder + ProtoExt + Clone,
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
 {
     type ShadowDecoded = Box<T::ShadowDecoded>;
 }
 
 impl<T, U> ProtoShadowDecode<Arc<U>> for Box<T>
 where
-    T: ProtoShadowDecode<U> + Clone,
+    T: ProtoShadowDecode<U>,
 {
     #[inline]
     fn to_sun(self) -> Result<Arc<U>, DecodeError> {

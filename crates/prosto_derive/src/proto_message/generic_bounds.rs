@@ -44,13 +44,23 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
     let mut bounded = generics.clone();
     let where_clause = bounded.make_where_clause();
     for ident in &used_lifetimes {
-        where_clause.predicates.push(parse_quote!(for<'a> #ident: 'a));
+        where_clause.predicates.push(parse_quote!(for<'__proto> #ident: '__proto));
     }
     for ident in used_encode {
-        where_clause.predicates.push(parse_quote!(for<'a> #ident: ::proto_rs::EncodeInputFromRef<'a>));
+        where_clause
+            .predicates
+            .push(parse_quote!(#ident: ::proto_rs::ProtoEncode + ::proto_rs::ProtoDecode + ::proto_rs::ProtoDecoder + ::proto_rs::ProtoExt));
+        where_clause
+            .predicates
+            .push(parse_quote!(for<'__proto> <#ident as ::proto_rs::ProtoEncode>::Shadow<'__proto>: ::proto_rs::ProtoArchive + ::proto_rs::ProtoExt));
     }
     for ty in bound_types {
-        where_clause.predicates.push(parse_quote!(for<'a> #ty: ::proto_rs::EncodeInputFromRef<'a>));
+        where_clause
+            .predicates
+            .push(parse_quote!(#ty: ::proto_rs::ProtoEncode + ::proto_rs::ProtoDecode + ::proto_rs::ProtoDecoder + ::proto_rs::ProtoExt));
+        where_clause
+            .predicates
+            .push(parse_quote!(for<'__proto> <#ty as ::proto_rs::ProtoEncode>::Shadow<'__proto>: ::proto_rs::ProtoArchive + ::proto_rs::ProtoExt));
     }
 
     bounded
