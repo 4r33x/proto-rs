@@ -261,6 +261,54 @@ impl_proto_primitive_by_ref!(String, string, "StringValue", ProtoKind::String);
 
 impl_proto_primitive_by_ref!(Bytes, bytes, "BytesValue", ProtoKind::Bytes);
 
+impl ProtoArchive for String {
+    type Archived<'a> = <&'a String as ProtoArchive>::Archived<'a>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        <&String as ProtoArchive>::is_default(&self)
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        <&String as ProtoArchive>::len(archived)
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { <&String as ProtoArchive>::encode(archived, buf) };
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        self
+    }
+}
+
+impl ProtoArchive for Bytes {
+    type Archived<'a> = <&'a Bytes as ProtoArchive>::Archived<'a>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        <&Bytes as ProtoArchive>::is_default(&self)
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        <&Bytes as ProtoArchive>::len(archived)
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { <&Bytes as ProtoArchive>::encode(archived, buf) };
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        self
+    }
+}
+
 // ============================================================================
 // Narrow primitives (u8, u16, i8, i16)
 // ============================================================================

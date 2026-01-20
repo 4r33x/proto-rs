@@ -2,11 +2,13 @@ use alloc::vec::Vec;
 use core::hash::BuildHasher;
 use core::hash::Hash;
 
+use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashSet;
 
 use crate::DecodeError;
 use crate::ProtoArchive;
+use crate::encoding::skip_field;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -78,7 +80,8 @@ where
 
 impl<T, S> ProtoArchive for &HashSet<T, S>
 where
-    T: ProtoArchive + ProtoExt + Eq + Hash,
+    T: ProtoExt + Eq + Hash,
+    for<'a> &'a T: ProtoArchive + ProtoExt,
     S: BuildHasher,
 {
     type Archived<'x> = Vec<u8>;
@@ -109,5 +112,47 @@ where
             encode_repeated_value::<T>(archived, &mut bytes);
         }
         bytes
+    }
+}
+
+impl<T, S> ProtoDecoder for HashSet<T, S>
+where
+    T: ProtoDecoder + ProtoExt + Eq + Hash,
+    S: BuildHasher + Default,
+{
+    #[inline(always)]
+    fn proto_default() -> Self {
+        HashSet::with_hasher(S::default())
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        self.clear();
+    }
+
+    #[inline(always)]
+    fn merge_field(
+        value: &mut Self,
+        tag: u32,
+        wire_type: crate::encoding::WireType,
+        buf: &mut impl Buf,
+        ctx: crate::encoding::DecodeContext,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            Self::merge(value, wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    #[inline(always)]
+    fn merge(&mut self, wire_type: crate::encoding::WireType, buf: &mut impl Buf, ctx: crate::encoding::DecodeContext) -> Result<(), DecodeError> {
+        let mut tmp = Vec::<T>::new();
+        <Vec<T> as ProtoDecoder>::merge(&mut tmp, wire_type, buf, ctx)?;
+        let guard = self.pin();
+        for item in tmp {
+            guard.insert(item);
+        }
+        Ok(())
     }
 }

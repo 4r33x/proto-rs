@@ -1,6 +1,7 @@
 use crate::ProtoArchive;
 use crate::ProtoExt;
 use crate::ProtoKind;
+use crate::traits::PrimitiveKind;
 use crate::bytes::BufMut;
 use crate::encoding::bytes as bytes_encoding;
 use crate::encoding::encode_varint;
@@ -25,12 +26,22 @@ pub enum ArchivedVec<'a, T: ProtoArchive + ProtoExt> {
     Owned(ArchivedRepeated<'a, T>),
 }
 
-impl ProtoExt for &[u8] {
-    const KIND: ProtoKind = ProtoKind::Bytes;
+impl<T: ProtoExt> ProtoExt for &[T] {
+    const KIND: ProtoKind = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
+        _ => ProtoKind::Repeated(&T::KIND),
+    };
+    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => None,
+        _ => Some("&[T]"),
+    };
 }
 
-impl ProtoArchive for &[u8] {
-    type Archived<'x> = &'x [u8];
+impl<T> ProtoArchive for &[T]
+where
+    T: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = ArchivedVec<'x, T>;
 
     #[inline(always)]
     fn is_default(&self) -> bool {
@@ -39,17 +50,40 @@ impl ProtoArchive for &[u8] {
 
     #[inline(always)]
     fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len()
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes.len(),
+            ArchivedVec::Owned(repeated) => repeated.len,
+        }
     }
 
     #[inline(always)]
     unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        bytes_encoding::encode(&archived, buf);
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes_encoding::encode(&bytes, buf),
+            ArchivedVec::Owned(repeated) => {
+                for item in repeated.items {
+                    encode_repeated_value::<T>(item, buf);
+                }
+            }
+        }
     }
 
     #[inline(always)]
     fn archive(&self) -> Self::Archived<'_> {
-        self
+        if T::KIND.is_bytes_kind() {
+            // SAFETY: only executed for &[u8].
+            let bytes = unsafe { *(core::ptr::from_ref(self).cast::<&[u8]>()) };
+            return ArchivedVec::Bytes(bytes);
+        }
+
+        let mut items = Vec::with_capacity(self.len());
+        let mut len = 0;
+        for item in *self {
+            let archived = item.archive();
+            len += repeated_payload_len::<T>(&archived);
+            items.push(archived);
+        }
+        ArchivedVec::Owned(ArchivedRepeated { items, len })
     }
 }
 

@@ -84,7 +84,7 @@ pub struct GoonPong {
 }
 
 const _: () = {
-    assert!(<GoonPong as proto_rs::ProtoExt>::VALIDATE_WITH_EXT);
+    assert!(<GoonPong as proto_rs::ProtoDecode>::VALIDATE_WITH_EXT);
 };
 
 #[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
@@ -259,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
 
-    use proto_rs::ProtoExt;
+    use proto_rs::ProtoDecode;
     use tokio_stream::StreamExt;
     use tonic::IntoRequest;
 

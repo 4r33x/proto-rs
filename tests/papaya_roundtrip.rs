@@ -3,7 +3,9 @@
 use std::hash::BuildHasherDefault;
 use std::hash::Hasher;
 
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/papaya.proto")]
@@ -73,7 +75,8 @@ fn papaya_hash_collections_roundtrip() {
     }
 
     let encoded = PapayaCollections::encode_to_vec(&message);
-    let decoded = PapayaCollections::decode(&encoded[..]).expect("decode papaya collections");
+    let decoded =
+        <PapayaCollections as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode papaya collections");
 
     assert_eq!(decoded, message);
 
@@ -103,7 +106,8 @@ fn papaya_hash_collections_support_custom_hashers() {
     }
 
     let encoded = PapayaCustomCollections::encode_to_vec(&message);
-    let decoded = PapayaCustomCollections::decode(&encoded[..]).expect("decode papaya custom collections");
+    let decoded = <PapayaCustomCollections as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode papaya custom collections");
 
     assert_eq!(decoded, message);
 }
@@ -120,7 +124,8 @@ fn papaya_hashset_roundtrip_with_strings() {
     }
 
     let encoded = PapayaStringSet::encode_to_vec(&message);
-    let decoded = PapayaStringSet::decode(&encoded[..]).expect("decode papaya string set");
+    let decoded =
+        <PapayaStringSet as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode papaya string set");
 
     assert_eq!(decoded, message);
 
@@ -140,7 +145,8 @@ fn papaya_hashset_roundtrip_with_custom_hasher_strings() {
     }
 
     let encoded = PapayaCustomStringSet::encode_to_vec(&message);
-    let decoded = PapayaCustomStringSet::decode(&encoded[..]).expect("decode papaya custom string set");
+    let decoded = <PapayaCustomStringSet as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode papaya custom string set");
 
     assert_eq!(decoded, message);
 }
