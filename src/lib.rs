@@ -84,6 +84,9 @@ pub use crate::traits::ProtoDecoder;
 pub use crate::traits::ProtoEncode;
 pub use crate::traits::ProtoExt;
 pub use crate::traits::ProtoKind;
+pub use crate::traits::ProtoShadowDecode;
+pub use crate::traits::ProtoShadowEncode;
+pub use crate::traits::ArchivedProtoInner;
 // #[cfg(feature = "papaya")]
 // pub use crate::wrappers::conc_map::papaya_map_encode_input;
 // #[cfg(feature = "papaya")]

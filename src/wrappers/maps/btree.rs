@@ -75,6 +75,36 @@ where
     }
 }
 
+impl<K, V> ProtoArchive for BTreeMap<K, V>
+where
+    K: ProtoEncode + Ord,
+    V: ProtoEncode + ProtoExt,
+    for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+    for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = <&'x BTreeMap<K, V> as ProtoArchive>::Archived<'x>;
+
+    #[inline]
+    fn is_default(&self) -> bool {
+        <&BTreeMap<K, V> as ProtoArchive>::is_default(&self)
+    }
+
+    #[inline]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        <&BTreeMap<K, V> as ProtoArchive>::len(archived)
+    }
+
+    #[inline]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { <&BTreeMap<K, V> as ProtoArchive>::encode(archived, buf) }
+    }
+
+    #[inline]
+    fn archive(&self) -> Self::Archived<'_> {
+        <&BTreeMap<K, V> as ProtoArchive>::archive(&self)
+    }
+}
+
 impl<K, V> ProtoExt for BTreeMap<K, V>
 where
     V: ProtoExt,

@@ -77,6 +77,13 @@ pub trait ProtoDecode: Sized {
     }
 
     #[inline(always)]
+    fn decode_length_delimited(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
+        let mut sh = Self::ShadowDecoded::proto_default();
+        Self::ShadowDecoded::merge(&mut sh, WireType::LengthDelimited, &mut buf, ctx)?;
+        Self::post_decode(sh)
+    }
+
+    #[inline(always)]
     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, DecodeError> {
         Self::ShadowDecoded::to_sun(value)
     }

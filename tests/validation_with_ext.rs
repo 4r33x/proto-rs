@@ -6,8 +6,14 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use proto_rs::DecodeError;
+use proto_rs::ProtoArchive;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoDecoder;
+use proto_rs::ProtoEncode;
 use proto_rs::ProtoExt;
-use proto_rs::ProtoShadow;
+use proto_rs::ProtoKind;
+use proto_rs::ProtoShadowDecode;
+use proto_rs::ProtoShadowEncode;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tonic::Extensions;
@@ -31,7 +37,7 @@ fn validate_pong_with_ext(pong: &mut Pong, ext: &Extensions) -> Result<(), Decod
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn validate_pong_shadow_with_ext(_pong: &mut PongWithShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+fn validate_pong_shadow_with_ext(_pong: &mut PongShadow, _ext: &Extensions) -> Result<(), DecodeError> {
     Ok(())
 }
 
@@ -53,17 +59,72 @@ pub struct PongShadow {
     pub id: u32,
 }
 
-impl ProtoShadow<PongWithShadow> for PongShadow {
-    type Sun<'a> = &'a PongWithShadow;
-    type OwnedSun = PongWithShadow;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, proto_rs::DecodeError> {
+impl ProtoShadowDecode<PongWithShadow> for PongShadow {
+    fn to_sun(self) -> Result<PongWithShadow, proto_rs::DecodeError> {
         Ok(PongWithShadow { id: self.id })
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, PongWithShadow> for PongShadow {
+    fn from_sun(value: &'a PongWithShadow) -> Self {
         Self { id: value.id }
+    }
+}
+
+impl ProtoEncode for PongWithShadow {
+    type Shadow<'a> = PongShadow;
+}
+
+impl ProtoDecode for PongWithShadow {
+    type ShadowDecoded = PongShadow;
+}
+
+impl ProtoExt for PongWithShadow {
+    const KIND: ProtoKind = ProtoKind::Message;
+}
+
+impl ProtoArchive for PongWithShadow {
+    type Archived<'a> = Vec<u8>;
+
+    fn is_default(&self) -> bool {
+        let shadow = <PongShadow as ProtoShadowEncode<'_, PongWithShadow>>::from_sun(self);
+        <PongShadow as ProtoArchive>::is_default(&shadow)
+    }
+
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl proto_rs::bytes::BufMut) {
+        buf.put_slice(archived.as_slice());
+    }
+
+    fn archive(&self) -> Self::Archived<'_> {
+        let shadow = <PongShadow as ProtoShadowEncode<'_, PongWithShadow>>::from_sun(self);
+        shadow.encode_to_vec()
+    }
+}
+
+impl ProtoDecoder for PongWithShadow {
+    fn proto_default() -> Self {
+        Self { id: 0 }
+    }
+
+    fn clear(&mut self) {
+        *self = Self::proto_default();
+    }
+
+    fn merge_field(
+        value: &mut Self,
+        tag: u32,
+        wire_type: proto_rs::encoding::WireType,
+        buf: &mut impl proto_rs::bytes::Buf,
+        ctx: proto_rs::encoding::DecodeContext,
+    ) -> Result<(), DecodeError> {
+        let mut shadow = <PongShadow as ProtoShadowEncode<'_, PongWithShadow>>::from_sun(value);
+        PongShadow::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+        *value = shadow.to_sun()?;
+        Ok(())
     }
 }
 
@@ -117,7 +178,7 @@ impl ValidationWithExt for ValidationWithExtService {
 #[test]
 fn validates_with_ext_flag_is_enabled() {
     const _: () = {
-        assert!(<Pong as ProtoExt>::VALIDATE_WITH_EXT);
+        assert!(<Pong as ProtoDecode>::VALIDATE_WITH_EXT);
     };
 }
 

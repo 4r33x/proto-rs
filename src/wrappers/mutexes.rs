@@ -128,6 +128,39 @@ impl<T> ProtoArchive for MutexShadow<T> {
     }
 }
 
+impl<T> ProtoArchive for std::sync::Mutex<T>
+where
+    T: ProtoEncode + ProtoArchive + ProtoExt,
+{
+    type Archived<'a> = Vec<u8>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        let guard = self.lock().expect("Mutex lock poisoned");
+        T::is_default(&*guard)
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        buf.put_slice(archived.as_slice());
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let guard = self.lock().expect("Mutex lock poisoned");
+        if T::is_default(&*guard) {
+            Vec::new()
+        } else {
+            guard.encode_to_vec()
+        }
+    }
+}
+
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoExt> ProtoExt for parking_lot::Mutex<T> {
     const KIND: ProtoKind = T::KIND;
@@ -203,6 +236,40 @@ where
             bytes,
             is_default,
             _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "parking_lot")]
+impl<T> ProtoArchive for parking_lot::Mutex<T>
+where
+    T: ProtoEncode + ProtoArchive + ProtoExt,
+{
+    type Archived<'a> = Vec<u8>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        let guard = self.lock();
+        T::is_default(&*guard)
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        archived.len()
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        buf.put_slice(archived.as_slice());
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let guard = self.lock();
+        if T::is_default(&*guard) {
+            Vec::new()
+        } else {
+            guard.encode_to_vec()
         }
     }
 }

@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use arc_swap::ArcSwapOption;
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/arc_swap.proto")]
@@ -94,8 +96,8 @@ fn arc_swap_roundtrip_preserves_inner_value() {
         }),
     };
 
-    let encoded = <SwapHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <SwapHolder as ProtoExt>::decode(&encoded[..]).expect("decode arc swap");
+    let encoded = holder.encode_to_vec();
+    let decoded = <SwapHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode arc swap");
 
     let guard = decoded.primary.load();
     assert_eq!(guard.label, "alpha");
@@ -111,8 +113,9 @@ fn arc_swap_option_roundtrip_handles_present_value() {
         }))),
     };
 
-    let encoded = <OptionalSwapHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <OptionalSwapHolder as ProtoExt>::decode(&encoded[..]).expect("decode arc swap option");
+    let encoded = holder.encode_to_vec();
+    let decoded = <OptionalSwapHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode arc swap option");
 
     let guard = decoded.maybe.load();
     let inner = guard.as_ref().expect("expected inner value");
@@ -124,8 +127,9 @@ fn arc_swap_option_roundtrip_handles_present_value() {
 fn arc_swap_option_roundtrip_handles_absent_value() {
     let holder = OptionalSwapHolder::default();
 
-    let encoded = <OptionalSwapHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <OptionalSwapHolder as ProtoExt>::decode(&encoded[..]).expect("decode default arc swap option");
+    let encoded = holder.encode_to_vec();
+    let decoded = <OptionalSwapHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode default arc swap option");
 
     let guard = decoded.maybe.load();
     assert!(guard.as_ref().is_none());
@@ -138,8 +142,9 @@ fn arc_swap_vec_u8_roundtrip_encodes_as_bytes() {
         ..ArcSwapContainerHolder::default()
     };
 
-    let encoded = <ArcSwapContainerHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <ArcSwapContainerHolder as ProtoExt>::decode(&encoded[..]).expect("decode arc swap container holder bytes");
+    let encoded = holder.encode_to_vec();
+    let decoded = <ArcSwapContainerHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode arc swap container holder bytes");
 
     let bytes_guard = decoded.swap_bytes.load();
     assert_eq!(bytes_guard.as_slice(), &[5, 8, 13, 21]);
@@ -151,16 +156,17 @@ fn arc_swap_option_bytes_roundtrip_handles_presence_and_absence() {
         maybe_swap_bytes: ArcSwapOption::new(Some(Arc::new(vec![1, 2, 3, 4]))),
     };
 
-    let encoded = <ArcSwapOptionBytesHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <ArcSwapOptionBytesHolder as ProtoExt>::decode(&encoded[..]).expect("decode arc swap option bytes");
+    let encoded = holder.encode_to_vec();
+    let decoded = <ArcSwapOptionBytesHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode arc swap option bytes");
 
     let present_guard = decoded.maybe_swap_bytes.load();
     let bytes = present_guard.as_ref().expect("expected bytes");
     assert_eq!(bytes.as_slice(), &[1, 2, 3, 4]);
 
     let default_holder = ArcSwapOptionBytesHolder::default();
-    let encoded_default = <ArcSwapOptionBytesHolder as ProtoExt>::encode_to_vec(&default_holder);
-    let decoded_default =
-        <ArcSwapOptionBytesHolder as ProtoExt>::decode(&encoded_default[..]).expect("decode default arc swap option bytes");
+    let encoded_default = default_holder.encode_to_vec();
+    let decoded_default = <ArcSwapOptionBytesHolder as ProtoDecode>::decode(&encoded_default[..], DecodeContext::default())
+        .expect("decode default arc swap option bytes");
     assert!(decoded_default.maybe_swap_bytes.load().as_ref().is_none());
 }

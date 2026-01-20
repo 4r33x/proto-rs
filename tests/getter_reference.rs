@@ -1,7 +1,10 @@
 use private::TaskCtx;
 use proto_rs::DecodeError;
-use proto_rs::ProtoExt;
-use proto_rs::ProtoShadow;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::ProtoShadowDecode;
+use proto_rs::ProtoShadowEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 mod private {
     #[derive(Clone, PartialEq, Debug)]
@@ -47,26 +50,38 @@ struct TaskProto {
     values: u32,
 }
 
-impl ProtoShadow<Task> for TaskProto {
-    type Sun<'a> = &'a Task;
-    type OwnedSun = Task;
-    type View<'a> = TaskRef<'a>;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<Task> for TaskProto {
+    fn to_sun(self) -> Result<Task, DecodeError> {
         Ok(Task {
             cfg_id: self.cfg_id,
             user_id: self.user_id,
             ctx: TaskCtx::new(self.flags, self.values),
         })
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        TaskRef {
+impl<'a> ProtoShadowEncode<'a, Task> for TaskProto {
+    fn from_sun(value: &'a Task) -> Self {
+        let view = TaskRef {
             cfg_id: value.cfg_id,
             user_id: value.user_id,
             ctx: &value.ctx,
+        };
+        Self {
+            cfg_id: view.cfg_id,
+            user_id: view.user_id,
+            flags: *view.ctx.flags(),
+            values: *view.ctx.values(),
         }
     }
+}
+
+impl ProtoEncode for Task {
+    type Shadow<'a> = TaskProto;
+}
+
+impl ProtoDecode for Task {
+    type ShadowDecoded = TaskProto;
 }
 
 #[test]
@@ -77,7 +92,8 @@ fn encode_decode_reference_with_getter() {
         ctx: TaskCtx::new(1, 2),
     };
     let bytes = Task::encode_to_vec(&task);
-    let decoded = Task::decode(bytes.as_slice()).expect("decode task with getters");
+    let decoded = <Task as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default())
+        .expect("decode task with getters");
 
     assert_eq!(decoded, task);
 }
@@ -109,7 +125,8 @@ fn encode_decode_papaya_getters() {
     let holder = PapayaHolder { map, set };
 
     let bytes = PapayaHolder::encode_to_vec(&holder);
-    let decoded = PapayaHolder::decode(bytes.as_slice()).expect("decode papaya holder");
+    let decoded = <PapayaHolder as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default())
+        .expect("decode papaya holder");
 
     let map_guard = decoded.map.pin();
     assert_eq!(map_guard.get(&1), Some(&10));

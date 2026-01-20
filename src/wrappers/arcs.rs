@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 
+use bytes::Buf;
 use bytes::BufMut;
 
 use crate::DecodeError;
@@ -12,9 +13,38 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
+use crate::encoding::skip_field;
 
 impl<T: ProtoExt> ProtoExt for Arc<T> {
     const KIND: ProtoKind = T::KIND;
+}
+
+impl<T: ProtoDecoder + ProtoExt + Clone> ProtoDecoder for Arc<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Arc::new(T::proto_default())
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        T::clear(Arc::make_mut(self));
+    }
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            T::merge(Arc::make_mut(value), wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        T::merge(Arc::make_mut(self), wire_type, buf, ctx)
+    }
 }
 
 impl<T: ProtoDecode + Clone> ProtoDecode for Arc<T>
