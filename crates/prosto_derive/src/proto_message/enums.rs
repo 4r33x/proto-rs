@@ -7,9 +7,6 @@ use syn::parse_quote;
 use syn::spanned::Spanned;
 
 use super::build_validate_with_ext_impl;
-use super::unified_field_handler::generate_delegating_proto_wire_impl;
-use super::unified_field_handler::generate_proto_shadow_impl;
-use super::unified_field_handler::generate_sun_proto_ext_impl;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::collect_discriminants_for_variants;
@@ -66,7 +63,7 @@ pub(super) fn generate_simple_enum_impl(
         .zip(discriminants.iter())
         .map(|(variant, value)| {
             let ident = &variant.ident;
-            quote! { Self::#ident => #value }
+            quote! { #name::#ident => #value }
         })
         .collect();
 
@@ -79,122 +76,112 @@ pub(super) fn generate_simple_enum_impl(
         })
         .collect();
 
-    let proto_shadow_impl = generate_proto_shadow_impl(name, generics);
-
-    let shadow_ty = quote! { #name #ty_generics };
-
-    let decode_arms = vec![quote! {
-        1 => {
-            let mut raw = 0i32;
-            <i32 as ::proto_rs::ProtoWire>::decode_into(
-                wire_type,
-                &mut raw,
-                buf,
-                ctx,
-            )?;
-            *value = <Self::Shadow<'_> as ::core::convert::TryFrom<i32>>::try_from(raw)?;
-            Ok(())
-        }
-    }];
-
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
-
-    let proto_ext_impl = if config.has_suns() {
-        let impls: Vec<_> = config
-            .suns
-            .iter()
-            .map(|sun| {
-                let target_ty = &sun.ty;
-                generate_sun_proto_ext_impl(&shadow_ty, target_ty, &decode_arms, &quote! {}, &validate_with_ext_impl)
-            })
-            .collect();
-        quote! { #(#impls)* }
+    let validate_with_ext_proto_impl = if config.has_suns() {
+        TokenStream2::new()
     } else {
-        quote! {
-            impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
-                type Shadow<'b> = #shadow_ty;
+        validate_with_ext_impl.clone()
+    };
 
-                #[inline(always)]
-                fn merge_field(
-                    value: &mut Self::Shadow<'_>,
-                    tag: u32,
-                    wire_type: ::proto_rs::encoding::WireType,
-                    buf: &mut impl ::proto_rs::bytes::Buf,
-                    ctx: ::proto_rs::encoding::DecodeContext,
-                ) -> Result<(), ::proto_rs::DecodeError> {
-                    match tag {
-                        1 => {
-                            let mut raw = 0i32;
-                            <i32 as ::proto_rs::ProtoWire>::decode_into(
-                                wire_type,
-                                &mut raw,
-                                buf,
-                                ctx,
-                            )?;
-                            *value = <Self::Shadow<'_> as ::core::convert::TryFrom<i32>>::try_from(raw)?;
-                            Ok(())
-                        }
-                        _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
+    let mut shadow_generics = generics.clone();
+    shadow_generics.params.insert(0, parse_quote!('a));
+    let (shadow_impl_generics, _shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
+
+    let sun_impls = if config.has_suns() {
+        let sun_impls = config.suns.iter().map(|sun| {
+            let target_ty = &sun.ty;
+            quote! {
+                impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
+                    const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
+                    #validate_with_ext_impl
+                }
+
+                impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
+                    type Shadow<'a> = #name #ty_generics;
+                }
+
+                impl #impl_generics ::proto_rs::ProtoDecode for #target_ty #where_clause {
+                    type ShadowDecoded = #name #ty_generics;
+
+                    #[inline(always)]
+                    fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
+                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(value)
+                    }
+
+                    #validate_with_ext_impl
+                }
+
+                impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                    #[inline(always)]
+                    fn proto_default() -> Self {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
+                            .expect("failed to build default sun value")
+                    }
+
+                    #[inline(always)]
+                    fn clear(&mut self) {
+                        *self = Self::proto_default();
+                    }
+
+                    #[inline(always)]
+                    fn merge_field(
+                        value: &mut Self,
+                        tag: u32,
+                        wire_type: ::proto_rs::encoding::WireType,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+                        *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
+                    }
+
+                    #[inline(always)]
+                    fn merge(
+                        &mut self,
+                        wire_type: ::proto_rs::encoding::WireType,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
+                        *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
                     }
                 }
 
-                #validate_with_ext_impl
-            }
-        }
-    };
+                impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
+                    type Archived<'a> = <#name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'a>;
 
-    let proto_wire_impl = quote! {
-        impl #impl_generics ::proto_rs::ProtoWire for #name #ty_generics #where_clause {
-            type EncodeInput<'b> = &'b Self;
-            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
+                    #[inline(always)]
+                    fn is_default(&self) -> bool {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
+                    }
 
-            #[inline(always)]
-            fn proto_default() -> Self {
-                Self::#default_ident
-            }
+                    #[inline(always)]
+                    fn len(archived: &Self::Archived<'_>) -> usize {
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::len(archived)
+                    }
 
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = Self::proto_default();
-            }
+                    #[inline(always)]
+                    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode(archived, buf);
+                    }
 
-            #[inline(always)]
-            fn is_default_impl(value: &Self::EncodeInput<'_>) -> bool {
-                matches!(**value, Self::#default_ident)
+                    #[inline(always)]
+                    fn archive(&self) -> Self::Archived<'_> {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive(&shadow)
+                    }
+                }
             }
-
-            #[inline(always)]
-            unsafe fn encoded_len_impl_raw(value: &Self::EncodeInput<'_>) -> usize {
-                let raw = match **value {
-                    #(#raw_from_variant,)*
-                };
-                <i32 as ::proto_rs::ProtoWire>::encoded_len_impl_raw(&raw)
-            }
-
-            #[inline(always)]
-            fn encode_raw_unchecked(
-                value: Self::EncodeInput<'_>,
-                buf: &mut impl ::proto_rs::bytes::BufMut,
-            ) {
-                let raw = match *value {
-                    #(#raw_from_variant,)*
-                };
-                <i32 as ::proto_rs::ProtoWire>::encode_raw_unchecked(raw, buf);
-            }
-
-            #[inline(always)]
-            fn decode_into(
-                wire_type: ::proto_rs::encoding::WireType,
-                value: &mut Self,
-                buf: &mut impl ::proto_rs::bytes::Buf,
-                ctx: ::proto_rs::encoding::DecodeContext,
-            ) -> Result<(), ::proto_rs::DecodeError> {
-                let mut raw = 0i32;
-                <i32 as ::proto_rs::ProtoWire>::decode_into(wire_type, &mut raw, buf, ctx)?;
-                *value = Self::try_from(raw)?;
-                Ok(())
-            }
-        }
+        });
+        quote! { #( #sun_impls )* }
+    } else {
+        quote! {}
     };
 
     let try_from_impl = quote! {
@@ -210,21 +197,101 @@ pub(super) fn generate_simple_enum_impl(
         }
     };
 
-    let delegating_impls = if config.has_suns() {
-        let shadow_ty = quote! { #name #ty_generics };
-        let impls: Vec<_> = config.suns.iter().map(|sun| generate_delegating_proto_wire_impl(&shadow_ty, &sun.ty)).collect();
-
-        quote! { #(#impls)* }
-    } else {
-        quote! {}
-    };
-
     quote! {
         #enum_item
-        #proto_shadow_impl
-        #proto_ext_impl
-        #proto_wire_impl
         #try_from_impl
-        #delegating_impls
+
+        impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
+            #validate_with_ext_proto_impl
+        }
+
+        impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for i32 #shadow_where_clause {
+            #[inline(always)]
+            fn from_sun(value: &'a #name #ty_generics) -> Self {
+                match *value {
+                    #(#raw_from_variant,)*
+                }
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+            type Archived<'a> = i32;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                matches!(*self, Self::#default_ident)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                <i32 as ::proto_rs::ProtoArchive>::len(archived)
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                <i32 as ::proto_rs::ProtoArchive>::encode(archived, buf);
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                match *self {
+                    #(#raw_from_variant,)*
+                }
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
+            type Shadow<'a> = i32;
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self::#default_ident
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                *self = Self::proto_default();
+            }
+
+            #[inline(always)]
+            fn merge_field(
+                value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                if tag == 1 {
+                    Self::merge(value, wire_type, buf, ctx)
+                } else {
+                    ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            #[inline(always)]
+            fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
+                let mut raw = 0i32;
+                <i32 as ::proto_rs::ProtoDecoder>::merge(&mut raw, wire_type, buf, ctx)?;
+                *self = Self::try_from(raw)?;
+                Ok(())
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
+            type ShadowDecoded = Self;
+            #validate_with_ext_proto_impl
+        }
+
+        impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+        }
+
+        #sun_impls
     }
 }

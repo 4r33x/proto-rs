@@ -155,6 +155,7 @@ impl<'a, const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoInner<'a, TAG,
         self.inner.is_none()
     }
 
+    #[allow(clippy::len_without_is_empty)]
     //used for preallocating buffers
     #[inline(always)]
     pub const fn len(&self) -> usize {
