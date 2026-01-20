@@ -46,6 +46,13 @@ pub trait ProtoEncode: Sized {
     }
 
     #[inline(always)]
+    fn encoded_len(&self) -> usize {
+        let shadow = Self::Shadow::from_sun(self);
+        let archived = shadow.archive();
+        <Self::Shadow<'_> as ProtoArchive>::len(&archived)
+    }
+
+    #[inline(always)]
     fn encode_to_vec(&self) -> Vec<u8> {
         let shadow = Self::Shadow::from_sun(self);
         let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {

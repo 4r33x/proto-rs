@@ -13,7 +13,6 @@ use syn::spanned::Spanned;
 
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
-use crate::utils::is_option_type;
 
 #[derive(Clone)]
 pub struct FieldInfo<'a> {

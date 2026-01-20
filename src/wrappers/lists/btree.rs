@@ -2,12 +2,15 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use bytes::Buf;
+use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::encoding::bytes as bytes_encoding;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
+use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -16,10 +19,20 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::wrappers::lists::ArchivedRepeated;
+use crate::wrappers::lists::ArchivedVec;
+use crate::wrappers::lists::encode_repeated_value;
+use crate::wrappers::lists::repeated_payload_len;
 
 impl<T: ProtoExt + Ord> ProtoExt for BTreeSet<T> {
-    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeSet");
+    const KIND: ProtoKind = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
+        _ => ProtoKind::Repeated(&T::KIND),
+    };
+    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => None,
+        _ => Some("BTreeSet"),
+    };
 }
 
 impl<T: ProtoDecoder + ProtoExt + Ord> ProtoDecoder for BTreeSet<T> {
@@ -107,5 +120,93 @@ where
     #[inline]
     fn from_sun(value: &'a BTreeSet<T>) -> Self {
         value.iter().map(S::from_sun).collect()
+    }
+}
+
+impl<T> ProtoArchive for &BTreeSet<T>
+where
+    T: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = ArchivedVec<'x, T>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes.len(),
+            ArchivedVec::Owned(repeated) => repeated.len,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes_encoding::encode(&bytes, buf),
+            ArchivedVec::Owned(repeated) => {
+                for item in repeated.items {
+                    encode_repeated_value::<T>(item, buf);
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut items = Vec::with_capacity(self.len());
+        let mut len = 0;
+        for item in *self {
+            let archived = item.archive();
+            len += repeated_payload_len::<T>(&archived);
+            items.push(archived);
+        }
+        ArchivedVec::Owned(ArchivedRepeated { items, len })
+    }
+}
+
+impl<T> ProtoArchive for BTreeSet<T>
+where
+    T: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = ArchivedVec<'x, T>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes.len(),
+            ArchivedVec::Owned(repeated) => repeated.len,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        match archived {
+            ArchivedVec::Bytes(bytes) => bytes_encoding::encode(&bytes, buf),
+            ArchivedVec::Owned(repeated) => {
+                for item in repeated.items {
+                    encode_repeated_value::<T>(item, buf);
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut items = Vec::with_capacity(self.len());
+        let mut len = 0;
+        for item in self {
+            let archived = item.archive();
+            len += repeated_payload_len::<T>(&archived);
+            items.push(archived);
+        }
+        ArchivedVec::Owned(ArchivedRepeated { items, len })
     }
 }

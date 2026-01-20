@@ -40,7 +40,7 @@ pub struct IdGeneric<T> {
     pub id: T,
 }
 
-#[proto_message(transparent)]
+#[proto_message]
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct IdGenericTransparent<T> {
     pub id: T,
@@ -84,7 +84,7 @@ pub struct GoonPong {
 }
 
 const _: () = {
-    assert!(<GoonPong as proto_rs::ProtoExt>::VALIDATE_WITH_EXT);
+    assert!(<GoonPong as proto_rs::ProtoDecode>::VALIDATE_WITH_EXT);
 };
 
 #[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]

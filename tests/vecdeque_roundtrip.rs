@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 
 use bytes::Bytes;
 use prost::Message as ProstMessage;
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/vecdeque.proto")]
@@ -64,8 +66,9 @@ fn vecdeque_roundtrip_primitives_and_messages() {
         children,
     };
 
-    let encoded = VecDequeMessage::encode_to_vec(&message);
-    let decoded = VecDequeMessage::decode(Bytes::from(encoded.clone())).expect("decode VecDequeMessage");
+    let encoded = message.encode_to_vec();
+    let decoded = <VecDequeMessage as ProtoDecode>::decode(Bytes::from(encoded.clone()), DecodeContext::default())
+        .expect("decode VecDequeMessage");
     assert_eq!(message, decoded);
 
     let prost_message = VecDequeMessageProst {
@@ -96,7 +99,8 @@ fn vecdeque_bytes_encode_equivalence() {
     };
 
     let encoded = VecDequeMessage::encode_to_vec(&message);
-    let decoded = VecDequeMessage::decode(Bytes::from(encoded.clone())).expect("decode VecDequeMessage bytes");
+    let decoded = <VecDequeMessage as ProtoDecode>::decode(Bytes::from(encoded.clone()), DecodeContext::default())
+        .expect("decode VecDequeMessage bytes");
     assert_eq!(message, decoded);
 
     let prost_message = VecDequeMessageProst {

@@ -10,8 +10,10 @@ use std::convert::TryInto;
 
 use bytes::Bytes;
 use prost::Message as ProstMessage;
-use proto_rs::ProtoExt;
-use proto_rs::ProtoWire;
+use proto_rs::ProtoArchive;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/advanced_features.proto")]
@@ -500,7 +502,8 @@ fn assert_roundtrip(message: AdvancedEdgeCase) {
     assert_eq!(message.digest, compute_digest(&message));
 
     let proto_bytes = AdvancedEdgeCase::encode_to_vec(&message);
-    let decoded_proto = AdvancedEdgeCase::decode(proto_bytes.as_slice()).expect("decode proto edge case");
+    let decoded_proto = <AdvancedEdgeCase as ProtoDecode>::decode(proto_bytes.as_slice(), DecodeContext::default())
+        .expect("decode proto edge case");
     assert_eq!(decoded_proto, message);
 
     let prost_message = tonic_prost_test::advanced::AdvancedEdgeCase::from(&message);
@@ -508,14 +511,16 @@ fn assert_roundtrip(message: AdvancedEdgeCase) {
     assert_eq!(decoded_prost, prost_message);
 
     let prost_bytes = prost_message.encode_to_vec();
-    let decoded_from_prost = AdvancedEdgeCase::decode(prost_bytes.as_slice()).expect("decode proto from prost bytes");
+    let decoded_from_prost = <AdvancedEdgeCase as ProtoDecode>::decode(prost_bytes.as_slice(), DecodeContext::default())
+        .expect("decode proto from prost bytes");
     assert_eq!(decoded_from_prost, message);
 }
 
 #[allow(clippy::needless_pass_by_value)]
 fn assert_union_roundtrip(value: AdvancedComplexUnion) {
     let proto_bytes = AdvancedComplexUnion::encode_to_vec(&value);
-    let decoded_proto = AdvancedComplexUnion::decode(proto_bytes.as_slice()).expect("decode proto union");
+    let decoded_proto = <AdvancedComplexUnion as ProtoDecode>::decode(proto_bytes.as_slice(), DecodeContext::default())
+        .expect("decode proto union");
     assert_eq!(decoded_proto, value);
 
     let prost_value = tonic_prost_test::advanced::AdvancedComplexUnion::from(&value);
@@ -523,7 +528,8 @@ fn assert_union_roundtrip(value: AdvancedComplexUnion) {
     assert_eq!(decoded_prost, prost_value);
 
     let prost_bytes = prost_value.encode_to_vec();
-    let decoded_from_prost = AdvancedComplexUnion::decode(prost_bytes.as_slice()).expect("decode proto from prost union bytes");
+    let decoded_from_prost = <AdvancedComplexUnion as ProtoDecode>::decode(prost_bytes.as_slice(), DecodeContext::default())
+        .expect("decode proto from prost union bytes");
     assert_eq!(decoded_from_prost, value);
 }
 
@@ -634,6 +640,7 @@ fn advanced_complex_enum_default_encodes_as_absent_value() {
     let decoded_prost = tonic_prost_test::advanced::AdvancedComplexUnion::decode(encoded.as_slice()).expect("decode prost default union");
     assert!(decoded_prost.value.is_none());
 
-    let decoded_proto = AdvancedComplexUnion::decode(encoded.as_slice()).expect("decode proto default union");
+    let decoded_proto = <AdvancedComplexUnion as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default())
+        .expect("decode proto default union");
     assert_eq!(decoded_proto, default_union);
 }

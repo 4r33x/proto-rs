@@ -76,6 +76,36 @@ where
     }
 }
 
+impl<K, V, S> ProtoArchive for HashMap<K, V, S>
+where
+    K: ProtoEncode + Eq + Hash,
+    V: ProtoEncode + ProtoExt,
+    for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+    for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
+{
+    type Archived<'x> = <&'x HashMap<K, V, S> as ProtoArchive>::Archived<'x>;
+
+    #[inline]
+    fn is_default(&self) -> bool {
+        <&HashMap<K, V, S> as ProtoArchive>::is_default(&self)
+    }
+
+    #[inline]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        <&HashMap<K, V, S> as ProtoArchive>::len(archived)
+    }
+
+    #[inline]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { <&HashMap<K, V, S> as ProtoArchive>::encode(archived, buf) }
+    }
+
+    #[inline]
+    fn archive(&self) -> Self::Archived<'_> {
+        <&HashMap<K, V, S> as ProtoArchive>::archive(&self)
+    }
+}
+
 impl<K, V, S> ProtoExt for HashMap<K, V, S>
 where
     V: ProtoExt,

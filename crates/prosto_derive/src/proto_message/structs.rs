@@ -4,6 +4,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 use syn::GenericArgument;
+use syn::GenericParam;
 use syn::Ident;
 use syn::ItemStruct;
 use syn::PathArguments;
@@ -96,7 +97,7 @@ pub(super) fn generate_struct_impl(
         let bounded_generics = add_proto_wire_bounds(generics, std::iter::once(&field));
         let bounded_generics = add_transparent_bounds(&bounded_generics, &field.field.ty);
         let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
-        let transparent_impl = generate_transparent_struct_impl(name, &impl_generics, &ty_generics, where_clause, &field, &data.fields);
+        let transparent_impl = generate_transparent_struct_impl(name, &bounded_generics, &impl_generics, where_clause, &field, &data.fields);
 
         return quote! {
             #struct_item
@@ -235,8 +236,8 @@ fn collect_type_params(ty: &Type, params: &BTreeSet<syn::Ident>, used: &mut BTre
 
 fn generate_transparent_struct_impl(
     name: &syn::Ident,
+    generics: &syn::Generics,
     impl_generics: &syn::ImplGenerics,
-    ty_generics: &syn::TypeGenerics,
     where_clause: Option<&syn::WhereClause>,
     field: &FieldInfo<'_>,
     original_fields: &syn::Fields,
@@ -245,6 +246,7 @@ fn generate_transparent_struct_impl(
     let mut_self_access = field.access.access_tokens(quote! { self });
     let self_access = field.access.access_tokens(quote! { self });
     let value_access = field.access.access_tokens(quote! { value });
+    let type_args = build_type_args(generics);
 
     let wrap_expr = match original_fields {
         syn::Fields::Unnamed(_) => quote! { Self(inner) },
@@ -265,11 +267,11 @@ fn generate_transparent_struct_impl(
     };
 
     quote! {
-        impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
+        impl #impl_generics ::proto_rs::ProtoExt for #name #type_args #where_clause {
             const KIND: ::proto_rs::ProtoKind = <#inner_ty as ::proto_rs::ProtoExt>::KIND;
         }
 
-        impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
+        impl #impl_generics ::proto_rs::ProtoDecoder for #name #type_args #where_clause {
             #[inline(always)]
             fn proto_default() -> Self {
                 #default_expr
@@ -296,32 +298,42 @@ fn generate_transparent_struct_impl(
                     ctx,
                 )
             }
+
+            #[inline(always)]
+            fn merge(
+                &mut self,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)
+            }
         }
 
-        impl #impl_generics ::proto_rs::ProtoShadowDecode<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics ::proto_rs::ProtoShadowDecode<Self> for #name #type_args #where_clause {
             #[inline(always)]
             fn to_sun(self) -> Result<Self, ::proto_rs::DecodeError> {
                 Ok(self)
             }
         }
 
-        impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
+        impl #impl_generics ::proto_rs::ProtoDecode for #name #type_args #where_clause {
             type ShadowDecoded = Self;
         }
 
-        impl<'__proto_a> #impl_generics ::proto_rs::ProtoShadowEncode<'__proto_a, #name #ty_generics> for &'__proto_a #name #ty_generics #where_clause {
+        impl<'__proto_a> #impl_generics ::proto_rs::ProtoShadowEncode<'__proto_a, #name #type_args> for &'__proto_a #name #type_args #where_clause {
             #[inline(always)]
-            fn from_sun(value: &'__proto_a #name #ty_generics) -> Self {
+            fn from_sun(value: &'__proto_a #name #type_args) -> Self {
                 value
             }
         }
 
-        impl<'__proto_a> #impl_generics ::proto_rs::ProtoArchive for &'__proto_a #name #ty_generics #where_clause {
+        impl<'__proto_a> #impl_generics ::proto_rs::ProtoArchive for &'__proto_a #name #type_args #where_clause {
             type Archived<'__proto_x> = <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'__proto_a> as ::proto_rs::ProtoArchive>::Archived<'__proto_x>;
 
             #[inline(always)]
             fn is_default(&self) -> bool {
-                let inner = <#inner_ty as ::proto_rs::ProtoEncode>::Shadow::from_sun(&#self_access);
+                let inner = <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'__proto_a> as ::proto_rs::ProtoShadowEncode<'__proto_a, #inner_ty>>::from_sun(&#self_access);
                 <_ as ::proto_rs::ProtoArchive>::is_default(&inner)
             }
 
@@ -337,12 +349,37 @@ fn generate_transparent_struct_impl(
 
             #[inline(always)]
             fn archive(&self) -> Self::Archived<'_> {
-                let inner = <#inner_ty as ::proto_rs::ProtoEncode>::Shadow::from_sun(&#self_access);
+                let inner = <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'_> as ::proto_rs::ProtoShadowEncode<'_, #inner_ty>>::from_sun(&#self_access);
                 inner.archive()
             }
         }
 
-        impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
+        impl #impl_generics ::proto_rs::ProtoArchive for #name #type_args #where_clause {
+            type Archived<'__proto_a> = <&'__proto_a #name #type_args as ::proto_rs::ProtoArchive>::Archived<'__proto_a>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                <&Self as ::proto_rs::ProtoArchive>::len(archived)
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                <&Self as ::proto_rs::ProtoArchive>::encode(archived, buf)
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                let inner = <<#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'_> as ::proto_rs::ProtoShadowEncode<'_, #inner_ty>>::from_sun(&#self_access);
+                inner.archive()
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoEncode for #name #type_args #where_clause {
             type Shadow<'__proto_a> = &'__proto_a Self;
         }
     }
@@ -367,7 +404,6 @@ fn generate_proto_archive_impl_for_ref(
         } else {
             access.clone()
         };
-
         Some(quote! {
             let #field_name = ::proto_rs::ArchivedProtoInner::<#tag, #proto_ty>::new(&#converted_value);
         })
@@ -380,10 +416,10 @@ fn generate_proto_archive_impl_for_ref(
     let len_sum = if field_names.is_empty() {
         quote! { 0 }
     } else {
-        quote! { #(#field_names.len())+* }
+        quote! { #(archived.#field_names.len())+* }
     };
 
-    let field_inits: Vec<_> = field_names.iter().map(|name| {
+    let mut field_inits: Vec<_> = field_names.iter().map(|name| {
         quote! { #name }
     }).collect();
 
@@ -399,25 +435,31 @@ fn generate_proto_archive_impl_for_ref(
     let (archive_impl_generics, _, archive_where_clause) = archive_generics.split_for_impl();
 
     // Generate the Archived struct
-    let archived_struct_fields: Vec<_> = fields.iter().filter_map(|info| {
+    let mut archived_struct_fields: Vec<_> = fields.iter().filter_map(|info| {
         let tag = info.tag?;
         let field_name = Ident::new(&format!("f{}", tag), info.field.span());
         let proto_ty = &info.proto_ty;
         Some(quote! { #field_name: ::proto_rs::ArchivedProtoInner<'__proto_a, #tag, #proto_ty> })
     }).collect();
+    if archived_struct_fields.is_empty() {
+        archived_struct_fields.push(quote! { _phantom: ::core::marker::PhantomData<&'__proto_a ()> });
+        field_inits.push(quote! { _phantom: ::core::marker::PhantomData });
+    }
 
+    let (_, archived_ty_generics, archived_where_clause) = archive_generics.split_for_impl();
     let archived_struct_def = quote! {
         #[allow(non_camel_case_types)]
-        struct #archived_struct_name<'__proto_a> #archive_where_clause {
+        pub struct #archived_struct_name #archived_ty_generics #archived_where_clause {
             #(#archived_struct_fields),*
         }
     };
+    let archived_type_args = build_archived_type_args(generics);
 
     quote! {
         #archived_struct_def
 
         impl #archive_impl_generics ::proto_rs::ProtoArchive for &'__proto_a #name #ty_generics #archive_where_clause {
-            type Archived<'__proto_x> = #archived_struct_name<'__proto_x>;
+            type Archived<'__proto_x> = #archived_struct_name #archived_type_args;
 
             #[inline(always)]
             fn is_default(&self) -> bool {
@@ -466,6 +508,60 @@ fn sanitize_struct(mut item: ItemStruct) -> ItemStruct {
     item
 }
 
+fn build_archived_type_args(generics: &syn::Generics) -> TokenStream2 {
+    let args: Vec<TokenStream2> = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Type(ty) => {
+                let ident = &ty.ident;
+                quote! { #ident }
+            }
+            GenericParam::Lifetime(lifetime) => {
+                let ident = &lifetime.lifetime;
+                quote! { #ident }
+            }
+            GenericParam::Const(const_param) => {
+                let ident = &const_param.ident;
+                quote! { #ident }
+            }
+        })
+        .collect();
+
+    if args.is_empty() {
+        quote! { <'__proto_x> }
+    } else {
+        quote! { <'__proto_x, #(#args),*> }
+    }
+}
+
+fn build_type_args(generics: &syn::Generics) -> TokenStream2 {
+    let args: Vec<TokenStream2> = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            GenericParam::Type(ty) => {
+                let ident = &ty.ident;
+                quote! { #ident }
+            }
+            GenericParam::Lifetime(lifetime) => {
+                let ident = &lifetime.lifetime;
+                quote! { #ident }
+            }
+            GenericParam::Const(const_param) => {
+                let ident = &const_param.ident;
+                quote! { #ident }
+            }
+        })
+        .collect();
+
+    if args.is_empty() {
+        quote! {}
+    } else {
+        quote! { <#(#args),*> }
+    }
+}
+
 fn generate_proto_ext_impl(
     name: &syn::Ident,
     impl_generics: &syn::ImplGenerics,
@@ -501,7 +597,7 @@ fn generate_proto_wire_impl(
     let message_validation = if let Some(validator_fn) = &config.validator {
         let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
         quote! {
-            #validator_path(&mut value)?;
+            #validator_path(&mut shadow)?;
         }
     } else {
         quote! {}
@@ -513,9 +609,10 @@ fn generate_proto_wire_impl(
         quote! {
             #[inline(always)]
             fn post_decode(mut value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
+                let mut shadow = value;
                 #(#post_decode_hooks)*
                 #message_validation
-                Ok(value)
+                Ok(shadow)
             }
         }
     };
@@ -586,8 +683,74 @@ fn generate_proto_wire_impl(
         }
     };
 
+    let field_archives: Vec<_> = fields
+        .iter()
+        .filter_map(|info| {
+            let tag = info.tag?;
+            let field_name = Ident::new(&format!("f{}", tag), info.field.span());
+            let access = info.access.access_tokens(quote! { self });
+            let proto_ty = &info.proto_ty;
+
+            if needs_encode_conversion(&info.config, &info.parsed) {
+                let converted_ident = Ident::new(
+                    &format!("__proto_rs_field_{}_converted", tag),
+                    info.field.span(),
+                );
+                let converted = encode_conversion_expr(info, &access);
+                Some(quote! {
+                    let #converted_ident: #proto_ty = #converted;
+                    let #field_name = ::proto_rs::ArchivedProtoInner::<#tag, #proto_ty>::new(&#converted_ident);
+                })
+            } else {
+                Some(quote! {
+                    let #field_name = ::proto_rs::ArchivedProtoInner::<#tag, #proto_ty>::new(&#access);
+                })
+            }
+        })
+        .collect();
+
+    let field_names: Vec<_> = fields
+        .iter()
+        .filter_map(|info| info.tag.map(|tag| Ident::new(&format!("f{}", tag), info.field.span())))
+        .collect();
+
+    let mut field_inits: Vec<_> = field_names.iter().map(|name| quote! { #name }).collect();
+    if field_names.is_empty() {
+        field_inits.push(quote! { _phantom: ::core::marker::PhantomData });
+    }
+
+    let archived_struct_name = Ident::new(&format!("{}Archived", name), name.span());
+
     // ProtoArchive implementation (for &Self)
     let proto_archive_impl = generate_proto_archive_impl_for_ref(name, impl_generics, ty_generics, fields, &bounded_generics);
+    let proto_archive_value_impl = quote! {
+        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+            type Archived<'__proto_a> = <&'__proto_a #name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'__proto_a>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                <&Self as ::proto_rs::ProtoArchive>::len(archived)
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                <&Self as ::proto_rs::ProtoArchive>::encode(archived, buf)
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                #(#field_archives)*
+                #archived_struct_name {
+                    #(#field_inits),*
+                }
+            }
+        }
+    };
 
     // ProtoEncode implementation
     let proto_encode_impl = quote! {
@@ -602,6 +765,7 @@ fn generate_proto_wire_impl(
         #proto_decode_impl
         #proto_shadow_encode_impl
         #proto_archive_impl
+        #proto_archive_value_impl
         #proto_encode_impl
     }
 }

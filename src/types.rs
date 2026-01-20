@@ -221,6 +221,30 @@ macro_rules! impl_proto_primitive_by_ref {
             }
         }
 
+        impl ProtoArchive for $ty {
+            type Archived<'x> = <&'x $ty as ProtoArchive>::Archived<'x>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                <&$ty as ProtoArchive>::is_default(&self)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                <&$ty as ProtoArchive>::len(archived)
+            }
+
+            #[inline(always)]
+            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+                unsafe { <&$ty as ProtoArchive>::encode(archived, buf) }
+            }
+
+            #[inline(always)]
+            fn archive(&self) -> Self::Archived<'_> {
+                self
+            }
+        }
+
         impl ProtoEncode for $ty {
             type Shadow<'a> = &'a $ty;
         }
