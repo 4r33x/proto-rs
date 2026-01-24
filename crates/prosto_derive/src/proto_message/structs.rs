@@ -286,6 +286,7 @@ fn collect_type_params(ty: &Type, params: &BTreeSet<syn::Ident>, used: &mut BTre
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn generate_transparent_struct_impl(
     name: &syn::Ident,
     vis: &syn::Visibility,
