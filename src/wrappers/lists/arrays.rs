@@ -7,6 +7,7 @@ use bytes::BufMut;
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::encoding::check_wire_type;
 use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
 use crate::traits::PrimitiveKind;
@@ -78,9 +79,20 @@ impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if T::KIND.is_bytes_kind() {
+            check_wire_type(WireType::LengthDelimited, wire_type)?;
+            let len = decode_varint(buf)? as usize;
+            if len != N {
+                return Err(DecodeError::new(format!(
+                    "invalid length for fixed byte array: expected {N} got {len}"
+                )));
+            }
+            if len > buf.remaining() {
+                return Err(DecodeError::new("buffer underflow"));
+            }
             // SAFETY: only executed for [u8]
-            let mut bytes: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr().cast::<u8>(), self.len()) };
-            return super::bytes_encoding::merge(wire_type, &mut bytes, buf, ctx);
+            let bytes: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr().cast::<u8>(), self.len()) };
+            buf.copy_to_slice(bytes);
+            return Ok(());
         }
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
