@@ -35,7 +35,7 @@ pub extern crate alloc;
 pub use bytes;
 
 mod coders;
-// mod custom_types;
+mod custom_types;
 #[cfg(feature = "tonic")]
 mod tonic;
 mod types;
