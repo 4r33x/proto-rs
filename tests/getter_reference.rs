@@ -60,18 +60,12 @@ impl ProtoShadowDecode<Task> for TaskProto {
     }
 }
 
-impl<'a> ProtoShadowEncode<'a, Task> for TaskProto {
+impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
     fn from_sun(value: &'a Task) -> Self {
-        let view = TaskRef {
+        TaskRef {
             cfg_id: value.cfg_id,
             user_id: value.user_id,
             ctx: &value.ctx,
-        };
-        TaskProto {
-            cfg_id: view.cfg_id,
-            user_id: view.user_id,
-            flags: *view.ctx.flags(),
-            values: *view.ctx.values(),
         }
     }
 }
