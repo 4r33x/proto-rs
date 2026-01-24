@@ -67,8 +67,8 @@ fn transparent_tuple_roundtrip() {
     let mut buf = Vec::new();
     let shadow =
         <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdTuple>>::from_sun(&original);
-    let archived = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive(&shadow);
-    unsafe { <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode(archived, &mut buf) };
+    let archived = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
+    unsafe { <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
     assert_eq!(buf, vec![123]);
 
     let mut decoded = <UserIdTuple as ProtoDecoder>::proto_default();
@@ -82,8 +82,8 @@ fn transparent_named_roundtrip() {
     let mut buf = Vec::new();
     let shadow =
         <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdNamed>>::from_sun(&original);
-    let archived = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive(&shadow);
-    unsafe { <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode(archived, &mut buf) };
+    let archived = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
+    unsafe { <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
     assert_eq!(buf, vec![77]);
 
     let mut decoded = <UserIdNamed as ProtoDecoder>::proto_default();
@@ -100,8 +100,8 @@ fn transparent_in_holder_encodes_inner_once() {
 
     let mut buf = Vec::new();
     let shadow = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, Holder>>::from_sun(&holder);
-    let archived = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive(&shadow);
-    unsafe { <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode(archived, &mut buf) };
+    let archived = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
+    unsafe { <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
 
     // Expected encoding:
     // field 1 (tuple): key 0x08 followed by value 0x05

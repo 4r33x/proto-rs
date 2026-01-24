@@ -15,6 +15,8 @@ mod btree;
 mod conc_map;
 mod hash_map;
 
+pub(crate) const MAP_ENTRY_KIND: ProtoKind = ProtoKind::Message;
+
 pub struct MapEntryDecoded<K, V> {
     key: K,
     value: V,

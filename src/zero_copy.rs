@@ -164,7 +164,7 @@ where
 
 impl<T> From<&T> for ZeroCopy<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline(always)]
     fn from(value: &T) -> Self {
@@ -178,7 +178,7 @@ where
 
 impl<T> From<T> for ZeroCopy<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline(always)]
     fn from(value: T) -> Self {
@@ -196,7 +196,7 @@ pub trait ToZeroCopy<T> {
 
 impl<T> ToZeroCopy<T> for &T
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     fn to_zero_copy(self) -> ZeroCopy<T> {
         ZeroCopy::from(self)
@@ -205,7 +205,7 @@ where
 
 impl<T> ToZeroCopy<T> for T
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     fn to_zero_copy(self) -> ZeroCopy<T> {
         ZeroCopy::from(self)
@@ -291,12 +291,12 @@ impl<T> ProtoArchive for ZeroCopy<T> {
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         buf.put_slice(archived);
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         self.inner.as_slice()
     }
 }

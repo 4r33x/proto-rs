@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use tonic::Request;
 
 use crate::ProtoEncode;
+use crate::ProtoExt;
 use crate::ToZeroCopyRequest;
 use crate::coders::BytesMode;
 use crate::coders::SunByRef;
@@ -55,7 +56,7 @@ impl<T> From<ZeroCopyRequest<T>> for Request<ZeroCopyBuffer> {
 
 impl<T> From<Request<T>> for ZeroCopyRequest<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from(request: Request<T>) -> Self {
@@ -67,7 +68,7 @@ where
 
 impl<'a, T> From<Request<&'a T>> for ZeroCopyRequest<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from(request: Request<&'a T>) -> Self {
@@ -79,7 +80,7 @@ where
 
 impl<T> ZeroCopyRequest<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     pub fn from_message(message: T) -> Self {
@@ -127,7 +128,7 @@ impl<T> ProtoRequest<T> for ZeroCopyRequest<T> {
 }
 impl<T> ToZeroCopyRequest<T> for &T
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {
@@ -138,7 +139,7 @@ where
 
 impl<T> ToZeroCopyRequest<T> for Request<&T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyRequest<T> {

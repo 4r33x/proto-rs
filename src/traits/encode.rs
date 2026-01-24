@@ -1,7 +1,10 @@
 use bytes::BufMut;
 
+use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
+use crate::encoding::key_len;
+use crate::encoding::WireType;
 use crate::error::EncodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -30,7 +33,10 @@ pub trait ProtoEncode: Sized {
     type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
 
     #[inline(always)]
-    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
+    where
+        Self: ProtoExt,
+    {
         let shadow = Self::Shadow::from_sun(self);
         let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
             Some(v) => v,
@@ -47,7 +53,10 @@ pub trait ProtoEncode: Sized {
     }
 
     #[inline(always)]
-    fn encode_to_vec(&self) -> Vec<u8> {
+    fn encode_to_vec(&self) -> Vec<u8>
+    where
+        Self: ProtoExt,
+    {
         let shadow = Self::Shadow::from_sun(self);
         let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
             Some(v) => v,
@@ -58,7 +67,10 @@ pub trait ProtoEncode: Sized {
         buf
     }
     #[inline(always)]
-    fn encode_to_zerocopy(&self) -> ZeroCopyBuffer {
+    fn encode_to_zerocopy(&self) -> ZeroCopyBuffer
+    where
+        Self: ProtoExt,
+    {
         let shadow = Self::Shadow::from_sun(self);
         let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
             Some(v) => v,
@@ -81,8 +93,9 @@ impl<T: ProtoEncode> ProtoExt for ArchivedProtoMessage<'_, '_, T> {
     const KIND: ProtoKind = T::Shadow::KIND;
 }
 
-impl<'a, 's, T: ProtoEncode> ArchivedProtoMessage<'a, 's, T>
+impl<'a, 's, T> ArchivedProtoMessage<'a, 's, T>
 where
+    T: ProtoEncode + ProtoExt,
     's: 'a,
     <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
 {
@@ -94,7 +107,10 @@ where
         }
         let archived = input.archive::<0>();
 
-        let len = <<T as ProtoEncode>::Shadow<'s> as ProtoArchive>::len(&archived);
+        let mut len = <<T as ProtoEncode>::Shadow<'s> as ProtoArchive>::len(&archived);
+        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+            len += key_len(1);
+        }
         Some(Self { len, inner: archived })
     }
 
@@ -113,8 +129,9 @@ where
         let len = self.len;
         debug_assert!(len != 0);
 
-        if matches!(Self::KIND, ProtoKind::SimpleEnum) {
-            unsafe { T::Shadow::encode::<1>(self.inner, buf) };
+        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+            encode_key(1, WireType::Varint, buf);
+            unsafe { T::Shadow::encode::<0>(self.inner, buf) };
         } else {
             unsafe { T::Shadow::encode::<0>(self.inner, buf) };
         }
@@ -130,7 +147,7 @@ impl<const TAG: u32, T: ProtoArchive + ProtoExt> ProtoExt for ArchivedProtoField
 }
 
 impl<'a, const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<'a, TAG, T> {
-    const _TAG_VARINT: VarintConst<10> = encode_varint_const(TAG as u64);
+    const _TAG_VARINT: VarintConst<10> = encode_varint_const(((TAG as u64) << 3) | (T::WIRE_TYPE as u64));
     const TAG_LEN: usize = Self::_TAG_VARINT.len;
 
     pub fn new(input: &'a T) -> Self {
@@ -196,5 +213,6 @@ impl<'a, const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<'a, TAG,
         if T::WIRE_TYPE.is_length_delimited() {
             encode_varint(self.len as u64, buf);
         }
+        unsafe { <T as ProtoArchive>::encode::<0>(value, buf) };
     }
 }

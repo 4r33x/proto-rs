@@ -550,7 +550,7 @@ fn generate_shadow_impls(
             type Archived<'x> = #archived_ident #archived_ty_generics;
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 #( #archive_inits )*
                 let len = 0 #( + #archive_len_terms )*;
                 #archived_ident {
@@ -570,7 +570,7 @@ fn generate_shadow_impls(
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 #( #encode_fields )*
             }
         }
@@ -710,14 +710,14 @@ fn generate_proto_impls(
                     }
 
                     #[inline(always)]
-                    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode(archived, buf);
+                    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
                     }
 
                     #[inline(always)]
-                    fn archive(&self) -> Self::Archived<'_> {
+                    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive(&shadow)
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow)
                     }
                 }
             }
@@ -790,17 +790,17 @@ fn generate_proto_impls(
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
                 buf.put_slice(archived.as_slice());
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                let archived = <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive(&shadow);
+                let archived = <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow);
                 let len = <#shadow_ty_short as ::proto_rs::ProtoArchive>::len(&archived);
                 let mut buf = Vec::with_capacity(len);
-                unsafe { <#shadow_ty_short as ::proto_rs::ProtoArchive>::encode(archived, &mut buf) };
+                unsafe { <#shadow_ty_short as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, &mut buf) };
                 buf
             }
         }

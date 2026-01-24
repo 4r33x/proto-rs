@@ -5,6 +5,7 @@ use tonic::Status;
 
 use crate::BytesMode;
 use crate::ProtoEncode;
+use crate::ProtoExt;
 use crate::SunByRef;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
@@ -56,7 +57,7 @@ impl<T> From<ZeroCopyResponse<T>> for Response<ZeroCopyBuffer> {
 
 impl<T> From<Response<T>> for ZeroCopyResponse<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from(request: Response<T>) -> Self {
@@ -68,7 +69,7 @@ where
 
 impl<'a, T> From<Response<&'a T>> for ZeroCopyResponse<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from(request: Response<&'a T>) -> Self {
@@ -80,7 +81,7 @@ where
 
 impl<T> ZeroCopyResponse<T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     pub fn from_message(message: T) -> Self {
@@ -174,7 +175,7 @@ where
 
 impl<T> ToZeroCopyResponse<T> for &T
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyResponse<T> {
@@ -185,7 +186,7 @@ where
 
 impl<T> ToZeroCopyResponse<T> for Response<&T>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn to_zero_copy(self) -> ZeroCopyResponse<T> {

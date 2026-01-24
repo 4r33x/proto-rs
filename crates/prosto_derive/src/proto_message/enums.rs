@@ -166,14 +166,14 @@ pub(super) fn generate_simple_enum_impl(
                     }
 
                     #[inline(always)]
-                    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode(archived, buf);
+                    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
                     }
 
                     #[inline(always)]
-                    fn archive(&self) -> Self::Archived<'_> {
+                    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive(&shadow)
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow)
                     }
                 }
             }
@@ -227,12 +227,15 @@ pub(super) fn generate_simple_enum_impl(
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                <i32 as ::proto_rs::ProtoArchive>::encode(archived, buf);
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                if TAG != 0 {
+                    ::proto_rs::encoding::encode_key(TAG, ::proto_rs::encoding::WireType::Varint, buf);
+                }
+                <i32 as ::proto_rs::ProtoArchive>::encode::<0>(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 match *self {
                     #(#raw_from_variant,)*
                 }
