@@ -704,11 +704,11 @@ pub struct Person {
     pub address: Address, // Complex type - needs shadow
 }
 
-fn datetime_to_i64(dt: &DateTime<Utc>) -> i64 {
+const fn datetime_to_i64(dt: &DateTime<Utc>) -> i64 {
     dt.timestamp()
 }
 
-fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
+const fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(ts, 0).unwrap()
 }
 fn try_i64_to_datetime(ts: i64) -> Result<DateTime<Utc>, DecodeError> {

@@ -345,7 +345,7 @@ impl<'a> ProtoShadowEncode<'a, TransactionError> for TransactionErrorProto {
     }
 }
 
-fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
+const fn instruction_error_from_native(value: &InstructionError) -> InstructionErrorProto {
     match value {
         InstructionError::GenericError => InstructionErrorProto::GenericError,
         InstructionError::InvalidArgument => InstructionErrorProto::InvalidArgument,

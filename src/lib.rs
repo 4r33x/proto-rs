@@ -58,6 +58,7 @@ pub use crate::coders::ProtoCodec;
 pub use crate::coders::ProtoEncoder;
 pub use crate::coders::SunByRef;
 pub use crate::coders::SunByVal;
+pub use crate::encoding::DecodeContext;
 pub use crate::encoding::length_delimiter::decode_length_delimiter;
 pub use crate::encoding::length_delimiter::encode_length_delimiter;
 pub use crate::encoding::length_delimiter::length_delimiter_len;

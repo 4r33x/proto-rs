@@ -32,7 +32,7 @@ fn validate_pong_with_ext(pong: &mut Pong, ext: &Extensions) -> Result<(), Decod
 }
 
 #[allow(clippy::unnecessary_wraps)]
-fn validate_pong_shadow_with_ext(_pong: &mut PongWithShadow, _ext: &Extensions) -> Result<(), DecodeError> {
+const fn validate_pong_shadow_with_ext(_pong: &mut PongWithShadow, _ext: &Extensions) -> Result<(), DecodeError> {
     Ok(())
 }
 

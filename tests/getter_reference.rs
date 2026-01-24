@@ -13,14 +13,14 @@ mod private {
         values: u32,
     }
     impl TaskCtx {
-        pub fn new(flags: u32, values: u32) -> Self {
+        pub const fn new(flags: u32, values: u32) -> Self {
             Self { flags, values }
         }
-        pub fn flags(&self) -> &u32 {
+        pub const fn flags(&self) -> &u32 {
             &self.flags
         }
 
-        pub fn values(&self) -> &u32 {
+        pub const fn values(&self) -> &u32 {
             &self.values
         }
     }
@@ -116,8 +116,7 @@ fn encode_decode_papaya_getters() {
     let holder = PapayaHolder { map, set };
 
     let bytes = PapayaHolder::encode_to_vec(&holder);
-    let decoded =
-        <PapayaHolder as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode papaya holder");
+    let decoded = <PapayaHolder as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode papaya holder");
 
     let map_guard = decoded.map.pin();
     assert_eq!(map_guard.get(&1), Some(&10));

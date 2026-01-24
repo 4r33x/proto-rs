@@ -206,11 +206,11 @@ impl From<&MixedProtoProst> for MixedProto {
     }
 }
 
-fn fake_time_to_i64(value: &FakeTime) -> i64 {
+const fn fake_time_to_i64(value: &FakeTime) -> i64 {
     value.seconds
 }
 
-fn i64_to_fake_time(value: i64) -> FakeTime {
+const fn i64_to_fake_time(value: i64) -> FakeTime {
     FakeTime { seconds: value }
 }
 

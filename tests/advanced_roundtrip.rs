@@ -88,11 +88,11 @@ pub struct AdvancedEdgeCase {
     pub optional_blob: Option<Bytes>,
 }
 
-fn timestamp_to_i64(value: &AdvancedTimestamp) -> i64 {
+const fn timestamp_to_i64(value: &AdvancedTimestamp) -> i64 {
     value.seconds
 }
 
-fn i64_to_timestamp(value: i64) -> AdvancedTimestamp {
+const fn i64_to_timestamp(value: i64) -> AdvancedTimestamp {
     AdvancedTimestamp { seconds: value }
 }
 
@@ -160,7 +160,7 @@ fn recompute_digest(value: &AdvancedEdgeCase) -> u32 {
     compute_digest(value)
 }
 
-fn stage_code(stage: Stage) -> u32 {
+const fn stage_code(stage: Stage) -> u32 {
     match stage {
         Stage::Unspecified => 0,
         Stage::Alpha => 1,

@@ -181,9 +181,7 @@ where
         if T::KIND.is_bytes_kind() {
             // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
             // The archived.items is [u8; N] and we write each byte directly
-            let bytes: &[u8] = unsafe {
-                core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N)
-            };
+            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N) };
             buf.put_slice(bytes);
             return;
         }
@@ -250,9 +248,7 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_
         if T::KIND.is_bytes_kind() {
             // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
             // The archived.items is [u8; N] and we write each byte directly
-            let bytes: &[u8] = unsafe {
-                core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N)
-            };
+            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N) };
             buf.put_slice(bytes);
             return;
         }

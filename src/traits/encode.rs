@@ -1,10 +1,10 @@
 use bytes::BufMut;
 
+use crate::encoding::WireType;
 use crate::encoding::encode_key;
 use crate::encoding::encode_varint;
 use crate::encoding::encoded_len_varint;
 use crate::encoding::key_len;
-use crate::encoding::WireType;
 use crate::error::EncodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -186,7 +186,7 @@ impl<'a, const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<'a, TAG,
     #[allow(clippy::len_without_is_empty)]
     //used for preallocating buffers
     #[inline(always)]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         if self.inner.is_none() {
             return 0;
         }

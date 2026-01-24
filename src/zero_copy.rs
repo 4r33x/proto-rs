@@ -49,14 +49,14 @@ impl ZeroCopyBuffer {
     }
 
     #[inline(always)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             inner: ZeroCopyBufferInner::new(),
         }
     }
 
     #[inline(always)]
-    pub fn inner_mut(&mut self) -> &mut ZeroCopyBufferInner {
+    pub const fn inner_mut(&mut self) -> &mut ZeroCopyBufferInner {
         &mut self.inner
     }
 }
@@ -109,7 +109,7 @@ impl<T> fmt::Debug for ZeroCopy<T> {
 
 impl<T> ZeroCopy<T> {
     #[inline(always)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             inner: ZeroCopyBuffer::new(),
             _marker: PhantomData,

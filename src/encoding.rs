@@ -71,7 +71,7 @@ impl DecodeContext {
     #[cfg(not(feature = "no-recursion-limit"))]
     #[inline]
     #[must_use]
-    pub fn enter_recursion(&self) -> DecodeContext {
+    pub const fn enter_recursion(&self) -> DecodeContext {
         DecodeContext {
             recurse_count: self.recurse_count - 1,
         }

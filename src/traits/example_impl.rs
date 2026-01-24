@@ -55,7 +55,7 @@ impl<K, V> ProtoExt for ID<'_, K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
 }
 
-impl<K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> ProtoExt for IDShadow<'_, K, V> {
+impl<K: ProtoEncode, V: ProtoEncode> ProtoExt for IDShadow<'_, K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
 }
 

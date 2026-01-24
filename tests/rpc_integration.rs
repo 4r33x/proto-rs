@@ -92,11 +92,11 @@ fn response_collections() -> Vec<CollectionsMessage> {
     messages
 }
 
-fn nested_to_tonic(nested: &NestedMessageProst) -> tonic_prost_test::encoding::NestedMessage {
+const fn nested_to_tonic(nested: &NestedMessageProst) -> tonic_prost_test::encoding::NestedMessage {
     tonic_prost_test::encoding::NestedMessage { value: nested.value }
 }
 
-fn nested_from_tonic(nested: tonic_prost_test::encoding::NestedMessage) -> NestedMessageProst {
+const fn nested_from_tonic(nested: tonic_prost_test::encoding::NestedMessage) -> NestedMessageProst {
     NestedMessageProst { value: nested.value }
 }
 
