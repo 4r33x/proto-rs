@@ -135,6 +135,7 @@ pub(super) fn generate_struct_impl(
     let proto_impls = generate_proto_impls(
         name,
         &shadow_ident,
+        &archived_ident,
         &bounded_generics,
         &impl_generics,
         &ty_generics,
@@ -385,11 +386,7 @@ fn generate_transparent_struct_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                if tag == 1 {
-                    <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_value_access, wire_type, buf, ctx)
-                } else {
-                    ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
-                }
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field(&mut #mut_value_access, tag, wire_type, buf, ctx)
             }
 
             #[inline(always)]
@@ -402,9 +399,20 @@ fn generate_transparent_struct_impl(
             type ShadowDecoded = Self;
 
             #[inline(always)]
-            fn decode(buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError> {
-                let inner = <#inner_ty as ::proto_rs::ProtoDecode>::decode(buf, ctx)?;
-                Ok(#wrap_expr)
+            fn decode(mut buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError> {
+                // For transparent types, we need to handle primitives vs messages differently:
+                // - Primitives are encoded as raw values (no field tags)
+                // - Messages are encoded with field tags
+                if <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE.is_length_delimited() {
+                    // Message type - decode using standard message decoding
+                    let inner = <#inner_ty as ::proto_rs::ProtoDecode>::decode(buf, ctx)?;
+                    Ok(#wrap_expr)
+                } else {
+                    // Primitive type - read raw value using merge
+                    let mut inner = <#inner_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                    <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut inner, <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE, &mut buf, ctx)?;
+                    Ok(#wrap_expr)
+                }
             }
         }
 
@@ -508,6 +516,7 @@ fn generate_shadow_impls(
             quote! { #field_ident: ::proto_rs::ArchivedProtoField<'x, #tag, #shadow_ty> }
         })
         .collect::<Vec<_>>();
+    // Add a phantom to ensure the 'x and 'a lifetimes are used even when all fields are value types
     archive_field_defs.push(quote! { #phantom_ident: ::core::marker::PhantomData<(&'x (), &'a ())> });
 
     let archive_struct = quote! {
@@ -604,6 +613,7 @@ fn generate_shadow_impls(
 fn generate_proto_impls(
     name: &syn::Ident,
     shadow_ident: &syn::Ident,
+    _archived_ident: &syn::Ident,
     generics: &syn::Generics,
     impl_generics: &syn::ImplGenerics,
     ty_generics: &syn::TypeGenerics,
@@ -823,7 +833,7 @@ fn generate_proto_impls(
         }
 
         impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            type Archived<'a> = Vec<u8>;
+            type Archived<'__proto_archive_lt> = Vec<u8>;
 
             #[inline(always)]
             fn is_default(&self) -> bool {
