@@ -2,7 +2,8 @@ pub use solana_address::ADDRESS_BYTES as BYTES;
 use solana_address::Address;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -14,18 +15,16 @@ pub struct AddressProto {
     inner: [u8; BYTES],
 }
 
-impl ProtoShadow<Address> for AddressProto {
-    type Sun<'a> = &'a Address;
-    type OwnedSun = Address;
-    type View<'a> = Self;
-
+impl ProtoShadowDecode<Address> for AddressProto {
     #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+    fn to_sun(self) -> Result<Address, DecodeError> {
         Ok(Address::from(self.inner))
     }
+}
 
+impl<'a> ProtoShadowEncode<'a, Address> for AddressProto {
     #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+    fn from_sun(value: &'a Address) -> Self {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());
         Self { inner }
@@ -35,7 +34,9 @@ impl ProtoShadow<Address> for AddressProto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProtoExt;
+    use crate::ProtoDecode;
+    use crate::ProtoEncode;
+    use crate::encoding::DecodeContext;
     use crate::encoding::WireType;
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
@@ -56,8 +57,8 @@ mod tests {
     #[test]
     fn roundtrip_proto_ext() {
         let original = Address::from(sample_address_bytes());
-        let encoded = <Address as ProtoExt>::encode_to_vec(&original);
-        let decoded = <Address as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        let encoded = <Address as ProtoEncode>::encode_to_vec(&original);
+        let decoded = <Address as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded.as_ref(), original.as_ref());
     }
 
@@ -68,7 +69,7 @@ mod tests {
         encode_varint((BYTES - 1) as u64, &mut buf);
         buf.extend(core::iter::repeat_n(0u8, BYTES - 1));
 
-        match <Address as ProtoExt>::decode(buf.as_slice()) {
+        match <Address as ProtoDecode>::decode(buf.as_slice(), DecodeContext::default()) {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
                 let message = err.to_string();

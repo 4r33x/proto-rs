@@ -3,7 +3,8 @@ use core::convert::TryInto;
 use fastnum::UD128;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 #[proto_message(proto_path = "protos/fastnum.proto", sun = UD128)]
@@ -20,12 +21,8 @@ pub struct UD128Proto {
     pub fractional_digits_count: i32,
 }
 
-impl ProtoShadow<UD128> for UD128Proto {
-    type Sun<'a> = &'a UD128;
-    type OwnedSun = UD128;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<UD128> for UD128Proto {
+    fn to_sun(self) -> Result<UD128, DecodeError> {
         let digits = ((self.hi as u128) << 64) | (self.lo as u128);
 
         let mut result = UD128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
@@ -38,8 +35,10 @@ impl ProtoShadow<UD128> for UD128Proto {
 
         Ok(result)
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, UD128> for UD128Proto {
+    fn from_sun(value: &'a UD128) -> Self {
         let digits: u128 = value.digits().try_into().expect("Should be safe as UD128 should have u128 capacity");
         let lo = digits as u64;
         let hi = (digits >> 64) as u64;
@@ -65,11 +64,11 @@ mod tests {
     }
 
     fn encode(value: &UD128) -> UD128Proto {
-        <UD128Proto as ProtoShadow<UD128>>::from_sun(value)
+        <UD128Proto as ProtoShadowEncode<'_, UD128>>::from_sun(value)
     }
 
     fn decode(proto: UD128Proto) -> UD128 {
-        ProtoShadow::<UD128>::to_sun(proto).unwrap()
+        ProtoShadowDecode::<UD128>::to_sun(proto).unwrap()
     }
 
     #[test]

@@ -4,7 +4,8 @@ use fastnum::D64;
 use fastnum::D128;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 #[proto_message(proto_path = "protos/fastnum.proto", sun = [D128, D64])]
@@ -23,12 +24,8 @@ pub struct D128Proto {
     pub is_negative: bool,
 }
 
-impl ProtoShadow<D128> for D128Proto {
-    type Sun<'a> = &'a D128;
-    type OwnedSun = D128;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<D128> for D128Proto {
+    fn to_sun(self) -> Result<D128, DecodeError> {
         let digits = ((self.hi as u128) << 64) | (self.lo as u128);
 
         let mut result = D128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
@@ -45,8 +42,10 @@ impl ProtoShadow<D128> for D128Proto {
 
         Ok(result)
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, D128> for D128Proto {
+    fn from_sun(value: &'a D128) -> Self {
         let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
         let lo = digits as u64;
         let hi = (digits >> 64) as u64;
@@ -60,12 +59,8 @@ impl ProtoShadow<D128> for D128Proto {
     }
 }
 
-impl ProtoShadow<D64> for D128Proto {
-    type Sun<'a> = &'a D64;
-    type OwnedSun = D64;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<D64> for D128Proto {
+    fn to_sun(self) -> Result<D64, DecodeError> {
         let mut result = D64::from_u64(self.lo);
 
         if self.fractional_digits_count > 0 {
@@ -79,8 +74,10 @@ impl ProtoShadow<D64> for D128Proto {
 
         Ok(result)
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, D64> for D128Proto {
+    fn from_sun(value: &'a D64) -> Self {
         let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
         let lo = digits as u64;
 
@@ -106,11 +103,11 @@ mod tests {
     }
 
     fn encode(value: &D128) -> D128Proto {
-        <D128Proto as ProtoShadow<D128>>::from_sun(value)
+        <D128Proto as ProtoShadowEncode<'_, D128>>::from_sun(value)
     }
 
     fn decode(proto: D128Proto) -> D128 {
-        ProtoShadow::<D128>::to_sun(proto).unwrap()
+        ProtoShadowDecode::<D128>::to_sun(proto).unwrap()
     }
 
     #[test]

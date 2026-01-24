@@ -4,7 +4,8 @@ use solana_instruction_error::InstructionError;
 use solana_transaction_error::TransactionError;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -122,12 +123,8 @@ pub enum InstructionErrorProto {
     BuiltinProgramsMustConsumeComputeUnits,
 }
 
-impl ProtoShadow<InstructionError> for InstructionErrorProto {
-    type Sun<'a> = &'a InstructionError;
-    type OwnedSun = InstructionError;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<InstructionError> for InstructionErrorProto {
+    fn to_sun(self) -> Result<InstructionError, DecodeError> {
         let value = match self {
             Self::GenericError => InstructionError::GenericError,
             Self::InvalidArgument => InstructionError::InvalidArgument,
@@ -187,8 +184,10 @@ impl ProtoShadow<InstructionError> for InstructionErrorProto {
 
         Ok(value)
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, InstructionError> for InstructionErrorProto {
+    fn from_sun(value: &'a InstructionError) -> Self {
         instruction_error_from_native(value)
     }
 }
@@ -287,12 +286,8 @@ pub enum TransactionErrorProto {
     CommitCancelled,
 }
 
-impl ProtoShadow<TransactionError> for TransactionErrorProto {
-    type Sun<'a> = &'a TransactionError;
-    type OwnedSun = TransactionError;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<TransactionError> for TransactionErrorProto {
+    fn to_sun(self) -> Result<TransactionError, DecodeError> {
         let value = match self {
             Self::AccountInUse => TransactionError::AccountInUse,
             Self::AccountLoadedTwice => TransactionError::AccountLoadedTwice,
@@ -303,7 +298,7 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
             Self::AlreadyProcessed => TransactionError::AlreadyProcessed,
             Self::BlockhashNotFound => TransactionError::BlockhashNotFound,
             Self::InstructionError { index, error } => {
-                let error = ProtoShadow::<InstructionError>::to_sun(error)?;
+                let error = ProtoShadowDecode::<InstructionError>::to_sun(error)?;
                 TransactionError::InstructionError(index, error)
             }
             Self::CallChainTooDeep => TransactionError::CallChainTooDeep,
@@ -342,8 +337,10 @@ impl ProtoShadow<TransactionError> for TransactionErrorProto {
 
         Ok(value)
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, TransactionError> for TransactionErrorProto {
+    fn from_sun(value: &'a TransactionError) -> Self {
         transaction_error_from_native(value)
     }
 }
@@ -419,7 +416,7 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
         TransactionError::BlockhashNotFound => TransactionErrorProto::BlockhashNotFound,
         TransactionError::InstructionError(index, error) => TransactionErrorProto::InstructionError {
             index: *index,
-            error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(error),
+            error: <InstructionErrorProto as ProtoShadowEncode<'_, InstructionError>>::from_sun(error),
         },
         TransactionError::CallChainTooDeep => TransactionErrorProto::CallChainTooDeep,
         TransactionError::MissingSignatureForFee => TransactionErrorProto::MissingSignatureForFee,
@@ -463,7 +460,9 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProtoExt;
+    use crate::ProtoDecode;
+    use crate::ProtoEncode;
+    use crate::encoding::DecodeContext;
     #[allow(dead_code)]
     #[proto_message(proto_path = "protos/solana_test.proto")]
     struct TxErrorWrapper {
@@ -478,13 +477,13 @@ mod tests {
     #[test]
     fn instruction_error_roundtrip_via_shadow() {
         let proto = InstructionErrorProto::Custom(7);
-        let restored = ProtoShadow::<InstructionError>::to_sun(proto.clone()).expect("decode");
+        let restored = ProtoShadowDecode::<InstructionError>::to_sun(proto.clone()).expect("decode");
         match restored {
             InstructionError::Custom(value) => assert_eq!(value, 7),
             other => panic!("unexpected instruction error: {other:?}"),
         }
 
-        let roundtrip = <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(&InstructionError::Custom(7));
+        let roundtrip = <InstructionErrorProto as ProtoShadowEncode<'_, InstructionError>>::from_sun(&InstructionError::Custom(7));
         assert!(matches!(roundtrip, InstructionErrorProto::Custom(7)));
     }
 
@@ -492,17 +491,17 @@ mod tests {
     fn transaction_error_roundtrip_via_shadow() {
         let proto = TransactionErrorProto::InstructionError {
             index: 3,
-            error: <InstructionErrorProto as ProtoShadow<InstructionError>>::from_sun(&InstructionError::InvalidArgument),
+            error: <InstructionErrorProto as ProtoShadowEncode<'_, InstructionError>>::from_sun(&InstructionError::InvalidArgument),
         };
-        let restored = ProtoShadow::<TransactionError>::to_sun(proto).expect("decode");
+        let restored = ProtoShadowDecode::<TransactionError>::to_sun(proto).expect("decode");
         assert_eq!(restored, TransactionError::InstructionError(3, InstructionError::InvalidArgument),);
     }
 
     #[test]
     fn transaction_error_protoext_roundtrip() {
         let error = TransactionError::InsufficientFundsForRent { account_index: 9 };
-        let encoded = <TransactionError as ProtoExt>::encode_to_vec(&error);
-        let decoded = <TransactionError as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        let encoded = <TransactionError as ProtoEncode>::encode_to_vec(&error);
+        let decoded = <TransactionError as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded, TransactionError::InsufficientFundsForRent { account_index: 9 },);
     }
 }
