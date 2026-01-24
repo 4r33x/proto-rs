@@ -436,6 +436,32 @@ impl<K: ProtoIdentifiable, V: ProtoIdentifiable, S> ProtoIdentifiable for ::std:
 }
 
 #[cfg(feature = "build-schemas")]
+impl ProtoIdentifiable for ::std::hash::RandomState {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "RandomState",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::None;
+}
+
+#[cfg(feature = "build-schemas")]
+impl<H> ProtoIdentifiable for ::std::hash::BuildHasherDefault<H> {
+    const PROTO_IDENT: ProtoIdent = ProtoIdent {
+        module_path: module_path!(),
+        name: "BuildHasherDefault",
+        proto_package_name: "",
+        proto_file_path: "",
+        proto_type: Self::PROTO_TYPE,
+        generics: &[],
+    };
+    const PROTO_TYPE: ProtoType = ProtoType::None;
+}
+
+#[cfg(feature = "build-schemas")]
 impl<K: ProtoIdentifiable, V: ProtoIdentifiable> ProtoIdentifiable for ::std::collections::BTreeMap<K, V> {
     const PROTO_IDENT: ProtoIdent = ProtoIdent {
         module_path: module_path!(),

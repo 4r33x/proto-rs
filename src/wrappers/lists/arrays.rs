@@ -164,7 +164,7 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         // For byte arrays [u8; N], write raw bytes directly
         if T::KIND.is_bytes_kind() {
             // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
@@ -176,19 +176,19 @@ where
             return;
         }
         for item in archived.items {
-            encode_repeated_value::<T>(item, buf);
+            encode_repeated_value::<T, TAG>(item, buf);
         }
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         let mut items: [MaybeUninit<T::Archived<'_>>; N] = [const { MaybeUninit::uninit() }; N];
         let mut len = 0;
         for (idx, item) in self.iter().enumerate() {
-            let archived = item.archive();
+            let archived = item.archive::<0>();
             // For byte arrays, len will be N (not computed from varints)
             if !T::KIND.is_bytes_kind() {
-                len += repeated_payload_len::<T>(&archived);
+                len += repeated_payload_len::<T, TAG>(&archived);
             }
             items[idx].write(archived);
         }
@@ -233,7 +233,7 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         // For byte arrays [u8; N], write raw bytes directly
         if T::KIND.is_bytes_kind() {
             // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
@@ -245,19 +245,19 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_
             return;
         }
         for item in archived.items {
-            encode_repeated_value::<T>(item, buf);
+            encode_repeated_value::<T, TAG>(item, buf);
         }
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         let mut items: [MaybeUninit<T::Archived<'_>>; N] = [const { MaybeUninit::uninit() }; N];
         let mut len = 0;
         for (idx, item) in self.slice.iter().enumerate() {
-            let archived = item.archive();
+            let archived = item.archive::<0>();
             // For byte arrays, len will be N (not computed from varints)
             if !T::KIND.is_bytes_kind() {
-                len += repeated_payload_len::<T>(&archived);
+                len += repeated_payload_len::<T, TAG>(&archived);
             }
             items[idx].write(archived);
         }

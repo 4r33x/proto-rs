@@ -4,6 +4,9 @@ use core::mem::MaybeUninit;
 use bytes::BufMut;
 
 use crate::DecodeError;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
+use crate::encoding::skip_field;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -22,6 +25,43 @@ where
     T::ShadowDecoded: ProtoDecoder + ProtoExt,
 {
     type ShadowDecoded = Box<T::ShadowDecoded>;
+}
+
+impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Arc<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Arc::new(T::proto_default())
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        if let Some(inner) = Arc::get_mut(self) {
+            inner.clear();
+        } else {
+            *self = Arc::new(T::proto_default());
+        }
+    }
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge(wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if let Some(inner) = Arc::get_mut(self) {
+            T::merge(inner, wire_type, buf, ctx)
+        } else {
+            let mut value = T::proto_default();
+            T::merge(&mut value, wire_type, buf, ctx)?;
+            *self = Arc::new(value);
+            Ok(())
+        }
+    }
 }
 
 impl<T, U> ProtoShadowDecode<Arc<U>> for Box<T>
@@ -60,13 +100,13 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode(archived, buf) };
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { T::encode::<TAG>(archived, buf) };
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        T::archive(self.as_ref())
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+        T::archive::<TAG>(self.as_ref())
     }
 }
 
@@ -104,12 +144,12 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode(archived, buf) };
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { T::encode::<TAG>(archived, buf) };
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        T::archive(self.as_ref())
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+        T::archive::<TAG>(self.as_ref())
     }
 }

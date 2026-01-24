@@ -134,19 +134,19 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         match archived {
             ArchivedVecDeque::Bytes(bytes) => bytes_encoding::encode(bytes, buf),
             ArchivedVecDeque::Owned(repeated) => {
                 for item in repeated.items {
-                    encode_repeated_value::<T>(item, buf);
+                    encode_repeated_value::<T, TAG>(item, buf);
                 }
             }
         }
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         if T::KIND.is_bytes_kind() {
             // SAFETY: only executed for VecDeque<u8>.
             let bytes = unsafe { &*(ptr::from_ref(self).cast::<VecDeque<u8>>()) };
@@ -156,8 +156,8 @@ where
         let mut items = Vec::with_capacity(self.len());
         let mut len = 0;
         for item in self {
-            let archived = item.archive();
-            len += repeated_payload_len::<T>(&archived);
+            let archived = item.archive::<0>();
+            len += repeated_payload_len::<T, TAG>(&archived);
             items.push(archived);
         }
         ArchivedVecDeque::Owned(ArchivedRepeated { items, len })

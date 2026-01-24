@@ -80,13 +80,13 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode(archived, buf) };
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { T::encode::<TAG>(archived, buf) };
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        T::archive(self.as_ref())
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+        T::archive::<TAG>(self.as_ref())
     }
 }
 
@@ -128,12 +128,12 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode(archived, buf) };
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { T::encode::<TAG>(archived, buf) };
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        T::archive(self.as_ref())
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+        T::archive::<TAG>(self.as_ref())
     }
 }

@@ -102,7 +102,7 @@ where
     type Archived<'x> = IDArchived<'x, 'a, K, V>;
 
     #[inline(always)]
-    fn archive(&self) -> <Self as ProtoArchive>::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> <Self as ProtoArchive>::Archived<'_> {
         // Each ArchivedProtoField::new() handles "default => None" internally.
         let f1 = ArchivedProtoField::<1, u64>::new(&self.id);
         let f2 = ArchivedProtoField::<2, <K as ProtoEncode>::Shadow<'a>>::new(&self.k);
@@ -124,7 +124,7 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         archived.f1.encode(buf);
         archived.f2.encode(buf);
         archived.f3.encode(buf);

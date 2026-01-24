@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use core::hash::BuildHasher;
 use core::hash::Hash;
 
+use bytes::Buf;
 use bytes::BufMut;
 use papaya::HashSet;
 
@@ -15,6 +16,10 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
+use crate::encoding::decode_varint;
+use crate::encoding::skip_field;
 use crate::wrappers::lists::encode_repeated_value;
 use crate::wrappers::lists::repeated_payload_len;
 
@@ -36,6 +41,63 @@ where
     Vec<<T as ProtoDecode>::ShadowDecoded>: ProtoShadowDecode<HashSet<T, S>>,
 {
     type ShadowDecoded = Vec<T::ShadowDecoded>;
+}
+
+impl<T, S> ProtoDecoder for HashSet<T, S>
+where
+    T: ProtoDecoder + ProtoExt + Eq + Hash,
+    S: BuildHasher + Default,
+{
+    #[inline(always)]
+    fn proto_default() -> Self {
+        HashSet::default()
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        let guard = self.pin();
+        guard.clear();
+    }
+
+    #[inline(always)]
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        if tag == 1 {
+            Self::merge(value, wire_type, buf, ctx)
+        } else {
+            skip_field(wire_type, tag, buf, ctx)
+        }
+    }
+
+    #[inline(always)]
+    fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let guard = self.pin();
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                if wire_type == WireType::LengthDelimited {
+                    let len = decode_varint(buf)? as usize;
+                    let mut slice = buf.take(len);
+                    while slice.has_remaining() {
+                        let mut v = T::proto_default();
+                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        guard.insert(v);
+                    }
+                    debug_assert!(!slice.has_remaining());
+                } else {
+                    let mut v = T::proto_default();
+                    T::merge(&mut v, wire_type, buf, ctx)?;
+                    guard.insert(v);
+                }
+                Ok(())
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let mut v = T::proto_default();
+                T::merge(&mut v, wire_type, buf, ctx)?;
+                guard.insert(v);
+                Ok(())
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
+        }
+    }
 }
 
 impl<T, U, S> ProtoShadowDecode<HashSet<U, S>> for Vec<T>
@@ -94,19 +156,19 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         buf.put_slice(archived.as_slice());
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         let mut bytes = Vec::new();
         let guard = self.pin();
         for item in &guard {
-            let archived = item.archive();
-            let len = repeated_payload_len::<T>(&archived);
+            let archived = item.archive::<0>();
+            let len = repeated_payload_len::<T, TAG>(&archived);
             bytes.reserve(len);
-            encode_repeated_value::<T>(archived, &mut bytes);
+            encode_repeated_value::<T, TAG>(archived, &mut bytes);
         }
         bytes
     }

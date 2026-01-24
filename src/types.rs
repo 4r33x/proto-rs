@@ -113,12 +113,12 @@ macro_rules! impl_proto_primitive_by_value {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 crate::encoding::$module::encode(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 *self
             }
         }
@@ -213,12 +213,12 @@ macro_rules! impl_proto_primitive_by_ref {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 crate::encoding::$module::encode(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 self
             }
         }
@@ -277,12 +277,12 @@ impl ProtoArchive for String {
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { <&String as ProtoArchive>::encode(archived, buf) };
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { <&String as ProtoArchive>::encode::<TAG>(archived, buf) };
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         self
     }
 }
@@ -301,12 +301,12 @@ impl ProtoArchive for Bytes {
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { <&Bytes as ProtoArchive>::encode(archived, buf) };
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        unsafe { <&Bytes as ProtoArchive>::encode::<TAG>(archived, buf) };
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
         self
     }
 }
@@ -389,13 +389,13 @@ macro_rules! impl_narrow_varint {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 let widened: $wide_ty = archived as $wide_ty;
                 encode_varint(widened as u64, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 *self
             }
         }
@@ -491,12 +491,12 @@ macro_rules! impl_atomic_primitive {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 crate::encoding::$module::encode(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 ($load)(self)
             }
         }
@@ -519,12 +519,12 @@ macro_rules! impl_atomic_primitive {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 crate::encoding::$module::encode(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 ($load)(*self)
             }
         }
@@ -615,12 +615,12 @@ macro_rules! impl_atomic_narrow_primitive {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 crate::encoding::$module::encode(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 ($load)(self) as $wide
             }
         }
@@ -643,12 +643,12 @@ macro_rules! impl_atomic_narrow_primitive {
             }
 
             #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
                 crate::encoding::$module::encode(archived, buf);
             }
 
             #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
                 ($load)(*self) as $wide
             }
         }
@@ -822,10 +822,10 @@ impl ProtoArchive for () {
     }
 
     #[inline(always)]
-    unsafe fn encode(_archived: Self::Archived<'_>, _buf: &mut impl BufMut) {}
+    unsafe fn encode<const TAG: u32>(_archived: Self::Archived<'_>, _buf: &mut impl BufMut) {}
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {}
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {}
 }
 
 impl ProtoEncode for () {

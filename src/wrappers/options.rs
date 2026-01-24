@@ -86,15 +86,15 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         if let Some(inner) = archived {
-            unsafe { T::encode(inner, buf) };
+            unsafe { T::encode::<TAG>(inner, buf) };
         }
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        self.as_ref().map(ProtoArchive::archive)
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+        self.as_ref().map(ProtoArchive::archive::<TAG>)
     }
 }
 
@@ -135,14 +135,14 @@ where
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
         if let Some(inner) = archived {
-            unsafe { T::encode(inner, buf) };
+            unsafe { T::encode::<TAG>(inner, buf) };
         }
     }
 
     #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        self.as_ref().map(ProtoArchive::archive)
+    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+        self.as_ref().map(ProtoArchive::archive::<TAG>)
     }
 }

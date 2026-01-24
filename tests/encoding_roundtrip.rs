@@ -378,7 +378,7 @@ fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_e
 
 fn encode_proto_message<M>(value: &M) -> Bytes
 where
-    M: ProtoEncode,
+    M: ProtoEncode + ProtoExt,
 {
     Bytes::from(<M as ProtoEncode>::encode_to_vec(value))
 }
@@ -394,29 +394,29 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoShadowEncode<'a, T>,
 {
     let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
-    let archived = <T::Shadow<'_> as ProtoArchive>::archive(&shadow);
+    let archived = <T::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow);
     <T::Shadow<'_> as ProtoArchive>::len(&archived)
 }
 //this functionality should be handled in traits
-// fn decode_length_delimited<T: ProtoDecode>(bytes: Bytes) -> Result<T, DecodeError> {
-//     let mut buf = bytes;
-//     let len = proto_rs::decode_length_delimiter(&mut buf)?;
-//     let slice = Buf::take(&mut buf, len);
-//     <T as ProtoDecode>::decode(slice, DecodeContext::default())
-// }
+fn decode_length_delimited<T: ProtoDecode>(bytes: Bytes) -> Result<T, DecodeError> {
+    let mut buf = bytes;
+    let len = proto_rs::decode_length_delimiter(&mut buf)?;
+    let slice = Buf::take(&mut buf, len);
+    <T as ProtoDecode>::decode(slice, DecodeContext::default())
+}
 
-// fn encode_message_with_tag<const TAG: u32, T: ProtoEncode>(value: &T, buf: &mut BytesMut)
-// where
-//     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
-// {
-//     let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
-//     let archived = proto_rs::ArchivedProtoField::<TAG, T::Shadow<'_>>::new(&shadow);
-//     archived.encode(buf);
-// }
+fn encode_message_with_tag<const TAG: u32, T: ProtoEncode>(value: &T, buf: &mut BytesMut)
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
+{
+    let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
+    let archived = proto_rs::ArchivedProtoField::<TAG, T::Shadow<'_>>::new(&shadow);
+    archived.encode(buf);
+}
 
 fn encode_proto_length_delimited<M>(value: &M) -> Bytes
 where
-    M: ProtoEncode,
+    M: ProtoEncode + ProtoExt,
 {
     let encoded = <M as ProtoEncode>::encode_to_vec(value);
     let len = encoded.len();
