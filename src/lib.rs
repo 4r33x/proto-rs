@@ -31,6 +31,9 @@ const RECURSION_LIMIT: u32 = 100;
 #[doc(hidden)]
 pub extern crate alloc;
 
+#[doc(hidden)]
+pub extern crate std;
+
 // Re-export the bytes crate for use within derived code.
 pub use bytes;
 

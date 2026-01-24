@@ -1758,9 +1758,9 @@ fn render_map_type_with_kind(
 #[allow(clippy::match_same_arms)]
 fn render_map_collection_type(kind: WrapperKind, key_type: &str, value_type: &str) -> String {
     let collection = match kind {
-        WrapperKind::HashMap => "::proto_rs::alloc::collections::HashMap",
+        WrapperKind::HashMap => "::proto_rs::std::collections::HashMap",
         WrapperKind::BTreeMap => "::proto_rs::alloc::collections::BTreeMap",
-        _ => "::proto_rs::alloc::collections::HashMap",
+        _ => "::proto_rs::std::collections::HashMap",
     };
     format!("{collection}<{key_type}, {value_type}>")
 }

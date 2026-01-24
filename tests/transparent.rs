@@ -65,8 +65,7 @@ pub struct MessageWrapper(InnerMessage);
 fn transparent_tuple_roundtrip() {
     let original = UserIdTuple(123);
     let mut buf = Vec::new();
-    let shadow =
-        <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdTuple>>::from_sun(&original);
+    let shadow = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdTuple>>::from_sun(&original);
     let archived = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
     unsafe { <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
     assert_eq!(buf, vec![123]);
@@ -80,8 +79,7 @@ fn transparent_tuple_roundtrip() {
 fn transparent_named_roundtrip() {
     let original = UserIdNamed { id: 77 };
     let mut buf = Vec::new();
-    let shadow =
-        <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdNamed>>::from_sun(&original);
+    let shadow = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdNamed>>::from_sun(&original);
     let archived = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
     unsafe { <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
     assert_eq!(buf, vec![77]);
