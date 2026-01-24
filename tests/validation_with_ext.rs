@@ -8,7 +8,6 @@ use std::sync::Arc;
 use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoShadowDecode;
-use proto_rs::ProtoShadowEncode;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tonic::Extensions;
@@ -57,12 +56,6 @@ pub struct PongShadowProto {
 impl ProtoShadowDecode<PongWithShadow> for PongShadowProto {
     fn to_sun(self) -> Result<PongWithShadow, proto_rs::DecodeError> {
         Ok(PongWithShadow { id: self.id })
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, PongWithShadow> for PongShadowProto {
-    fn from_sun(value: &'a PongWithShadow) -> Self {
-        Self { id: value.id }
     }
 }
 

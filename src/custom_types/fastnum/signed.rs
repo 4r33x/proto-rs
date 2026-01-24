@@ -5,21 +5,84 @@ use fastnum::D128;
 
 use crate::DecodeError;
 use crate::ProtoShadowDecode;
-use crate::ProtoShadowEncode;
 use crate::proto_message;
+
+trait FastnumSignedParts {
+    fn digits_u128(&self) -> u128;
+    fn fractional_digits_count_i32(&self) -> i32;
+    fn is_negative(&self) -> bool;
+}
+
+impl FastnumSignedParts for D128 {
+    #[inline(always)]
+    fn digits_u128(&self) -> u128 {
+        self.digits()
+            .try_into()
+            .expect("D128 digits should fit in u128")
+    }
+
+    #[inline(always)]
+    fn fractional_digits_count_i32(&self) -> i32 {
+        i32::from(self.fractional_digits_count())
+    }
+
+    #[inline(always)]
+    fn is_negative(&self) -> bool {
+        self.is_sign_negative()
+    }
+}
+
+impl FastnumSignedParts for D64 {
+    #[inline(always)]
+    fn digits_u128(&self) -> u128 {
+        self.digits()
+            .try_into()
+            .expect("D64 digits should fit in u128")
+    }
+
+    #[inline(always)]
+    fn fractional_digits_count_i32(&self) -> i32 {
+        i32::from(self.fractional_digits_count())
+    }
+
+    #[inline(always)]
+    fn is_negative(&self) -> bool {
+        self.is_sign_negative()
+    }
+}
+
+#[inline(always)]
+fn fastnum_lo<T: FastnumSignedParts>(value: &T) -> u64 {
+    value.digits_u128() as u64
+}
+
+#[inline(always)]
+fn fastnum_hi<T: FastnumSignedParts>(value: &T) -> u64 {
+    (value.digits_u128() >> 64) as u64
+}
+
+#[inline(always)]
+fn fastnum_fractional_digits_count<T: FastnumSignedParts>(value: &T) -> i32 {
+    value.fractional_digits_count_i32()
+}
+
+#[inline(always)]
+fn fastnum_is_negative<T: FastnumSignedParts>(value: &T) -> bool {
+    value.is_negative()
+}
 
 #[proto_message(proto_path = "protos/fastnum.proto", sun = [D128, D64])]
 pub struct D128Proto {
-    #[proto(tag = 1)]
+    #[proto(tag = 1, getter = "fastnum_lo($)")]
     /// Lower 64 bits of the digits
     pub lo: u64,
-    #[proto(tag = 2)]
+    #[proto(tag = 2, getter = "fastnum_hi($)")]
     /// Upper 64 bits of the digits
     pub hi: u64,
-    #[proto(tag = 3)]
+    #[proto(tag = 3, getter = "fastnum_fractional_digits_count($)")]
     /// Fractional digits count (can be negative for scientific notation)
     pub fractional_digits_count: i32,
-    #[proto(tag = 4)]
+    #[proto(tag = 4, getter = "fastnum_is_negative($)")]
     /// Sign bit: true for negative, false for positive/zero
     pub is_negative: bool,
 }
@@ -44,21 +107,6 @@ impl ProtoShadowDecode<D128> for D128Proto {
     }
 }
 
-impl<'a> ProtoShadowEncode<'a, D128> for D128Proto {
-    fn from_sun(value: &'a D128) -> Self {
-        let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
-        let lo = digits as u64;
-        let hi = (digits >> 64) as u64;
-
-        Self {
-            lo,
-            hi,
-            fractional_digits_count: i32::from(value.fractional_digits_count()),
-            is_negative: value.is_sign_negative(),
-        }
-    }
-}
-
 impl ProtoShadowDecode<D64> for D128Proto {
     fn to_sun(self) -> Result<D64, DecodeError> {
         let mut result = D64::from_u64(self.lo);
@@ -76,25 +124,12 @@ impl ProtoShadowDecode<D64> for D128Proto {
     }
 }
 
-impl<'a> ProtoShadowEncode<'a, D64> for D128Proto {
-    fn from_sun(value: &'a D64) -> Self {
-        let digits: u128 = value.digits().try_into().expect("Should be safe as D128 should have u128 capacity");
-        let lo = digits as u64;
-
-        Self {
-            lo,
-            hi: 0,
-            fractional_digits_count: i32::from(value.fractional_digits_count()),
-            is_negative: value.is_sign_negative(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use fastnum::dec128;
 
     use super::*;
+    use crate::ProtoShadowEncode;
 
     #[allow(dead_code)]
     #[proto_message(proto_path = "protos/fastnum_test.proto")]

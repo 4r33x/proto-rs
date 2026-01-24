@@ -3,7 +3,6 @@ use solana_address::Address;
 
 use crate::DecodeError;
 use crate::ProtoShadowDecode;
-use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -11,7 +10,7 @@ extern crate self as proto_rs;
 #[allow(dead_code)]
 #[proto_message(proto_path = "protos/solana.proto", sun = solana_address::Address)]
 pub struct AddressProto {
-    #[proto(tag = 1)]
+    #[proto(tag = 1, getter = "*$.as_array()")]
     inner: [u8; BYTES],
 }
 
@@ -19,15 +18,6 @@ impl ProtoShadowDecode<Address> for AddressProto {
     #[inline(always)]
     fn to_sun(self) -> Result<Address, DecodeError> {
         Ok(Address::from(self.inner))
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, Address> for AddressProto {
-    #[inline(always)]
-    fn from_sun(value: &'a Address) -> Self {
-        let mut inner = [0u8; BYTES];
-        inner.copy_from_slice(value.as_ref());
-        Self { inner }
     }
 }
 

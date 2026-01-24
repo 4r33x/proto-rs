@@ -8,7 +8,6 @@ use chrono::Utc;
 use prosto_derive::proto_dump;
 use proto_rs::DecodeError;
 use proto_rs::ProtoShadowDecode;
-use proto_rs::ProtoShadowEncode;
 use proto_rs::inject_proto_import;
 use proto_rs::proto_message;
 use serde::Deserialize;
@@ -32,12 +31,6 @@ pub struct FoldedValue {
 impl ProtoShadowDecode<ValueCanBeFolded> for FoldedValue {
     fn to_sun(self) -> Result<ValueCanBeFolded, proto_rs::DecodeError> {
         Err(DecodeError::new("TokenBalanceSealed can't be accepted by server"))
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, ValueCanBeFolded> for FoldedValue {
-    fn from_sun(value: &'a ValueCanBeFolded) -> Self {
-        Self { a: value.a, b: value.b }
     }
 }
 

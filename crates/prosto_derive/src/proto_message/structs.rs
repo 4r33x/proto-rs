@@ -97,6 +97,7 @@ pub(super) fn generate_struct_impl(
         let (impl_generics, ty_generics, where_clause) = bounded_generics.split_for_impl();
         let transparent_impl = generate_transparent_struct_impl(
             name,
+            &item_struct.vis,
             &bounded_generics,
             &impl_generics,
             &ty_generics,
@@ -286,6 +287,7 @@ fn collect_type_params(ty: &Type, params: &BTreeSet<syn::Ident>, used: &mut BTre
 
 fn generate_transparent_struct_impl(
     name: &syn::Ident,
+    vis: &syn::Visibility,
     generics: &syn::Generics,
     impl_generics: &syn::ImplGenerics,
     ty_generics: &syn::TypeGenerics,
@@ -297,23 +299,6 @@ fn generate_transparent_struct_impl(
     let mut_value_access = field.access.access_tokens(quote! { value });
     let mut_self_access = field.access.access_tokens(quote! { self });
 
-    let wrap_expr = match original_fields {
-        syn::Fields::Unnamed(_) => quote! { Self(inner) },
-        syn::Fields::Named(_) => {
-            let ident = field.access.ident().expect("expected named field ident for transparent struct");
-            quote! { Self { #ident: inner } }
-        }
-        syn::Fields::Unit => quote! { Self },
-    };
-    let wrap_expr_name = match original_fields {
-        syn::Fields::Unnamed(_) => quote! { #name(inner) },
-        syn::Fields::Named(_) => {
-            let ident = field.access.ident().expect("expected named field ident for transparent struct");
-            quote! { #name { #ident: inner } }
-        }
-        syn::Fields::Unit => quote! { #name },
-    };
-
     let default_expr = match original_fields {
         syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoDecoder>::proto_default()) },
         syn::Fields::Named(_) => {
@@ -323,13 +308,84 @@ fn generate_transparent_struct_impl(
         syn::Fields::Unit => quote! { Self },
     };
 
-    let shadow_ty = quote! { <#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'a> };
-    let decode_shadow_ty = quote! { <#inner_ty as ::proto_rs::ProtoDecode>::ShadowDecoded };
+    let wrap_expr_name = match original_fields {
+        syn::Fields::Unnamed(_) => quote! { #name(inner) },
+        syn::Fields::Named(_) => {
+            let ident = field.access.ident().expect("expected named field ident for transparent struct");
+            quote! { #name { #ident: inner } }
+        }
+        syn::Fields::Unit => quote! { #name },
+    };
+
+    let shadow_ident = syn::Ident::new(&format!("__ProtoRs{}Shadow", name), name.span());
+    let inner_shadow_ty = quote! { <#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'a> };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
-    let (shadow_impl_generics, _shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
+    let (shadow_impl_generics, shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
+
+    let decode_shadow_ident = syn::Ident::new(&format!("__ProtoRs{}Decoded", name), name.span());
+    let inner_decode_shadow_ty = quote! { <#inner_ty as ::proto_rs::ProtoDecode>::ShadowDecoded };
+    let (decode_impl_generics, decode_ty_generics, decode_where_clause) = generics.split_for_impl();
 
     quote! {
+        #vis struct #shadow_ident #shadow_impl_generics #shadow_where_clause {
+            inner: #inner_shadow_ty,
+            _marker: ::core::marker::PhantomData<&'a ()>,
+        }
+
+        #vis struct #decode_shadow_ident #decode_impl_generics ( #inner_decode_shadow_ty ) #decode_where_clause;
+
+        impl #decode_impl_generics ::proto_rs::ProtoExt for #decode_shadow_ident #decode_ty_generics #decode_where_clause {
+            const KIND: ::proto_rs::ProtoKind = <#inner_decode_shadow_ty as ::proto_rs::ProtoExt>::KIND;
+        }
+
+        impl #decode_impl_generics ::proto_rs::ProtoDecoder for #decode_shadow_ident #decode_ty_generics #decode_where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self(<#inner_decode_shadow_ty as ::proto_rs::ProtoDecoder>::proto_default())
+            }
+
+            #[inline(always)]
+            fn clear(&mut self) {
+                <#inner_decode_shadow_ty as ::proto_rs::ProtoDecoder>::clear(&mut self.0);
+            }
+
+            #[inline(always)]
+            fn merge_field(
+                value: &mut Self,
+                tag: u32,
+                wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf,
+                ctx: ::proto_rs::encoding::DecodeContext,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_decode_shadow_ty as ::proto_rs::ProtoDecoder>::merge_field(&mut value.0, tag, wire_type, buf, ctx)
+            }
+
+            #[inline(always)]
+            fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_decode_shadow_ty as ::proto_rs::ProtoDecoder>::merge(&mut self.0, wire_type, buf, ctx)
+            }
+        }
+
+        impl #decode_impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #decode_shadow_ident #decode_ty_generics #decode_where_clause {
+            #[inline(always)]
+            fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
+                let inner = <#inner_decode_shadow_ty as ::proto_rs::ProtoShadowDecode<#inner_ty>>::to_sun(self.0)?;
+                Ok(#wrap_expr_name)
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
+                Ok(self)
+            }
+        }
+
+        impl #shadow_impl_generics ::proto_rs::ProtoExt for #shadow_ident #shadow_ty_generics #shadow_where_clause {
+            const KIND: ::proto_rs::ProtoKind = <#inner_shadow_ty as ::proto_rs::ProtoExt>::KIND;
+        }
+
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = <#inner_ty as ::proto_rs::ProtoExt>::KIND;
         }
@@ -367,32 +423,45 @@ fn generate_transparent_struct_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
-            type ShadowDecoded = #decode_shadow_ty;
-
-            #[inline(always)]
-            fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
-                let inner = <#decode_shadow_ty as ::proto_rs::ProtoShadowDecode<#inner_ty>>::to_sun(value)?;
-                Ok(#wrap_expr)
-            }
+            type ShadowDecoded = #decode_shadow_ident #decode_ty_generics;
         }
 
-        impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #decode_shadow_ty #where_clause {
-            #[inline(always)]
-            fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
-                let inner = <#decode_shadow_ty as ::proto_rs::ProtoShadowDecode<#inner_ty>>::to_sun(self)?;
-                Ok(#wrap_expr_name)
-            }
-        }
-
-        impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for #shadow_ty #shadow_where_clause {
+        impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for #shadow_ident #shadow_ty_generics #shadow_where_clause {
             #[inline(always)]
             fn from_sun(value: &'a #name #ty_generics) -> Self {
-                <#shadow_ty as ::proto_rs::ProtoShadowEncode<'a, #inner_ty>>::from_sun(&#mut_value_access)
+                Self {
+                    inner: <#inner_shadow_ty as ::proto_rs::ProtoShadowEncode<'a, #inner_ty>>::from_sun(&#mut_value_access),
+                    _marker: ::core::marker::PhantomData,
+                }
+            }
+        }
+
+        impl #shadow_impl_generics ::proto_rs::ProtoArchive for #shadow_ident #shadow_ty_generics #shadow_where_clause {
+            type Archived<'x> = <#inner_shadow_ty as ::proto_rs::ProtoArchive>::Archived<'x>;
+
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                <#inner_shadow_ty as ::proto_rs::ProtoArchive>::is_default(&self.inner)
+            }
+
+            #[inline(always)]
+            fn len(archived: &Self::Archived<'_>) -> usize {
+                <#inner_shadow_ty as ::proto_rs::ProtoArchive>::len(archived)
+            }
+
+            #[inline(always)]
+            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
+                <#inner_shadow_ty as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
+            }
+
+            #[inline(always)]
+            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+                <#inner_shadow_ty as ::proto_rs::ProtoArchive>::archive::<TAG>(&self.inner)
             }
         }
 
         impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
-            type Shadow<'a> = #shadow_ty;
+            type Shadow<'a> = #shadow_ident #shadow_ty_generics;
         }
     }
 }
@@ -624,6 +693,10 @@ fn generate_proto_impls(
     let shadow_ty_short = shadow_type_tokens_with_lifetime(generics, shadow_ident, quote! { '_ });
 
     let sun_impls = if config.has_suns() {
+        let sun_shadow_init = build_sun_init_expr(fields, original_fields, true);
+        let mut sun_shadow_generics = generics.clone();
+        sun_shadow_generics.params.insert(0, parse_quote!('a));
+        let (sun_shadow_impl_generics, _sun_shadow_ty_generics, sun_shadow_where_clause) = sun_shadow_generics.split_for_impl();
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
             let sun_post_decode = if post_decode_hooks.is_empty() && config.validator.is_none() {
@@ -652,6 +725,13 @@ fn generate_proto_impls(
                     type ShadowDecoded = #name #ty_generics;
                     #sun_post_decode
                     #validate_with_ext_impl
+                }
+
+                impl #sun_shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #target_ty> for #name #ty_generics #sun_shadow_where_clause {
+                    #[inline(always)]
+                    fn from_sun(value: &'a #target_ty) -> Self {
+                        #sun_shadow_init
+                    }
                 }
 
                 impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
@@ -821,30 +901,103 @@ fn shadow_field_ty(info: &FieldInfo<'_>) -> TokenStream2 {
 
 fn shadow_field_init(info: &FieldInfo<'_>, use_getters: bool) -> TokenStream2 {
     let base = quote! { value };
-    let access_expr = if use_getters && let Some(getter) = &info.config.getter {
+    let (access_expr, getter_is_base) = if use_getters && let Some(getter) = &info.config.getter {
         let base_str = base.to_string();
         let getter_expr = getter.replace('$', &base_str);
-        syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
+        let access = syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
             panic!(
                 "invalid getter expression in #[proto(getter = ...)] on field {}",
                 info.field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string)
             )
-        })
+        });
+        (access, getter.trim() == "$")
     } else {
-        info.access.access_tokens(base)
+        (info.access.access_tokens(base), false)
     };
-    let ref_expr = if use_getters && info.config.getter.is_some() {
-        access_expr.clone()
+    let uses_getter = use_getters && info.config.getter.is_some();
+    let ref_expr = if uses_getter {
+        if getter_is_base {
+            quote! { &#access_expr }
+        } else {
+            access_expr.clone()
+        }
     } else {
         quote! { &#access_expr }
     };
 
     if needs_encode_conversion(&info.config, &info.parsed) {
         encode_conversion_expr(info, &ref_expr)
+    } else if uses_getter && is_value_encode_type(&info.field.ty) {
+        let field_ty = &info.field.ty;
+        let shadow_ty = shadow_field_ty(info);
+        quote! {{
+            let __proto_rs_tmp = #access_expr;
+            <#shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #field_ty>>::from_sun(&__proto_rs_tmp)
+        }}
     } else {
         let field_ty = &info.field.ty;
         let shadow_ty = shadow_field_ty(info);
         quote! { <#shadow_ty as ::proto_rs::ProtoShadowEncode<'a, #field_ty>>::from_sun(#ref_expr) }
+    }
+}
+
+fn is_value_encode_type(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Path(type_path)
+            if type_path.qself.is_none()
+                && type_path.path.segments.len() == 1
+                && matches!(type_path.path.segments[0].ident.to_string().as_str(),
+                    "bool" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
+                    "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
+                    "f32" | "f64"
+                )
+    )
+}
+
+fn build_sun_init_expr(fields: &[FieldInfo<'_>], original_fields: &syn::Fields, use_getters: bool) -> TokenStream2 {
+    let base = quote! { value };
+    let init_fields = fields
+        .iter()
+        .map(|info| {
+            if info.config.skip {
+                return match info.access {
+                    FieldAccess::Named(ident) => quote! { #ident: ::core::default::Default::default() },
+                    FieldAccess::Direct(_) | FieldAccess::Tuple(_) => quote! { ::core::default::Default::default() },
+                };
+            }
+
+            let access_expr = if use_getters && let Some(getter) = &info.config.getter {
+                let base_str = base.to_string();
+                let getter_expr = getter.replace('$', &base_str);
+                syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
+                    panic!(
+                        "invalid getter expression in #[proto(getter = ...)] on field {}",
+                        info.field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string)
+                    )
+                })
+            } else {
+                info.access.access_tokens(base.clone())
+            };
+
+            let init = if needs_encode_conversion(&info.config, &info.parsed) {
+                let access_ref = quote! { &#access_expr };
+                encode_conversion_expr(info, &access_ref)
+            } else {
+                access_expr
+            };
+
+            match info.access {
+                FieldAccess::Named(ident) => quote! { #ident: #init },
+                FieldAccess::Direct(_) | FieldAccess::Tuple(_) => quote! { #init },
+            }
+        })
+        .collect::<Vec<_>>();
+
+    match original_fields {
+        syn::Fields::Named(_) => quote! { Self { #( #init_fields, )* } },
+        syn::Fields::Unnamed(_) => quote! { Self( #( #init_fields, )* ) },
+        syn::Fields::Unit => quote! { Self },
     }
 }
 

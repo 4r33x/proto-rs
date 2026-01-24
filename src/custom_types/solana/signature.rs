@@ -3,7 +3,6 @@ use solana_signature::Signature;
 
 use crate::DecodeError;
 use crate::ProtoShadowDecode;
-use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -11,7 +10,7 @@ extern crate self as proto_rs;
 #[allow(dead_code)]
 #[proto_message(proto_path = "protos/solana.proto", sun = Signature)]
 pub struct SignatureProto {
-    #[proto(tag = 1)]
+    #[proto(tag = 1, getter = "*$.as_array()")]
     pub inner: [u8; BYTES],
 }
 
@@ -19,15 +18,6 @@ impl ProtoShadowDecode<Signature> for SignatureProto {
     #[inline(always)]
     fn to_sun(self) -> Result<Signature, DecodeError> {
         Ok(Signature::from(self.inner))
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, Signature> for SignatureProto {
-    #[inline(always)]
-    fn from_sun(value: &'a Signature) -> Self {
-        let mut inner = [0u8; BYTES];
-        inner.copy_from_slice(value.as_ref());
-        Self { inner }
     }
 }
 

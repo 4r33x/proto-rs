@@ -3,14 +3,17 @@ use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoShadowDecode;
-use proto_rs::ProtoShadowEncode;
 use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
+
+fn locked_id(value: &IdOwned) -> u64 {
+    *value.id.lock().unwrap()
+}
 
 #[proto_message(sun = IdOwned)]
 #[allow(dead_code)]
 struct IdShadow {
-    #[proto(tag = 1)]
+    #[proto(tag = 1, getter = "locked_id($)")]
     id: u64,
 }
 
@@ -28,13 +31,6 @@ impl PartialEq for IdOwned {
 impl ProtoShadowDecode<IdOwned> for IdShadow {
     fn to_sun(self) -> Result<IdOwned, DecodeError> {
         Ok(IdOwned { id: Mutex::new(self.id) })
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, IdOwned> for IdShadow {
-    fn from_sun(value: &'a IdOwned) -> Self {
-        let guard = value.id.lock().unwrap();
-        IdShadow { id: *guard }
     }
 }
 

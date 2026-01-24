@@ -3,7 +3,6 @@ const BYTES: usize = Keypair::SECRET_KEY_LENGTH;
 
 use crate::DecodeError;
 use crate::ProtoShadowDecode;
-use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -11,7 +10,7 @@ extern crate self as proto_rs;
 #[allow(dead_code)]
 #[proto_message(proto_path = "protos/solana.proto", sun = Keypair)]
 pub struct KeypairProto {
-    #[proto(tag = 1)]
+    #[proto(tag = 1, getter = "*$.secret_bytes()")]
     inner: [u8; BYTES],
 }
 
@@ -19,15 +18,6 @@ impl ProtoShadowDecode<Keypair> for KeypairProto {
     #[inline(always)]
     fn to_sun(self) -> Result<Keypair, DecodeError> {
         Ok(Keypair::new_from_array(self.inner))
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, Keypair> for KeypairProto {
-    #[inline(always)]
-    fn from_sun(value: &'a Keypair) -> Self {
-        Self {
-            inner: *value.secret_bytes(),
-        }
     }
 }
 

@@ -4,19 +4,41 @@ use fastnum::UD128;
 
 use crate::DecodeError;
 use crate::ProtoShadowDecode;
-use crate::ProtoShadowEncode;
 use crate::proto_message;
+
+#[inline(always)]
+fn ud128_lo(value: &UD128) -> u64 {
+    let digits: u128 = value
+        .digits()
+        .try_into()
+        .expect("UD128 digits should fit in u128");
+    digits as u64
+}
+
+#[inline(always)]
+fn ud128_hi(value: &UD128) -> u64 {
+    let digits: u128 = value
+        .digits()
+        .try_into()
+        .expect("UD128 digits should fit in u128");
+    (digits >> 64) as u64
+}
+
+#[inline(always)]
+fn ud128_fractional_digits_count(value: &UD128) -> i32 {
+    i32::from(value.fractional_digits_count())
+}
 
 #[proto_message(proto_path = "protos/fastnum.proto", sun = UD128)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct UD128Proto {
-    #[proto(tag = 1)]
+    #[proto(tag = 1, getter = "ud128_lo($)")]
     /// Lower 64 bits of the digits
     pub lo: u64,
-    #[proto(tag = 2)]
+    #[proto(tag = 2, getter = "ud128_hi($)")]
     /// Upper 64 bits of the digits
     pub hi: u64,
-    #[proto(tag = 3)]
+    #[proto(tag = 3, getter = "ud128_fractional_digits_count($)")]
     /// Fractional digits count (can be negative for scientific notation)
     pub fractional_digits_count: i32,
 }
@@ -37,26 +59,13 @@ impl ProtoShadowDecode<UD128> for UD128Proto {
     }
 }
 
-impl<'a> ProtoShadowEncode<'a, UD128> for UD128Proto {
-    fn from_sun(value: &'a UD128) -> Self {
-        let digits: u128 = value.digits().try_into().expect("Should be safe as UD128 should have u128 capacity");
-        let lo = digits as u64;
-        let hi = (digits >> 64) as u64;
-
-        Self {
-            lo,
-            hi,
-            fractional_digits_count: i32::from(value.fractional_digits_count()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
     use fastnum::udec128;
 
     use super::*;
+    use crate::ProtoShadowEncode;
     #[allow(dead_code)]
     #[proto_message(proto_path = "protos/fastnum_test.proto")]
     struct UD128Wrapper {
