@@ -7,7 +7,7 @@ use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::{self};
 use crate::error::DecodeError;
-use crate::traits::ArchivedProtoInner;
+use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoEncode;
@@ -43,13 +43,17 @@ pub struct IDDecoded<Kd, Vd> {
 
 /// ---------- Archived container for IDShadow encoding ----------
 pub struct IDArchived<'x, 'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> {
-    pub f1: ArchivedProtoInner<'x, 1, u64>,
-    pub f2: ArchivedProtoInner<'x, 2, <K as ProtoEncode>::Shadow<'a>>,
-    pub f3: ArchivedProtoInner<'x, 3, <V as ProtoEncode>::Shadow<'a>>,
+    pub f1: ArchivedProtoField<'x, 1, u64>,
+    pub f2: ArchivedProtoField<'x, 2, <K as ProtoEncode>::Shadow<'a>>,
+    pub f3: ArchivedProtoField<'x, 3, <V as ProtoEncode>::Shadow<'a>>,
     pub len: usize,
 }
 
 // ---------------- ProtoExt glue ----------------
+
+impl<K, V> ProtoExt for ID<'_, K, V> {
+    const KIND: ProtoKind = ProtoKind::Message;
+}
 
 impl<K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> ProtoExt for IDShadow<'_, K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
@@ -99,10 +103,10 @@ where
 
     #[inline(always)]
     fn archive(&self) -> <Self as ProtoArchive>::Archived<'_> {
-        // Each ArchivedProtoInner::new() handles "default => None" internally.
-        let f1 = ArchivedProtoInner::<1, u64>::new(&self.id);
-        let f2 = ArchivedProtoInner::<2, <K as ProtoEncode>::Shadow<'a>>::new(&self.k);
-        let f3 = ArchivedProtoInner::<3, <V as ProtoEncode>::Shadow<'a>>::new(&self.v);
+        // Each ArchivedProtoField::new() handles "default => None" internally.
+        let f1 = ArchivedProtoField::<1, u64>::new(&self.id);
+        let f2 = ArchivedProtoField::<2, <K as ProtoEncode>::Shadow<'a>>::new(&self.k);
+        let f3 = ArchivedProtoField::<3, <V as ProtoEncode>::Shadow<'a>>::new(&self.v);
 
         let len = f1.len() + f2.len() + f3.len();
 

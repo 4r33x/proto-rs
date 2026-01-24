@@ -1,4 +1,4 @@
-use proto_rs::ProtoExt;
+use proto_rs::ProtoEncode;
 use proto_rs::ToZeroCopyRequest;
 use proto_rs::ToZeroCopyResponse;
 

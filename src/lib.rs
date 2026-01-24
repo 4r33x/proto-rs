@@ -9,6 +9,8 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::inline_always)]
+#![allow(clippy::if_not_else)]
+#![allow(clippy::match_same_arms)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate self as proto_rs;
@@ -18,7 +20,7 @@ pub use prosto_derive::inject_proto_import;
 pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
 pub use prosto_derive::proto_rpc;
-pub use traits::ArchivedProtoInner;
+pub use traits::ArchivedProtoField;
 pub use traits::ProtoShadowDecode;
 pub use traits::ProtoShadowEncode;
 pub use traits::const_test_validate_with_ext;

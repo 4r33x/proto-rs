@@ -156,11 +156,25 @@ where
 
     #[inline(always)]
     fn len(archived: &Self::Archived<'_>) -> usize {
+        // For byte arrays [u8; N], the length is always N (raw bytes, not varints)
+        if T::KIND.is_bytes_kind() {
+            return N;
+        }
         archived.len
     }
 
     #[inline(always)]
     unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        // For byte arrays [u8; N], write raw bytes directly
+        if T::KIND.is_bytes_kind() {
+            // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
+            // The archived.items is [u8; N] and we write each byte directly
+            let bytes: &[u8] = unsafe {
+                core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N)
+            };
+            buf.put_slice(bytes);
+            return;
+        }
         for item in archived.items {
             encode_repeated_value::<T>(item, buf);
         }
@@ -172,8 +186,84 @@ where
         let mut len = 0;
         for (idx, item) in self.iter().enumerate() {
             let archived = item.archive();
-            len += repeated_payload_len::<T>(&archived);
+            // For byte arrays, len will be N (not computed from varints)
+            if !T::KIND.is_bytes_kind() {
+                len += repeated_payload_len::<T>(&archived);
+            }
             items[idx].write(archived);
+        }
+        // For byte arrays, set len to N
+        if T::KIND.is_bytes_kind() {
+            len = N;
+        }
+        let items = unsafe { assume_init_array(items) };
+        ArchivedArray { items, len }
+    }
+}
+
+/// Wrapper type for array shadows that preserves array default semantics.
+/// Arrays are considered default when all elements are default, unlike slices/vecs
+/// which are only default when empty.
+#[doc(hidden)]
+pub struct ArrayShadow<'a, T: ProtoArchive + ProtoExt, const N: usize> {
+    slice: &'a [T],
+}
+
+impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T, N> {
+    const KIND: ProtoKind = <[T; N] as ProtoExt>::KIND;
+    const _REPEATED_SUPPORT: Option<&'static str> = <[T; N] as ProtoExt>::_REPEATED_SUPPORT;
+}
+
+impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N> {
+    type Archived<'x> = ArchivedArray<'x, T, N>;
+
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        // Arrays are default when all elements are default (unlike slices which are default when empty)
+        self.slice.iter().all(|item| <T as ProtoArchive>::is_default(item))
+    }
+
+    #[inline(always)]
+    fn len(archived: &Self::Archived<'_>) -> usize {
+        // For byte arrays [u8; N], the length is always N (raw bytes, not varints)
+        if T::KIND.is_bytes_kind() {
+            return N;
+        }
+        archived.len
+    }
+
+    #[inline(always)]
+    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
+        // For byte arrays [u8; N], write raw bytes directly
+        if T::KIND.is_bytes_kind() {
+            // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
+            // The archived.items is [u8; N] and we write each byte directly
+            let bytes: &[u8] = unsafe {
+                core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N)
+            };
+            buf.put_slice(bytes);
+            return;
+        }
+        for item in archived.items {
+            encode_repeated_value::<T>(item, buf);
+        }
+    }
+
+    #[inline(always)]
+    fn archive(&self) -> Self::Archived<'_> {
+        let mut items: [MaybeUninit<T::Archived<'_>>; N] = [const { MaybeUninit::uninit() }; N];
+        let mut len = 0;
+        for (idx, item) in self.slice.iter().enumerate() {
+            let archived = item.archive();
+            // For byte arrays, len will be N (not computed from varints)
+            if !T::KIND.is_bytes_kind() {
+                len += repeated_payload_len::<T>(&archived);
+            }
+            items[idx].write(archived);
+        }
+        // For byte arrays, set len to N
+        if T::KIND.is_bytes_kind() {
+            len = N;
         }
         let items = unsafe { assume_init_array(items) };
         ArchivedArray { items, len }
@@ -183,15 +273,14 @@ where
 impl<T: ProtoEncode, const N: usize> ProtoEncode for [T; N]
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
-    for<'a> T: 'a + ProtoExt,
-    for<'a> &'a [T]: ProtoArchive + ProtoExt,
+    for<'a> T: 'a + ProtoExt + ProtoArchive,
 {
-    type Shadow<'a> = &'a [T];
+    type Shadow<'a> = ArrayShadow<'a, T, N>;
 }
 
-impl<'a, T, const N: usize> ProtoShadowEncode<'a, [T; N]> for &'a [T] {
+impl<'a, T: ProtoArchive + ProtoExt, const N: usize> ProtoShadowEncode<'a, [T; N]> for ArrayShadow<'a, T, N> {
     #[inline]
     fn from_sun(value: &'a [T; N]) -> Self {
-        value
+        ArrayShadow { slice: value.as_slice() }
     }
 }

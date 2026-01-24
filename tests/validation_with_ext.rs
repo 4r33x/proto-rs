@@ -6,8 +6,9 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use proto_rs::DecodeError;
-use proto_rs::ProtoExt;
-use proto_rs::ProtoShadow;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoShadowDecode;
+use proto_rs::ProtoShadowEncode;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tonic::Extensions;
@@ -49,20 +50,18 @@ pub struct PongWithShadow {
 
 #[proto_message(proto_path = "protos/tests/validation_with_ext.proto", sun = [PongWithShadow])]
 #[proto(validator_with_ext = validate_pong_shadow_with_ext)]
-pub struct PongShadow {
+pub struct PongShadowProto {
     pub id: u32,
 }
 
-impl ProtoShadow<PongWithShadow> for PongShadow {
-    type Sun<'a> = &'a PongWithShadow;
-    type OwnedSun = PongWithShadow;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, proto_rs::DecodeError> {
+impl ProtoShadowDecode<PongWithShadow> for PongShadowProto {
+    fn to_sun(self) -> Result<PongWithShadow, proto_rs::DecodeError> {
         Ok(PongWithShadow { id: self.id })
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, PongWithShadow> for PongShadowProto {
+    fn from_sun(value: &'a PongWithShadow) -> Self {
         Self { id: value.id }
     }
 }
@@ -117,7 +116,7 @@ impl ValidationWithExt for ValidationWithExtService {
 #[test]
 fn validates_with_ext_flag_is_enabled() {
     const _: () = {
-        assert!(<Pong as ProtoExt>::VALIDATE_WITH_EXT);
+        assert!(<Pong as ProtoDecode>::VALIDATE_WITH_EXT);
     };
 }
 

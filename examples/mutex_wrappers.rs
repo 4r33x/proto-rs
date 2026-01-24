@@ -1,4 +1,6 @@
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/mutex_example.proto")]
@@ -50,16 +52,17 @@ impl Default for ExampleParkingLotMutex {
 
 fn main() {
     let std_holder = ExampleStdMutex::default();
-    let encoded = <ExampleStdMutex as ProtoExt>::encode_to_vec(&std_holder);
-    let decoded = <ExampleStdMutex as ProtoExt>::decode(&encoded[..]).expect("decode std mutex");
+    let encoded = <ExampleStdMutex as ProtoEncode>::encode_to_vec(&std_holder);
+    let decoded = <ExampleStdMutex as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode std mutex");
     let inner = decoded.value.into_inner().expect("mutex poisoned");
     println!("decoded std mutex: {} ({})", inner.value, inner.count);
 
     #[cfg(feature = "parking_lot")]
     {
         let parking_holder = ExampleParkingLotMutex::default();
-        let encoded = <ExampleParkingLotMutex as ProtoExt>::encode_to_vec(&parking_holder);
-        let decoded = <ExampleParkingLotMutex as ProtoExt>::decode(&encoded[..]).expect("decode parking_lot mutex");
+        let encoded = <ExampleParkingLotMutex as ProtoEncode>::encode_to_vec(&parking_holder);
+        let decoded =
+            <ExampleParkingLotMutex as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode parking_lot mutex");
         let inner = decoded.value.into_inner();
         println!("decoded parking_lot mutex: {} ({})", inner.value, inner.count);
     }

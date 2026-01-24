@@ -1,5 +1,7 @@
-use proto_rs::ProtoExt;
-use proto_rs::ProtoWire;
+use bytes::Buf;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoDecoder;
+use proto_rs::ProtoEncode;
 use proto_rs::encoding::DecodeContext;
 use proto_rs::encoding::WireType;
 use proto_rs::proto_message;
@@ -63,11 +65,14 @@ pub struct MessageWrapper(InnerMessage);
 fn transparent_tuple_roundtrip() {
     let original = UserIdTuple(123);
     let mut buf = Vec::new();
-    <UserIdTuple as ProtoWire>::encode_raw_unchecked(&original, &mut buf);
+    let shadow =
+        <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdTuple>>::from_sun(&original);
+    let archived = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive(&shadow);
+    unsafe { <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode(archived, &mut buf) };
     assert_eq!(buf, vec![123]);
 
-    let mut decoded = UserIdTuple::proto_default();
-    <UserIdTuple as ProtoWire>::decode_into(WireType::Varint, &mut decoded, &mut &buf[..], DecodeContext::default()).unwrap();
+    let mut decoded = <UserIdTuple as ProtoDecoder>::proto_default();
+    <UserIdTuple as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 
@@ -75,11 +80,14 @@ fn transparent_tuple_roundtrip() {
 fn transparent_named_roundtrip() {
     let original = UserIdNamed { id: 77 };
     let mut buf = Vec::new();
-    <UserIdNamed as ProtoWire>::encode_raw_unchecked(&original, &mut buf);
+    let shadow =
+        <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdNamed>>::from_sun(&original);
+    let archived = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive(&shadow);
+    unsafe { <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode(archived, &mut buf) };
     assert_eq!(buf, vec![77]);
 
-    let mut decoded = UserIdNamed::proto_default();
-    <UserIdNamed as ProtoWire>::decode_into(WireType::Varint, &mut decoded, &mut &buf[..], DecodeContext::default()).unwrap();
+    let mut decoded = <UserIdNamed as ProtoDecoder>::proto_default();
+    <UserIdNamed as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 
@@ -91,7 +99,9 @@ fn transparent_in_holder_encodes_inner_once() {
     };
 
     let mut buf = Vec::new();
-    <Holder as ProtoWire>::encode_raw_unchecked(&holder, &mut buf);
+    let shadow = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, Holder>>::from_sun(&holder);
+    let archived = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive(&shadow);
+    unsafe { <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode(archived, &mut buf) };
 
     // Expected encoding:
     // field 1 (tuple): key 0x08 followed by value 0x05
@@ -102,14 +112,17 @@ fn transparent_in_holder_encodes_inner_once() {
 #[test]
 fn transparent_message_roundtrip_top_level() {
     let original = MessageWrapper(InnerMessage { value: 42 });
-    let buf = <MessageWrapper as ProtoExt>::encode_to_vec(&original);
-    let decoded = <MessageWrapper as ProtoExt>::decode(&buf[..]).unwrap();
+    let buf = <MessageWrapper as ProtoEncode>::encode_to_vec(&original);
+    let decoded = <MessageWrapper as ProtoDecode>::decode(&buf[..], DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 
 #[test]
 fn transparent_message_decode_length_delimited_body() {
     let body = [0x02, 0x08, 0x2A];
-    let decoded = <MessageWrapper as ProtoExt>::decode_length_delimited(&body[..], DecodeContext::default()).unwrap();
+    let mut buf = &body[..];
+    let len = proto_rs::decode_length_delimiter(&mut buf).expect("decode length");
+    let slice = Buf::take(&mut buf, len);
+    let decoded = <MessageWrapper as ProtoDecode>::decode(slice, DecodeContext::default()).unwrap();
     assert_eq!(decoded, MessageWrapper(InnerMessage { value: 42 }));
 }

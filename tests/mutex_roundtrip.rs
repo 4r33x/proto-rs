@@ -1,4 +1,6 @@
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/mutex.proto")]
@@ -34,8 +36,8 @@ fn std_mutex_roundtrip_preserves_inner_values() {
         }),
     };
 
-    let encoded = <StdMutexHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <StdMutexHolder as ProtoExt>::decode(&encoded[..]).expect("decode std mutex holder");
+    let encoded = <StdMutexHolder as ProtoEncode>::encode_to_vec(&holder);
+    let decoded = <StdMutexHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode std mutex holder");
 
     assert_eq!(
         decoded.inner.into_inner().expect("mutex poisoned"),
@@ -50,8 +52,9 @@ fn std_mutex_roundtrip_preserves_inner_values() {
 fn std_mutex_roundtrip_handles_default_values() {
     let holder = StdMutexHolder::default();
 
-    let encoded = <StdMutexHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <StdMutexHolder as ProtoExt>::decode(&encoded[..]).expect("decode default std mutex holder");
+    let encoded = <StdMutexHolder as ProtoEncode>::encode_to_vec(&holder);
+    let decoded =
+        <StdMutexHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode default std mutex holder");
 
     assert_eq!(decoded.inner.into_inner().expect("mutex poisoned"), MutexInner::default());
 }
@@ -83,8 +86,9 @@ fn parking_lot_mutex_roundtrip_preserves_inner_values() {
         }),
     };
 
-    let encoded = <ParkingLotMutexHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <ParkingLotMutexHolder as ProtoExt>::decode(&encoded[..]).expect("decode parking_lot mutex holder");
+    let encoded = <ParkingLotMutexHolder as ProtoEncode>::encode_to_vec(&holder);
+    let decoded =
+        <ParkingLotMutexHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode parking_lot mutex holder");
 
     assert_eq!(
         decoded.inner.into_inner(),
@@ -100,8 +104,9 @@ fn parking_lot_mutex_roundtrip_preserves_inner_values() {
 fn parking_lot_mutex_roundtrip_handles_default_values() {
     let holder = ParkingLotMutexHolder::default();
 
-    let encoded = <ParkingLotMutexHolder as ProtoExt>::encode_to_vec(&holder);
-    let decoded = <ParkingLotMutexHolder as ProtoExt>::decode(&encoded[..]).expect("decode default parking_lot mutex holder");
+    let encoded = <ParkingLotMutexHolder as ProtoEncode>::encode_to_vec(&holder);
+    let decoded = <ParkingLotMutexHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
+        .expect("decode default parking_lot mutex holder");
 
     assert_eq!(decoded.inner.into_inner(), MutexInner::default());
 }

@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 
 use bytes::Bytes;
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message]
@@ -24,8 +26,8 @@ fn generic_const_message_roundtrip() {
     items.push_back(Pair { key: 11u32, value: 21u64 });
 
     let lru = Lru::<u32, u64, 8> { items };
-    let encoded = <Lru<u32, u64, 8> as ProtoExt>::encode_to_vec(&lru);
-    let decoded = <Lru<u32, u64, 8> as ProtoExt>::decode(Bytes::from(encoded)).expect("decode");
+    let encoded = <Lru<u32, u64, 8> as ProtoEncode>::encode_to_vec(&lru);
+    let decoded = <Lru<u32, u64, 8> as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default()).expect("decode");
 
     assert_eq!(lru, decoded);
 }

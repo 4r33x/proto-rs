@@ -93,7 +93,6 @@ pub(super) fn generate_simple_enum_impl(
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
                     const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
-                    #validate_with_ext_impl
                 }
 
                 impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
@@ -203,7 +202,6 @@ pub(super) fn generate_simple_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
-            #validate_with_ext_proto_impl
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for i32 #shadow_where_clause {

@@ -52,6 +52,13 @@ impl ProtoKind {
     pub const fn for_vec(inner: &'static ProtoKind) -> ProtoKind {
         ProtoKind::Repeated(inner)
     }
+
+    pub const fn is_repeated_non_packable(&self) -> bool {
+        match self {
+            ProtoKind::Repeated(proto_kind) => !proto_kind.is_packable(),
+            _ => false,
+        }
+    }
     #[inline(always)]
     pub const fn is_packable(&self) -> bool {
         matches!(self, ProtoKind::Primitive(_) | ProtoKind::SimpleEnum)

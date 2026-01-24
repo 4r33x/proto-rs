@@ -151,9 +151,11 @@ where
         return <T::ShadowDecoded as ProtoShadowDecode<T>>::to_sun(shadow);
     }
 
-    if let ProtoKind::Message = T::KIND {
+    // Messages and SimpleEnums are encoded with field tags and need full decode
+    if matches!(T::KIND, ProtoKind::Message | ProtoKind::SimpleEnum) {
         T::decode(buf, DecodeContext::default())
     } else {
+        // Primitives and other types are stored as raw payloads
         let mut shadow = <T::ShadowDecoded as ProtoDecoder>::proto_default();
         <T::ShadowDecoded as ProtoDecoder>::merge(&mut shadow, T::WIRE_TYPE, &mut buf, DecodeContext::default())?;
         <T::ShadowDecoded as ProtoShadowDecode<T>>::to_sun(shadow)
@@ -215,6 +217,9 @@ where
     T: ProtoExt,
 {
     const KIND: ProtoKind = T::KIND;
+    // ZeroCopy always stores pre-encoded bytes that need length-delimited encoding,
+    // regardless of the underlying type's wire type
+    const WIRE_TYPE: crate::encoding::WireType = crate::encoding::WireType::LengthDelimited;
 }
 
 impl<T> ProtoDecoder for ZeroCopy<T>

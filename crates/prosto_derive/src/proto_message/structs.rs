@@ -481,7 +481,7 @@ fn generate_shadow_impls(
             let tag = info.tag.expect("tag required");
             let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
             let shadow_ty = shadow_field_ty(info);
-            quote! { #field_ident: ::proto_rs::ArchivedProtoInner<'x, #tag, #shadow_ty> }
+            quote! { #field_ident: ::proto_rs::ArchivedProtoField<'x, #tag, #shadow_ty> }
         })
         .collect::<Vec<_>>();
     archive_field_defs.push(quote! { #phantom_ident: ::core::marker::PhantomData<(&'x (), &'a ())> });
@@ -498,7 +498,7 @@ fn generate_shadow_impls(
         let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
         let shadow_ty = shadow_field_ty(info);
         let access = info.access.access_tokens(quote! { self });
-        quote! { let #field_ident = ::proto_rs::ArchivedProtoInner::<#tag, #shadow_ty>::new(&#access); }
+        quote! { let #field_ident = ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::new(&#access); }
     });
 
     let archive_len_terms = encoded_fields.iter().map(|info| {
@@ -642,7 +642,6 @@ fn generate_proto_impls(
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
                     const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
-                    #validate_with_ext_impl
                 }
 
                 impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
@@ -731,7 +730,6 @@ fn generate_proto_impls(
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
-            #validate_with_ext_proto_impl
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {

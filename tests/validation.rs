@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 
 use proto_rs::DecodeError;
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 // Helper validation functions
@@ -91,7 +93,8 @@ mod tests {
         };
 
         let encoded = MessageWithFieldValidator::encode_to_vec(&msg);
-        let decoded = MessageWithFieldValidator::decode(&encoded[..]).unwrap();
+        let decoded =
+            <MessageWithFieldValidator as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
         assert_eq!(decoded, msg);
     }
 
@@ -103,7 +106,7 @@ mod tests {
         };
 
         let encoded = MessageWithFieldValidator::encode_to_vec(&msg);
-        let result = MessageWithFieldValidator::decode(&encoded[..]);
+        let result = <MessageWithFieldValidator as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Bad id"));
     }
@@ -113,7 +116,7 @@ mod tests {
         let msg = PositiveCount { count: 42 };
 
         let encoded = PositiveCount::encode_to_vec(&msg);
-        let decoded = PositiveCount::decode(&encoded[..]).unwrap();
+        let decoded = <PositiveCount as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
         assert_eq!(decoded, msg);
     }
 
@@ -122,7 +125,7 @@ mod tests {
         let msg = PositiveCount { count: -5 }; // Invalid: count must be positive
 
         let encoded = PositiveCount::encode_to_vec(&msg);
-        let result = PositiveCount::decode(&encoded[..]);
+        let result = <PositiveCount as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Bad count"));
     }
@@ -135,7 +138,7 @@ mod tests {
         };
 
         let encoded = User::encode_to_vec(&user);
-        let decoded = User::decode(&encoded[..]).unwrap();
+        let decoded = <User as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
         assert_eq!(decoded, user);
     }
 
@@ -147,7 +150,7 @@ mod tests {
         };
 
         let encoded = User::encode_to_vec(&user);
-        let result = User::decode(&encoded[..]);
+        let result = <User as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("age cannot be negative"));
     }
@@ -160,7 +163,8 @@ mod tests {
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
-        let decoded = MessageWithBothValidators::decode(&encoded[..]).unwrap();
+        let decoded =
+            <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
         assert_eq!(decoded, msg);
     }
 
@@ -172,7 +176,7 @@ mod tests {
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
-        let result = MessageWithBothValidators::decode(&encoded[..]);
+        let result = <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Bad id"));
     }
@@ -185,7 +189,7 @@ mod tests {
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
-        let result = MessageWithBothValidators::decode(&encoded[..]);
+        let result = <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("sum of scores"));
     }
@@ -198,7 +202,7 @@ mod tests {
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
-        let result = MessageWithBothValidators::decode(&encoded[..]);
+        let result = <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         // Should fail on field validation first
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Bad id"));
