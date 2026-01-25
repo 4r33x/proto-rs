@@ -1,12 +1,12 @@
 use alloc::vec::Vec;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -15,6 +15,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 
 pub struct MutexShadow<T> {
     bytes: Vec<u8>,
@@ -104,27 +105,21 @@ where
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T> ProtoArchive for MutexShadow<T> {
-    type Archived<'a> = &'a [u8];
-
+impl<T: ProtoExt> ProtoArchive for MutexShadow<T> {
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.is_default
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len()
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        buf.put_slice(archived);
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        self.bytes.as_slice()
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        w.put_slice(self.bytes.as_slice());
+        if TAG != 0 {
+            if Self::WIRE_TYPE.is_length_delimited() {
+                w.put_varint(self.bytes.len() as u64);
+            }
+            ArchivedProtoField::<TAG, Self>::put_key(w);
+        }
     }
 }
 

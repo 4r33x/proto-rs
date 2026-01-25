@@ -234,7 +234,7 @@ fn extract_proto_type(success_ty: &Type) -> Type {
             && let Some(segment) = path.segments.last()
             && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
             && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-            && matches!(segment.ident.to_string().as_str(), "Response" | "ZeroCopyResponse" | "Box" | "Arc")
+            && matches!(segment.ident.to_string().as_str(), "Response" | "Box" | "Arc")
         {
             current = inner_ty.clone();
             continue;
@@ -310,27 +310,16 @@ mod tests {
         let trait_input: ItemTrait = parse_quote! {
             trait TestService {
                 type MyStream: tonic::codegen::tokio_stream::Stream<Item = Result<MyResponse, tonic::Status>> + Send + 'static;
-                type ZeroCopyStream: tonic::codegen::tokio_stream::Stream<Item = Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>> + Send + 'static;
 
                 async fn unary(
                     &self,
                     request: tonic::Request<MyRequest>
                 ) -> Result<tonic::Response<MyResponse>, tonic::Status>;
 
-                async fn zero_copy(
-                    &self,
-                    request: tonic::Request<MyRequest>
-                ) -> Result<proto_rs::ZeroCopyResponse<MyResponse>, tonic::Status>;
-
                 async fn streaming(
                     &self,
                     request: tonic::Request<MyRequest>
                 ) -> Result<tonic::Response<Self::MyStream>, tonic::Status>;
-
-                async fn streaming_zero_copy(
-                    &self,
-                    request: tonic::Request<MyRequest>
-                ) -> Result<tonic::Response<Self::ZeroCopyStream>, tonic::Status>;
 
                 async fn arced(
                     &self,
@@ -381,53 +370,39 @@ mod tests {
         assert!(unary.response_is_result);
         assert!(!unary.is_streaming);
 
-        let zero_copy = &signatures[1];
-        let zero_copy_return = &zero_copy.response_return_type;
-        assert_eq!(quote!(#zero_copy_return).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
-        assert!(zero_copy.response_is_result);
-
-        let streaming = &signatures[2];
+        let streaming = &signatures[1];
         assert!(streaming.is_streaming);
         assert_eq!(streaming.stream_type_name.as_ref().unwrap().to_string(), "MyStream");
         let stream_proto = streaming.inner_response_type.as_ref().unwrap();
         assert_eq!(quote!(#stream_proto).to_string(), "MyResponse");
         let stream_item = streaming.stream_item_type.as_ref().unwrap();
         assert_eq!(quote!(#stream_item).to_string(), "MyResponse");
-
-        let zero_copy_stream = &signatures[3];
-        assert!(zero_copy_stream.is_streaming);
-        assert_eq!(zero_copy_stream.stream_type_name.as_ref().unwrap().to_string(), "ZeroCopyStream");
-        let zero_proto = zero_copy_stream.inner_response_type.as_ref().unwrap();
-        assert_eq!(quote!(#zero_proto).to_string(), "MyResponse");
-        let zero_item = zero_copy_stream.stream_item_type.as_ref().unwrap();
-        assert_eq!(quote!(#zero_item).to_string(), "proto_rs :: ZeroCopyResponse < MyResponse >");
-
-        let arced = &signatures[4];
+        let arced = &signatures[2];
         assert!(arced.response_is_result);
         let arced_response = &arced.response_type;
         assert_eq!(quote!(#arced_response).to_string(), "MyResponse");
 
-        let boxed = &signatures[5];
+        let boxed = &signatures[3];
         assert!(boxed.response_is_result);
         let boxed_response = &boxed.response_type;
         assert_eq!(quote!(#boxed_response).to_string(), "MyResponse");
 
-        let plain = &signatures[6];
+        let plain = &signatures[4];
         assert!(!plain.response_is_result);
         let plain_return = &plain.response_return_type;
         assert_eq!(quote!(#plain_return).to_string(), "MyResponse");
         assert!(plain.request_is_wrapped);
 
-        let plain_request = &signatures[7];
+        let plain_request = &signatures[5];
         assert!(!plain_request.response_is_result);
         assert!(!plain_request.request_is_wrapped);
 
-        let stream_plain_request = &signatures[8];
+        let stream_plain_request = &signatures[6];
         assert!(stream_plain_request.is_streaming);
         assert!(!stream_plain_request.request_is_wrapped);
         assert!(!stream_plain_request.response_is_response);
 
-        let sync_plain = &signatures[9];
+        let sync_plain = &signatures[7];
         assert!(sync_plain.response_is_result);
         assert!(!sync_plain.is_async);
         let sync_response = &sync_plain.response_return_type;

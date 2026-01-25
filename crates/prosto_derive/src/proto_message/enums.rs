@@ -152,8 +152,6 @@ pub(super) fn generate_simple_enum_impl(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    type Archived<'a> = <#name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'a>;
-
                     #[inline(always)]
                     fn is_default(&self) -> bool {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
@@ -161,19 +159,9 @@ pub(super) fn generate_simple_enum_impl(
                     }
 
                     #[inline(always)]
-                    fn len(archived: &Self::Archived<'_>) -> usize {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::len(archived)
-                    }
-
-                    #[inline(always)]
-                    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
-                    }
-
-                    #[inline(always)]
-                    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+                    fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow)
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
                     }
                 }
             }
@@ -214,31 +202,17 @@ pub(super) fn generate_simple_enum_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            type Archived<'a> = i32;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 matches!(*self, Self::#default_ident)
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                <i32 as ::proto_rs::ProtoArchive>::len(archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                if TAG != 0 {
-                    ::proto_rs::encoding::encode_key(TAG, ::proto_rs::encoding::WireType::Varint, buf);
-                }
-                <i32 as ::proto_rs::ProtoArchive>::encode::<0>(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                match *self {
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                let value: i32 = match *self {
                     #(#raw_from_variant,)*
-                }
+                };
+                <i32 as ::proto_rs::ProtoArchive>::archive::<TAG>(&value, w);
             }
         }
 

@@ -258,15 +258,6 @@ pub const fn proto_type_validation_fail<T: ProtoIdentifiable>(e: &'static str) -
     const_panic::concat_panic!("Error in validation ", T::PROTO_IDENT.name, ": ", e)
 }
 
-const B: ProtoType = ProtoType::Bool;
-const OPT_B: ProtoType = ProtoType::Optional(&B);
-const MY_FAV: ProtoType = ProtoType::Optional(&OPT_B);
-
-impl<T: ProtoIdentifiable> ProtoIdentifiable for crate::ZeroCopy<T> {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const PROTO_TYPE: ProtoType = MY_FAV;
-}
-
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy)]
 struct TypeValidatorCtx {

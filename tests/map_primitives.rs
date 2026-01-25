@@ -31,8 +31,7 @@ fn map_with_primitive_values_roundtrips() {
     message.tree.insert(Foo { id: 1, meta: 2 }, 3);
 
     let encoded = MapPrimitives::encode_to_vec(&message);
-    let decoded =
-        <MapPrimitives as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode map with primitives");
+    let decoded = <MapPrimitives as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode map with primitives");
 
     assert_eq!(decoded, message);
 }
@@ -56,8 +55,8 @@ fn papaya_map_with_primitive_values_roundtrips() {
     }
 
     let encoded = PapayaPrimitives::encode_to_vec(&message);
-    let decoded = <PapayaPrimitives as ProtoDecode>::decode(&encoded[..], DecodeContext::default())
-        .expect("decode papaya map with primitives");
+    let decoded =
+        <PapayaPrimitives as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode papaya map with primitives");
 
     assert_eq!(decoded, message);
 }

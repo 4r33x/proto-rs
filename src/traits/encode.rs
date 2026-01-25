@@ -9,6 +9,7 @@ use crate::error::EncodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::buffer::ProtoAsSlice;
+use crate::traits::buffer::RevBuffer;
 use crate::traits::buffer::RevVec;
 use crate::traits::buffer::RevWriter;
 use crate::traits::utils::VarintConst;
@@ -20,10 +21,11 @@ pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
 
 pub trait ProtoArchive: Sized {
     fn is_default(&self) -> bool;
-    /// # Safety
+    /// Reverse one-pass archive into a [`RevWriter`].
     ///
-    /// DO NOT CALL IT, ONLY IMPLEMENTATION ALLOWED
-    /// When tag == 0, its top-level payload, when tag >= 1 its a field
+    /// TAG semantics:
+    /// - TAG == 0 => top-level payload (no field key/len wrapper)
+    /// - TAG != 0 => field encoding (payload, then len/key as required by wire type)
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter);
 }
 
@@ -42,7 +44,7 @@ pub trait ProtoEncode: Sized {
             None => return Ok(()),
         };
 
-        ArchivedProtoMessage::encode(value, buf);
+        ArchivedProtoMessage::encode(value, buf)?;
 
         Ok(())
     }
@@ -115,13 +117,19 @@ where
     #[inline(always)]
     pub fn to_vec(self) -> Vec<u8>
     where
-        W: RevWriter<Buf = Vec<u8>>,
+        W: RevWriter<Buf = RevBuffer<Vec<u8>>>,
     {
-        self.inner.finish()
+        let buf = self.inner.finish();
+        buf.as_slice().to_vec()
     }
 }
 
 pub struct ArchivedProtoField<const TAG: u32, T: ProtoArchive + ProtoExt>(PhantomData<T>);
+
+/// Helper for generated code: emits field keys and enforces field-vs-root semantics.
+///
+/// Deterministic output requires encoding message fields (and repeated elements) in reverse order
+/// when using the reverse writer.
 
 impl<const TAG: u32, T: ProtoArchive + ProtoExt> ProtoExt for ArchivedProtoField<TAG, T> {
     const KIND: ProtoKind = T::KIND;

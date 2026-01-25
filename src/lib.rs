@@ -21,8 +21,15 @@ pub use prosto_derive::proto_dump;
 pub use prosto_derive::proto_message;
 pub use prosto_derive::proto_rpc;
 pub use traits::ArchivedProtoField;
+pub use traits::ArchivedProtoMessage;
+pub use traits::ArchivedProtoMessageWriter;
 pub use traits::ProtoShadowDecode;
 pub use traits::ProtoShadowEncode;
+pub use traits::buffer::ProtoAsSlice;
+pub use traits::buffer::ProtoBufferMut;
+pub use traits::buffer::RevBuffer;
+pub use traits::buffer::RevVec;
+pub use traits::buffer::RevWriter;
 pub use traits::const_test_validate_with_ext;
 
 #[cfg(not(feature = "no-recursion-limit"))]
@@ -43,7 +50,6 @@ mod custom_types;
 mod tonic;
 mod types;
 mod wrappers;
-mod zero_copy;
 
 #[doc(hidden)]
 pub mod encoding;
@@ -76,14 +82,6 @@ pub use crate::tonic::ProtoRequest;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoResponse;
 #[cfg(feature = "tonic")]
-pub use crate::tonic::ToZeroCopyRequest;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::ToZeroCopyResponse;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::ZeroCopyRequest;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::ZeroCopyResponse;
-#[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_response;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_stream_result;
@@ -97,8 +95,6 @@ pub use crate::traits::ProtoKind;
 // pub use crate::wrappers::conc_map::papaya_map_encode_input;
 // #[cfg(feature = "papaya")]
 // pub use crate::wrappers::conc_set::papaya_set_encode_input;
-pub use crate::zero_copy::ToZeroCopy;
-pub use crate::zero_copy::ZeroCopy;
 
 // Example build.rs that users can copy:
 #[cfg(all(feature = "build-schemas", feature = "std", doc))]

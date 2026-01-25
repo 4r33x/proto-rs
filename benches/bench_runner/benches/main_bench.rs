@@ -401,8 +401,9 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
             for _ in 0..iters {
                 buf.clear();
                 let start = Instant::now();
-                let zero_copy = ComplexRoot::encode_to_zerocopy(&message);
-                buf.put_slice(zero_copy.as_slice());
+                let archived: proto_rs::ArchivedProtoMessageWriter<ComplexRoot> =
+                    proto_rs::ArchivedProtoMessage::new(&message).expect("message should encode");
+                archived.encode(&mut buf).expect("encode to buffer");
                 black_box(&buf);
                 total += start.elapsed();
             }

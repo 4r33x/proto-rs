@@ -8,9 +8,7 @@ mod req;
 mod resp;
 use bytes::BufMut;
 pub use req::ProtoRequest;
-pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
-pub use resp::ZeroCopyResponse;
 pub use resp::map_proto_response;
 pub use resp::map_proto_stream_result;
 
@@ -28,13 +26,6 @@ use crate::coders::SunByRef;
 use crate::coders::SunByRefDeref;
 use crate::coders::SunByVal;
 use crate::encoding::DecodeContext;
-
-pub trait ToZeroCopyResponse<T> {
-    fn to_zero_copy(self) -> ZeroCopyResponse<T>;
-}
-pub trait ToZeroCopyRequest<T> {
-    fn to_zero_copy(self) -> ZeroCopyRequest<T>;
-}
 
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
 where

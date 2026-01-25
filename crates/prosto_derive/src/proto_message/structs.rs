@@ -340,26 +340,14 @@ fn generate_transparent_struct_impl(
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoArchive for #shadow_ident #shadow_ty_generics #shadow_where_clause {
-            type Archived<'x> = <#shadow_ty as ::proto_rs::ProtoArchive>::Archived<'x>;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 <#shadow_ty as ::proto_rs::ProtoArchive>::is_default(&self.0)
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                <#shadow_ty as ::proto_rs::ProtoArchive>::len(archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                <#shadow_ty as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                <#shadow_ty as ::proto_rs::ProtoArchive>::archive::<TAG>(&self.0)
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                <#shadow_ty as ::proto_rs::ProtoArchive>::archive::<TAG>(&self.0, w);
             }
         }
 
@@ -433,7 +421,7 @@ fn generate_transparent_struct_impl(
 fn generate_shadow_impls(
     proto_ident: &syn::Ident,
     shadow_ident: &syn::Ident,
-    archived_ident: &syn::Ident,
+    _archived_ident: &syn::Ident,
     vis: &syn::Visibility,
     original_fields: &syn::Fields,
     fields: &[FieldInfo<'_>],
@@ -444,9 +432,6 @@ fn generate_shadow_impls(
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
     let (shadow_impl_generics, shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
-    let mut archived_generics = shadow_generics.clone();
-    archived_generics.params.insert(0, parse_quote!('x));
-    let (archived_impl_generics, archived_ty_generics, archived_where_clause) = archived_generics.split_for_impl();
 
     let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
 
@@ -507,50 +492,11 @@ fn generate_shadow_impls(
         syn::Fields::Unit => quote! { Self { #phantom_ident: ::core::marker::PhantomData } },
     };
 
-    let mut archive_field_defs = encoded_fields
-        .iter()
-        .map(|info| {
-            let tag = info.tag.expect("tag required");
-            let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
-            let shadow_ty = shadow_field_ty(info);
-            quote! { #field_ident: ::proto_rs::ArchivedProtoField<'x, #tag, #shadow_ty> }
-        })
-        .collect::<Vec<_>>();
-    // Add a phantom to ensure the 'x and 'a lifetimes are used even when all fields are value types
-    archive_field_defs.push(quote! { #phantom_ident: ::core::marker::PhantomData<(&'x (), &'a ())> });
-
-    let archive_struct = quote! {
-        #vis struct #archived_ident #archived_impl_generics #archived_where_clause {
-            #( #archive_field_defs, )*
-            len: usize,
-        }
-    };
-
-    let archive_inits = encoded_fields.iter().map(|info| {
+    let archive_fields = encoded_fields.iter().rev().map(|info| {
         let tag = info.tag.expect("tag required");
-        let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
         let shadow_ty = shadow_field_ty(info);
         let access = info.access.access_tokens(quote! { self });
-        quote! { let #field_ident = ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::new(&#access); }
-    });
-
-    let archive_len_terms = encoded_fields.iter().map(|info| {
-        let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
-        quote! { #field_ident.len() }
-    });
-
-    let mut archive_fields = encoded_fields
-        .iter()
-        .map(|info| {
-            let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
-            quote! { #field_ident }
-        })
-        .collect::<Vec<_>>();
-    archive_fields.push(quote! { #phantom_ident: ::core::marker::PhantomData });
-
-    let encode_fields = encoded_fields.iter().map(|info| {
-        let field_ident = syn::Ident::new(&format!("field_{}", info.index), info.field.span());
-        quote! { archived.#field_ident.encode(buf); }
+        quote! { ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&#access, w); }
     });
 
     let is_default_checks = encoded_fields.iter().map(|info| {
@@ -566,7 +512,6 @@ fn generate_shadow_impls(
 
     quote! {
         #shadow_struct
-        #archive_struct
 
         impl #shadow_impl_generics ::proto_rs::ProtoExt for #shadow_ident #shadow_ty_generics #shadow_where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
@@ -580,31 +525,20 @@ fn generate_shadow_impls(
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoArchive for #shadow_ident #shadow_ty_generics #shadow_where_clause {
-            type Archived<'x> = #archived_ident #archived_ty_generics;
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                #( #archive_inits )*
-                let len = 0 #( + #archive_len_terms )*;
-                #archived_ident {
-                    #( #archive_fields, )*
-                    len,
-                }
-            }
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 #is_default_expr
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                archived.len
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                #( #encode_fields )*
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                let mark = w.mark();
+                #( #archive_fields )*
+                if TAG != 0 {
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ::proto_rs::ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
     }
@@ -753,8 +687,6 @@ fn generate_proto_impls(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    type Archived<'a> = <#name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'a>;
-
                     #[inline(always)]
                     fn is_default(&self) -> bool {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
@@ -762,19 +694,9 @@ fn generate_proto_impls(
                     }
 
                     #[inline(always)]
-                    fn len(archived: &Self::Archived<'_>) -> usize {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::len(archived)
-                    }
-
-                    #[inline(always)]
-                    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
-                    }
-
-                    #[inline(always)]
-                    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+                    fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow)
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
                     }
                 }
             }
@@ -833,8 +755,6 @@ fn generate_proto_impls(
         }
 
         impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            type Archived<'__proto_archive_lt> = Vec<u8>;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
@@ -842,23 +762,9 @@ fn generate_proto_impls(
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                archived.len()
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                buf.put_slice(archived.as_slice());
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                 let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                let archived = <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow);
-                let len = <#shadow_ty_short as ::proto_rs::ProtoArchive>::len(&archived);
-                let mut buf = Vec::with_capacity(len);
-                unsafe { <#shadow_ty_short as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, &mut buf) };
-                buf
+                <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
             }
         }
 
