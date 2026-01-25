@@ -173,6 +173,7 @@ impl<B: ProtoBufferMut> RevVec<B> {
         }
 
         let mut new_buf = B::with_capacity(new_cap);
+        let new_cap = new_buf.capacity();
         unsafe { new_buf.set_len(new_cap) };
 
         // Copy existing payload [pos..old_cap) to the end of the new buffer.
@@ -213,12 +214,12 @@ impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
 
     #[inline(always)]
     fn mark(&self) -> Self::Mark {
-        self.pos
+        self.cap() - self.pos
     }
 
     #[inline(always)]
     fn written_since(&self, mark: Self::Mark) -> usize {
-        mark - self.pos
+        self.cap() - self.pos - mark
     }
 
     #[inline(always)]
@@ -245,16 +246,22 @@ impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
 
     #[inline(always)]
     fn put_varint(&mut self, mut v: u64) {
-        // Emit standard varint bytes; reverse writer places them at descending addresses.
+        let mut buf = [0u8; 10];
+        let mut i = 0usize;
         loop {
             let byte = (v as u8) & 0x7F;
             v >>= 7;
             if v == 0 {
-                self.put_u8(byte);
+                buf[i] = byte;
+                i += 1;
                 break;
             }
-            self.put_u8(byte | 0x80);
+            buf[i] = byte | 0x80;
+            i += 1;
         }
+
+        // IMPORTANT: put_slice preserves order in the final written slice.
+        self.put_slice(&buf[..i]);
     }
 
     #[inline(always)]
@@ -270,6 +277,7 @@ impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
     #[inline(always)]
     fn with_capacity(cap: usize) -> Self {
         let mut buf = B::with_capacity(cap);
+        let cap = buf.capacity();
         unsafe { buf.set_len(cap) };
         Self { buf, pos: cap }
     }
