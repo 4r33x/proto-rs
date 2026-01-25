@@ -116,14 +116,7 @@ pub(super) fn generate_struct_impl(
 
     let fields = assign_tags(fields);
 
-    let shadow_impls = generate_ref_shadow_impls(
-        name,
-        &data.fields,
-        &fields,
-        &bounded_generics,
-        &ty_generics,
-        config.suns.is_empty(),
-    );
+    let shadow_impls = generate_ref_shadow_impls(name, &data.fields, &fields, &bounded_generics, &ty_generics, config.suns.is_empty());
     let proto_impls = generate_proto_impls(
         name,
         &bounded_generics,
@@ -427,10 +420,7 @@ fn generate_ref_shadow_impls(
         })
         .collect::<Vec<_>>();
 
-    let shadow_inits = shadow_fields
-        .iter()
-        .map(|(ident, _shadow_ty, init, _tag)| quote! { let #ident = #init; })
-        .collect::<Vec<_>>();
+    let shadow_inits = shadow_fields.iter().map(|(ident, _shadow_ty, init, _tag)| quote! { let #ident = #init; }).collect::<Vec<_>>();
     let shadow_inits_for_default = shadow_inits.clone();
 
     let archive_fields = shadow_fields.iter().rev().map(|(ident, shadow_ty, _init, tag)| {
@@ -447,17 +437,19 @@ fn generate_ref_shadow_impls(
         quote! { #( #is_default_checks )&&* }
     };
 
-    let is_default_block = match original_fields {
-        syn::Fields::Unit => quote! { true },
-        _ => quote! {
+    let is_default_block = if let syn::Fields::Unit = original_fields {
+        quote! { true }
+    } else {
+        quote! {
             #( #shadow_inits_for_default )*
             #is_default_expr
-        },
+        }
     };
 
-    let archive_block = match original_fields {
-        syn::Fields::Unit => quote! {},
-        _ => quote! { #( #shadow_inits )* },
+    let archive_block = if let syn::Fields::Unit = original_fields {
+        quote! {}
+    } else {
+        quote! { #( #shadow_inits )* }
     };
 
     quote! {
