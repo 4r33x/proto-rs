@@ -2,9 +2,6 @@ use core::marker::PhantomData;
 
 use bytes::BufMut;
 
-use crate::encoding::WireType;
-use crate::encoding::encode_key;
-use crate::encoding::key_len;
 use crate::error::EncodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -83,11 +80,16 @@ where
         if <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
             return None;
         }
-        let mut b = W::with_capacity(Self::INIT_CAP);
-        s.archive::<0>(&mut b);
+        let mut w = W::with_capacity(Self::INIT_CAP);
+
+        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+            s.archive::<1>(&mut w);
+        } else {
+            s.archive::<0>(&mut w);
+        }
 
         Some(Self {
-            inner: b,
+            inner: w,
             _pd: PhantomData,
         })
     }
@@ -97,18 +99,10 @@ where
         let v = self.inner.finish();
         let slice = v.as_slice();
         let remaining = buf.remaining_mut();
-        let total = if matches!(T::KIND, ProtoKind::SimpleEnum) {
-            key_len(1) + slice.len()
-        } else {
-            slice.len()
-        };
+        let total = slice.len();
 
         if total > remaining {
             return Err(EncodeError::new(total, remaining));
-        }
-
-        if matches!(T::KIND, ProtoKind::SimpleEnum) {
-            encode_key(1, WireType::Varint, buf);
         }
 
         buf.put_slice(slice);
@@ -130,7 +124,6 @@ pub struct ArchivedProtoField<const TAG: u32, T: ProtoArchive + ProtoExt>(Phanto
 ///
 /// Deterministic output requires encoding message fields (and repeated elements) in reverse order
 /// when using the reverse writer.
-
 impl<const TAG: u32, T: ProtoArchive + ProtoExt> ProtoExt for ArchivedProtoField<TAG, T> {
     const KIND: ProtoKind = T::KIND;
 }
