@@ -1,160 +1,55 @@
-/// Low-level storage backend for reverse writing.
-pub trait ProtoBufferMut: Sized {
-    fn empty() -> Self;
-    fn with_capacity(cap: usize) -> Self;
-    fn capacity(&self) -> usize;
-
-    /// # Safety
-    /// Must set the length to exactly `len`. Caller guarantees bytes will be initialized
-    /// before they are read. Reverse writer uses this to treat the full capacity as writable.
-    unsafe fn set_len(&mut self, len: usize);
-
-    fn as_ptr(&self) -> *const u8;
-    fn as_mut_ptr(&mut self) -> *mut u8;
-
-    fn replace_with(&mut self, other: Self);
-}
-
-impl ProtoBufferMut for Vec<u8> {
-    #[inline(always)]
-    fn empty() -> Self {
-        vec![]
-    }
-    #[inline(always)]
-    fn with_capacity(cap: usize) -> Self {
-        Vec::with_capacity(cap)
-    }
-
-    #[inline(always)]
-    fn capacity(&self) -> usize {
-        Vec::capacity(self)
-    }
-
-    #[inline(always)]
-    unsafe fn set_len(&mut self, len: usize) {
-        unsafe { Vec::set_len(self, len) }
-    }
-
-    #[inline(always)]
-    fn as_ptr(&self) -> *const u8 {
-        Vec::as_ptr(self)
-    }
-
-    #[inline(always)]
-    fn as_mut_ptr(&mut self) -> *mut u8 {
-        Vec::as_mut_ptr(self)
-    }
-
-    #[inline(always)]
-    fn replace_with(&mut self, other: Self) {
-        *self = other;
-    }
-}
-
-pub trait ProtoAsSlice {
-    fn as_slice(&self) -> &[u8];
-}
-impl ProtoAsSlice for Vec<u8> {
-    #[inline(always)]
-    fn as_slice(&self) -> &[u8] {
-        Vec::as_slice(self)
-    }
-}
-
-/// Reverse buffer view that can expose only the written slice without copying.
-pub struct RevBuffer<B: ProtoBufferMut + ProtoAsSlice> {
-    buf: B,
-    start: usize,
-    len: usize,
-}
-
-#[allow(clippy::len_without_is_empty)]
-impl<B: ProtoBufferMut + ProtoAsSlice> RevBuffer<B> {
-    #[inline(always)]
-    pub const fn start(&self) -> usize {
-        self.start
-    }
-
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-
-    #[inline(always)]
-    pub fn into_inner(self) -> B {
-        self.buf
-    }
-}
-
-impl<B: ProtoBufferMut + ProtoAsSlice> ProtoAsSlice for RevBuffer<B> {
-    #[inline(always)]
-    fn as_slice(&self) -> &[u8] {
-        &self.buf.as_slice()[self.start..self.start + self.len]
-    }
-}
-
-/// Reverse writer trait.
-///
-/// Requirements:
-/// - Must support writing bytes "backwards" (prepend semantics).
-/// - Must support growth without invalidating already written bytes (upb strategy: grow + shift tail).
-/// - `finish(self)` returns the underlying buffer with NO COPY.
+/// Reverse writer trait (keeps your existing API shape).
 pub trait RevWriter {
-    type Buf: ProtoAsSlice;
-
-    /// A "mark" used to compute written lengths (for length-delimited payload length).
+    type RawBuf;
+    type TightBuf;
     type Mark: Copy;
 
     fn with_capacity(cap: usize) -> Self;
-
     fn empty() -> Self;
 
     fn mark(&self) -> Self::Mark;
     fn written_since(&self, mark: Self::Mark) -> usize;
+    fn as_written_slice(&self) -> &[u8];
+
     fn put_u8(&mut self, b: u8);
     fn put_slice(&mut self, s: &[u8]);
-
-    /// Varint bytes MUST be emitted in normal forward varint byte order.
     fn put_varint(&mut self, v: u64);
 
+    #[inline(always)]
     fn put_fixed32(&mut self, v: u32) {
         self.put_slice(&v.to_le_bytes());
     }
+
+    #[inline(always)]
     fn put_fixed64(&mut self, v: u64) {
         self.put_slice(&v.to_le_bytes());
     }
 
-    /// Return the underlying buffer with NO COPY.
-    fn finish(self) -> Self::Buf;
+    fn finish_raw(self) -> Self::RawBuf;
+    fn finish_tight(self) -> Self::TightBuf;
 }
 
-// Concrete reverse writer backed by a single contiguous buffer (Vec<u8> by default).
-///
-/// Invariant:
-/// - We treat the entire capacity as initialized backing store via `set_len(cap)`.
-/// - `pos` moves backward; valid bytes are in `buf[pos..cap)`.
-///
-/// IMPORTANT:
-/// - `finish()` returns the *buffer as-is*, i.e. still containing prefix slack in [0..pos).
-/// - If you want a tight Vec with len == encoded bytes and data at offset 0,
-///   you can add a separate `finish_tight()` that memmoves once.
-///   You explicitly asked for "no copy" in finish; memmove counts as a copy, so not done here.
-///
-/// Integration:
-/// - If tonic requires a tight slice at offset 0, you can do the final "tightening"
-///   exactly once right before copying to tonic (or accept offset+len metadata in your pipeline).
-pub struct RevVec<B: ProtoBufferMut = Vec<u8>> {
-    buf: B,
-    pos: usize,
+pub struct RevVec {
+    buf: Vec<u8>,
+    pos: usize, // valid bytes are in [pos..cap)
 }
 
-#[allow(clippy::len_without_is_empty)]
-impl<B: ProtoBufferMut> RevVec<B> {
+impl RevVec {
     const MIN_GROW: usize = 64;
 
     #[inline(always)]
-    fn cap(&self) -> usize {
+    const fn cap(&self) -> usize {
         self.buf.capacity()
+    }
+
+    #[inline(always)]
+    pub const fn len(&self) -> usize {
+        self.cap() - self.pos
+    }
+
+    #[inline(always)]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     #[inline(always)]
@@ -166,51 +61,41 @@ impl<B: ProtoBufferMut> RevVec<B> {
         let old_cap = self.cap();
         let used = old_cap - self.pos;
 
-        // Exponential growth (upb-style). Ensure new_cap >= used + need.
         let mut new_cap = (old_cap * 2).next_power_of_two().max(Self::MIN_GROW);
         while new_cap < used + need {
             new_cap *= 2;
         }
 
-        let mut new_buf = B::with_capacity(new_cap);
+        let mut new_buf: Vec<u8> = Vec::with_capacity(new_cap);
         let new_cap = new_buf.capacity();
         unsafe { new_buf.set_len(new_cap) };
 
-        // Copy existing payload [pos..old_cap) to the end of the new buffer.
         unsafe {
             core::ptr::copy_nonoverlapping(self.buf.as_ptr().add(self.pos), new_buf.as_mut_ptr().add(new_cap - used), used);
         }
 
-        self.buf.replace_with(new_buf);
+        self.buf = new_buf;
         self.pos = new_cap - used;
-    }
-
-    /// (Optional helper) Return where the valid bytes start (no copy).
-    #[inline(always)]
-    pub const fn start(&self) -> usize {
-        self.pos
-    }
-
-    /// (Optional helper) Return encoded length (no copy).
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.cap() - self.pos
-    }
-
-    /// (Optional helper) Borrow the encoded bytes slice (no copy), as `[start..cap)`.
-    ///
-    /// Only usable while you still have access to the writer.
-    #[inline(always)]
-    pub fn as_written_slice(&self) -> &[u8] {
-        let cap = self.cap();
-        // SAFETY: buf length is cap (we set_len(cap)); bytes in [pos..cap) are initialized by us.
-        unsafe { core::slice::from_raw_parts(self.buf.as_ptr().add(self.pos), cap - self.pos) }
     }
 }
 
-impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
-    type Buf = RevBuffer<B>;
+impl RevWriter for RevVec {
+    type TightBuf = Vec<u8>;
+    type RawBuf = Vec<u8>;
     type Mark = usize;
+
+    #[inline(always)]
+    fn with_capacity(cap: usize) -> Self {
+        let mut buf = Vec::with_capacity(cap);
+        let cap = buf.capacity();
+        unsafe { buf.set_len(cap) }; // invariant: len == cap
+        Self { buf, pos: cap }
+    }
+
+    #[inline(always)]
+    fn empty() -> Self {
+        Self { buf: Vec::new(), pos: 0 }
+    }
 
     #[inline(always)]
     fn mark(&self) -> Self::Mark {
@@ -219,7 +104,7 @@ impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
 
     #[inline(always)]
     fn written_since(&self, mark: Self::Mark) -> usize {
-        self.cap() - self.pos - mark
+        (self.cap() - self.pos) - mark
     }
 
     #[inline(always)]
@@ -246,43 +131,50 @@ impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
 
     #[inline(always)]
     fn put_varint(&mut self, mut v: u64) {
-        let mut buf = [0u8; 10];
+        let mut tmp = [0u8; 10];
         let mut i = 0usize;
         loop {
-            let byte = (v as u8) & 0x7F;
+            let byte = (v as u8) & 0x7f;
             v >>= 7;
             if v == 0 {
-                buf[i] = byte;
+                tmp[i] = byte;
                 i += 1;
                 break;
             }
-            buf[i] = byte | 0x80;
+            tmp[i] = byte | 0x80;
             i += 1;
         }
-
-        // IMPORTANT: put_slice preserves order in the final written slice.
-        self.put_slice(&buf[..i]);
+        self.put_slice(&tmp[..i]);
     }
 
     #[inline(always)]
-    fn finish(self) -> Self::Buf {
+    fn finish_raw(self) -> Self::RawBuf {
+        self.buf
+    }
+
+    /// Optional helper for viewing while still writing (no copy).
+    #[inline(always)]
+    fn as_written_slice(&self) -> &[u8] {
+        let cap = self.cap();
+        unsafe { core::slice::from_raw_parts(self.buf.as_ptr().add(self.pos), cap - self.pos) }
+    }
+
+    #[inline(always)]
+    fn finish_tight(mut self) -> Self::TightBuf {
         let cap = self.cap();
         let pos = self.pos;
-        RevBuffer {
-            buf: self.buf,
-            start: pos,
-            len: cap - pos,
-        }
-    }
-    #[inline(always)]
-    fn with_capacity(cap: usize) -> Self {
-        let mut buf = B::with_capacity(cap);
-        let cap = buf.capacity();
-        unsafe { buf.set_len(cap) };
-        Self { buf, pos: cap }
-    }
+        let len = cap - pos;
 
-    fn empty() -> Self {
-        Self { buf: B::empty(), pos: 0 }
+        if len == 0 {
+            unsafe { self.buf.set_len(0) };
+            return self.buf;
+        }
+        if pos != 0 {
+            unsafe {
+                core::ptr::copy(self.buf.as_ptr().add(pos), self.buf.as_mut_ptr(), len);
+            }
+        }
+        unsafe { self.buf.set_len(len) };
+        self.buf
     }
 }

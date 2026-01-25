@@ -1,5 +1,4 @@
 use bytes::Buf;
-use proto_rs::ProtoAsSlice;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoDecoder;
 use proto_rs::ProtoEncode;
@@ -67,9 +66,9 @@ pub struct MessageWrapper(InnerMessage);
 fn transparent_tuple_roundtrip() {
     let original = UserIdTuple(123);
     let shadow = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdTuple>>::from_sun(&original);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(8);
+    let mut writer = proto_rs::RevVec::with_capacity(8);
     <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow, &mut writer);
-    let buf = writer.finish();
+    let buf = writer.finish_tight();
     assert_eq!(buf.as_slice(), vec![123]);
 
     let mut decoded = <UserIdTuple as ProtoDecoder>::proto_default();
@@ -81,9 +80,9 @@ fn transparent_tuple_roundtrip() {
 fn transparent_named_roundtrip() {
     let original = UserIdNamed { id: 77 };
     let shadow = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdNamed>>::from_sun(&original);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(8);
+    let mut writer = proto_rs::RevVec::with_capacity(8);
     <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow, &mut writer);
-    let buf = writer.finish();
+    let buf = writer.finish_tight();
     assert_eq!(buf.as_slice(), vec![77]);
 
     let mut decoded = <UserIdNamed as ProtoDecoder>::proto_default();
@@ -99,9 +98,9 @@ fn transparent_in_holder_encodes_inner_once() {
     };
 
     let shadow = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, Holder>>::from_sun(&holder);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(16);
+    let mut writer = proto_rs::RevVec::with_capacity(16);
     <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow, &mut writer);
-    let buf = writer.finish();
+    let buf = writer.finish_tight();
 
     // Expected encoding:
     // field 1 (tuple): key 0x08 followed by value 0x05

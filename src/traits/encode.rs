@@ -5,8 +5,6 @@ use bytes::BufMut;
 use crate::error::EncodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
-use crate::traits::buffer::ProtoAsSlice;
-use crate::traits::buffer::RevBuffer;
 use crate::traits::buffer::RevVec;
 use crate::traits::buffer::RevWriter;
 use crate::traits::utils::VarintConst;
@@ -26,7 +24,7 @@ pub trait ProtoArchive: Sized {
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter);
 }
 
-pub type ArchivedProtoMessageWriter<T> = ArchivedProtoMessage<T, RevVec<Vec<u8>>>;
+pub type ArchivedProtoMessageWriter<T> = ArchivedProtoMessage<T, RevVec>;
 
 pub trait ProtoEncode: Sized {
     type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
@@ -55,7 +53,7 @@ pub trait ProtoEncode: Sized {
             Some(v) => v,
             None => return vec![],
         };
-        value.to_vec()
+        value.to_vec_tight()
     }
 }
 
@@ -96,25 +94,35 @@ where
 
     #[inline(always)]
     pub fn encode(self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        let v = self.inner.finish();
-        let slice = v.as_slice();
+        let v = self.inner.as_written_slice();
+
         let remaining = buf.remaining_mut();
-        let total = slice.len();
+        let total = v.len();
 
         if total > remaining {
             return Err(EncodeError::new(total, remaining));
         }
 
-        buf.put_slice(slice);
+        buf.put_slice(v);
         Ok(())
     }
+}
+
+impl<T: ProtoEncode + ProtoExt> ArchivedProtoMessage<T, RevVec>
+where
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+{
+    /// Convert to a tight Vec<u8> with data at offset 0.
+    ///
+    /// This avoids an extra allocation compared to `finish().as_slice().to_vec()`
+    /// by doing an in-place memmove within the existing buffer.
     #[inline(always)]
-    pub fn to_vec(self) -> Vec<u8>
-    where
-        W: RevWriter<Buf = RevBuffer<Vec<u8>>>,
-    {
-        let buf = self.inner.finish();
-        buf.as_slice().to_vec()
+    pub fn to_vec_tight(self) -> Vec<u8> {
+        self.inner.finish_tight()
+    }
+    #[inline(always)]
+    pub fn to_vec_raw(self) -> Vec<u8> {
+        self.inner.finish_raw()
     }
 }
 
