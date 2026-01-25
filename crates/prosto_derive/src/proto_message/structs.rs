@@ -8,7 +8,6 @@ use syn::ItemStruct;
 use syn::PathArguments;
 use syn::Type;
 use syn::parse_quote;
-use syn::spanned::Spanned;
 
 use super::build_validate_with_ext_impl;
 use super::generic_bounds::add_proto_wire_bounds;

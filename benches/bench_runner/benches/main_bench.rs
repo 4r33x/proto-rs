@@ -14,7 +14,6 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::Instant;
 
-use bytes::BufMut;
 use bytes::Bytes;
 use chrono::Utc;
 use criterion::BenchmarkGroup;

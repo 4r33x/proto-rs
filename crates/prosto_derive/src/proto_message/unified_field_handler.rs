@@ -13,7 +13,6 @@ use syn::spanned::Spanned;
 
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
-use crate::utils::is_option_type;
 
 #[derive(Clone)]
 pub struct FieldInfo<'a> {
@@ -167,64 +166,6 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
     }
 
     fields
-}
-
-pub struct EncodeBinding {
-    pub prelude: Option<TokenStream2>,
-    pub value: TokenStream2,
-}
-
-pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> EncodeBinding {
-    let proto_ty = &field.proto_ty;
-    let access_expr = if let Some(getter) = &field.config.getter {
-        parse_getter_expr(getter, base, field.field)
-    } else {
-        match &field.access {
-            FieldAccess::Direct(tokens) => tokens.clone(),
-            _ => field.access.access_tokens(base.clone()),
-        }
-    };
-
-    if needs_encode_conversion(&field.config, &field.parsed) {
-        let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_converted", field.index), field.field.span());
-        let converted = encode_conversion_expr(field, &access_expr);
-        if is_value_encode_type(proto_ty) {
-            let prelude = quote! {
-                let #tmp_ident: #proto_ty = #converted;
-            };
-            EncodeBinding {
-                prelude: Some(prelude),
-                value: quote! { #tmp_ident },
-            }
-        } else {
-            let prelude = quote! {
-                let #tmp_ident: #proto_ty = #converted;
-            };
-            EncodeBinding {
-                prelude: Some(prelude),
-                value: quote! { &#tmp_ident },
-            }
-        }
-    } else {
-        let init_expr = if is_option_type(&field.field.ty) {
-            quote! { (#access_expr).as_ref() }
-        } else {
-            quote! { #access_expr }
-        };
-        EncodeBinding {
-            prelude: None,
-            value: init_expr,
-        }
-    }
-}
-
-fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &Field) -> TokenStream2 {
-    let base_str = base.to_string();
-    let getter_expr = getter.replace('$', &base_str);
-    syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
-        let name = field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string);
-        panic!("invalid getter expression in #[proto(getter = ...)] on field {name}")
-    })
 }
 
 pub fn is_value_encode_type(ty: &Type) -> bool {
@@ -389,44 +330,4 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
             }
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::parse_field_config;
-    use crate::utils::parse_field_type;
-
-    #[test]
-    fn direct_scalar_field_derefs_binding() {
-        let field: Field = syn::parse_quote! {
-            #[proto(tag = 1)]
-            value: u32
-        };
-
-        let config = parse_field_config(&field);
-        let effective_ty = crate::utils::resolved_field_type(&field, &config);
-        let parsed = parse_field_type(&effective_ty);
-        let proto_ty = compute_proto_ty(&field, &config, &parsed, &effective_ty);
-        let decode_ty = compute_decode_ty(&field, &config, &parsed, &proto_ty);
-
-        let info = FieldInfo {
-            index: 0,
-            field: &field,
-            access: FieldAccess::Direct(quote! { value }),
-            config,
-            tag: Some(1),
-            parsed,
-            proto_ty,
-            decode_ty,
-        };
-
-        let binding = encode_input_binding(&info, &TokenStream2::new());
-        assert!(binding.prelude.is_none());
-        let rendered = binding.value.to_string();
-        assert!(
-            rendered.contains("Borrow :: borrow"),
-            "binding should borrow before copying: {rendered}"
-        );
-    }
 }
