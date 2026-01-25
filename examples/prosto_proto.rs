@@ -388,8 +388,8 @@ pub enum Status {
     Completed,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
 #[proto_message]
+#[derive(Debug, Hash, PartialEq, Eq)]
 pub struct Foo {
     #[proto(tag = 1)]
     pub id: u32,
