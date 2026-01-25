@@ -105,20 +105,22 @@ where
             return Err(DecodeError::new("map entry must be length-delimited"));
         }
         let len = decode_varint(buf)? as usize;
-        let mut slice = buf.take(len);
+        let remaining = buf.remaining();
+        if len > remaining {
+            return Err(DecodeError::new("buffer underflow"));
+        }
         let guard = self.pin();
-        if !slice.has_remaining() {
-            let entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
-            let (key, value) = entry.to_sun()?;
-            guard.insert(key, value);
-            return Ok(());
+        // Each merge call handles exactly one map entry
+        let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
+        if len > 0 {
+            // Use limit-based decoding to avoid Take wrapper overhead
+            let limit = remaining - len;
+            while buf.remaining() > limit {
+                MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_one_field(&mut entry, buf, ctx)?;
+            }
         }
-        while slice.has_remaining() {
-            let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
-            MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_into(&mut entry, &mut slice, ctx)?;
-            let (key, value) = entry.to_sun()?;
-            guard.insert(key, value);
-        }
+        let (key, value) = entry.to_sun()?;
+        guard.insert(key, value);
         Ok(())
     }
 }

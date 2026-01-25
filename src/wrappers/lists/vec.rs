@@ -63,13 +63,17 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
                     let len = decode_varint(buf)? as usize;
-                    let mut slice = buf.take(len);
-                    while slice.has_remaining() {
+                    let remaining = buf.remaining();
+                    if len > remaining {
+                        return Err(DecodeError::new("buffer underflow"));
+                    }
+                    // Use limit-based decoding to avoid Take wrapper overhead
+                    let limit = remaining - len;
+                    while buf.remaining() > limit {
                         let mut v = T::proto_default();
-                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        T::merge(&mut v, T::WIRE_TYPE, buf, ctx)?;
                         self.push(v);
                     }
-                    debug_assert!(!slice.has_remaining());
                 } else {
                     let mut v = T::proto_default();
                     T::merge(&mut v, wire_type, buf, ctx)?;

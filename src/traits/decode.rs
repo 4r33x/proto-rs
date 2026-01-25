@@ -35,30 +35,43 @@ pub trait ProtoDecoder: Sized + ProtoExt {
         if wire_type != WireType::LengthDelimited {
             return Err(DecodeError::new(format!("invalid wire type {}", Self::KIND.dbg_name())));
         }
+        // Check recursion limit once at recursion boundary (not per-field)
+        ctx.limit_reached()?;
         let len = decode_varint(buf)? as usize;
-        Self::decode_into(self, &mut Buf::take(buf, len), ctx)
+        let remaining = buf.remaining();
+        if len > remaining {
+            return Err(DecodeError::new("buffer underflow"));
+        }
+        // Use limit-based decoding to avoid Buf::take wrapper overhead
+        let limit = remaining - len;
+        while buf.remaining() > limit {
+            Self::decode_one_field(self, buf, ctx)?;
+        }
+        Ok(())
     }
 
     ///top level decode entrypoint
     #[inline(always)]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
+        // Check recursion limit at top-level entry
+        ctx.limit_reached()?;
         let mut sh = Self::proto_default();
         Self::decode_into(&mut sh, &mut buf, ctx)?;
         Ok(sh)
     }
-    /// Decode until `buf` is exhausted.
+    /// Decode until `buf` is exhausted. Caller must check ctx.limit_reached() before calling.
     #[inline(always)]
     fn decode_into(value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         while buf.has_remaining() {
-            // If you support protobuf “message set” / groups, recursion is inside skip_field.
             Self::decode_one_field(value, buf, ctx)?;
         }
         Ok(())
     }
 
+    /// Decode one field from the buffer. This is an internal function - `ctx.limit_reached()`
+    /// must be checked before the first call to this function (it's checked in `merge` before recursion).
     #[inline(always)]
     fn decode_one_field(value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        ctx.limit_reached()?;
         let (tag, wire) = decode_key(buf)?;
         if tag == 0 {
             return Err(DecodeError::new("invalid tag 0"));

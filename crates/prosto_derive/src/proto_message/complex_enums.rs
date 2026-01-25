@@ -647,10 +647,9 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         ::proto_rs::encoding::WireType::LengthDelimited,
                         wire_type,
                     )?;
-                    ctx.limit_reached()?;
+                    // No need to check limit_reached() for unit variants - no recursion happens
                     let len = ::proto_rs::encoding::decode_varint(buf)?;
-                    let remaining = buf.remaining();
-                    if len > remaining as u64 {
+                    if len > buf.remaining() as u64 {
                         return Err(::proto_rs::DecodeError::new("buffer underflow"));
                     }
                     if len != 0 {
@@ -830,14 +829,14 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         ::proto_rs::encoding::WireType::LengthDelimited,
                         wire_type,
                     )?;
+                    // Check limit once at recursion boundary, then use entered context for fields
                     ctx.limit_reached()?;
                     let inner_ctx = ctx.enter_recursion();
                     let len = ::proto_rs::encoding::decode_varint(buf)?;
-                    let remaining = buf.remaining();
-                    if len > remaining as u64 {
+                    if len > buf.remaining() as u64 {
                         return Err(::proto_rs::DecodeError::new("buffer underflow"));
                     }
-                    let limit = remaining - len as usize;
+                    let limit = buf.remaining() - len as usize;
                     #(#field_inits)*
                     #decode_loop
                     #assign_variant
