@@ -1,4 +1,42 @@
 
+# Benchmark Run — 2026-01-25 23:19:05
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_string | prost decode | 31773615.64 | 272.72 | 1.00× |
+| collection_overhead_decode | one_string | proto_rs decode | 32303094.75 | 277.26 | 1.02× faster |
+| collection_overhead_encode | one_string | prost encode_to_vec | 41470872.20 | 355.95 | 1.00× |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 35566578.08 | 305.27 | 0.86× slower |
+| micro_fields_decode | one_string | prost decode | 30611007.05 | 408.70 | 1.00× |
+| micro_fields_decode | one_string | proto_rs decode | 33899946.81 | 452.61 | 1.11× faster |
+| micro_fields_encode | one_string | prost encode_to_vec | 41364168.83 | 552.27 | 1.00× |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 35276667.24 | 470.99 | 0.85× slower |
+
+
+# Benchmark Run — 2026-01-25 23:14:33
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_string | prost decode | 31571047.14 | 270.98 | 1.00× |
+| collection_overhead_decode | one_string | proto_rs decode | 35616606.39 | 305.70 | 1.13× faster |
+| collection_overhead_encode | one_string | prost encode_to_vec | 41491035.32 | 356.12 | 1.00× |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 35456894.16 | 304.33 | 0.85× slower |
+| micro_fields_decode | one_string | prost decode | 28608877.89 | 381.97 | 1.00× |
+| micro_fields_decode | one_string | proto_rs decode | 33333136.04 | 445.05 | 1.17× faster |
+| micro_fields_encode | one_string | prost encode_to_vec | 41455450.42 | 553.49 | 1.00× |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 35399860.01 | 472.64 | 0.85× slower |
+
+
+# Benchmark Run — 2026-01-25 22:31:35
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| collection_overhead_encode | one_string | prost encode_to_vec | 41392587.56 | 355.28 | 1.00× |
+| collection_overhead_encode | one_string | proto_rs encode_to_vec | 33426533.87 | 286.90 | 0.81× slower |
+| micro_fields_encode | one_string | prost encode_to_vec | 41370280.59 | 552.35 | 1.00× |
+| micro_fields_encode | one_string | proto_rs encode_to_vec | 33275594.70 | 444.28 | 0.80× slower |
+
+
 # Benchmark Run — 2026-01-25 21:05:11 - 0.9.0-pre
 
 | Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |

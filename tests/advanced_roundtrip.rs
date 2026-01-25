@@ -546,7 +546,7 @@ fn advanced_roundtrip_len_match_min() {
     let p: tonic_prost_test::advanced::AdvancedNested = (&m).into();
     let pl = p.encoded_len();
     let shadow = <<AdvancedNested as ProtoEncode>::Shadow<'_> as ProtoShadowEncode<'_, AdvancedNested>>::from_sun(&m);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    let mut writer = proto_rs::RevVec::with_capacity(64);
     <<AdvancedNested as ProtoEncode>::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow, &mut writer);
     let rl = writer.len();
     let e = <AdvancedNested as ProtoEncode>::encode_to_vec(&m);
@@ -560,7 +560,7 @@ fn advanced_roundtrip_len_match_min() {
 fn advanced_roundtrip_len_match() {
     let m = sample_raw_message();
     let shadow = <<AdvancedEdgeCase as ProtoEncode>::Shadow<'_> as ProtoShadowEncode<'_, AdvancedEdgeCase>>::from_sun(&m);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    let mut writer = proto_rs::RevVec::with_capacity(64);
     <<AdvancedEdgeCase as ProtoEncode>::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow, &mut writer);
     let len = writer.len();
     let e = <AdvancedEdgeCase as ProtoEncode>::encode_to_vec(&m);
@@ -568,7 +568,7 @@ fn advanced_roundtrip_len_match() {
 
     let missing = sample_missing_origin_message();
     let missing_shadow = <<AdvancedEdgeCase as ProtoEncode>::Shadow<'_> as ProtoShadowEncode<'_, AdvancedEdgeCase>>::from_sun(&missing);
-    let mut missing_writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    let mut missing_writer = proto_rs::RevVec::with_capacity(64);
     <<AdvancedEdgeCase as ProtoEncode>::Shadow<'_> as ProtoArchive>::archive::<0>(&missing_shadow, &mut missing_writer);
     let missing_len = missing_writer.len();
     let missing_bytes = <AdvancedEdgeCase as ProtoEncode>::encode_to_vec(&missing);

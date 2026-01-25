@@ -9,7 +9,6 @@ use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::DecodeError;
 use proto_rs::ProtoArchive;
-use proto_rs::ProtoAsSlice;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoDecoder;
 use proto_rs::ProtoEncode;
@@ -394,7 +393,7 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoShadowEncode<'a, T>,
 {
     let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    let mut writer = proto_rs::RevVec::with_capacity(64);
     <T::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow, &mut writer);
     writer.len()
 }
@@ -411,9 +410,9 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
     let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
-    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    let mut writer = proto_rs::RevVec::with_capacity(64);
     proto_rs::ArchivedProtoField::<TAG, T::Shadow<'_>>::archive(&shadow, &mut writer);
-    let bytes = writer.finish();
+    let bytes = writer.finish_tight();
     buf.extend_from_slice(bytes.as_slice());
 }
 
