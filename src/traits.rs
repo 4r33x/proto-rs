@@ -10,6 +10,7 @@ pub use encode::ArchivedProtoMessageWriter;
 pub use encode::ProtoArchive;
 pub use encode::ProtoEncode;
 pub use encode::ProtoShadowEncode;
+pub use encode::ZeroCopy;
 pub use utils::PrimitiveKind;
 pub use utils::ProtoKind;
 pub use utils::const_test_validate_with_ext;

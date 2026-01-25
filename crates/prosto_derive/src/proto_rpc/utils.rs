@@ -234,7 +234,7 @@ fn extract_proto_type(success_ty: &Type) -> Type {
             && let Some(segment) = path.segments.last()
             && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
             && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
-            && matches!(segment.ident.to_string().as_str(), "Response" | "Box" | "Arc")
+            && matches!(segment.ident.to_string().as_str(), "Response" | "Box" | "Arc" | "ZeroCopy")
         {
             current = inner_ty.clone();
             continue;

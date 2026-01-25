@@ -25,6 +25,7 @@ pub use traits::ArchivedProtoMessage;
 pub use traits::ArchivedProtoMessageWriter;
 pub use traits::ProtoShadowDecode;
 pub use traits::ProtoShadowEncode;
+pub use traits::ZeroCopy;
 pub use traits::buffer::RevVec;
 pub use traits::buffer::RevWriter;
 pub use traits::const_test_validate_with_ext;

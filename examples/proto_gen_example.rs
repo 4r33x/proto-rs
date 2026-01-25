@@ -5,6 +5,8 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
+use proto_rs::ProtoEncode;
+use proto_rs::ZeroCopy;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -48,7 +50,7 @@ pub trait SigmaRpc {
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn rizz_ping_arced_resp(&self, request: Request<RizzPing>) -> Result<Response<Arc<GoonPong>>, Status>;
     async fn rizz_ping_boxed_resp(&self, request: Request<RizzPing>) -> Result<Response<Box<GoonPong>>, Status>;
-    fn sync_rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
+    fn sync_rizz_ping(&self, request: Request<RizzPing>) -> ZeroCopy<GoonPong>;
 }
 
 // A dummy server impl
@@ -125,8 +127,8 @@ impl SigmaRpc for S {
         Response::new(stream)
     }
 
-    fn sync_rizz_ping(&self, _request: tonic::Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
-        Ok(Response::new(GoonPong {}))
+    fn sync_rizz_ping(&self, _request: tonic::Request<RizzPing>) -> ZeroCopy<GoonPong> {
+        GoonPong {}.to_zero_copy()
     }
 }
 
@@ -149,7 +151,7 @@ mod tests {
     #[ignore = "requires running SigmaRpc server"]
     async fn test_proto_client_unary_impl() {
         let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
-        let res = client.rizz_ping(RizzPing {}).await.unwrap();
+        let res = client.rizz_ping(RizzPing {}.to_zero_copy()).await.unwrap();
         println!("{:?}", res)
     }
 
