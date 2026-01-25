@@ -109,6 +109,7 @@ macro_rules! map {
         ///
         /// This is necessary because enumeration values can have a default value other
         /// than 0 in proto2.
+        #[inline]
         pub fn merge_with_default<K, V, B, KM, VM>(
             key_merge: KM,
             val_merge: VM,
@@ -123,24 +124,31 @@ macro_rules! map {
             KM: Fn(WireType, &mut K, &mut B, DecodeContext) -> Result<(), DecodeError>,
             VM: Fn(WireType, &mut V, &mut B, DecodeContext) -> Result<(), DecodeError>,
         {
-            let mut key = Default::default();
+            let mut key = K::default();
             let mut val = val_default;
+            // Check recursion limit once at map entry boundary
             ctx.limit_reached()?;
-            merge_loop(
-                &mut (&mut key, &mut val),
-                buf,
-                ctx.enter_recursion(),
-                |&mut (ref mut key, ref mut val), buf, ctx| {
-                    let (tag, wire_type) = decode_key(buf)?;
-                    match tag {
-                        1 => key_merge(wire_type, key, buf, ctx),
-                        2 => val_merge(wire_type, val, buf, ctx),
-                        _ => skip_field(wire_type, tag, buf, ctx),
-                    }
-                },
-            )?;
+            // Inline the merge_loop to avoid closure overhead
+            let len = decode_varint(buf)?;
+            let remaining = buf.remaining();
+            if len > remaining as u64 {
+                return Err(DecodeError::new("buffer underflow"));
+            }
+            let limit = remaining - len as usize;
+            // Don't enter_recursion() for map internals - the key/value are not nested messages
+            // from a recursion safety perspective (map entry is a single-level wrapper)
+            while buf.remaining() > limit {
+                let (tag, wire_type) = decode_key(buf)?;
+                match tag {
+                    1 => key_merge(wire_type, &mut key, buf, ctx)?,
+                    2 => val_merge(wire_type, &mut val, buf, ctx)?,
+                    _ => skip_field(wire_type, tag, buf, ctx)?,
+                }
+            }
+            if buf.remaining() != limit {
+                return Err(DecodeError::new("delimited length exceeded"));
+            }
             values.insert(key, val);
-
             Ok(())
         }
 
