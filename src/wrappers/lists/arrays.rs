@@ -2,7 +2,6 @@ use core::array;
 use core::mem::MaybeUninit;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
@@ -10,6 +9,7 @@ use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
 use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
@@ -19,8 +19,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
-use crate::wrappers::lists::encode_repeated_value;
-use crate::wrappers::lists::repeated_payload_len;
+use crate::traits::buffer::RevWriter;
 
 #[cfg(feature = "stable")]
 #[inline]
@@ -35,12 +34,6 @@ unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; 
 #[allow(clippy::needless_pass_by_value)]
 unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
     unsafe { MaybeUninit::array_assume_init(arr) }
-}
-
-#[doc(hidden)]
-pub struct ArchivedArray<'a, T: ProtoArchive + ProtoExt, const N: usize> {
-    items: [T::Archived<'a>; N],
-    len: usize,
 }
 
 impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
@@ -159,55 +152,42 @@ impl<T, const N: usize> ProtoArchive for [T; N]
 where
     T: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = ArchivedArray<'x, T, N>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.iter().all(|item| <T as ProtoArchive>::is_default(item))
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        // For byte arrays [u8; N], the length is always N (raw bytes, not varints)
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
-            return N;
-        }
-        archived.len
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        // For byte arrays [u8; N], write raw bytes directly
-        if T::KIND.is_bytes_kind() {
-            // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
-            // The archived.items is [u8; N] and we write each byte directly
-            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N) };
-            buf.put_slice(bytes);
+            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(self.as_ptr().cast::<u8>(), N) };
+            w.put_slice(bytes);
+            if TAG != 0 {
+                w.put_varint(bytes.len() as u64);
+                ArchivedProtoField::<TAG, Self>::put_key(w);
+            }
             return;
         }
-        for item in archived.items {
-            encode_repeated_value::<T, TAG>(item, buf);
-        }
-    }
 
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        let mut items: [MaybeUninit<T::Archived<'_>>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut len = 0;
-        for (idx, item) in self.iter().enumerate() {
-            let archived = item.archive::<0>();
-            // For byte arrays, len will be N (not computed from varints)
-            if !T::KIND.is_bytes_kind() {
-                len += repeated_payload_len::<T, TAG>(&archived);
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                let mark = w.mark();
+                for item in self.iter().rev() {
+                    item.archive::<0>(w);
+                }
+                if TAG != 0 {
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
-            items[idx].write(archived);
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                for item in self.iter().rev() {
+                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                }
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
         }
-        // For byte arrays, set len to N
-        if T::KIND.is_bytes_kind() {
-            len = N;
-        }
-        let items = unsafe { assume_init_array(items) };
-        ArchivedArray { items, len }
     }
 }
 
@@ -225,8 +205,6 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T,
 }
 
 impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N> {
-    type Archived<'x> = ArchivedArray<'x, T, N>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         // Arrays are default when all elements are default (unlike slices which are default when empty)
@@ -234,47 +212,8 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        // For byte arrays [u8; N], the length is always N (raw bytes, not varints)
-        if T::KIND.is_bytes_kind() {
-            return N;
-        }
-        archived.len
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        // For byte arrays [u8; N], write raw bytes directly
-        if T::KIND.is_bytes_kind() {
-            // SAFETY: When T::KIND.is_bytes_kind(), T = u8 and T::Archived<'a> = u8
-            // The archived.items is [u8; N] and we write each byte directly
-            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(archived.items.as_ptr().cast::<u8>(), N) };
-            buf.put_slice(bytes);
-            return;
-        }
-        for item in archived.items {
-            encode_repeated_value::<T, TAG>(item, buf);
-        }
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        let mut items: [MaybeUninit<T::Archived<'_>>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut len = 0;
-        for (idx, item) in self.slice.iter().enumerate() {
-            let archived = item.archive::<0>();
-            // For byte arrays, len will be N (not computed from varints)
-            if !T::KIND.is_bytes_kind() {
-                len += repeated_payload_len::<T, TAG>(&archived);
-            }
-            items[idx].write(archived);
-        }
-        // For byte arrays, set len to N
-        if T::KIND.is_bytes_kind() {
-            len = N;
-        }
-        let items = unsafe { assume_init_array(items) };
-        ArchivedArray { items, len }
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        self.slice.archive::<TAG>(w);
     }
 }
 

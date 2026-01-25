@@ -137,8 +137,6 @@ pub(super) fn generate_complex_enum_impl(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    type Archived<'a> = <#name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'a>;
-
                     #[inline(always)]
                     fn is_default(&self) -> bool {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
@@ -146,19 +144,9 @@ pub(super) fn generate_complex_enum_impl(
                     }
 
                     #[inline(always)]
-                    fn len(archived: &Self::Archived<'_>) -> usize {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::len(archived)
-                    }
-
-                    #[inline(always)]
-                    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode::<TAG>(archived, buf);
-                    }
-
-                    #[inline(always)]
-                    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
+                    fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow)
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
                     }
                 }
             }
@@ -221,8 +209,6 @@ pub(super) fn generate_complex_enum_impl(
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoArchive for &'a #name #ty_generics #shadow_where_clause {
-            type Archived<'x> = Vec<u8>;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 match *self {
@@ -231,49 +217,28 @@ pub(super) fn generate_complex_enum_impl(
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                archived.len()
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                ::proto_rs::bytes::BufMut::put_slice(buf, archived.as_slice());
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                if <Self as ::proto_rs::ProtoArchive>::is_default(self) {
-                    return Vec::new();
-                }
-                let mut buf = Vec::new();
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                let mark = w.mark();
                 match *self {
                     #(#encode_arms,)*
                 }
-                buf
+                if TAG != 0 {
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ::proto_rs::ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
 
         impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            type Archived<'x> = Vec<u8>;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                archived.len()
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                ::proto_rs::bytes::BufMut::put_slice(buf, archived.as_slice());
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                <&Self as ::proto_rs::ProtoArchive>::archive::<TAG>(&self)
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                <&Self as ::proto_rs::ProtoArchive>::archive::<TAG>(&self, w)
             }
         }
 
@@ -472,12 +437,8 @@ fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u3
 // Helper: Generate encoding body for empty variants (Unit or empty Struct)
 fn build_empty_variant_encode_body(tag: u32) -> TokenStream2 {
     quote! {
-        ::proto_rs::encoding::encode_key(
-            #tag,
-            ::proto_rs::encoding::WireType::LengthDelimited,
-            &mut buf,
-        );
-        ::proto_rs::encoding::encode_varint(0, &mut buf);
+        w.put_varint(0);
+        ::proto_rs::ArchivedProtoField::<#tag, ()>::put_key(w);
     }
 }
 
@@ -628,14 +589,13 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>, enum_ident: &Ident) -> To
                 #enum_ident::#ident(#binding_ident) => {
                     let __proto_rs_shadow = #shadow_expr;
                     // Use new_always to preserve variant selection even when payload is default
-                    let archived = ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::new_always(&__proto_rs_shadow);
-                    archived.encode(&mut buf);
+                    ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::new_always(&__proto_rs_shadow, w);
                 }
             }
         }
         VariantKind::Struct { fields } => {
             let bindings = build_struct_field_bindings(fields);
-            let field_encodes = fields.iter().filter_map(|info| {
+            let field_encodes = fields.iter().rev().filter_map(|info| {
                 if info.config.skip {
                     return None;
                 }
@@ -658,23 +618,18 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>, enum_ident: &Ident) -> To
                     &format!("__proto_rs_variant_{}_shadow_{}", ident.to_string().to_lowercase(), info.index),
                     info.field.span(),
                 );
-                let archived_ident = syn::Ident::new(
-                    &format!("__proto_rs_variant_{}_archived_{}", ident.to_string().to_lowercase(), info.index),
-                    info.field.span(),
-                );
                 Some(quote! {
                     let #shadow_ident = #shadow_expr;
-                    let #archived_ident = ::proto_rs::ArchivedProtoField::<#field_tag, #shadow_ty>::new(&#shadow_ident);
-                    #archived_ident.encode(&mut inner_buf);
+                    ::proto_rs::ArchivedProtoField::<#field_tag, #shadow_ty>::archive(&#shadow_ident, w);
                 })
             });
             quote! {
                 #enum_ident::#ident { #(#bindings),* } => {
-                    let mut inner_buf = Vec::new();
+                    let mark = w.mark();
                     #(#field_encodes)*
-                    ::proto_rs::encoding::encode_key(#tag, ::proto_rs::encoding::WireType::LengthDelimited, &mut buf);
-                    ::proto_rs::encoding::encode_varint(inner_buf.len() as u64, &mut buf);
-                    ::proto_rs::bytes::BufMut::put_slice(&mut buf, inner_buf.as_slice());
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ::proto_rs::ArchivedProtoField::<#tag, Self>::put_key(w);
                 }
             }
         }

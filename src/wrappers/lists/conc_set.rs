@@ -3,11 +3,15 @@ use core::hash::BuildHasher;
 use core::hash::Hash;
 
 use bytes::Buf;
-use bytes::BufMut;
 use papaya::HashSet;
 
 use crate::DecodeError;
 use crate::ProtoArchive;
+use crate::encoding::DecodeContext;
+use crate::encoding::WireType;
+use crate::encoding::decode_varint;
+use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -16,12 +20,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
-use crate::encoding::DecodeContext;
-use crate::encoding::WireType;
-use crate::encoding::decode_varint;
-use crate::encoding::skip_field;
-use crate::wrappers::lists::encode_repeated_value;
-use crate::wrappers::lists::repeated_payload_len;
+use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt + Eq + Hash, S> ProtoExt for HashSet<T, S> {
     const KIND: ProtoKind = match T::KIND {
@@ -143,33 +142,34 @@ where
     T: ProtoArchive + ProtoExt + Eq + Hash,
     S: BuildHasher,
 {
-    type Archived<'x> = Vec<u8>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len()
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        buf.put_slice(archived.as_slice());
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        let mut bytes = Vec::new();
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         let guard = self.pin();
-        for item in &guard {
-            let archived = item.archive::<0>();
-            let len = repeated_payload_len::<T, TAG>(&archived);
-            bytes.reserve(len);
-            encode_repeated_value::<T, TAG>(archived, &mut bytes);
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                let items: Vec<&T> = guard.iter().collect();
+                let mark = w.mark();
+                for item in items.into_iter().rev() {
+                    item.archive::<0>(w);
+                }
+                if TAG != 0 {
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                let items: Vec<&T> = guard.iter().collect();
+                for item in items.into_iter().rev() {
+                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                }
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
         }
-        bytes
     }
 }

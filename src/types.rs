@@ -19,7 +19,6 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use ::bytes::Buf;
-use ::bytes::BufMut;
 use ::bytes::Bytes;
 
 use crate::DecodeError;
@@ -29,9 +28,8 @@ use crate::ProtoEncode;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
-use crate::encoding::encode_varint;
-use crate::encoding::encoded_len_varint;
 use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
@@ -39,12 +37,13 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 // ============================================================================
 // Macro for by-value primitives (bool, i32, i64, u32, u64, f32, f64)
 // ============================================================================
 
-macro_rules! impl_proto_primitive_by_value {
-    ($ty:ty, $module:ident, $name:literal, $kind:expr, $default:expr) => {
+macro_rules! impl_proto_primitive_varint_by_value {
+    ($ty:ty, $module:ident, $name:literal, $kind:expr, $default:expr, to_u64($v:ident) $to_u64:expr) => {
         impl ProtoExt for $ty {
             const KIND: ProtoKind = $kind;
         }
@@ -100,26 +99,106 @@ macro_rules! impl_proto_primitive_by_value {
         }
 
         impl ProtoArchive for $ty {
-            type Archived<'a> = $ty;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 *self == $default
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                crate::encoding::$module::encoded_len(*archived)
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let $v: $ty = *self;
+                let value = $to_u64;
+                w.put_varint(value);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
+            }
+        }
+
+        impl ProtoEncode for $ty {
+            type Shadow<'a> = $ty;
+        }
+
+        impl Name for $ty {
+            const NAME: &'static str = $name;
+            const PACKAGE: &'static str = "google.protobuf";
+            fn type_url() -> String {
+                format!("type.googleapis.com/{}.{}", Self::PACKAGE, Self::NAME)
+            }
+        }
+    };
+}
+
+macro_rules! impl_proto_primitive_fixed_by_value {
+    ($ty:ty, $module:ident, $name:literal, $kind:expr, $default:expr, to_bits($v:ident) $to_bits:expr, $put:ident) => {
+        impl ProtoExt for $ty {
+            const KIND: ProtoKind = $kind;
+        }
+
+        impl ProtoShadowDecode<$ty> for $ty {
+            #[inline(always)]
+            fn to_sun(self) -> Result<$ty, DecodeError> {
+                Ok(self)
+            }
+        }
+
+        impl<'a> ProtoShadowEncode<'a, $ty> for $ty {
+            #[inline(always)]
+            fn from_sun(value: &'a $ty) -> Self {
+                *value
+            }
+        }
+
+        impl ProtoDecoder for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                $default
             }
 
             #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                crate::encoding::$module::encode(archived, buf);
+            fn clear(&mut self) {
+                *self = $default;
             }
 
             #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                *self
+            fn merge_field(
+                value: &mut Self,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    crate::encoding::$module::merge(wire_type, value, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            #[inline(always)]
+            fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                crate::encoding::$module::merge(wire_type, self, buf, ctx)
+            }
+        }
+
+        impl ProtoDecode for $ty {
+            type ShadowDecoded = Self;
+        }
+
+        impl ProtoArchive for $ty {
+            #[inline(always)]
+            fn is_default(&self) -> bool {
+                *self == $default
+            }
+
+            #[inline(always)]
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let $v: $ty = *self;
+                let bits = $to_bits;
+                w.$put(bits);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
 
@@ -198,28 +277,19 @@ macro_rules! impl_proto_primitive_by_ref {
         }
 
         impl<'a> ProtoArchive for &'a $ty {
-            type Archived<'x> = &'x $ty;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 (*self).is_empty()
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                // Return just the raw byte length, not including the varint length prefix.
-                // ArchivedProtoField::encode adds the length prefix separately.
-                (*archived).len()
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                crate::encoding::$module::encode(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                self
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let bytes = self.as_ref();
+                w.put_slice(bytes);
+                if TAG != 0 {
+                    w.put_varint(bytes.len() as u64);
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
 
@@ -241,19 +311,70 @@ macro_rules! impl_proto_primitive_by_ref {
 // Implement by-value primitives
 // ============================================================================
 
-impl_proto_primitive_by_value!(bool, bool, "BoolValue", ProtoKind::Primitive(PrimitiveKind::Bool), false);
+impl_proto_primitive_varint_by_value!(
+    bool,
+    bool,
+    "BoolValue",
+    ProtoKind::Primitive(PrimitiveKind::Bool),
+    false,
+    to_u64(value) { value as u64 }
+);
 
-impl_proto_primitive_by_value!(u32, uint32, "UInt32Value", ProtoKind::Primitive(PrimitiveKind::U32), 0);
+impl_proto_primitive_varint_by_value!(
+    u32,
+    uint32,
+    "UInt32Value",
+    ProtoKind::Primitive(PrimitiveKind::U32),
+    0,
+    to_u64(value) { value as u64 }
+);
 
-impl_proto_primitive_by_value!(u64, uint64, "UInt64Value", ProtoKind::Primitive(PrimitiveKind::U64), 0);
+impl_proto_primitive_varint_by_value!(
+    u64,
+    uint64,
+    "UInt64Value",
+    ProtoKind::Primitive(PrimitiveKind::U64),
+    0,
+    to_u64(value) { value as u64 }
+);
 
-impl_proto_primitive_by_value!(i32, int32, "Int32Value", ProtoKind::Primitive(PrimitiveKind::I32), 0);
+impl_proto_primitive_varint_by_value!(
+    i32,
+    int32,
+    "Int32Value",
+    ProtoKind::Primitive(PrimitiveKind::I32),
+    0,
+    to_u64(value) { value as u64 }
+);
 
-impl_proto_primitive_by_value!(i64, int64, "Int64Value", ProtoKind::Primitive(PrimitiveKind::I64), 0);
+impl_proto_primitive_varint_by_value!(
+    i64,
+    int64,
+    "Int64Value",
+    ProtoKind::Primitive(PrimitiveKind::I64),
+    0,
+    to_u64(value) { value as u64 }
+);
 
-impl_proto_primitive_by_value!(f32, float, "FloatValue", ProtoKind::Primitive(PrimitiveKind::F32), 0.0);
+impl_proto_primitive_fixed_by_value!(
+    f32,
+    float,
+    "FloatValue",
+    ProtoKind::Primitive(PrimitiveKind::F32),
+    0.0,
+    to_bits(value) { value.to_bits() },
+    put_fixed32
+);
 
-impl_proto_primitive_by_value!(f64, double, "DoubleValue", ProtoKind::Primitive(PrimitiveKind::F64), 0.0);
+impl_proto_primitive_fixed_by_value!(
+    f64,
+    double,
+    "DoubleValue",
+    ProtoKind::Primitive(PrimitiveKind::F64),
+    0.0,
+    to_bits(value) { value.to_bits() },
+    put_fixed64
+);
 
 // ============================================================================
 // Implement by-ref primitives
@@ -264,50 +385,26 @@ impl_proto_primitive_by_ref!(String, string, "StringValue", ProtoKind::String);
 impl_proto_primitive_by_ref!(Bytes, bytes, "BytesValue", ProtoKind::Bytes);
 
 impl ProtoArchive for String {
-    type Archived<'a> = <&'a String as ProtoArchive>::Archived<'a>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         <&String as ProtoArchive>::is_default(&self)
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        <&String as ProtoArchive>::len(archived)
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { <&String as ProtoArchive>::encode::<TAG>(archived, buf) };
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        self
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        (&self).archive::<TAG>(w);
     }
 }
 
 impl ProtoArchive for Bytes {
-    type Archived<'a> = <&'a Bytes as ProtoArchive>::Archived<'a>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         <&Bytes as ProtoArchive>::is_default(&self)
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        <&Bytes as ProtoArchive>::len(archived)
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { <&Bytes as ProtoArchive>::encode::<TAG>(archived, buf) };
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        self
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        (&self).archive::<TAG>(w);
     }
 }
 
@@ -375,28 +472,18 @@ macro_rules! impl_narrow_varint {
         }
 
         impl ProtoArchive for $ty {
-            type Archived<'a> = $ty;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 *self == 0
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                let widened: $wide_ty = *archived as $wide_ty;
-                encoded_len_varint(widened as u64)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                let widened: $wide_ty = archived as $wide_ty;
-                encode_varint(widened as u64, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                *self
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let widened: $wide_ty = *self as $wide_ty;
+                w.put_varint(widened as u64);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
 
@@ -478,26 +565,15 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl ProtoArchive for $ty {
-            type Archived<'a> = $base;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 ($load)(self) == $default
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                crate::encoding::$module::encoded_len(*archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                crate::encoding::$module::encode(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                ($load)(self)
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let value: $base = ($load)(self);
+                value.archive::<TAG>(w);
             }
         }
 
@@ -506,26 +582,15 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl<'a> ProtoArchive for &'a $ty {
-            type Archived<'x> = $base;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 ($load)(*self) == $default
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                crate::encoding::$module::encoded_len(*archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                crate::encoding::$module::encode(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                ($load)(*self)
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let value: $base = ($load)(*self);
+                value.archive::<TAG>(w);
             }
         }
     };
@@ -602,26 +667,18 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl ProtoArchive for $ty {
-            type Archived<'a> = $wide;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 ($load)(self) == $default
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                crate::encoding::$module::encoded_len(*archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                crate::encoding::$module::encode(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                ($load)(self) as $wide
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let value: $wide = ($load)(self) as $wide;
+                w.put_varint(value as u64);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
 
@@ -630,26 +687,18 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl<'a> ProtoArchive for &'a $ty {
-            type Archived<'x> = $wide;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 ($load)(*self) == $default
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                crate::encoding::$module::encoded_len(*archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-                crate::encoding::$module::encode(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-                ($load)(*self) as $wide
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let value: $wide = ($load)(*self) as $wide;
+                w.put_varint(value as u64);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
             }
         }
     };
@@ -809,23 +858,13 @@ impl ProtoDecode for () {
 }
 
 impl ProtoArchive for () {
-    type Archived<'a> = ();
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         true
     }
 
     #[inline(always)]
-    fn len(_archived: &Self::Archived<'_>) -> usize {
-        0
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(_archived: Self::Archived<'_>, _buf: &mut impl BufMut) {}
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {}
+    fn archive<const TAG: u32>(&self, _w: &mut impl RevWriter) {}
 }
 
 impl ProtoEncode for () {

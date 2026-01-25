@@ -5,7 +5,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use encoding_messages::ZeroCopyContainer;
-use proto_rs::ToZeroCopyRequest;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
@@ -448,18 +447,7 @@ async fn proto_client_accepts_borrowed_requests() {
     let response = client.echo_sample(request_message()).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
-    let zero_copy: proto_rs::ZeroCopyRequest<_> = tonic::Request::new(&request).into();
-    let response = client.echo_sample(zero_copy).await.unwrap().into_inner();
-    assert_eq!(response, response_message());
-
-    let owned_request = tonic::Request::new(request_message());
-    let zero_copy_owned = tonic::Request::from_parts(
-        owned_request.metadata().clone(),
-        owned_request.extensions().clone(),
-        owned_request.get_ref(),
-    )
-    .to_zero_copy();
-    let response = client.echo_sample(zero_copy_owned).await.unwrap().into_inner();
+    let response = client.echo_sample(tonic::Request::new(request.clone())).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
     shutdown.send(()).unwrap();

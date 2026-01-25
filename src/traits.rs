@@ -5,6 +5,8 @@ pub use decode::ProtoDecode;
 pub use decode::ProtoDecoder;
 pub use decode::ProtoShadowDecode;
 pub use encode::ArchivedProtoField;
+pub use encode::ArchivedProtoMessage;
+pub use encode::ArchivedProtoMessageWriter;
 pub use encode::ProtoArchive;
 pub use encode::ProtoEncode;
 pub use encode::ProtoShadowEncode;
@@ -15,7 +17,7 @@ pub use utils::const_unreachable;
 
 use crate::encoding::WireType;
 
-mod buffer;
+pub mod buffer;
 mod decode;
 mod encode;
 mod example_impl;

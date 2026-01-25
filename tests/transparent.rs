@@ -1,7 +1,9 @@
 use bytes::Buf;
+use proto_rs::ProtoAsSlice;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoDecoder;
 use proto_rs::ProtoEncode;
+use proto_rs::RevWriter;
 use proto_rs::encoding::DecodeContext;
 use proto_rs::encoding::WireType;
 use proto_rs::proto_message;
@@ -64,28 +66,28 @@ pub struct MessageWrapper(InnerMessage);
 #[test]
 fn transparent_tuple_roundtrip() {
     let original = UserIdTuple(123);
-    let mut buf = Vec::new();
     let shadow = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdTuple>>::from_sun(&original);
-    let archived = <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
-    unsafe { <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
-    assert_eq!(buf, vec![123]);
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(8);
+    <<UserIdTuple as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow, &mut writer);
+    let buf = writer.finish();
+    assert_eq!(buf.as_slice(), vec![123]);
 
     let mut decoded = <UserIdTuple as ProtoDecoder>::proto_default();
-    <UserIdTuple as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
+    <UserIdTuple as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut buf.as_slice(), DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 
 #[test]
 fn transparent_named_roundtrip() {
     let original = UserIdNamed { id: 77 };
-    let mut buf = Vec::new();
     let shadow = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, UserIdNamed>>::from_sun(&original);
-    let archived = <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
-    unsafe { <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
-    assert_eq!(buf, vec![77]);
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(8);
+    <<UserIdNamed as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow, &mut writer);
+    let buf = writer.finish();
+    assert_eq!(buf.as_slice(), vec![77]);
 
     let mut decoded = <UserIdNamed as ProtoDecoder>::proto_default();
-    <UserIdNamed as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
+    <UserIdNamed as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut buf.as_slice(), DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 
@@ -96,15 +98,15 @@ fn transparent_in_holder_encodes_inner_once() {
         named: UserIdNamed { id: 9 },
     };
 
-    let mut buf = Vec::new();
     let shadow = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoShadowEncode<'_, Holder>>::from_sun(&holder);
-    let archived = <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow);
-    unsafe { <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::encode::<0>(archived, &mut buf) };
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(16);
+    <<Holder as ProtoEncode>::Shadow<'_> as proto_rs::ProtoArchive>::archive::<0>(&shadow, &mut writer);
+    let buf = writer.finish();
 
     // Expected encoding:
     // field 1 (tuple): key 0x08 followed by value 0x05
     // field 2 (named): key 0x10 followed by value 0x09
-    assert_eq!(buf, vec![0x08, 0x05, 0x10, 0x09]);
+    assert_eq!(buf.as_slice(), vec![0x08, 0x05, 0x10, 0x09]);
 }
 
 #[test]
@@ -146,19 +148,14 @@ fn transparent_generic_roundtrip() {
     // just the raw varint. Let's decode using the merge method which handles
     // primitives directly
     let mut decoded = <IdGenericTransparent<u64> as ProtoDecoder>::proto_default();
-    <IdGenericTransparent<u64> as ProtoDecoder>::merge(
-        &mut decoded,
-        WireType::Varint,
-        &mut &buf[..],
-        DecodeContext::default()
-    ).unwrap();
+    <IdGenericTransparent<u64> as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 
 #[test]
 fn transparent_generic_with_message_roundtrip() {
     let original: IdGenericTransparent<InnerMessage> = IdGenericTransparent {
-        id: InnerMessage { value: 999 }
+        id: InnerMessage { value: 999 },
     };
     let buf = <IdGenericTransparent<InnerMessage> as ProtoEncode>::encode_to_vec(&original);
 
@@ -171,7 +168,7 @@ fn transparent_generic_merge_field_forwards_correctly() {
     // This test verifies that merge_field correctly forwards to the inner type
     // Previously, the code was checking tag == 1 which was wrong
     let original: IdGenericTransparent<InnerMessage> = IdGenericTransparent {
-        id: InnerMessage { value: 42 }
+        id: InnerMessage { value: 42 },
     };
     let buf = <IdGenericTransparent<InnerMessage> as ProtoEncode>::encode_to_vec(&original);
 
@@ -181,8 +178,13 @@ fn transparent_generic_merge_field_forwards_correctly() {
     while buf_slice.has_remaining() {
         let (tag, wire_type) = proto_rs::encoding::decode_key(&mut buf_slice).unwrap();
         <IdGenericTransparent<InnerMessage> as ProtoDecoder>::merge_field(
-            &mut decoded, tag, wire_type, &mut buf_slice, DecodeContext::default()
-        ).unwrap();
+            &mut decoded,
+            tag,
+            wire_type,
+            &mut buf_slice,
+            DecodeContext::default(),
+        )
+        .unwrap();
     }
     assert_eq!(decoded, original);
 }

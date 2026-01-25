@@ -1,8 +1,6 @@
 use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 
-use bytes::BufMut;
-
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
@@ -15,6 +13,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Arc<T> {
     const KIND: ProtoKind = T::KIND;
@@ -43,7 +42,13 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Arc<T> {
     }
 
     #[inline(always)]
-    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+    fn merge_field(
+        value: &mut Self,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl bytes::Buf,
+        ctx: DecodeContext,
+    ) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
         } else {
@@ -87,26 +92,14 @@ impl<T> ProtoArchive for Arc<T>
 where
     T: ProtoArchive,
 {
-    type Archived<'a> = T::Archived<'a>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        T::len(archived)
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode::<TAG>(archived, buf) };
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        T::archive::<TAG>(self.as_ref())
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }
 }
 
@@ -131,25 +124,13 @@ impl<T> ProtoArchive for &Arc<T>
 where
     T: ProtoArchive,
 {
-    type Archived<'x> = T::Archived<'x>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        T::len(archived)
-    }
-
-    #[inline(always)]
-    unsafe fn encode<const TAG: u32>(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode::<TAG>(archived, buf) };
-    }
-
-    #[inline(always)]
-    fn archive<const TAG: u32>(&self) -> Self::Archived<'_> {
-        T::archive::<TAG>(self.as_ref())
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }
 }

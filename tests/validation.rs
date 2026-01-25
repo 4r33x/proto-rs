@@ -93,8 +93,7 @@ mod tests {
         };
 
         let encoded = MessageWithFieldValidator::encode_to_vec(&msg);
-        let decoded =
-            <MessageWithFieldValidator as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
+        let decoded = <MessageWithFieldValidator as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
         assert_eq!(decoded, msg);
     }
 
@@ -163,8 +162,7 @@ mod tests {
         };
 
         let encoded = MessageWithBothValidators::encode_to_vec(&msg);
-        let decoded =
-            <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
+        let decoded = <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
         assert_eq!(decoded, msg);
     }
 

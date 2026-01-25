@@ -5,8 +5,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use proto_rs::ToZeroCopyResponse;
-use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -40,12 +38,12 @@ pub struct BarSub;
 )]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
 pub trait SigmaRpc {
-    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Response<Self::RizzUniStream>;
-    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status>;
+    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong, Status>;
     async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
-    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong>;
+    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
     async fn rizz_ping_arced_resp(&self, request: Request<RizzPing>) -> Result<Response<Arc<GoonPong>>, Status>;
@@ -73,12 +71,12 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
 impl SigmaRpc for S {
     #[cfg(feature = "stable")]
-    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send>>;
+    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
     #[cfg(not(feature = "stable"))]
-    type RizzUniStream = impl Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    type RizzUniStream = impl Stream<Item = Result<FooResponse, Status>> + Send;
 
-    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<ZeroCopyResponse<GoonPong>, Status> {
-        Ok(GoonPong {}.to_zero_copy())
+    async fn zero_copy_ping(&self, _request: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
+        Ok(Response::new(GoonPong {}))
     }
 
     async fn just_ping(&self, _request: Request<RizzPing>) -> Result<GoonPong, Status> {
@@ -89,8 +87,8 @@ impl SigmaRpc for S {
         GoonPong {}
     }
 
-    async fn infallible_zero_copy_ping(&self, _request: Request<RizzPing>) -> ZeroCopyResponse<GoonPong> {
-        GoonPong {}.to_zero_copy()
+    async fn infallible_zero_copy_ping(&self, _request: Request<RizzPing>) -> Response<GoonPong> {
+        Response::new(GoonPong {})
     }
 
     async fn infallible_ping(&self, _request: Request<RizzPing>) -> Response<GoonPong> {
@@ -111,7 +109,7 @@ impl SigmaRpc for S {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
-                let response = ZeroCopyResponse::from_message(FooResponse {});
+                let response = FooResponse {};
                 if tx.send(Ok(response)).await.is_err() {
                     break;
                 }
@@ -162,18 +160,6 @@ mod tests {
         while let Some(v) = res.next().await {
             println!("{:?}", v.unwrap())
         }
-    }
-
-    #[tokio::test]
-    async fn test_zero_copy_client_requests() {
-        use proto_rs::ZeroCopyRequest;
-        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
-
-        let borrowed = RizzPing {};
-        let zero_copy_1: ZeroCopyRequest<RizzPing> = proto_rs::ToZeroCopyRequest::to_zero_copy(&borrowed);
-        let zero_copy_2: ZeroCopyRequest<RizzPing> = proto_rs::ToZeroCopyRequest::to_zero_copy(&borrowed);
-        client.rizz_ping(zero_copy_1).await.unwrap();
-        client.sync_rizz_ping(zero_copy_2).await.unwrap();
     }
 
     #[test]

@@ -53,8 +53,7 @@ fn std_mutex_roundtrip_handles_default_values() {
     let holder = StdMutexHolder::default();
 
     let encoded = <StdMutexHolder as ProtoEncode>::encode_to_vec(&holder);
-    let decoded =
-        <StdMutexHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode default std mutex holder");
+    let decoded = <StdMutexHolder as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode default std mutex holder");
 
     assert_eq!(decoded.inner.into_inner().expect("mutex poisoned"), MutexInner::default());
 }

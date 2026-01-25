@@ -9,13 +9,13 @@ use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::DecodeError;
 use proto_rs::ProtoArchive;
+use proto_rs::ProtoAsSlice;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoDecoder;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadowEncode;
-use proto_rs::ToZeroCopy;
-use proto_rs::ZeroCopy;
+use proto_rs::RevWriter;
 use proto_rs::encoding::DecodeContext;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
@@ -394,8 +394,9 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoShadowEncode<'a, T>,
 {
     let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
-    let archived = <T::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow);
-    <T::Shadow<'_> as ProtoArchive>::len(&archived)
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    <T::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow, &mut writer);
+    writer.len()
 }
 //this functionality should be handled in traits
 fn decode_length_delimited<T: ProtoDecode>(bytes: Bytes) -> Result<T, DecodeError> {
@@ -410,8 +411,10 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
     let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
-    let archived = proto_rs::ArchivedProtoField::<TAG, T::Shadow<'_>>::new(&shadow);
-    archived.encode(buf);
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    proto_rs::ArchivedProtoField::<TAG, T::Shadow<'_>>::archive(&shadow, &mut writer);
+    let bytes = writer.finish();
+    buf.extend_from_slice(bytes.as_slice());
 }
 
 fn encode_proto_length_delimited<M>(value: &M) -> Bytes
@@ -685,18 +688,12 @@ fn zero_copy_container_roundtrip() {
 #[test]
 fn zero_copy_field_roundtrip() {
     let nested = NestedMessage { value: 42 };
-    let from_ref = (&nested).to_zero_copy();
-    let from_owned = nested.clone().to_zero_copy();
-    assert_eq!(from_ref.as_bytes(), from_owned.as_bytes());
-
-    let message = ZeroCopyMessage { payload: from_ref.clone() };
+    let message = ZeroCopyMessage { payload: nested.clone() };
     let encoded = ZeroCopyMessage::encode_to_vec(&message);
     let decoded =
         <ZeroCopyMessage as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default()).expect("decode zero copy message");
 
-    assert_eq!(decoded.payload.as_bytes(), from_ref.as_bytes());
-    let decoded_nested = decoded.payload.decode().expect("decode nested message");
-    assert_eq!(decoded_nested, nested);
+    assert_eq!(decoded.payload, nested);
 }
 
 #[test]
@@ -706,22 +703,6 @@ fn zero_copy_enum_variants_roundtrip() {
     let decoded = <ZeroCopyEnumContainer as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default())
         .expect("decode zero copy enum container");
     assert_eq!(decoded, container);
-
-    let simple_enum = container.raw_direct.clone().decode().expect("decode simple enum");
-    assert_eq!(simple_enum, SampleEnum::Two);
-
-    let roundtrip_simple = ZeroCopy::from(&SampleEnum::Two);
-    assert_eq!(roundtrip_simple.decode().expect("decode roundtrip enum"), SampleEnum::Two);
-
-    let list = container.raw_list.clone().decode().expect("decode enum list");
-    assert_eq!(list, complex_enum_list_fixture());
-
-    let nested = container.nested.clone().decode().expect("decode nested enum message");
-    assert_eq!(nested.status, SampleEnum::Two);
-    assert_eq!(nested.timeline, nested_complex_enum_list_fixture().values);
-
-    let nested_list = nested.bag.decode().expect("decode nested bag");
-    assert_eq!(nested_list, nested_complex_enum_list_fixture());
 }
 
 #[test]

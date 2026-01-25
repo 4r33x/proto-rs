@@ -391,7 +391,6 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
         .collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

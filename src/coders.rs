@@ -3,7 +3,6 @@
 use core::marker::PhantomData;
 
 use crate::alloc::vec::Vec;
-use crate::zero_copy::ZeroCopyBuffer;
 
 pub trait AsBytes {
     fn as_bytes(&self) -> &[u8];
@@ -13,12 +12,6 @@ impl AsBytes for Vec<u8> {
     #[inline(always)]
     fn as_bytes(&self) -> &[u8] {
         self
-    }
-}
-impl AsBytes for ZeroCopyBuffer {
-    #[inline(always)]
-    fn as_bytes(&self) -> &[u8] {
-        self.as_slice()
     }
 }
 impl<const N: usize> AsBytes for [u8; N] {

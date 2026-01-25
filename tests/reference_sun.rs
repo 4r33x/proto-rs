@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+
 use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoEncode;

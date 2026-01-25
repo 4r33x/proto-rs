@@ -57,7 +57,39 @@ pub trait ProtoAsSlice {
 impl ProtoAsSlice for Vec<u8> {
     #[inline(always)]
     fn as_slice(&self) -> &[u8] {
-        Vec::as_slice(&self)
+        Vec::as_slice(self)
+    }
+}
+
+/// Reverse buffer view that can expose only the written slice without copying.
+pub struct RevBuffer<B: ProtoBufferMut + ProtoAsSlice> {
+    buf: B,
+    start: usize,
+    len: usize,
+}
+
+#[allow(clippy::len_without_is_empty)]
+impl<B: ProtoBufferMut + ProtoAsSlice> RevBuffer<B> {
+    #[inline(always)]
+    pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    #[inline(always)]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline(always)]
+    pub fn into_inner(self) -> B {
+        self.buf
+    }
+}
+
+impl<B: ProtoBufferMut + ProtoAsSlice> ProtoAsSlice for RevBuffer<B> {
+    #[inline(always)]
+    fn as_slice(&self) -> &[u8] {
+        &self.buf.as_slice()[self.start..self.start + self.len]
     }
 }
 
@@ -116,6 +148,7 @@ pub struct RevVec<B: ProtoBufferMut = Vec<u8>> {
     pos: usize,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl<B: ProtoBufferMut> RevVec<B> {
     const MIN_GROW: usize = 64;
 
@@ -153,7 +186,7 @@ impl<B: ProtoBufferMut> RevVec<B> {
 
     /// (Optional helper) Return where the valid bytes start (no copy).
     #[inline(always)]
-    pub fn start(&self) -> usize {
+    pub const fn start(&self) -> usize {
         self.pos
     }
 
@@ -175,7 +208,7 @@ impl<B: ProtoBufferMut> RevVec<B> {
 }
 
 impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
-    type Buf = B;
+    type Buf = RevBuffer<B>;
     type Mark = usize;
 
     #[inline(always)]
@@ -226,7 +259,13 @@ impl<B: ProtoBufferMut + ProtoAsSlice> RevWriter for RevVec<B> {
 
     #[inline(always)]
     fn finish(self) -> Self::Buf {
-        self.buf
+        let cap = self.cap();
+        let pos = self.pos;
+        RevBuffer {
+            buf: self.buf,
+            start: pos,
+            len: cap - pos,
+        }
     }
     #[inline(always)]
     fn with_capacity(cap: usize) -> Self {

@@ -105,11 +105,6 @@ where
     /// - TAG != 0 => field encoding: payload + (len if length-delimited) + key
     #[inline(always)]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        // Field-level default elision: root TAG==0 is handled by ArchivedProtoMessage::new()
-        if self.is_default() {
-            return;
-        }
-
         // Mark start of *this message payload* to compute length if we need to wrap (TAG != 0).
         let mark = w.mark();
 
