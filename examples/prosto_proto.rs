@@ -7,6 +7,8 @@ use chrono::DateTime;
 use chrono::Utc;
 use prosto_derive::proto_dump;
 use proto_rs::DecodeError;
+use proto_rs::ProtoShadowDecode;
+use proto_rs::ProtoShadowEncode;
 use proto_rs::inject_proto_import;
 use proto_rs::proto_message;
 use serde::Deserialize;
@@ -27,16 +29,14 @@ pub struct FoldedValue {
     pub b: u64,
 }
 
-impl proto_rs::ProtoShadow<ValueCanBeFolded> for FoldedValue {
-    type Sun<'a> = &'a ValueCanBeFolded;
-    type OwnedSun = ValueCanBeFolded;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, proto_rs::DecodeError> {
+impl ProtoShadowDecode<ValueCanBeFolded> for FoldedValue {
+    fn to_sun(self) -> Result<ValueCanBeFolded, proto_rs::DecodeError> {
         Err(DecodeError::new("TokenBalanceSealed can't be accepted by server"))
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, ValueCanBeFolded> for FoldedValue {
+    fn from_sun(value: &'a ValueCanBeFolded) -> Self {
         Self { a: value.a, b: value.b }
     }
 }
@@ -704,11 +704,11 @@ pub struct Person {
     pub address: Address, // Complex type - needs shadow
 }
 
-fn datetime_to_i64(dt: &DateTime<Utc>) -> i64 {
+const fn datetime_to_i64(dt: &DateTime<Utc>) -> i64 {
     dt.timestamp()
 }
 
-fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
+const fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(ts, 0).unwrap()
 }
 fn try_i64_to_datetime(ts: i64) -> Result<DateTime<Utc>, DecodeError> {

@@ -5,9 +5,6 @@
 use std::pin::Pin;
 
 use proto_rs::DecodeError;
-use proto_rs::ToZeroCopyResponse;
-use proto_rs::ZeroCopy;
-use proto_rs::ZeroCopyResponse;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
@@ -80,11 +77,11 @@ fn validate_pong_with_ext(id: &mut GoonPong, _ext: &Extensions) -> Result<(), De
 pub struct GoonPong {
     #[proto(validator = validate_id)]
     id: Id,
-    status: ZeroCopy<ServiceStatus>,
+    status: ServiceStatus,
 }
 
 const _: () = {
-    assert!(<GoonPong as proto_rs::ProtoExt>::VALIDATE_WITH_EXT);
+    assert!(<GoonPong as proto_rs::ProtoDecode>::VALIDATE_WITH_EXT);
 };
 
 #[proto_message(proto_path = "protos/gen_complex_proto/rizz_types.proto")]
@@ -104,7 +101,7 @@ pub struct BarSub;
 )]
 #[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong", "ServiceStatus", "Id"] )]
 pub trait SigmaRpc {
-    type RizzUniStream: Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
     type RizzUniStream2: Stream<Item = Result<FooResponse, Status>> + Send;
     type GenericUniStream: Stream<Item = Result<IdGeneric<u64>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
@@ -140,9 +137,9 @@ pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
 
 impl SigmaRpc for S {
     #[cfg(feature = "stable")]
-    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send>>;
+    type RizzUniStream = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
     #[cfg(not(feature = "stable"))]
-    type RizzUniStream = impl Stream<Item = Result<ZeroCopyResponse<FooResponse>, Status>> + Send;
+    type RizzUniStream = impl Stream<Item = Result<FooResponse, Status>> + Send;
 
     #[cfg(feature = "stable")]
     type RizzUniStream2 = Pin<Box<dyn Stream<Item = Result<FooResponse, Status>> + Send>>;
@@ -157,7 +154,7 @@ impl SigmaRpc for S {
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
             id: Id { id: 10 },
-            status: ZeroCopy::from(&ServiceStatus::Completed),
+            status: ServiceStatus::Completed,
         }))
     }
 
@@ -165,7 +162,7 @@ impl SigmaRpc for S {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
-                if tx.send(Ok(FooResponse {}.to_zero_copy())).await.is_err() {
+                if tx.send(Ok(FooResponse {})).await.is_err() {
                     break;
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -217,7 +214,7 @@ impl SigmaRpc for S {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
-                if tx.send(Ok(FooResponse {}.to_zero_copy())).await.is_err() {
+                if tx.send(Ok(FooResponse {})).await.is_err() {
                     break;
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -259,7 +256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
 
-    use proto_rs::ProtoExt;
+    use proto_rs::ProtoDecode;
     use tokio_stream::StreamExt;
     use tonic::IntoRequest;
 
@@ -298,7 +295,7 @@ mod tests {
         let res = client
             .goon_pong(GoonPong {
                 id: Id { id: 1 },
-                status: ZeroCopy::from(&ServiceStatus::Pending),
+                status: ServiceStatus::Pending,
             })
             .await
             .unwrap();

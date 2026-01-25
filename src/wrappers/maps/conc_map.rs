@@ -3,17 +3,14 @@ use core::hash::BuildHasher;
 use core::hash::Hash;
 
 use bytes::Buf;
-use bytes::BufMut;
 use papaya::HashMap;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
-use crate::encoding::encode_varint;
-use crate::encoding::encoded_len_varint;
 use crate::encoding::skip_field;
-use crate::traits::ArchivedProtoInner;
+use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -22,6 +19,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 use crate::wrappers::maps::MapEntryDecoded;
 
 impl<'a, K, V, S> ProtoShadowEncode<'a, HashMap<K, V, S>> for &'a HashMap<K, V, S>
@@ -43,47 +41,32 @@ where
     for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
     for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = Vec<u8>;
-
     #[inline]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
     #[inline]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len()
-    }
-
-    #[inline]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        buf.put_slice(archived.as_slice());
-    }
-
-    #[inline]
-    fn archive(&self) -> Self::Archived<'_> {
-        let mut bytes = Vec::new();
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         let guard = self.pin();
-        for entry in &guard {
-            let key = <K as ProtoEncode>::Shadow::from_sun(entry.0);
-            let key_archived = ArchivedProtoInner::<1, <K as ProtoEncode>::Shadow<'_>>::new(&key);
-            let value = <V as ProtoEncode>::Shadow::from_sun(entry.1);
-            let value_archived = ArchivedProtoInner::<2, <V as ProtoEncode>::Shadow<'_>>::new(&value);
-            let entry_len = key_archived.len() + value_archived.len();
-            bytes.reserve(encoded_len_varint(entry_len as u64) + entry_len);
-            encode_varint(entry_len as u64, &mut bytes);
-            key_archived.encode(&mut bytes);
-            value_archived.encode(&mut bytes);
+        let entries: Vec<(&K, &V)> = guard.iter().collect();
+        for (key_value, value_value) in entries.into_iter().rev() {
+            let key = <K as ProtoEncode>::Shadow::from_sun(key_value);
+            let value = <V as ProtoEncode>::Shadow::from_sun(value_value);
+            let mark = w.mark();
+            ArchivedProtoField::<2, <V as ProtoEncode>::Shadow<'_>>::archive(&value, w);
+            ArchivedProtoField::<1, <K as ProtoEncode>::Shadow<'_>>::archive(&key, w);
+            if TAG != 0 {
+                let payload_len = w.written_since(mark);
+                w.put_varint(payload_len as u64);
+                ArchivedProtoField::<TAG, Self>::put_key(w);
+            }
         }
-        bytes
     }
 }
 
-impl<K, V, S> ProtoExt for HashMap<K, V, S>
-where
-    V: ProtoExt,
-{
-    const KIND: ProtoKind = ProtoKind::Repeated(&V::KIND);
+impl<K, V, S> ProtoExt for HashMap<K, V, S> {
+    const KIND: ProtoKind = ProtoKind::Repeated(&crate::wrappers::maps::MAP_ENTRY_KIND);
     const _REPEATED_SUPPORT: Option<&'static str> = Some("papaya::HashMap");
 }
 
@@ -124,6 +107,12 @@ where
         let len = decode_varint(buf)? as usize;
         let mut slice = buf.take(len);
         let guard = self.pin();
+        if !slice.has_remaining() {
+            let entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
+            let (key, value) = entry.to_sun()?;
+            guard.insert(key, value);
+            return Ok(());
+        }
         while slice.has_remaining() {
             let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
             MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_into(&mut entry, &mut slice, ctx)?;

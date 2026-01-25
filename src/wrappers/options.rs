@@ -1,5 +1,4 @@
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
@@ -13,6 +12,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Option<T> {
     const KIND: ProtoKind = T::KIND;
@@ -70,31 +70,16 @@ impl<T> ProtoArchive for Option<T>
 where
     T: ProtoArchive,
 {
-    type Archived<'x> = Option<T::Archived<'x>>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.is_none()
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        match &archived {
-            Some(inner) => T::len(inner),
-            None => 0,
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        if let Some(inner) = self.as_ref() {
+            inner.archive::<TAG>(w);
         }
-    }
-
-    #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        if let Some(inner) = archived {
-            unsafe { T::encode(inner, buf) };
-        }
-    }
-
-    #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        self.as_ref().map(ProtoArchive::archive)
     }
 }
 
@@ -119,30 +104,15 @@ impl<T> ProtoArchive for &Option<T>
 where
     T: ProtoArchive,
 {
-    type Archived<'x> = Option<T::Archived<'x>>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.is_none()
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        match &archived {
-            Some(inner) => T::len(inner),
-            None => 0,
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        if let Some(inner) = self.as_ref() {
+            inner.archive::<TAG>(w);
         }
-    }
-
-    #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        if let Some(inner) = archived {
-            unsafe { T::encode(inner, buf) };
-        }
-    }
-
-    #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        self.as_ref().map(ProtoArchive::archive)
     }
 }

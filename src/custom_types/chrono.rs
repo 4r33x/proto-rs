@@ -3,7 +3,8 @@ use chrono::TimeDelta;
 use chrono::Utc;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::impl_proto_ident;
 use crate::proto_message;
 
@@ -25,18 +26,14 @@ pub struct TimeDeltaProto {
     pub ns: u32,
 }
 
-impl ProtoShadow<TimeDelta> for TimeDeltaProto {
-    type Sun<'a> = &'a TimeDelta;
-
-    type OwnedSun = TimeDelta;
-
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<TimeDelta> for TimeDeltaProto {
+    fn to_sun(self) -> Result<TimeDelta, DecodeError> {
         TimeDelta::new(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, TimeDelta> for TimeDeltaProto {
+    fn from_sun(value: &'a TimeDelta) -> Self {
         let secs = value.num_seconds();
         let sub = value.subsec_nanos(); // may be negative
 
@@ -53,16 +50,14 @@ impl ProtoShadow<TimeDelta> for TimeDeltaProto {
     }
 }
 
-impl ProtoShadow<DateTime<Utc>> for DateTimeProto {
-    type Sun<'a> = &'a DateTime<Utc>;
-    type OwnedSun = DateTime<Utc>;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<DateTime<Utc>> for DateTimeProto {
+    fn to_sun(self) -> Result<DateTime<Utc>, DecodeError> {
         DateTime::from_timestamp(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, DateTime<Utc>> for DateTimeProto {
+    fn from_sun(value: &'a DateTime<Utc>) -> Self {
         Self {
             secs: value.timestamp(),
             ns: value.timestamp_subsec_nanos(),
@@ -74,7 +69,9 @@ impl ProtoShadow<DateTime<Utc>> for DateTimeProto {
 mod tests {
 
     use super::*;
-    use crate::ProtoExt;
+    use crate::ProtoDecode;
+    use crate::ProtoEncode;
+    use crate::encoding::DecodeContext;
 
     #[proto_message(proto_path = "protos/chrono_test.proto")]
     struct ChronoWrapper {
@@ -89,8 +86,8 @@ mod tests {
     }
 
     fn roundtrip(td: TimeDelta) {
-        let encoded = TimeDelta::encode_to_vec(&td);
-        let decoded = TimeDelta::decode(encoded.as_slice()).unwrap();
+        let encoded = <TimeDelta as ProtoEncode>::encode_to_vec(&td);
+        let decoded = <TimeDelta as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).unwrap();
         assert_eq!(td, decoded);
     }
 
@@ -131,8 +128,8 @@ mod tests {
         let td = TimeDelta::new(123, 987_654_321).unwrap();
         let wrapper = DeltaWrapper { inner: td };
 
-        let encoded = DeltaWrapper::encode_to_vec(&wrapper);
-        let decoded = DeltaWrapper::decode(encoded.as_slice()).unwrap();
+        let encoded = <DeltaWrapper as ProtoEncode>::encode_to_vec(&wrapper);
+        let decoded = <DeltaWrapper as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).unwrap();
 
         assert_eq!(wrapper.inner, decoded.inner);
     }
@@ -141,8 +138,8 @@ mod tests {
         let dt = DateTime::from_timestamp(1_234_567_890, 123_456_789).expect("valid timestamp");
 
         // Test encoding and decoding through ProtoExt
-        let encoded = chrono::DateTime::encode_to_vec(&dt);
-        let decoded = DateTime::<Utc>::decode(encoded.as_slice()).expect("decode");
+        let encoded = <DateTime<Utc> as ProtoEncode>::encode_to_vec(&dt);
+        let decoded = <DateTime<Utc> as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
 
         assert_eq!(dt, decoded);
     }
@@ -152,8 +149,8 @@ mod tests {
         let dt = DateTime::from_timestamp(9_876_543_210, 987_654_321).expect("valid timestamp");
         let wrapper = ChronoWrapper { inner: dt };
 
-        let encoded = ChronoWrapper::encode_to_vec(&wrapper);
-        let decoded = ChronoWrapper::decode(encoded.as_slice()).expect("decode");
+        let encoded = <ChronoWrapper as ProtoEncode>::encode_to_vec(&wrapper);
+        let decoded = <ChronoWrapper as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
 
         assert_eq!(wrapper.inner, decoded.inner);
     }

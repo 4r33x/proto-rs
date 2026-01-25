@@ -78,7 +78,7 @@ pub fn arc_swap_inner_type(ty: &Type) -> Option<Type> {
 pub fn box_like_inner_type(ty: &Type) -> Option<Type> {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()
-        && matches!(segment.ident.to_string().as_str(), "Box" | "Arc" | "Mutex" | "ZeroCopy")
+        && matches!(segment.ident.to_string().as_str(), "Box" | "Arc" | "Mutex")
         && let PathArguments::AngleBracketed(args) = &segment.arguments
         && let Some(GenericArgument::Type(inner)) = args.args.first()
     {

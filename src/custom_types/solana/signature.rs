@@ -2,7 +2,8 @@ pub use solana_signature::SIGNATURE_BYTES as BYTES;
 use solana_signature::Signature;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -14,18 +15,16 @@ pub struct SignatureProto {
     pub inner: [u8; BYTES],
 }
 
-impl ProtoShadow<Signature> for SignatureProto {
-    type Sun<'a> = &'a Signature;
-    type OwnedSun = Signature;
-    type View<'a> = Self;
-
+impl ProtoShadowDecode<Signature> for SignatureProto {
     #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+    fn to_sun(self) -> Result<Signature, DecodeError> {
         Ok(Signature::from(self.inner))
     }
+}
 
+impl<'a> ProtoShadowEncode<'a, Signature> for SignatureProto {
     #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+    fn from_sun(value: &'a Signature) -> Self {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());
         Self { inner }
@@ -35,7 +34,9 @@ impl ProtoShadow<Signature> for SignatureProto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProtoExt;
+    use crate::ProtoDecode;
+    use crate::ProtoEncode;
+    use crate::encoding::DecodeContext;
     use crate::encoding::WireType;
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
@@ -56,8 +57,8 @@ mod tests {
     #[test]
     fn roundtrip_proto_ext() {
         let original = Signature::from(sample_signature_bytes());
-        let encoded = <Signature as ProtoExt>::encode_to_vec(&original);
-        let decoded = <Signature as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        let encoded = <Signature as ProtoEncode>::encode_to_vec(&original);
+        let decoded = <Signature as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded.as_ref(), original.as_ref());
     }
 
@@ -68,7 +69,7 @@ mod tests {
         encode_varint((BYTES - 2) as u64, &mut buf);
         buf.extend(core::iter::repeat_n(0u8, BYTES - 2));
 
-        match <Signature as ProtoExt>::decode(buf.as_slice()) {
+        match <Signature as ProtoDecode>::decode(buf.as_slice(), DecodeContext::default()) {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
                 let message = err.to_string();

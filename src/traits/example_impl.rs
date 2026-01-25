@@ -1,19 +1,19 @@
 use core::marker::PhantomData;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::{self};
 use crate::error::DecodeError;
-use crate::traits::ArchivedProtoInner;
-use crate::traits::ProtoArchive;
+use crate::traits::ArchivedProtoField; // NEW: helper for field-vs-root semantics + const tag bytes
+use crate::traits::ProtoArchive; // NEW: single-pass reverse archive(TAG, writer)
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
+use crate::traits::buffer::RevWriter; // NEW: reverse writer trait
 use crate::traits::decode::ProtoDecoder;
 use crate::traits::encode::ProtoShadowEncode;
 
@@ -41,17 +41,13 @@ pub struct IDDecoded<Kd, Vd> {
     pub v: Vd,
 }
 
-/// ---------- Archived container for IDShadow encoding ----------
-pub struct IDArchived<'x, 'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> {
-    pub f1: ArchivedProtoInner<'x, 1, u64>,
-    pub f2: ArchivedProtoInner<'x, 2, <K as ProtoEncode>::Shadow<'a>>,
-    pub f3: ArchivedProtoInner<'x, 3, <V as ProtoEncode>::Shadow<'a>>,
-    pub len: usize,
-}
-
 // ---------------- ProtoExt glue ----------------
 
-impl<K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> ProtoExt for IDShadow<'_, K, V> {
+impl<K, V> ProtoExt for ID<'_, K, V> {
+    const KIND: ProtoKind = ProtoKind::Message;
+}
+
+impl<K: ProtoEncode, V: ProtoEncode> ProtoExt for IDShadow<'_, K, V> {
     const KIND: ProtoKind = ProtoKind::Message;
 }
 
@@ -87,6 +83,8 @@ where
     type Shadow<'a> = IDShadow<'a, K, V>;
 }
 
+// ---------------- Encoding: Reverse single-pass (NEW) ----------------
+
 impl<'a, K, V> ProtoArchive for IDShadow<'a, K, V>
 where
     K: ProtoEncode,
@@ -95,35 +93,39 @@ where
     <V as ProtoEncode>::Shadow<'a>: ProtoArchive + ProtoExt,
     u64: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = IDArchived<'x, 'a, K, V>;
-
-    #[inline(always)]
-    fn archive(&self) -> <Self as ProtoArchive>::Archived<'_> {
-        // Each ArchivedProtoInner::new() handles "default => None" internally.
-        let f1 = ArchivedProtoInner::<1, u64>::new(&self.id);
-        let f2 = ArchivedProtoInner::<2, <K as ProtoEncode>::Shadow<'a>>::new(&self.k);
-        let f3 = ArchivedProtoInner::<3, <V as ProtoEncode>::Shadow<'a>>::new(&self.v);
-
-        let len = f1.len() + f2.len() + f3.len();
-
-        IDArchived { f1, f2, f3, len }
-    }
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.id == 0 && <K as ProtoEncode>::Shadow::is_default(&self.k) && <V as ProtoEncode>::Shadow::is_default(&self.v)
     }
 
+    /// Reverse one-pass encoding.
+    ///
+    /// TAG semantics (framework-wide):
+    /// - TAG == 0 => root payload (no len/key wrapper)
+    /// - TAG != 0 => field encoding: payload + (len if length-delimited) + key
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len
-    }
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        // Mark start of *this message payload* to compute length if we need to wrap (TAG != 0).
+        let mark = w.mark();
 
-    #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        archived.f1.encode(buf);
-        archived.f2.encode(buf);
-        archived.f3.encode(buf);
+        // IMPORTANT: reverse writer => emit fields in REVERSE order for deterministic bytes.
+        // Each ArchivedProtoField::<N, T>::archive calls `T::archive::<N>` which writes
+        // (payload + prefixes) for that field, skipping default values.
+        ArchivedProtoField::<3, <V as ProtoEncode>::Shadow<'a>>::archive(&self.v, w);
+        ArchivedProtoField::<2, <K as ProtoEncode>::Shadow<'a>>::archive(&self.k, w);
+        ArchivedProtoField::<1, u64>::archive(&self.id, w);
+
+        // If this message is embedded as a field, wrap it as length-delimited + key.
+        // (Message wire type is LengthDelimited.)
+        if TAG != 0 {
+            let payload_len = w.written_since(mark);
+            w.put_varint(payload_len as u64);
+
+            // Emit the field key using the const-tag fast path.
+            // This writes the varint bytes for (TAG<<3 | wire_type) in forward byte order,
+            // placed backwards in memory by the reverse writer.
+            ArchivedProtoField::<TAG, Self>::put_key(w);
+        }
     }
 }
 
@@ -155,7 +157,6 @@ where
         match tag {
             1 => value.id.merge(wire_type, buf, ctx),
             2 => value.k.merge(wire_type, buf, ctx),
-
             3 => value.v.merge(wire_type, buf, ctx),
             _ => {
                 // Contract: unknown tags must be skipped.

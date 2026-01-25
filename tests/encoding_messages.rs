@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use proto_rs::ZeroCopy;
 use proto_rs::proto_message;
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -74,7 +73,7 @@ pub struct ZeroCopyContainer {
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ZeroCopyMessage {
-    pub payload: ZeroCopy<NestedMessage>,
+    pub payload: NestedMessage,
 }
 
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
@@ -86,7 +85,7 @@ pub struct SampleEnumList {
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ZeroCopyEnumMessage {
-    pub bag: ZeroCopy<SampleEnumList>,
+    pub bag: SampleEnumList,
     pub status: SampleEnum,
     pub timeline: Vec<SampleEnum>,
 }
@@ -95,11 +94,11 @@ pub struct ZeroCopyEnumMessage {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct ZeroCopyEnumContainer {
     pub direct: SampleEnum,
-    pub raw_direct: ZeroCopy<SampleEnum>,
+    pub raw_direct: SampleEnum,
     pub repeated_direct: Vec<SampleEnum>,
-    pub raw_list: ZeroCopy<SampleEnumList>,
-    pub nested: ZeroCopy<ZeroCopyEnumMessage>,
-    pub nested_message: ZeroCopy<SampleMessage>,
+    pub raw_list: SampleEnumList,
+    pub nested: ZeroCopyEnumMessage,
+    pub nested_message: SampleMessage,
 }
 
 #[derive(Clone, PartialEq, prost::Message)]
@@ -373,17 +372,17 @@ pub fn zero_copy_enum_fixture() -> ZeroCopyEnumContainer {
     let nested_list = nested_complex_enum_list_fixture();
 
     let nested_message = ZeroCopyEnumMessage {
-        bag: ZeroCopy::from(&nested_list),
+        bag: nested_list.clone(),
         status: SampleEnum::Two,
         timeline: nested_list.values.clone(),
     };
 
     ZeroCopyEnumContainer {
         direct: SampleEnum::Two,
-        raw_direct: ZeroCopy::from(&SampleEnum::Two),
+        raw_direct: SampleEnum::Two,
         repeated_direct: vec![SampleEnum::One, SampleEnum::Two],
-        raw_list: ZeroCopy::from(&outer_list),
-        nested: ZeroCopy::from(&nested_message),
-        nested_message: ZeroCopy::from(&sample_message()),
+        raw_list: outer_list.clone(),
+        nested: nested_message,
+        nested_message: sample_message(),
     }
 }

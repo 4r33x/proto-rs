@@ -93,7 +93,6 @@ pub(super) fn generate_simple_enum_impl(
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
                     const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
-                    #validate_with_ext_impl
                 }
 
                 impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
@@ -153,8 +152,6 @@ pub(super) fn generate_simple_enum_impl(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    type Archived<'a> = <#name #ty_generics as ::proto_rs::ProtoArchive>::Archived<'a>;
-
                     #[inline(always)]
                     fn is_default(&self) -> bool {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
@@ -162,19 +159,9 @@ pub(super) fn generate_simple_enum_impl(
                     }
 
                     #[inline(always)]
-                    fn len(archived: &Self::Archived<'_>) -> usize {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::len(archived)
-                    }
-
-                    #[inline(always)]
-                    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::encode(archived, buf);
-                    }
-
-                    #[inline(always)]
-                    fn archive(&self) -> Self::Archived<'_> {
+                    fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive(&shadow)
+                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
                     }
                 }
             }
@@ -203,7 +190,6 @@ pub(super) fn generate_simple_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
-            #validate_with_ext_proto_impl
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for i32 #shadow_where_clause {
@@ -216,28 +202,17 @@ pub(super) fn generate_simple_enum_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            type Archived<'a> = i32;
-
             #[inline(always)]
             fn is_default(&self) -> bool {
                 matches!(*self, Self::#default_ident)
             }
 
             #[inline(always)]
-            fn len(archived: &Self::Archived<'_>) -> usize {
-                <i32 as ::proto_rs::ProtoArchive>::len(archived)
-            }
-
-            #[inline(always)]
-            unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl ::proto_rs::bytes::BufMut) {
-                <i32 as ::proto_rs::ProtoArchive>::encode(archived, buf);
-            }
-
-            #[inline(always)]
-            fn archive(&self) -> Self::Archived<'_> {
-                match *self {
+            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                let value: i32 = match *self {
                     #(#raw_from_variant,)*
-                }
+                };
+                <i32 as ::proto_rs::ProtoArchive>::archive::<TAG>(&value, w);
             }
         }
 

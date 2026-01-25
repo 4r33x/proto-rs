@@ -1,4 +1,35 @@
 
+# Benchmark Run — 2026-01-25 18:46:56 - 0.9.0-pre
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| zero_copy_vs_clone | prost | clone + encode | 127062.44 | 457.80 | 1.00× |
+| zero_copy_vs_clone | proto_rs | zero_copy | 231498.55 | 834.09 | 1.82× faster |
+
+# Benchmark Run — 2026-01-25 18:43:02 - 0.9.0-pre
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | one_deep_message | prost decode | 774224.76 | 256.95 | 1.00× |
+| collection_overhead_decode | one_deep_message | proto_rs decode | 617999.73 | 205.10 | 0.80× slower |
+| collection_overhead_encode | one_deep_message | prost encode_to_vec | 2609711.28 | 866.11 | 1.00× |
+| collection_overhead_encode | one_deep_message | proto_rs encode_to_vec | 2445913.09 | 811.75 | 0.94× slower |
+| micro_fields_decode | one_deep_message | prost decode | 752933.58 | 249.88 | 1.00× |
+| micro_fields_decode | one_deep_message | proto_rs decode | 617728.33 | 205.01 | 0.82× slower |
+| micro_fields_encode | one_deep_message | prost encode_to_vec | 2604505.27 | 864.38 | 1.00× |
+| micro_fields_encode | one_deep_message | proto_rs encode_to_vec | 2477541.55 | 822.24 | 0.95× slower |
+
+
+# Benchmark Run — 2026-01-25 18:41:18 - 0.9.0-pre
+
+| Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
+| --- | --- | --- | ---: | ---: | ---: |
+| collection_overhead_decode | deep_list_len1 | prost decode | 817916.77 | 271.45 | 1.00× |
+| collection_overhead_decode | deep_list_len1 | proto_rs decode | 612231.35 | 203.19 | 0.75× slower |
+| collection_overhead_encode | deep_list_len1 | prost encode_to_vec | 2606536.88 | 865.05 | 1.00× |
+| collection_overhead_encode | deep_list_len1 | proto_rs encode_to_vec | 2446895.23 | 812.07 | 0.94× slower |
+
+
 # Benchmark Run — 2025-11-30 00:50:25 - No smallvec (0.6.11)
 
 | Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |

@@ -1,9 +1,11 @@
 use std::sync::Mutex;
-use std::sync::MutexGuard;
 
 use proto_rs::DecodeError;
-use proto_rs::ProtoExt;
-use proto_rs::ProtoShadow;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::ProtoShadowDecode;
+use proto_rs::ProtoShadowEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[proto_message(sun = IdOwned)]
@@ -24,23 +26,16 @@ impl PartialEq for IdOwned {
     }
 }
 
-struct IdRef<'a> {
-    _guard: MutexGuard<'a, u64>,
-    id: u64,
-}
-
-impl ProtoShadow<IdOwned> for IdShadow {
-    type Sun<'a> = &'a IdOwned;
-    type OwnedSun = IdOwned;
-    type View<'a> = IdRef<'a>;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+impl ProtoShadowDecode<IdOwned> for IdShadow {
+    fn to_sun(self) -> Result<IdOwned, DecodeError> {
         Ok(IdOwned { id: Mutex::new(self.id) })
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, IdOwned> for IdShadow {
+    fn from_sun(value: &'a IdOwned) -> Self {
         let guard = value.id.lock().unwrap();
-        IdRef { id: *guard, _guard: guard }
+        IdShadow { id: *guard }
     }
 }
 
@@ -48,7 +43,7 @@ impl ProtoShadow<IdOwned> for IdShadow {
 fn encode_decode_reference_sun_top_level() {
     let id = IdOwned { id: Mutex::new(42) };
     let bytes = IdOwned::encode_to_vec(&id);
-    let decoded = IdOwned::decode(bytes.as_slice()).expect("decode owned id");
+    let decoded = <IdOwned as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode owned id");
 
     assert_eq!(decoded, id);
 }

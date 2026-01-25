@@ -2,13 +2,14 @@ use core::array;
 use core::mem::MaybeUninit;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
+use crate::encoding::check_wire_type;
 use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
@@ -18,8 +19,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
-use crate::wrappers::lists::encode_repeated_value;
-use crate::wrappers::lists::repeated_payload_len;
+use crate::traits::buffer::RevWriter;
 
 #[cfg(feature = "stable")]
 #[inline]
@@ -34,12 +34,6 @@ unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; 
 #[allow(clippy::needless_pass_by_value)]
 unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; N] {
     unsafe { MaybeUninit::array_assume_init(arr) }
-}
-
-#[doc(hidden)]
-pub struct ArchivedArray<'a, T: ProtoArchive + ProtoExt, const N: usize> {
-    items: [T::Archived<'a>; N],
-    len: usize,
 }
 
 impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
@@ -78,9 +72,20 @@ impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if T::KIND.is_bytes_kind() {
+            check_wire_type(WireType::LengthDelimited, wire_type)?;
+            let len = decode_varint(buf)? as usize;
+            if len != N {
+                return Err(DecodeError::new(format!(
+                    "invalid length for fixed byte array: expected {N} got {len}"
+                )));
+            }
+            if len > buf.remaining() {
+                return Err(DecodeError::new("buffer underflow"));
+            }
             // SAFETY: only executed for [u8]
-            let mut bytes: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr().cast::<u8>(), self.len()) };
-            return super::bytes_encoding::merge(wire_type, &mut bytes, buf, ctx);
+            let bytes: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr().cast::<u8>(), self.len()) };
+            buf.copy_to_slice(bytes);
+            return Ok(());
         }
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
@@ -147,51 +152,82 @@ impl<T, const N: usize> ProtoArchive for [T; N]
 where
     T: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = ArchivedArray<'x, T, N>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.iter().all(|item| <T as ProtoArchive>::is_default(item))
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        if T::KIND.is_bytes_kind() {
+            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(self.as_ptr().cast::<u8>(), N) };
+            w.put_slice(bytes);
+            if TAG != 0 {
+                w.put_varint(bytes.len() as u64);
+                ArchivedProtoField::<TAG, Self>::put_key(w);
+            }
+            return;
+        }
+
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                let mark = w.mark();
+                for item in self.iter().rev() {
+                    item.archive::<0>(w);
+                }
+                if TAG != 0 {
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                for item in self.iter().rev() {
+                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                }
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
+        }
+    }
+}
+
+/// Wrapper type for array shadows that preserves array default semantics.
+/// Arrays are considered default when all elements are default, unlike slices/vecs
+/// which are only default when empty.
+#[doc(hidden)]
+pub struct ArrayShadow<'a, T: ProtoArchive + ProtoExt, const N: usize> {
+    slice: &'a [T],
+}
+
+impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T, N> {
+    const KIND: ProtoKind = <[T; N] as ProtoExt>::KIND;
+    const _REPEATED_SUPPORT: Option<&'static str> = <[T; N] as ProtoExt>::_REPEATED_SUPPORT;
+}
+
+impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N> {
+    #[inline(always)]
+    fn is_default(&self) -> bool {
+        // Arrays are default when all elements are default (unlike slices which are default when empty)
+        self.slice.iter().all(|item| <T as ProtoArchive>::is_default(item))
     }
 
     #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        for item in archived.items {
-            encode_repeated_value::<T>(item, buf);
-        }
-    }
-
-    #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        let mut items: [MaybeUninit<T::Archived<'_>>; N] = [const { MaybeUninit::uninit() }; N];
-        let mut len = 0;
-        for (idx, item) in self.iter().enumerate() {
-            let archived = item.archive();
-            len += repeated_payload_len::<T>(&archived);
-            items[idx].write(archived);
-        }
-        let items = unsafe { assume_init_array(items) };
-        ArchivedArray { items, len }
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        self.slice.archive::<TAG>(w);
     }
 }
 
 impl<T: ProtoEncode, const N: usize> ProtoEncode for [T; N]
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
-    for<'a> T: 'a + ProtoExt,
-    for<'a> &'a [T]: ProtoArchive + ProtoExt,
+    for<'a> T: 'a + ProtoExt + ProtoArchive,
 {
-    type Shadow<'a> = &'a [T];
+    type Shadow<'a> = ArrayShadow<'a, T, N>;
 }
 
-impl<'a, T, const N: usize> ProtoShadowEncode<'a, [T; N]> for &'a [T] {
+impl<'a, T: ProtoArchive + ProtoExt, const N: usize> ProtoShadowEncode<'a, [T; N]> for ArrayShadow<'a, T, N> {
     #[inline]
     fn from_sun(value: &'a [T; N]) -> Self {
-        value
+        ArrayShadow { slice: value.as_slice() }
     }
 }

@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 use core::ptr;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
@@ -10,6 +9,7 @@ use crate::encoding::WireType;
 use crate::encoding::bytes as bytes_encoding;
 use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
+use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
@@ -19,10 +19,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
-use crate::wrappers::lists::ArchivedRepeated;
-use crate::wrappers::lists::ArchivedVec;
-use crate::wrappers::lists::encode_repeated_value;
-use crate::wrappers::lists::repeated_payload_len;
+use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Vec<T> {
     const KIND: ProtoKind = match T::KIND {
@@ -113,49 +110,43 @@ impl<T> ProtoArchive for Vec<T>
 where
     T: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = ArchivedVec<'x, T>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        match archived {
-            ArchivedVec::Bytes(bytes) => bytes.len(),
-            ArchivedVec::Owned(repeated) => repeated.len,
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        match archived {
-            ArchivedVec::Bytes(bytes) => bytes_encoding::encode(&bytes, buf),
-            ArchivedVec::Owned(repeated) => {
-                for item in repeated.items {
-                    encode_repeated_value::<T>(item, buf);
-                }
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
             // SAFETY: only executed for Vec<u8>.
             let bytes = unsafe { (*(ptr::from_ref(self).cast::<Vec<u8>>())).as_slice() };
-            return ArchivedVec::Bytes(bytes);
+            w.put_slice(bytes);
+            if TAG != 0 {
+                w.put_varint(bytes.len() as u64);
+                ArchivedProtoField::<TAG, Self>::put_key(w);
+            }
+            return;
         }
 
-        let mut items = Vec::with_capacity(self.len());
-        let mut len = 0;
-        for item in self {
-            let archived = item.archive();
-            len += repeated_payload_len::<T>(&archived);
-            items.push(archived);
+        match T::KIND {
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
+                let mark = w.mark();
+                for item in self.iter().rev() {
+                    item.archive::<0>(w);
+                }
+                if TAG != 0 {
+                    let payload_len = w.written_since(mark);
+                    w.put_varint(payload_len as u64);
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
+            }
+            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
+                for item in self.iter().rev() {
+                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                }
+            }
+            ProtoKind::Repeated(_) => unreachable!(),
         }
-        ArchivedVec::Owned(ArchivedRepeated { items, len })
     }
 }
 

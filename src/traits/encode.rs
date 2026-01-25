@@ -1,175 +1,152 @@
+use core::marker::PhantomData;
+
 use bytes::BufMut;
 
-use crate::encoding::encode_varint;
-use crate::encoding::encoded_len_varint;
 use crate::error::EncodeError;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
+use crate::traits::buffer::ProtoAsSlice;
+use crate::traits::buffer::RevBuffer;
+use crate::traits::buffer::RevVec;
+use crate::traits::buffer::RevWriter;
 use crate::traits::utils::VarintConst;
 use crate::traits::utils::encode_varint_const;
-use crate::zero_copy::ZeroCopyBuffer;
 
 pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
     fn from_sun(value: &'a T) -> Self;
 }
 
 pub trait ProtoArchive: Sized {
-    type Archived<'a>;
-
     fn is_default(&self) -> bool;
-    fn len(archived: &Self::Archived<'_>) -> usize;
-    /// # Safety
+    /// Reverse one-pass archive into a [`RevWriter`].
     ///
-    /// DO NOT CALL IT, ONLY IMPLEMENTATION ALLOWED
-    unsafe fn encode(arhived: Self::Archived<'_>, buf: &mut impl BufMut);
-    fn archive(&self) -> Self::Archived<'_>;
+    /// TAG semantics:
+    /// - TAG == 0 => top-level payload (no field key/len wrapper)
+    /// - TAG != 0 => field encoding (payload, then len/key as required by wire type)
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter);
 }
+
+pub type ArchivedProtoMessageWriter<T> = ArchivedProtoMessage<T, RevVec<Vec<u8>>>;
 
 pub trait ProtoEncode: Sized {
     type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
 
     #[inline(always)]
-    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
-        let shadow = Self::Shadow::from_sun(self);
-        let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
+    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
+    where
+        Self: ProtoExt,
+    {
+        let value: ArchivedProtoMessageWriter<Self> = match ArchivedProtoMessage::new(self) {
             Some(v) => v,
             None => return Ok(()),
         };
-        let total = value.len;
-        let remaining = buf.remaining_mut();
-        if total > value.len {
-            return Err(EncodeError::new(total, remaining));
-        }
-        ArchivedProtoMessage::encode(value, buf);
+
+        ArchivedProtoMessage::encode(value, buf)?;
 
         Ok(())
     }
 
     #[inline(always)]
-    fn encode_to_vec(&self) -> Vec<u8> {
-        let shadow = Self::Shadow::from_sun(self);
-        let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
+    fn encode_to_vec(&self) -> Vec<u8>
+    where
+        Self: ProtoExt,
+    {
+        let value: ArchivedProtoMessageWriter<Self> = match ArchivedProtoMessage::new(self) {
             Some(v) => v,
             None => return vec![],
         };
-        let mut buf = Vec::with_capacity(value.len);
-        ArchivedProtoMessage::encode(value, &mut buf);
-        buf
-    }
-    #[inline(always)]
-    fn encode_to_zerocopy(&self) -> ZeroCopyBuffer {
-        let shadow = Self::Shadow::from_sun(self);
-        let value: ArchivedProtoMessage<Self> = match ArchivedProtoMessage::new(&shadow) {
-            Some(v) => v,
-            None => return ZeroCopyBuffer::new(),
-        };
-        let mut buf = ZeroCopyBuffer::with_capacity(value.len);
-        value.encode(&mut buf);
-        buf
+        value.to_vec()
     }
 }
 
-pub struct ArchivedProtoMessage<'a, 's, T: ProtoEncode>
-where
-    's: 'a,
-{
-    inner: <<T as ProtoEncode>::Shadow<'s> as ProtoArchive>::Archived<'a>, //None when default
-    len: usize,                                                            // 0 when inner=None
+pub struct ArchivedProtoMessage<T: ProtoEncode, W: RevWriter> {
+    inner: W,
+    _pd: PhantomData<T>,
 }
-impl<T: ProtoEncode> ProtoExt for ArchivedProtoMessage<'_, '_, T> {
+
+impl<T: ProtoEncode, W: RevWriter> ProtoExt for ArchivedProtoMessage<T, W> {
     const KIND: ProtoKind = T::Shadow::KIND;
 }
 
-impl<'a, 's, T: ProtoEncode> ArchivedProtoMessage<'a, 's, T>
+impl<T: ProtoEncode, W: RevWriter> ArchivedProtoMessage<T, W>
 where
-    's: 'a,
-    <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+    T: ProtoEncode + ProtoExt,
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
 {
-    pub fn new(input: &'a T::Shadow<'s>) -> Option<Self> {
-        let archived = input.archive();
-        let len = <<T as ProtoEncode>::Shadow<'s> as ProtoArchive>::len(&archived);
-        if len == 0 {
+    const INIT_CAP: usize = 64;
+    #[inline]
+    pub fn new(input: &T) -> Option<Self> {
+        let s = T::Shadow::from_sun(input);
+        if <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
             return None;
         }
-        Some(Self { len, inner: archived })
-    }
+        let mut w = W::with_capacity(Self::INIT_CAP);
 
-    #[inline(always)]
-    pub const fn is_default(&self) -> bool {
-        self.len == 0
-    }
-
-    //used for preallocating buffers
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-    #[inline(always)]
-    pub fn encode(self, buf: &mut impl BufMut) {
-        const TAG_VARINT_ONE: VarintConst<5> = encode_varint_const(1);
-        const TAG_LEN_ONE: usize = TAG_VARINT_ONE.len;
-
-        let len = self.len;
-        debug_assert!(len != 0);
-
-        if matches!(Self::KIND, ProtoKind::SimpleEnum) {
-            buf.put_slice(&TAG_VARINT_ONE.bytes[..TAG_LEN_ONE]);
-            unsafe { T::Shadow::encode(self.inner, buf) };
+        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+            s.archive::<1>(&mut w);
         } else {
-            unsafe { T::Shadow::encode(self.inner, buf) };
+            s.archive::<0>(&mut w);
         }
+
+        Some(Self {
+            inner: w,
+            _pd: PhantomData,
+        })
+    }
+
+    #[inline(always)]
+    pub fn encode(self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        let v = self.inner.finish();
+        let slice = v.as_slice();
+        let remaining = buf.remaining_mut();
+        let total = slice.len();
+
+        if total > remaining {
+            return Err(EncodeError::new(total, remaining));
+        }
+
+        buf.put_slice(slice);
+        Ok(())
+    }
+    #[inline(always)]
+    pub fn to_vec(self) -> Vec<u8>
+    where
+        W: RevWriter<Buf = RevBuffer<Vec<u8>>>,
+    {
+        let buf = self.inner.finish();
+        buf.as_slice().to_vec()
     }
 }
 
-pub struct ArchivedProtoInner<'a, const TAG: u32, T: ProtoArchive> {
-    inner: Option<T::Archived<'a>>, //None when default
-    len: usize,                     // 0 when inner=None
-}
-impl<const TAG: u32, T: ProtoArchive + ProtoExt> ProtoExt for ArchivedProtoInner<'_, TAG, T> {
+pub struct ArchivedProtoField<const TAG: u32, T: ProtoArchive + ProtoExt>(PhantomData<T>);
+
+/// Helper for generated code: emits field keys and enforces field-vs-root semantics.
+///
+/// Deterministic output requires encoding message fields (and repeated elements) in reverse order
+/// when using the reverse writer.
+impl<const TAG: u32, T: ProtoArchive + ProtoExt> ProtoExt for ArchivedProtoField<TAG, T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<'a, const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoInner<'a, TAG, T> {
-    const _TAG_VARINT: VarintConst<10> = encode_varint_const(TAG as u64);
+impl<const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<TAG, T> {
+    const _TAG_VARINT: VarintConst<10> = encode_varint_const(((TAG << 3) | Self::WIRE_TYPE as u32) as u64);
     const TAG_LEN: usize = Self::_TAG_VARINT.len;
 
-    pub fn new(input: &'a T) -> Self {
+    pub fn archive(input: &T, w: &mut impl RevWriter) {
         if <T as ProtoArchive>::is_default(input) {
-            return Self { inner: None, len: 0 };
+            return;
         }
-        let archived = input.archive();
-        let len = <T as ProtoArchive>::len(&archived);
-        Self {
-            len,
-            inner: Some(archived),
-        }
+        input.archive::<{ TAG }>(w);
+    }
+
+    /// Creates an ArchivedProtoField that will always encode, even if the value is default.
+    /// Use this for enum tuple variants where the variant selection must be preserved.
+    pub fn new_always(input: &T, w: &mut impl RevWriter) {
+        input.archive::<{ TAG }>(w);
     }
 
     #[inline(always)]
-    pub fn put_tag(buf: &mut impl bytes::BufMut) {
-        buf.put_slice(&Self::_TAG_VARINT.bytes[..Self::TAG_LEN]);
-    }
-
-    #[inline(always)]
-    pub const fn is_default(&self) -> bool {
-        self.inner.is_none()
-    }
-
-    #[allow(clippy::len_without_is_empty)]
-    //used for preallocating buffers
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.len + encoded_len_varint(self.len as u64) + Self::TAG_LEN
-    }
-
-    pub fn encode(self, buf: &mut impl BufMut) {
-        let Some(value) = self.inner else { return };
-        if T::WIRE_TYPE.is_length_delimited() {
-            Self::put_tag(buf);
-            encode_varint(self.len as u64, buf);
-        } else {
-            Self::put_tag(buf);
-        }
-        unsafe { <T as ProtoArchive>::encode(value, buf) };
+    pub fn put_key(w: &mut impl RevWriter) {
+        w.put_slice(&Self::_TAG_VARINT.bytes[..Self::TAG_LEN]);
     }
 }

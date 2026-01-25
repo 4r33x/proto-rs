@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use proto_rs::ProtoExt;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -29,7 +31,7 @@ fn map_with_primitive_values_roundtrips() {
     message.tree.insert(Foo { id: 1, meta: 2 }, 3);
 
     let encoded = MapPrimitives::encode_to_vec(&message);
-    let decoded = MapPrimitives::decode(&encoded[..]).expect("decode map with primitives");
+    let decoded = <MapPrimitives as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode map with primitives");
 
     assert_eq!(decoded, message);
 }
@@ -53,7 +55,8 @@ fn papaya_map_with_primitive_values_roundtrips() {
     }
 
     let encoded = PapayaPrimitives::encode_to_vec(&message);
-    let decoded = PapayaPrimitives::decode(&encoded[..]).expect("decode papaya map with primitives");
+    let decoded =
+        <PapayaPrimitives as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).expect("decode papaya map with primitives");
 
     assert_eq!(decoded, message);
 }

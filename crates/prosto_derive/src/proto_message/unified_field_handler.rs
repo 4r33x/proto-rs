@@ -177,14 +177,7 @@ pub struct EncodeBinding {
 pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> EncodeBinding {
     let proto_ty = &field.proto_ty;
     let access_expr = if let Some(getter) = &field.config.getter {
-        let base_str = base.to_string();
-        let getter_expr = getter.replace('$', &base_str);
-        syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
-            panic!(
-                "invalid getter expression in #[proto(getter = ...)] on field {}",
-                field.field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string)
-            )
-        })
+        parse_getter_expr(getter, base, field.field)
     } else {
         match &field.access {
             FieldAccess::Direct(tokens) => tokens.clone(),
@@ -223,6 +216,15 @@ pub fn encode_input_binding(field: &FieldInfo<'_>, base: &TokenStream2) -> Encod
             value: init_expr,
         }
     }
+}
+
+fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &Field) -> TokenStream2 {
+    let base_str = base.to_string();
+    let getter_expr = getter.replace('$', &base_str);
+    syn::parse_str::<TokenStream2>(&getter_expr).unwrap_or_else(|_| {
+        let name = field.ident.as_ref().map_or_else(|| "<tuple field>".to_string(), ToString::to_string);
+        panic!("invalid getter expression in #[proto(getter = ...)] on field {name}")
+    })
 }
 
 pub fn is_value_encode_type(ty: &Type) -> bool {
@@ -388,7 +390,6 @@ pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -
         })
         .collect()
 }
-
 
 #[cfg(test)]
 mod tests {

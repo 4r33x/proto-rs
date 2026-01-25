@@ -3,16 +3,20 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::cast_possible_truncation)]
 
+use bytes::Buf;
 use bytes::Bytes;
 use bytes::BytesMut;
 use prost::Message as ProstMessage;
 use proto_rs::DecodeError;
+use proto_rs::ProtoArchive;
+use proto_rs::ProtoAsSlice;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoDecoder;
+use proto_rs::ProtoEncode;
 use proto_rs::ProtoExt;
-use proto_rs::ProtoShadow;
-use proto_rs::ProtoWire;
-use proto_rs::Shadow;
-use proto_rs::ToZeroCopy;
-use proto_rs::ZeroCopy;
+use proto_rs::ProtoShadowEncode;
+use proto_rs::RevWriter;
+use proto_rs::encoding::DecodeContext;
 use proto_rs::encoding::varint::encoded_len_varint;
 use proto_rs::encoding::{self};
 use proto_rs::proto_message;
@@ -202,11 +206,11 @@ impl From<&MixedProtoProst> for MixedProto {
     }
 }
 
-fn fake_time_to_i64(value: &FakeTime) -> i64 {
+const fn fake_time_to_i64(value: &FakeTime) -> i64 {
     value.seconds
 }
 
-fn i64_to_fake_time(value: i64) -> FakeTime {
+const fn i64_to_fake_time(value: i64) -> FakeTime {
     FakeTime { seconds: value }
 }
 
@@ -272,7 +276,7 @@ fn collections_roundtrip() {
     msg.tree_ids.extend([3, 1, 8]);
 
     let bytes = encode_proto_message(&msg);
-    let decoded = CollectionsMessage::decode(bytes.clone()).expect("decode collections message");
+    let decoded = <CollectionsMessage as ProtoDecode>::decode(bytes.clone(), DecodeContext::default()).expect("decode collections message");
 
     assert_eq!(decoded.hash_scores, msg.hash_scores);
     assert_eq!(decoded.tree_messages, msg.tree_messages);
@@ -292,7 +296,8 @@ fn collections_matches_prost_for_ordered_structures() {
     assert_eq!(decoded_prost, CollectionsMessageProst::from(&msg));
 
     let prost_roundtrip = encode_prost_message(&CollectionsMessageProst::from(&msg));
-    let decoded_proto = CollectionsMessage::decode(prost_roundtrip.clone()).expect("proto decode");
+    let decoded_proto =
+        <CollectionsMessage as ProtoDecode>::decode(prost_roundtrip.clone(), DecodeContext::default()).expect("proto decode");
     assert_eq!(decoded_proto.tree_messages, msg.tree_messages);
     assert_eq!(decoded_proto.tree_ids, msg.tree_ids);
 }
@@ -364,7 +369,7 @@ fn sample_message_prost() -> SampleMessageProst {
 }
 
 fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_expected: &SampleMessageProst) {
-    let decoded_proto = SampleMessage::decode(bytes.clone()).expect("proto decode failed");
+    let decoded_proto = <SampleMessage as ProtoDecode>::decode(bytes.clone(), DecodeContext::default()).expect("proto decode failed");
     assert_eq!(decoded_proto, *proto_expected);
 
     let decoded_prost = SampleMessageProst::decode(bytes).expect("prost decode failed");
@@ -373,13 +378,9 @@ fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_e
 
 fn encode_proto_message<M>(value: &M) -> Bytes
 where
-    for<'a> M: ProtoExt + ProtoWire<EncodeInput<'a> = &'a M>,
-    for<'a> Shadow<'a, M>: ProtoShadow<M, Sun<'a> = &'a M, View<'a> = &'a M>,
+    M: ProtoEncode + ProtoExt,
 {
-    let len = <M as ProtoWire>::encoded_len(value);
-    let mut buf = BytesMut::with_capacity(len);
-    <M as ProtoExt>::encode(value, &mut buf).expect("proto encode failed");
-    buf.freeze()
+    Bytes::from(<M as ProtoEncode>::encode_to_vec(value))
 }
 
 fn encode_prost_message<M: ProstMessage>(value: &M) -> Bytes {
@@ -388,15 +389,43 @@ fn encode_prost_message<M: ProstMessage>(value: &M) -> Bytes {
     buf.freeze()
 }
 
+fn proto_len<T: ProtoEncode>(value: &T) -> usize
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoShadowEncode<'a, T>,
+{
+    let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    <T::Shadow<'_> as ProtoArchive>::archive::<0>(&shadow, &mut writer);
+    writer.len()
+}
+//this functionality should be handled in traits
+fn decode_length_delimited<T: ProtoDecode>(bytes: Bytes) -> Result<T, DecodeError> {
+    let mut buf = bytes;
+    let len = proto_rs::decode_length_delimiter(&mut buf)?;
+    let slice = Buf::take(&mut buf, len);
+    <T as ProtoDecode>::decode(slice, DecodeContext::default())
+}
+
+fn encode_message_with_tag<const TAG: u32, T: ProtoEncode>(value: &T, buf: &mut BytesMut)
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
+{
+    let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(value);
+    let mut writer = proto_rs::RevVec::<Vec<u8>>::with_capacity(64);
+    proto_rs::ArchivedProtoField::<TAG, T::Shadow<'_>>::archive(&shadow, &mut writer);
+    let bytes = writer.finish();
+    buf.extend_from_slice(bytes.as_slice());
+}
+
 fn encode_proto_length_delimited<M>(value: &M) -> Bytes
 where
-    for<'a> M: ProtoExt + ProtoWire<EncodeInput<'a> = &'a M>,
-    for<'a> Shadow<'a, M>: ProtoShadow<M, Sun<'a> = &'a M, View<'a> = &'a M>,
+    M: ProtoEncode + ProtoExt,
 {
-    let len = <M as ProtoWire>::encoded_len(value);
+    let encoded = <M as ProtoEncode>::encode_to_vec(value);
+    let len = encoded.len();
     let mut buf = BytesMut::with_capacity(len + encoded_len_varint(len as u64));
     encoding::encode_varint(len as u64, &mut buf);
-    <M as ProtoExt>::encode(value, &mut buf).expect("proto length-delimited encode failed");
+    buf.extend_from_slice(&encoded);
     buf.freeze()
 }
 
@@ -415,12 +444,13 @@ fn enum_default_attribute_maps_to_zero_discriminant() {
     assert_eq!(StatusWithDefaultAttribute::Inactive as i32, 2);
     assert_eq!(StatusWithDefaultAttribute::Completed as i32, 3);
 
-    let default_bytes = <StatusWithDefaultAttribute as ProtoExt>::encode_to_vec(&StatusWithDefaultAttribute::Active);
+    let default_bytes = <StatusWithDefaultAttribute as ProtoEncode>::encode_to_vec(&StatusWithDefaultAttribute::Active);
     assert!(default_bytes.is_empty(), "default enum variant must encode to empty payload");
 
-    let pending_bytes = <StatusWithDefaultAttribute as ProtoExt>::encode_to_vec(&StatusWithDefaultAttribute::Pending);
+    let pending_bytes = <StatusWithDefaultAttribute as ProtoEncode>::encode_to_vec(&StatusWithDefaultAttribute::Pending);
     assert!(!pending_bytes.is_empty(), "non-default enum variant must encode field value");
-    let decoded = StatusWithDefaultAttribute::decode(Bytes::from(pending_bytes)).expect("decode enum with explicit value");
+    let decoded = <StatusWithDefaultAttribute as ProtoDecode>::decode(Bytes::from(pending_bytes), DecodeContext::default())
+        .expect("decode enum with explicit value");
     assert_eq!(decoded, StatusWithDefaultAttribute::Pending);
 }
 
@@ -435,7 +465,8 @@ fn proto_and_prost_encodings_are_equivalent() {
     let prost_decoded_from_proto = SampleMessageProst::decode(proto_bytes.clone()).expect("prost decode from proto bytes failed");
     assert_eq!(prost_decoded_from_proto, prost_msg);
 
-    let proto_decoded_from_prost = SampleMessage::decode(prost_bytes.clone()).expect("proto decode from prost bytes failed");
+    let proto_decoded_from_prost = <SampleMessage as ProtoDecode>::decode(prost_bytes.clone(), DecodeContext::default())
+        .expect("proto decode from prost bytes failed");
     assert_eq!(proto_decoded_from_prost, proto_msg);
 
     let normalized_prost = encode_prost_message(&prost_decoded_from_proto);
@@ -444,7 +475,7 @@ fn proto_and_prost_encodings_are_equivalent() {
     let normalized_proto = encode_proto_message(&proto_decoded_from_prost);
     assert_eq!(normalized_proto, proto_bytes, "proto re-encode mismatch");
 
-    assert_eq!(SampleMessage::encoded_len(&proto_msg), proto_bytes.len());
+    assert_eq!(proto_len(&proto_msg), proto_bytes.len());
 }
 
 #[test]
@@ -458,7 +489,8 @@ fn cross_decode_round_trips() {
     assert_decode_roundtrip(proto_bytes.clone(), &proto_msg, &prost_msg);
     assert_decode_roundtrip(prost_bytes, &proto_msg, &prost_msg);
 
-    let decoded_proto_from_proto = SampleMessage::decode(proto_bytes.clone()).expect("proto decode failed");
+    let decoded_proto_from_proto =
+        <SampleMessage as ProtoDecode>::decode(proto_bytes.clone(), DecodeContext::default()).expect("proto decode failed");
     assert_eq!(decoded_proto_from_proto, proto_msg);
 }
 
@@ -481,7 +513,8 @@ fn try_from_fn_decode_error() {
     };
 
     let prost_bytes = encode_prost_message(&prost_msg);
-    let err = MixedProto::decode(prost_bytes).expect_err("decoding should fail due to conversion error");
+    let err = <MixedProto as ProtoDecode>::decode(prost_bytes, DecodeContext::default())
+        .expect_err("decoding should fail due to conversion error");
     assert!(err.to_string().contains("timestamp must be non-negative"));
 }
 
@@ -493,12 +526,11 @@ fn length_delimited_round_trips() {
     let proto_bytes = encode_proto_length_delimited(&proto_msg);
     let prost_bytes = encode_prost_length_delimited(&prost_msg);
 
-    let decoded_proto = SampleMessage::decode_length_delimited(proto_bytes.clone(), encoding::DecodeContext::default())
-        .expect("proto length-delimited decode failed");
+    let decoded_proto = decode_length_delimited::<SampleMessage>(proto_bytes.clone()).expect("proto length-delimited decode failed");
     assert_eq!(decoded_proto, proto_msg);
 
-    let decoded_proto_from_prost = SampleMessage::decode_length_delimited(prost_bytes.clone(), encoding::DecodeContext::default())
-        .expect("proto decode from prost length-delimited failed");
+    let decoded_proto_from_prost =
+        decode_length_delimited::<SampleMessage>(prost_bytes.clone()).expect("proto decode from prost length-delimited failed");
     assert_eq!(decoded_proto_from_prost, proto_msg);
 
     let decoded_prost = SampleMessageProst::decode_length_delimited(prost_bytes.clone()).expect("prost length-delimited decode failed");
@@ -517,13 +549,13 @@ fn decode_handles_non_canonical_field_order() {
     encoding::int32::encode_tagged(8, SampleEnumProst::from(source.mode) as i32, &mut buf);
     encoding::bytes::encode_tagged(4, &source.data, &mut buf);
     encoding::int64::encode_tagged(7, source.values[0], &mut buf);
-    NestedMessage::encode_with_tag(6, &source.nested_list[0], &mut buf);
+    encode_message_with_tag::<6, NestedMessage>(&source.nested_list[0], &mut buf);
     encoding::string::encode_tagged(3, &source.name, &mut buf);
     encoding::bool::encode_tagged(2, source.flag, &mut buf);
     encoding::uint32::encode_tagged(1, source.id, &mut buf);
-    NestedMessage::encode_with_tag(6, &source.nested_list[1], &mut buf);
+    encode_message_with_tag::<6, NestedMessage>(&source.nested_list[1], &mut buf);
     encoding::int64::encode_tagged(7, source.values[1], &mut buf);
-    NestedMessage::encode_with_tag(5, source.nested.as_ref().expect("missing nested"), &mut buf);
+    encode_message_with_tag::<5, NestedMessage>(source.nested.as_ref().expect("missing nested"), &mut buf);
     encoding::int64::encode_tagged(7, source.values[2], &mut buf);
     encoding::int64::encode_tagged(7, source.values[3], &mut buf);
     if let Some(optional_mode) = source.optional_mode {
@@ -596,7 +628,8 @@ fn mixed_proto_cross_roundtrip_with_prost() {
     assert_eq!(proto_from_prost, proto_msg);
 
     let proto_bytes = encode_proto_message(&proto_msg);
-    let decoded_proto = MixedProto::decode(proto_bytes.clone()).expect("mixed proto decode failed");
+    let decoded_proto =
+        <MixedProto as ProtoDecode>::decode(proto_bytes.clone(), DecodeContext::default()).expect("mixed proto decode failed");
     assert_eq!(decoded_proto, proto_msg);
     let decoded_prost = MixedProtoProst::decode(proto_bytes.clone()).expect("mixed prost decode from proto bytes failed");
     assert_eq!(decoded_prost, prost_msg);
@@ -604,7 +637,8 @@ fn mixed_proto_cross_roundtrip_with_prost() {
     assert_eq!(reconverted_prost, prost_msg);
 
     let prost_bytes = encode_prost_message(&prost_msg);
-    let decoded_proto_from_prost = MixedProto::decode(prost_bytes.clone()).expect("mixed proto decode from prost bytes failed");
+    let decoded_proto_from_prost = <MixedProto as ProtoDecode>::decode(prost_bytes.clone(), DecodeContext::default())
+        .expect("mixed proto decode from prost bytes failed");
     assert_eq!(decoded_proto_from_prost, proto_msg);
     let reconverted_prost_from_proto = MixedProtoProst::from(&decoded_proto_from_prost);
     assert_eq!(reconverted_prost_from_proto, prost_msg);
@@ -621,7 +655,7 @@ fn mixed_proto_skip_and_rebuild_behaviour() {
     proto_msg.checksum = 0;
 
     let bytes = encode_proto_message(&proto_msg);
-    let decoded = MixedProto::decode(bytes).expect("mixed proto decode failed");
+    let decoded = <MixedProto as ProtoDecode>::decode(bytes, DecodeContext::default()).expect("mixed proto decode failed");
 
     assert!(decoded.cached.is_empty(), "skipped field should remain at default");
     assert_eq!(
@@ -641,54 +675,34 @@ fn enum_discriminants_match_proto_requirements() {
 #[test]
 fn zero_copy_container_roundtrip() {
     let default_container = ZeroCopyContainer::default();
-    assert_eq!(ZeroCopyContainer::encoded_len(&default_container), 0);
+    assert_eq!(proto_len(&default_container), 0);
 
     let fixture = zero_copy_fixture();
-    assert!(ZeroCopyContainer::encoded_len(&fixture) > 0);
+    assert!(proto_len(&fixture) > 0);
 
     let encoded = ZeroCopyContainer::encode_to_vec(&fixture);
-    let decoded = ZeroCopyContainer::decode(Bytes::from(encoded)).expect("decode fixture");
+    let decoded = <ZeroCopyContainer as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default()).expect("decode fixture");
     assert_eq!(decoded, fixture);
 }
 
 #[test]
 fn zero_copy_field_roundtrip() {
     let nested = NestedMessage { value: 42 };
-    let from_ref = (&nested).to_zero_copy();
-    let from_owned = nested.clone().to_zero_copy();
-    assert_eq!(from_ref.as_bytes(), from_owned.as_bytes());
-
-    let message = ZeroCopyMessage { payload: from_ref.clone() };
+    let message = ZeroCopyMessage { payload: nested.clone() };
     let encoded = ZeroCopyMessage::encode_to_vec(&message);
-    let decoded = ZeroCopyMessage::decode(Bytes::from(encoded)).expect("decode zero copy message");
+    let decoded =
+        <ZeroCopyMessage as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default()).expect("decode zero copy message");
 
-    assert_eq!(decoded.payload.as_bytes(), from_ref.as_bytes());
-    let decoded_nested = decoded.payload.decode().expect("decode nested message");
-    assert_eq!(decoded_nested, nested);
+    assert_eq!(decoded.payload, nested);
 }
 
 #[test]
 fn zero_copy_enum_variants_roundtrip() {
     let container = zero_copy_enum_fixture();
     let encoded = ZeroCopyEnumContainer::encode_to_vec(&container);
-    let decoded = ZeroCopyEnumContainer::decode(Bytes::from(encoded)).expect("decode zero copy enum container");
+    let decoded = <ZeroCopyEnumContainer as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default())
+        .expect("decode zero copy enum container");
     assert_eq!(decoded, container);
-
-    let simple_enum = container.raw_direct.clone().decode().expect("decode simple enum");
-    assert_eq!(simple_enum, SampleEnum::Two);
-
-    let roundtrip_simple = ZeroCopy::from(&SampleEnum::Two);
-    assert_eq!(roundtrip_simple.decode().expect("decode roundtrip enum"), SampleEnum::Two);
-
-    let list = container.raw_list.clone().decode().expect("decode enum list");
-    assert_eq!(list, complex_enum_list_fixture());
-
-    let nested = container.nested.clone().decode().expect("decode nested enum message");
-    assert_eq!(nested.status, SampleEnum::Two);
-    assert_eq!(nested.timeline, nested_complex_enum_list_fixture().values);
-
-    let nested_list = nested.bag.decode().expect("decode nested bag");
-    assert_eq!(nested_list, nested_complex_enum_list_fixture());
 }
 
 #[test]
@@ -701,24 +715,24 @@ fn encoded_len_matches_prost_for_complex_collections() {
     collections_with_defaults.tree_messages.insert(String::new(), NestedMessage::default());
     collections_with_defaults.hash_scores.insert(0, 0);
 
-    let defaults_proto_len = CollectionsMessage::encoded_len(&collections_with_defaults);
+    let defaults_proto_len = proto_len(&collections_with_defaults);
     let defaults_proto_bytes = CollectionsMessage::encode_to_vec(&collections_with_defaults);
     assert_eq!(defaults_proto_bytes.len(), defaults_proto_len);
     let defaults_prost =
         CollectionsMessageProst::decode(Bytes::from(defaults_proto_bytes.clone())).expect("prost decode with default map entries");
     assert_eq!(defaults_prost, CollectionsMessageProst::from(&collections_with_defaults));
 
-    let base_proto_len = CollectionsMessage::encoded_len(&base_collections);
+    let base_proto_len = proto_len(&base_collections);
     let base_prost_len = CollectionsMessageProst::from(&base_collections).encoded_len();
     assert_eq!(base_proto_len, base_prost_len, "collections message encoded_len must match prost");
 
     let mut zero_container = zero_copy_fixture();
-    let zero_proto_len = ZeroCopyContainer::encoded_len(&zero_container);
+    let zero_proto_len = proto_len(&zero_container);
     let zero_prost_len = ZeroCopyContainerProst::from(&zero_container).encoded_len();
     assert_eq!(zero_proto_len, zero_prost_len, "zero copy container encoded_len must match prost");
 
     zero_container.enum_lookup.insert(String::new(), SampleEnum::default());
-    let zero_defaults_proto_len = ZeroCopyContainer::encoded_len(&zero_container);
+    let zero_defaults_proto_len = proto_len(&zero_container);
     let zero_defaults_bytes = ZeroCopyContainer::encode_to_vec(&zero_container);
     assert_eq!(zero_defaults_bytes.len(), zero_defaults_proto_len);
     let zero_defaults_prost =
@@ -744,7 +758,8 @@ fn map_default_entries_align_with_prost() {
         "map encoding must match prost when default keys or values are present"
     );
 
-    let roundtrip = CollectionsMessage::decode(Bytes::from(proto_bytes)).expect("decode proto message");
+    let roundtrip =
+        <CollectionsMessage as ProtoDecode>::decode(Bytes::from(proto_bytes), DecodeContext::default()).expect("decode proto message");
     assert_eq!(roundtrip, message, "default map entries should survive encode/decode");
 }
 
@@ -774,31 +789,31 @@ enum SkippedTupleDefault {
 
 #[test]
 fn complex_enum_is_default_checks_variant_and_fields() {
-    let default_method = PaymentMethod::proto_default();
-    assert!(<PaymentMethod as ProtoWire>::is_default_impl(&&default_method));
+    let default_method = <PaymentMethod as ProtoDecoder>::proto_default();
+    assert!(<PaymentMethod as ProtoArchive>::is_default(&default_method));
 
     let non_default_variant = PaymentMethod::Card(String::new());
-    assert!(!<PaymentMethod as ProtoWire>::is_default_impl(&&non_default_variant));
+    assert!(!<PaymentMethod as ProtoArchive>::is_default(&non_default_variant));
 
     let non_default_field = PaymentMethod::Cash(5);
-    assert!(!<PaymentMethod as ProtoWire>::is_default_impl(&&non_default_field));
+    assert!(!<PaymentMethod as ProtoArchive>::is_default(&non_default_field));
 
-    let nested_default = PaymentMethod::Crypto(QuoteLamports::proto_default());
+    let nested_default = PaymentMethod::Crypto(<QuoteLamports as ProtoDecoder>::proto_default());
     assert!(matches!(nested_default, PaymentMethod::Crypto(_)));
-    assert!(!<PaymentMethod as ProtoWire>::is_default_impl(&&nested_default));
+    assert!(!<PaymentMethod as ProtoArchive>::is_default(&nested_default));
 }
 
 #[test]
 fn complex_enum_default_tuple_skip_is_ignored() {
     use std::rc::Rc;
 
-    let default_value = SkippedTupleDefault::proto_default();
+    let default_value = <SkippedTupleDefault as ProtoDecoder>::proto_default();
     assert!(matches!(default_value, SkippedTupleDefault::Ephemeral(_)));
-    assert!(<SkippedTupleDefault as ProtoWire>::is_default_impl(&&default_value));
+    assert!(<SkippedTupleDefault as ProtoArchive>::is_default(&default_value));
 
     let non_default_variant = SkippedTupleDefault::Persistent(0);
-    assert!(!<SkippedTupleDefault as ProtoWire>::is_default_impl(&&non_default_variant));
+    assert!(!<SkippedTupleDefault as ProtoArchive>::is_default(&non_default_variant));
 
     let non_default_field = SkippedTupleDefault::Ephemeral(Rc::new("runtime".to_string()));
-    assert!(<SkippedTupleDefault as ProtoWire>::is_default_impl(&&non_default_field));
+    assert!(<SkippedTupleDefault as ProtoArchive>::is_default(&non_default_field));
 }

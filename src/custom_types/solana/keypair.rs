@@ -2,7 +2,8 @@ use solana_keypair::Keypair;
 const BYTES: usize = Keypair::SECRET_KEY_LENGTH;
 
 use crate::DecodeError;
-use crate::ProtoShadow;
+use crate::ProtoShadowDecode;
+use crate::ProtoShadowEncode;
 use crate::proto_message;
 
 extern crate self as proto_rs;
@@ -14,18 +15,16 @@ pub struct KeypairProto {
     inner: [u8; BYTES],
 }
 
-impl ProtoShadow<Keypair> for KeypairProto {
-    type Sun<'a> = &'a Keypair;
-    type OwnedSun = Keypair;
-    type View<'a> = Self;
-
+impl ProtoShadowDecode<Keypair> for KeypairProto {
     #[inline(always)]
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
+    fn to_sun(self) -> Result<Keypair, DecodeError> {
         Ok(Keypair::new_from_array(self.inner))
     }
+}
 
+impl<'a> ProtoShadowEncode<'a, Keypair> for KeypairProto {
     #[inline(always)]
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+    fn from_sun(value: &'a Keypair) -> Self {
         Self {
             inner: *value.secret_bytes(),
         }
@@ -35,7 +34,9 @@ impl ProtoShadow<Keypair> for KeypairProto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProtoExt;
+    use crate::ProtoDecode;
+    use crate::ProtoEncode;
+    use crate::encoding::DecodeContext;
     use crate::encoding::WireType;
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
@@ -56,8 +57,8 @@ mod tests {
     #[test]
     fn roundtrip_proto_ext() {
         let original = Keypair::new_from_array(sample_keypair_bytes());
-        let encoded = <Keypair as ProtoExt>::encode_to_vec(&original);
-        let decoded = <Keypair as ProtoExt>::decode(encoded.as_slice()).expect("decode");
+        let encoded = <Keypair as ProtoEncode>::encode_to_vec(&original);
+        let decoded = <Keypair as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded.to_bytes(), original.to_bytes());
     }
 
@@ -68,7 +69,7 @@ mod tests {
         encode_varint((BYTES - 1) as u64, &mut buf);
         buf.extend(core::iter::repeat_n(0u8, BYTES - 1));
 
-        match <Keypair as ProtoExt>::decode(buf.as_slice()) {
+        match <Keypair as ProtoDecode>::decode(buf.as_slice(), DecodeContext::default()) {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
                 let message = err.to_string();

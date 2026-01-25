@@ -1,7 +1,6 @@
 use alloc::boxed::Box;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::ProtoDecoder;
@@ -15,6 +14,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Box<T> {
     const KIND: ProtoKind = T::KIND;
@@ -67,26 +67,14 @@ impl<T> ProtoArchive for Box<T>
 where
     T: ProtoArchive,
 {
-    type Archived<'a> = T::Archived<'a>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        T::len(archived)
-    }
-
-    #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode(archived, buf) };
-    }
-
-    #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        T::archive(self.as_ref())
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }
 }
 
@@ -115,25 +103,13 @@ impl<T> ProtoArchive for &Box<T>
 where
     T: ProtoArchive,
 {
-    type Archived<'x> = T::Archived<'x>;
-
     #[inline(always)]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
     #[inline(always)]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        T::len(archived)
-    }
-
-    #[inline(always)]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        unsafe { T::encode(archived, buf) };
-    }
-
-    #[inline(always)]
-    fn archive(&self) -> Self::Archived<'_> {
-        T::archive(self.as_ref())
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }
 }

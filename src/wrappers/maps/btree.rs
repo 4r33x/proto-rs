@@ -2,16 +2,13 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use bytes::Buf;
-use bytes::BufMut;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_varint;
-use crate::encoding::encode_varint;
-use crate::encoding::encoded_len_varint;
 use crate::encoding::skip_field;
-use crate::traits::ArchivedProtoInner;
+use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -20,6 +17,7 @@ use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
+use crate::traits::buffer::RevWriter;
 use crate::wrappers::maps::MapEntryDecoded;
 
 impl<'a, K, V> ProtoShadowEncode<'a, BTreeMap<K, V>> for &'a BTreeMap<K, V>
@@ -40,46 +38,31 @@ where
     for<'b> <K as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
     for<'b> <V as ProtoEncode>::Shadow<'b>: ProtoArchive + ProtoExt,
 {
-    type Archived<'x> = Vec<u8>;
-
     #[inline]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
     #[inline]
-    fn len(archived: &Self::Archived<'_>) -> usize {
-        archived.len()
-    }
-
-    #[inline]
-    unsafe fn encode(archived: Self::Archived<'_>, buf: &mut impl BufMut) {
-        buf.put_slice(archived.as_slice());
-    }
-
-    #[inline]
-    fn archive(&self) -> Self::Archived<'_> {
-        let mut bytes = Vec::new();
-        for entry in *self {
-            let key = <K as ProtoEncode>::Shadow::from_sun(entry.0);
-            let key_archived = ArchivedProtoInner::<1, <K as ProtoEncode>::Shadow<'_>>::new(&key);
-            let value = <V as ProtoEncode>::Shadow::from_sun(entry.1);
-            let value_archived = ArchivedProtoInner::<2, <V as ProtoEncode>::Shadow<'_>>::new(&value);
-            let entry_len = key_archived.len() + value_archived.len();
-            bytes.reserve(encoded_len_varint(entry_len as u64) + entry_len);
-            encode_varint(entry_len as u64, &mut bytes);
-            key_archived.encode(&mut bytes);
-            value_archived.encode(&mut bytes);
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        let entries: Vec<(&K, &V)> = self.iter().collect();
+        for (key_value, value_value) in entries.into_iter().rev() {
+            let key = <K as ProtoEncode>::Shadow::from_sun(key_value);
+            let value = <V as ProtoEncode>::Shadow::from_sun(value_value);
+            let mark = w.mark();
+            ArchivedProtoField::<2, <V as ProtoEncode>::Shadow<'_>>::archive(&value, w);
+            ArchivedProtoField::<1, <K as ProtoEncode>::Shadow<'_>>::archive(&key, w);
+            if TAG != 0 {
+                let payload_len = w.written_since(mark);
+                w.put_varint(payload_len as u64);
+                ArchivedProtoField::<TAG, Self>::put_key(w);
+            }
         }
-        bytes
     }
 }
 
-impl<K, V> ProtoExt for BTreeMap<K, V>
-where
-    V: ProtoExt,
-{
-    const KIND: ProtoKind = ProtoKind::Repeated(&V::KIND);
+impl<K, V> ProtoExt for BTreeMap<K, V> {
+    const KIND: ProtoKind = ProtoKind::Repeated(&crate::wrappers::maps::MAP_ENTRY_KIND);
     const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeMap");
 }
 
@@ -117,6 +100,12 @@ where
         }
         let len = decode_varint(buf)? as usize;
         let mut slice = buf.take(len);
+        if !slice.has_remaining() {
+            let entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
+            let (key, value) = entry.to_sun()?;
+            self.insert(key, value);
+            return Ok(());
+        }
         while slice.has_remaining() {
             let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
             MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_into(&mut entry, &mut slice, ctx)?;

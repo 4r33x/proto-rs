@@ -8,14 +8,13 @@ mod req;
 mod resp;
 use bytes::BufMut;
 pub use req::ProtoRequest;
-pub use req::ZeroCopyRequest;
 pub use resp::ProtoResponse;
-pub use resp::ZeroCopyResponse;
 pub use resp::map_proto_response;
 pub use resp::map_proto_stream_result;
 
 use crate::ProtoDecode;
 use crate::ProtoEncode;
+use crate::ProtoExt;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
 use crate::coders::AsBytes;
@@ -27,13 +26,6 @@ use crate::coders::SunByRef;
 use crate::coders::SunByRefDeref;
 use crate::coders::SunByVal;
 use crate::encoding::DecodeContext;
-
-pub trait ToZeroCopyResponse<T> {
-    fn to_zero_copy(self) -> ZeroCopyResponse<T>;
-}
-pub trait ToZeroCopyRequest<T> {
-    fn to_zero_copy(self) -> ZeroCopyRequest<T>;
-}
 
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
 where
@@ -75,7 +67,7 @@ where
 // Case 1: Sun<'a> = T  (owned)
 impl<T> EncoderExt<T, SunByVal> for ProtoEncoder<T, SunByVal>
 where
-    T: ProtoEncode + 'static,
+    T: ProtoEncode + ProtoExt + 'static,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
@@ -85,7 +77,7 @@ where
 // Case 2: Sun<'a> = &'a T (borrowed)
 impl<T> EncoderExt<T, SunByRef> for ProtoEncoder<T, SunByRef>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
@@ -94,7 +86,7 @@ where
 
 impl<T> EncoderExt<Arc<T>, SunByRefDeref> for ProtoEncoder<Arc<T>, SunByRefDeref>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: Arc<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
@@ -103,7 +95,7 @@ where
 
 impl<T> EncoderExt<Box<T>, SunByRefDeref> for ProtoEncoder<Box<T>, SunByRefDeref>
 where
-    T: ProtoEncode,
+    T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: Box<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
