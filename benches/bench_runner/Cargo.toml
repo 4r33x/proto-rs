@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-criterion = { version = "0.7" }
+criterion = { version = "0.8.1" }
 chrono.workspace = true
 prost = { workspace = true, features = ["derive", "std"] }
 bytes = { workspace = true, default-features = false }

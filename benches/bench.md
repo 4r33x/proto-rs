@@ -1,10 +1,10 @@
-# Benchmark Run — 2026-01-25 18:40:16 - 0.9.0-pre
+
+# Benchmark Run — 2026-01-25 18:46:56 - 0.9.0-pre
 
 | Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |
 | --- | --- | --- | ---: | ---: | ---: |
-| zero_copy_vs_clone | prost | clone + encode | 132671.64 | 478.01 | 1.00× |
-| zero_copy_vs_clone | proto_rs | zero_copy | 244944.82 | 882.53 | 1.85× faster |
-
+| zero_copy_vs_clone | prost | clone + encode | 127062.44 | 457.80 | 1.00× |
+| zero_copy_vs_clone | proto_rs | zero_copy | 231498.55 | 834.09 | 1.82× faster |
 
 # Benchmark Run — 2026-01-25 18:43:02 - 0.9.0-pre
 
