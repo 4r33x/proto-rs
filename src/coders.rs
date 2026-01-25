@@ -36,6 +36,8 @@ pub struct SunByVal; // Sun<'a> = T
 pub struct SunByRef; // Sun<'a> = &'a T
 #[derive(Clone, Copy, Default)]
 pub struct SunByRefDeref; // Sun<'a> = &'a T::Target
+#[derive(Clone, Copy, Default)]
+pub struct ZeroCopyMode; // Pre-encoded ZeroCopy<T>
 
 #[derive(Debug, Clone)]
 pub struct ProtoCodec<Encode = (), Decode = (), Mode = SunByRef> {

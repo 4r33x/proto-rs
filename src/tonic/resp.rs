@@ -2,9 +2,13 @@ use tonic::Response;
 use tonic::Status;
 
 use crate::ProtoEncode;
+use crate::ProtoExt;
 use crate::SunByRef;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
+use crate::coders::ZeroCopyMode;
+use crate::traits::ProtoArchive;
+use crate::traits::ZeroCopy;
 
 pub trait ProtoResponse<T>: Sized {
     type Encode: Send + Sync + 'static;
@@ -60,6 +64,33 @@ where
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         Response::new(self)
+    }
+}
+
+// ZeroCopy<T> can be used in place of T for responses
+impl<T> ProtoResponse<T> for ZeroCopy<T>
+where
+    T: ProtoEncode + ProtoExt + Send + Sync + 'static,
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+{
+    type Encode = ZeroCopy<T>;
+    type Mode = ZeroCopyMode;
+    #[inline]
+    fn into_response(self) -> Response<Self::Encode> {
+        Response::new(self)
+    }
+}
+
+impl<T> ProtoResponse<T> for Response<ZeroCopy<T>>
+where
+    T: ProtoEncode + ProtoExt + Send + Sync + 'static,
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+{
+    type Encode = ZeroCopy<T>;
+    type Mode = ZeroCopyMode;
+    #[inline]
+    fn into_response(self) -> Response<Self::Encode> {
+        self
     }
 }
 

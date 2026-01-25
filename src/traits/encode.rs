@@ -55,6 +55,20 @@ pub trait ProtoEncode: Sized {
         };
         value.to_vec_tight()
     }
+
+    /// Pre-encode the message into a `ZeroCopy<Self>` wrapper.
+    ///
+    /// This allows you to serialize the message once and reuse the serialized
+    /// form multiple times without re-encoding. Returns `None` if the message
+    /// is empty/default.
+    #[inline(always)]
+    fn to_zero_copy(&self) -> Option<ZeroCopy<Self>>
+    where
+        Self: ProtoExt,
+        for<'s> <Self as ProtoEncode>::Shadow<'s>: ProtoArchive,
+    {
+        ArchivedProtoMessage::new(self).map(ZeroCopy::new)
+    }
 }
 
 pub struct ArchivedProtoMessage<T: ProtoEncode, W: RevWriter> {
@@ -123,6 +137,51 @@ where
     #[inline(always)]
     pub fn to_vec_raw(self) -> Vec<u8> {
         self.inner.finish_raw()
+    }
+}
+
+/// A zero-copy wrapper around a pre-encoded proto message.
+///
+/// `ZeroCopy<T>` holds an already-serialized proto message in a buffer,
+/// allowing it to be sent over the wire without re-encoding. This is useful
+/// when you want to pre-compute the serialization (e.g., for caching) and
+/// avoid repeated encoding costs.
+///
+/// Both server responses and client requests can use `ZeroCopy<T>` instead
+/// of `T` directly.
+pub struct ZeroCopy<T: ProtoEncode + ProtoExt>
+where
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+{
+    inner: ArchivedProtoMessage<T, RevVec>,
+}
+
+impl<T: ProtoEncode + ProtoExt> ZeroCopy<T>
+where
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+{
+    /// Create a new `ZeroCopy<T>` from an `ArchivedProtoMessage`.
+    #[inline]
+    pub fn new(inner: ArchivedProtoMessage<T, RevVec>) -> Self {
+        Self { inner }
+    }
+
+    /// Get the underlying bytes as a slice.
+    #[inline(always)]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner.inner.as_written_slice()
+    }
+
+    /// Encode the pre-serialized message into a buffer.
+    #[inline(always)]
+    pub fn encode(self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
+        self.inner.encode(buf)
+    }
+
+    /// Convert to a tight Vec<u8> with data at offset 0.
+    #[inline(always)]
+    pub fn into_vec(self) -> crate::alloc::vec::Vec<u8> {
+        self.inner.to_vec_tight()
     }
 }
 

@@ -25,7 +25,10 @@ use crate::coders::ProtoEncoder;
 use crate::coders::SunByRef;
 use crate::coders::SunByRefDeref;
 use crate::coders::SunByVal;
+use crate::coders::ZeroCopyMode;
 use crate::encoding::DecodeContext;
+use crate::traits::ProtoArchive;
+use crate::traits::ZeroCopy;
 
 impl<Encode, Decode, Mode> Codec for ProtoCodec<Encode, Decode, Mode>
 where
@@ -99,6 +102,18 @@ where
 {
     fn encode_sun(&mut self, item: Box<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+    }
+}
+
+// Case 5: ZeroCopy<T> - pre-encoded message
+impl<T> EncoderExt<ZeroCopy<T>, ZeroCopyMode> for ProtoEncoder<ZeroCopy<T>, ZeroCopyMode>
+where
+    T: ProtoEncode + ProtoExt + 'static,
+    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
+{
+    fn encode_sun(&mut self, item: ZeroCopy<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
+        dst.put_slice(item.as_bytes());
+        Ok(())
     }
 }
 
