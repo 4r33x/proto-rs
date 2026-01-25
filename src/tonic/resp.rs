@@ -1,8 +1,10 @@
 use tonic::Response;
 use tonic::Status;
 
+use crate::BytesMode;
 use crate::ProtoEncode;
 use crate::SunByRef;
+use crate::ZeroCopy;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
 
@@ -57,6 +59,30 @@ where
 {
     type Encode = T;
     type Mode = SunByRef;
+    #[inline]
+    fn into_response(self) -> Response<Self::Encode> {
+        Response::new(self)
+    }
+}
+
+impl<T> ProtoResponse<T> for Response<ZeroCopy<T>>
+where
+    T: ProtoEncode + Send + Sync + 'static,
+{
+    type Encode = ZeroCopy<T>;
+    type Mode = BytesMode;
+    #[inline]
+    fn into_response(self) -> Response<Self::Encode> {
+        self
+    }
+}
+
+impl<T> ProtoResponse<T> for ZeroCopy<T>
+where
+    T: ProtoEncode + Send + Sync + 'static,
+{
+    type Encode = ZeroCopy<T>;
+    type Mode = BytesMode;
     #[inline]
     fn into_response(self) -> Response<Self::Encode> {
         Response::new(self)
