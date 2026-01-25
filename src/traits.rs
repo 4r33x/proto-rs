@@ -15,6 +15,7 @@ pub use utils::const_unreachable;
 
 use crate::encoding::WireType;
 
+mod buffer;
 mod decode;
 mod encode;
 mod example_impl;

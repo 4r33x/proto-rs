@@ -41,14 +41,6 @@ pub struct IDDecoded<Kd, Vd> {
     pub v: Vd,
 }
 
-/// ---------- Archived container for IDShadow encoding ----------
-pub struct IDArchived<'x, 'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> {
-    pub f1: ArchivedProtoField<'x, 1, u64>,
-    pub f2: ArchivedProtoField<'x, 2, <K as ProtoEncode>::Shadow<'a>>,
-    pub f3: ArchivedProtoField<'x, 3, <V as ProtoEncode>::Shadow<'a>>,
-    pub len: usize,
-}
-
 // ---------------- ProtoExt glue ----------------
 
 impl<K, V> ProtoExt for ID<'_, K, V> {
