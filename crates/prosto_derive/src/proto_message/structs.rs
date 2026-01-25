@@ -421,17 +421,14 @@ fn generate_ref_shadow_impls(
         .collect::<Vec<_>>();
 
     let shadow_inits = shadow_fields.iter().map(|(ident, _shadow_ty, init, _tag)| quote! { let #ident = #init; }).collect::<Vec<_>>();
-    let shadow_inits_for_default = shadow_inits.clone();
 
     let archive_fields = shadow_fields.iter().rev().map(|(ident, shadow_ty, _init, tag)| {
         quote! { ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&#ident, w); }
     });
 
-    let is_default_checks = shadow_fields.iter().map(|(ident, _shadow_ty, _init, _tag)| {
-        quote! { ::proto_rs::ProtoArchive::is_default(&#ident) }
-    });
+    let is_default_checks = encoded_fields.iter().map(|info| is_default_field_expr(info, quote! { self }, use_getters));
 
-    let is_default_expr = if shadow_fields.is_empty() {
+    let is_default_expr = if encoded_fields.is_empty() {
         quote! { true }
     } else {
         quote! { #( #is_default_checks )&&* }
@@ -441,7 +438,6 @@ fn generate_ref_shadow_impls(
         quote! { true }
     } else {
         quote! {
-            #( #shadow_inits_for_default )*
             #is_default_expr
         }
     };
@@ -734,6 +730,30 @@ fn shadow_field_expr(info: &FieldInfo<'_>, base: TokenStream2, use_getters: bool
         let field_ty = &info.field.ty;
         let shadow_ty = shadow_field_ty(info);
         quote! { <#shadow_ty as ::proto_rs::ProtoShadowEncode<'a, #field_ty>>::from_sun(#ref_expr) }
+    }
+}
+
+fn is_default_field_expr(info: &FieldInfo<'_>, base: TokenStream2, use_getters: bool) -> TokenStream2 {
+    let base_for_access = base.clone();
+    let access_expr = if use_getters && let Some(getter) = &info.config.getter {
+        parse_getter_expr(getter, &base_for_access, info.field)
+    } else {
+        info.access.access_tokens(base_for_access)
+    };
+    let ref_expr = if use_getters && info.config.getter.is_some() {
+        access_expr.clone()
+    } else {
+        quote! { &#access_expr }
+    };
+
+    if needs_encode_conversion(&info.config, &info.parsed) {
+        let converted = encode_conversion_expr(info, &ref_expr);
+        quote! { ::proto_rs::ProtoArchive::is_default(&#converted) }
+    } else if is_value_encode_type(&info.field.ty) {
+        quote! { ::proto_rs::ProtoArchive::is_default(#ref_expr) }
+    } else {
+        let shadow_expr = shadow_field_expr(info, base, use_getters);
+        quote! { ::proto_rs::ProtoArchive::is_default(&#shadow_expr) }
     }
 }
 
