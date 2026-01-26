@@ -1565,7 +1565,11 @@ fn proto_path_info(config: &UnifiedProtoConfig) -> (String, String) {
         || (String::new(), String::new()),
         |path| {
             let file_name = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
-            (derive_package_name(file_name), path.to_string())
+            let package_name = config
+                .rpc_package_override()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| derive_package_name(file_name));
+            (package_name, path.to_string())
         },
     )
 }

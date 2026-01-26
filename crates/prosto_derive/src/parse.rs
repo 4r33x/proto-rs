@@ -173,6 +173,11 @@ impl UnifiedProtoConfig {
         self.rpc_package.as_ref().expect("RPC package name required: use rpc_package = \"name\"")
     }
 
+    /// Get the RPC package name if set
+    pub fn rpc_package_override(&self) -> Option<&str> {
+        self.rpc_package.as_deref()
+    }
+
     /// Get the proto file path (returns None if not specified)
     pub fn proto_path(&self) -> Option<&str> {
         self.proto_path.as_deref()
