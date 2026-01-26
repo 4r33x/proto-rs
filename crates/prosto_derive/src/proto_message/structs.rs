@@ -649,37 +649,57 @@ fn generate_proto_impls(
             } else {
                 quote! {}
             };
-            let sun_merge_field_impl = if sun_ir_ty.is_some() {
-                quote! {
-                    let ir = <<Self as ::proto_rs::ProtoEncode>::Shadow<'_> as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
-                    let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, <Self as ::proto_rs::ProtoEncode>::Shadow<'_>>>::from_sun(&ir);
-                    <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
-                    *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
-                    Ok(())
-                }
-            } else {
-                quote! {
+            let sun_decoder_impl = if sun_ir_ty.is_none() {
+                let sun_merge_field_impl = quote! {
                     let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
                     <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
                     *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                     Ok(())
-                }
-            };
-            let sun_merge_impl = if sun_ir_ty.is_some() {
-                quote! {
-                    let ir = <<Self as ::proto_rs::ProtoEncode>::Shadow<'_> as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                    let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, <Self as ::proto_rs::ProtoEncode>::Shadow<'_>>>::from_sun(&ir);
-                    <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
-                    *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
-                    Ok(())
-                }
-            } else {
-                quote! {
+                };
+                let sun_merge_impl = quote! {
                     let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                     <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
                     *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                     Ok(())
+                };
+                quote! {
+                    impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                        #[inline(always)]
+                        fn proto_default() -> Self {
+                            let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                            <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
+                                .expect("failed to build default sun value")
+                        }
+
+                        #[inline(always)]
+                        fn clear(&mut self) {
+                            *self = Self::proto_default();
+                        }
+
+                        #[inline(always)]
+                        fn merge_field(
+                            value: &mut Self,
+                            tag: u32,
+                            wire_type: ::proto_rs::encoding::WireType,
+                            buf: &mut impl ::proto_rs::bytes::Buf,
+                            ctx: ::proto_rs::encoding::DecodeContext,
+                        ) -> Result<(), ::proto_rs::DecodeError> {
+                            #sun_merge_field_impl
+                        }
+
+                        #[inline(always)]
+                        fn merge(
+                            &mut self,
+                            wire_type: ::proto_rs::encoding::WireType,
+                            buf: &mut impl ::proto_rs::bytes::Buf,
+                            ctx: ::proto_rs::encoding::DecodeContext,
+                        ) -> Result<(), ::proto_rs::DecodeError> {
+                            #sun_merge_impl
+                        }
+                    }
                 }
+            } else {
+                quote! {}
             };
             let sun_shadow_from_ir_impl = sun_ir_ty.as_ref().map(|sun_ir_ty| {
                 quote! {
@@ -735,40 +755,7 @@ fn generate_proto_impls(
                     #validate_with_ext_impl
                 }
 
-                impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
-                    #[inline(always)]
-                    fn proto_default() -> Self {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
-                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
-                            .expect("failed to build default sun value")
-                    }
-
-                    #[inline(always)]
-                    fn clear(&mut self) {
-                        *self = Self::proto_default();
-                    }
-
-                    #[inline(always)]
-                    fn merge_field(
-                        value: &mut Self,
-                        tag: u32,
-                        wire_type: ::proto_rs::encoding::WireType,
-                        buf: &mut impl ::proto_rs::bytes::Buf,
-                        ctx: ::proto_rs::encoding::DecodeContext,
-                    ) -> Result<(), ::proto_rs::DecodeError> {
-                        #sun_merge_field_impl
-                    }
-
-                    #[inline(always)]
-                    fn merge(
-                        &mut self,
-                        wire_type: ::proto_rs::encoding::WireType,
-                        buf: &mut impl ::proto_rs::bytes::Buf,
-                        ctx: ::proto_rs::encoding::DecodeContext,
-                    ) -> Result<(), ::proto_rs::DecodeError> {
-                        #sun_merge_impl
-                    }
-                }
+                #sun_decoder_impl
             }
         });
         quote! { #( #sun_impls )* }
