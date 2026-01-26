@@ -88,6 +88,26 @@ pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
     pub by_ref: bool,
+    pub encode_ty: Option<Type>,
+}
+
+struct SunSpec {
+    ty: Type,
+    encode_ty: Option<Type>,
+}
+
+impl Parse for SunSpec {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ty: Type = input.parse()?;
+        let encode_ty = if input.peek(syn::Token![=>]) {
+            input.parse::<syn::Token![=>]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        Ok(Self { ty, encode_ty })
+    }
 }
 
 #[derive(Clone)]
@@ -221,14 +241,15 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 // Handle array syntax: sun = [Type1, Type2]
                 let content;
                 syn::bracketed!(content in value);
-                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> = content.parse_terminated(Type::parse, syn::Token![,])?;
-                for ty in types {
-                    config.push_sun(ty);
+                let types: syn::punctuated::Punctuated<SunSpec, syn::Token![,]> =
+                    content.parse_terminated(SunSpec::parse, syn::Token![,])?;
+                for spec in types {
+                    config.push_sun(spec);
                 }
             } else {
                 // Handle single type: sun = Type
-                let ty: Type = value.parse()?;
-                config.push_sun(ty);
+                let spec: SunSpec = value.parse()?;
+                config.push_sun(spec);
             }
             return Ok(());
         } else if meta.path.is_ident("rpc_server") {
@@ -370,11 +391,16 @@ impl UnifiedProtoConfig {
         Ok(variants)
     }
 
-    fn push_sun(&mut self, ty: Type) {
-        let by_ref = is_reference_sun(&ty);
-        let ty = normalize_sun_type(ty);
+    fn push_sun(&mut self, spec: SunSpec) {
+        let by_ref = is_reference_sun(&spec.ty);
+        let ty = normalize_sun_type(spec.ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
-        self.suns.push(SunConfig { ty, message_ident, by_ref });
+        self.suns.push(SunConfig {
+            ty,
+            message_ident,
+            by_ref,
+            encode_ty: spec.encode_ty,
+        });
     }
 }
 
@@ -716,6 +742,15 @@ mod tests {
 
         assert_eq!(extract_type_ident(&normalized), Some("BorrowedType".to_string()));
         assert!(matches!(normalized, Type::Path(_)));
+    }
+
+    #[test]
+    fn parses_sun_spec_with_encode_shadow() {
+        let spec: SunSpec = parse_quote!(Task => TaskRef);
+        let normalized = normalize_sun_type(spec.ty);
+
+        assert_eq!(extract_type_ident(&normalized), Some("Task".to_string()));
+        assert!(spec.encode_ty.is_some());
     }
 
     #[test]

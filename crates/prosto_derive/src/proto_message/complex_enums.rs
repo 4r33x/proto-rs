@@ -75,17 +75,23 @@ pub(super) fn generate_complex_enum_impl(
     let sun_impls = if config.has_suns() {
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
+            let encode_shadow_ty = sun
+                .encode_ty
+                .as_ref()
+                .map(|encode_ty| quote! { #encode_ty })
+                .unwrap_or_else(|| quote! { #name #ty_generics });
+            let decode_shadow_ty = quote! { #name #ty_generics };
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
                     const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
                 }
 
                 impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
-                    type Shadow<'a> = #name #ty_generics;
+                    type Shadow<'a> = #encode_shadow_ty;
                 }
 
                 impl #impl_generics ::proto_rs::ProtoDecode for #target_ty #where_clause {
-                    type ShadowDecoded = #name #ty_generics;
+                    type ShadowDecoded = #decode_shadow_ty;
 
                     #[inline(always)]
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
@@ -98,7 +104,7 @@ pub(super) fn generate_complex_enum_impl(
                 impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
                     #[inline(always)]
                     fn proto_default() -> Self {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                        let shadow = <#decode_shadow_ty as ::proto_rs::ProtoDecoder>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                             .expect("failed to build default sun value")
                     }
@@ -116,8 +122,8 @@ pub(super) fn generate_complex_enum_impl(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
+                        let mut shadow = <#decode_shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                        <#decode_shadow_ty as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
                         *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
                     }
@@ -129,8 +135,8 @@ pub(super) fn generate_complex_enum_impl(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
+                        let mut shadow = <#decode_shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#decode_shadow_ty as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
                         *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
                     }
@@ -139,14 +145,14 @@ pub(super) fn generate_complex_enum_impl(
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
                     #[inline(always)]
                     fn is_default(&self) -> bool {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
+                        let shadow = <#encode_shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#encode_shadow_ty as ::proto_rs::ProtoArchive>::is_default(&shadow)
                     }
 
                     #[inline(always)]
                     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
+                        let shadow = <#encode_shadow_ty as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#encode_shadow_ty as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
                     }
                 }
             }
