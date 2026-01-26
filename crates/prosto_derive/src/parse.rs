@@ -20,8 +20,8 @@ use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
 use crate::utils::type_name_with_generics_for_path;
 use crate::write_file::register_and_emit_proto_inner;
-use crate::write_file::register_package;
 use crate::write_file::register_imports;
+use crate::write_file::register_package;
 
 pub trait ParseFieldAttr {
     fn extract_field_imports(&self, map: &mut BTreeMap<String, BTreeSet<String>>);
@@ -92,7 +92,7 @@ pub struct SunConfig {
 }
 
 /// Encoding intermediate representation type for sun conversions.
-/// When specified, the encoding path becomes: Sun -> SunIR (via ProtoShadowEncode) -> Shadow.
+/// When specified, the encoding path becomes: Sun -> `SunIR` (via `ProtoShadowEncode`) -> Shadow.
 #[derive(Clone, Default)]
 pub struct SunIrConfig {
     pub ty: Option<Type>,

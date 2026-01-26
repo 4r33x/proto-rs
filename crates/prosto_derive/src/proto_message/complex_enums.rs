@@ -136,19 +136,19 @@ pub(super) fn generate_complex_enum_impl(
                     }
                 }
 
-                impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    #[inline(always)]
-                    fn is_default(&self) -> bool {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
-                    }
+                // impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
+                //     #[inline(always)]
+                //     fn is_default(&self) -> bool {
+                //         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                //         <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
+                //     }
 
                     #[inline(always)]
-                    fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
-                    }
-                }
+                //     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                //         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                //         <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
+                //     }
+                // }
             }
         });
         quote! { #( #sun_impls )* }
@@ -230,17 +230,17 @@ pub(super) fn generate_complex_enum_impl(
             }
         }
 
-        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            #[inline(always)]
-            fn is_default(&self) -> bool {
-                <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
-            }
+        // impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+        //     #[inline(always)]
+        //     fn is_default(&self) -> bool {
+        //         <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
+        //     }
 
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                <&Self as ::proto_rs::ProtoArchive>::archive::<TAG>(&self, w)
-            }
-        }
+        //     #[inline(always)]
+        //     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+        //         <&Self as ::proto_rs::ProtoArchive>::archive::<TAG>(&self, w)
+        //     }
+        // }
 
         impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
             type Shadow<'a> = &'a #name #ty_generics;

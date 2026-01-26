@@ -718,19 +718,19 @@ fn generate_proto_impls(
                     }
                 }
 
-                impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    #[inline(always)]
-                    fn is_default(&self) -> bool {
-                        let shadow = <#encode_shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        ::proto_rs::ProtoArchive::is_default(&shadow)
-                    }
+                // impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
+                //     #[inline(always)]
+                //     fn is_default(&self) -> bool {
+                //         let shadow = <#encode_shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                //         ::proto_rs::ProtoArchive::is_default(&shadow)
+                //     }
 
-                    #[inline(always)]
-                    fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                        let shadow = <#encode_shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#encode_shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
-                    }
-                }
+                //     #[inline(always)]
+                //     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                //         let shadow = <#encode_shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                //         <#encode_shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
+                //     }
+                // }
             }
         });
         quote! { #( #sun_impls )* }
@@ -786,19 +786,19 @@ fn generate_proto_impls(
             type Shadow<'a> = #shadow_ty;
         }
 
-        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            #[inline(always)]
-            fn is_default(&self) -> bool {
-                let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                ::proto_rs::ProtoArchive::is_default(&shadow)
-            }
+        // impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+        //     #[inline(always)]
+        //     fn is_default(&self) -> bool {
+        //         let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+        //         ::proto_rs::ProtoArchive::is_default(&shadow)
+        //     }
 
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
-            }
-        }
+        //     #[inline(always)]
+        //     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+        //         let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+        //         <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
+        //     }
+        // }
 
         #sun_impls
     }
@@ -883,7 +883,7 @@ fn build_sun_shadow_encode_init(fields: &[FieldInfo<'_>], original_fields: &syn:
     }
 }
 
-/// Build shadow initialization from the sun_ir intermediate type.
+/// Build shadow initialization from the `sun_ir` intermediate type.
 /// This generates code that accesses fields from `ir` using getters.
 fn build_sun_ir_shadow_init(fields: &[FieldInfo<'_>], original_fields: &syn::Fields, _ir_ty: &Type) -> TokenStream2 {
     let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
