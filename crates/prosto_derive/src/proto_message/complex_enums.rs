@@ -76,7 +76,7 @@ pub(super) fn generate_complex_enum_impl(
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
             let sun_ir_ty = config.sun_ir.as_ref();
-            let sun_encode_shadow_ty = sun_ir_ty.map(|sun_ir_ty| quote! { #sun_ir_ty }).unwrap_or_else(|| quote! { #name #ty_generics });
+            let sun_encode_shadow_ty = sun_ir_ty.map_or_else(|| quote! { #name #ty_generics }, |sun_ir_ty| quote! { #sun_ir_ty });
             let sun_ir_ext_impls = sun_ir_ty.map(|sun_ir_ty| {
                 quote! {
                     impl #shadow_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #shadow_where_clause {
