@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0]
+- Introduced new trait design - codegen and encoding/decoding paths changed to new algo
+- Encoding path now uses upb-style reverse writing
+- Decoding converts to the Shadow IR exactly once
+- Both encoding and decoding performance improved significantly
+- Since encoding is done in a single pass now, it is now impossible to produce corrupted messages when using atomics or other concurrent types
+
 ## [0.8.0]
 - Revert to [0.7.6]
 
