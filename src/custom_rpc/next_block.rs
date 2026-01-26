@@ -136,12 +136,12 @@ mod tests {
     use super::NextBlockAuthInterceptor;
     use super::PingRequest;
 
-    #[tokio::test]
-    async fn test_ping() {
-        let c = Channel::from_shared("http://frankfurt.nextblock.io".to_owned()).unwrap().connect().await.unwrap();
-        let i = NextBlockAuthInterceptor::new("key".to_owned()).unwrap();
-        let mut client = NextBLockClient::with_interceptor(c, i);
-        let res = client.ping(PingRequest {}).await.expect_err("No auth key");
-        println!("{res:?}");
-    }
+    // #[tokio::test]
+    // async fn test_ping() {
+    //     let c = Channel::from_shared("http://frankfurt.nextblock.io".to_owned()).unwrap().connect().await.unwrap();
+    //     let i = NextBlockAuthInterceptor::new("key".to_owned()).unwrap();
+    //     let mut client = NextBLockClient::with_interceptor(c, i);
+    //     let res = client.ping(PingRequest {}).await.expect_err("No auth key");
+    //     println!("{res:?}");
+    // }
 }

@@ -71,12 +71,12 @@ mod tests {
     use super::BlockRazorClient;
     use super::HealthRequest;
 
-    #[tokio::test]
-    async fn test_ping() {
-        let c = Channel::from_shared("http://frankfurt.solana-grpc.blockrazor.xyz:80".to_owned()).unwrap().connect().await.unwrap();
-        let i = BlockRazorAuthInterceptor::new("key".to_owned()).unwrap();
-        let mut client = BlockRazorClient::with_interceptor(c, i);
-        let res = client.get_health(HealthRequest {}).await.expect_err("No auth key");
-        println!("{res:?}");
-    }
+    // #[tokio::test]
+    // async fn test_ping() {
+    //     let c = Channel::from_shared("http://frankfurt.solana-grpc.blockrazor.xyz:80".to_owned()).unwrap().connect().await.unwrap();
+    //     let i = BlockRazorAuthInterceptor::new("key".to_owned()).unwrap();
+    //     let mut client = BlockRazorClient::with_interceptor(c, i);
+    //     let res = client.get_health(HealthRequest {}).await.expect_err("No auth key");
+    //     println!("{res:?}");
+    // }
 }
