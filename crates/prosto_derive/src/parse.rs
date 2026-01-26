@@ -75,6 +75,7 @@ pub struct UnifiedProtoConfig {
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
+    pub sun_ir: SunIrConfig,
     pub transparent: bool,
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
@@ -88,6 +89,13 @@ pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
     pub by_ref: bool,
+}
+
+/// Encoding intermediate representation type for sun conversions.
+/// When specified, the encoding path becomes: Sun -> SunIR (via ProtoShadowEncode) -> Shadow.
+#[derive(Clone, Default)]
+pub struct SunIrConfig {
+    pub ty: Option<Type>,
 }
 
 #[derive(Clone)]
@@ -230,6 +238,12 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 let ty: Type = value.parse()?;
                 config.push_sun(ty);
             }
+            return Ok(());
+        } else if meta.path.is_ident("sun_ir") {
+            // Parse sun_ir = TypeRef<'a>
+            let value = meta.value()?;
+            let ty: Type = value.parse()?;
+            config.sun_ir = SunIrConfig { ty: Some(ty) };
             return Ok(());
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {

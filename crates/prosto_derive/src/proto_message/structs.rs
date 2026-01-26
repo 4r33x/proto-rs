@@ -597,9 +597,10 @@ fn generate_proto_impls(
     };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
-    let (shadow_impl_generics, _shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
+    let (shadow_impl_generics, shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
 
     let sun_impls = if config.has_suns() {
+        let sun_ir_ty = config.sun_ir.ty.as_ref();
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
             let sun_post_decode = if post_decode_hooks.is_empty() && config.validator.is_none() {
@@ -615,7 +616,24 @@ fn generate_proto_impls(
                     }
                 }
             };
-            let sun_shadow_encode_impl = if let Some(init) = &sun_shadow_encode_init {
+
+            // Generate ProtoShadowEncode for sun type to shadow
+            // When sun_ir is specified: Sun -> SunIR (user-provided) -> Shadow (using getters on IR)
+            // When no sun_ir: Sun -> Shadow (using getters on Sun, if provided)
+            let sun_shadow_encode_impl = if let Some(ir_ty) = sun_ir_ty {
+                // With sun_ir: generate Shadow's from_sun that first converts Sun -> IR, then uses getters on IR
+                let ir_shadow_init = build_sun_ir_shadow_init(fields, original_fields, ir_ty);
+                quote! {
+                    impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #target_ty> for #shadow_ident #shadow_ty_generics #shadow_where_clause {
+                        #[inline(always)]
+                        fn from_sun(value: &'a #target_ty) -> Self {
+                            let ir = <#ir_ty as ::proto_rs::ProtoShadowEncode<'a, #target_ty>>::from_sun(value);
+                            #ir_shadow_init
+                        }
+                    }
+                }
+            } else if let Some(init) = &sun_shadow_encode_init {
+                // Without sun_ir but with getters: generate ProtoType's from_sun using getters directly on sun
                 quote! {
                     impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #target_ty> for #name #ty_generics #shadow_where_clause {
                         #[inline(always)]
@@ -627,6 +645,21 @@ fn generate_proto_impls(
             } else {
                 quote! {}
             };
+
+            // Determine ProtoEncode::Shadow type for the sun type
+            // When sun_ir is specified: Shadow = actual shadow type (encoding: Sun -> SunIR -> Shadow)
+            // When no sun_ir: Shadow = proto type (encoding: Sun -> Proto -> ProtoShadow via ProtoArchive)
+            let (encode_shadow_ty, encode_shadow_ty_short) = if sun_ir_ty.is_some() {
+                // For GAT context (type Shadow<'a> = ...), use the full shadow type with 'a
+                // For non-GAT contexts (ProtoArchive), use '_ wildcard
+                let shadow_ty_short = shadow_type_tokens_with_lifetime(generics, shadow_ident, quote! { '_ });
+                (quote! { #shadow_ident #shadow_ty_generics }, shadow_ty_short)
+            } else {
+                // Without sun_ir, use the proto type as the "shadow" for the sun type
+                // The proto type then uses its own shadow for actual archiving
+                (quote! { #name #ty_generics }, quote! { #name #ty_generics })
+            };
+
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
                     const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
@@ -635,7 +668,7 @@ fn generate_proto_impls(
                 #sun_shadow_encode_impl
 
                 impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
-                    type Shadow<'a> = #name #ty_generics;
+                    type Shadow<'a> = #encode_shadow_ty;
                 }
 
                 impl #impl_generics ::proto_rs::ProtoDecode for #target_ty #where_clause {
@@ -665,7 +698,7 @@ fn generate_proto_impls(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
                         *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
@@ -678,7 +711,7 @@ fn generate_proto_impls(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
                         *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
@@ -688,14 +721,14 @@ fn generate_proto_impls(
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
                     #[inline(always)]
                     fn is_default(&self) -> bool {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
+                        let shadow = <#encode_shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        ::proto_rs::ProtoArchive::is_default(&shadow)
                     }
 
                     #[inline(always)]
                     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
+                        let shadow = <#encode_shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#encode_shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
                     }
                 }
             }
@@ -847,6 +880,71 @@ fn build_sun_shadow_encode_init(fields: &[FieldInfo<'_>], original_fields: &syn:
             quote! { Self( #( #inits, )* ) }
         }
         syn::Fields::Unit => quote! { Self },
+    }
+}
+
+/// Build shadow initialization from the sun_ir intermediate type.
+/// This generates code that accesses fields from `ir` using getters.
+fn build_sun_ir_shadow_init(fields: &[FieldInfo<'_>], original_fields: &syn::Fields, _ir_ty: &Type) -> TokenStream2 {
+    let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
+
+    match original_fields {
+        syn::Fields::Named(_) => {
+            let phantom_ident = syn::Ident::new("__proto_phantom", proc_macro2::Span::call_site());
+            let mut inits: Vec<_> = encoded_fields
+                .iter()
+                .map(|info| {
+                    let ident = info.access.ident().expect("expected named field ident");
+                    let init = sun_ir_field_init(info);
+                    quote! { #ident: #init }
+                })
+                .collect();
+            inits.push(quote! { #phantom_ident: ::core::marker::PhantomData });
+            quote! { Self { #( #inits, )* } }
+        }
+        syn::Fields::Unnamed(_) => {
+            let mut inits: Vec<_> = encoded_fields.iter().map(|info| sun_ir_field_init(info)).collect();
+            inits.push(quote! { ::core::marker::PhantomData });
+            quote! { Self( #( #inits, )* ) }
+        }
+        syn::Fields::Unit => quote! { Self { __proto_phantom: ::core::marker::PhantomData } },
+    }
+}
+
+/// Generate field initialization from the IR type for shadow construction.
+/// Uses getter expressions with `ir` as the base variable.
+/// For fields with getters: use getter expression (returns reference with lifetime 'a through IR's borrowed fields)
+/// For fields without getters: copy/clone directly from IR's owned fields
+fn sun_ir_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
+    let base = quote! { ir };
+
+    if let Some(getter) = &info.config.getter {
+        // Fields with getters: the getter returns a reference through the IR's borrowed fields
+        // which have lifetime 'a, so we can use ProtoShadowEncode
+        let access_expr = parse_getter_expr(getter, &base, info.field);
+
+        if needs_encode_conversion(&info.config, &info.parsed) {
+            encode_conversion_expr(info, &access_expr)
+        } else {
+            let field_ty = &info.field.ty;
+            let shadow_ty = shadow_field_ty(info);
+            quote! { <#shadow_ty as ::proto_rs::ProtoShadowEncode<'a, #field_ty>>::from_sun(#access_expr) }
+        }
+    } else {
+        // Fields without getters: accessed directly from IR's owned fields
+        // For value types, just copy; for others, clone
+        let access_expr = info.access.access_tokens(base);
+
+        if needs_encode_conversion(&info.config, &info.parsed) {
+            let ref_expr = quote! { &#access_expr };
+            encode_conversion_expr(info, &ref_expr)
+        } else if is_value_encode_type(&info.field.ty) {
+            // Primitive/Copy type - just copy
+            quote! { #access_expr }
+        } else {
+            // Non-Copy type - clone
+            quote! { #access_expr.clone() }
+        }
     }
 }
 
