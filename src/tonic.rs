@@ -62,19 +62,15 @@ where
     }
 }
 
-// ----- Specialization via helper trait (disjoint impls) -----
-
-// Case 1: Sun<'a> = T  (owned)
 impl<T> EncoderExt<T, SunByVal> for ProtoEncoder<T, SunByVal>
 where
-    T: ProtoEncode + ProtoExt + 'static,
+    T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
         ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
     }
 }
 
-// Case 2: Sun<'a> = &'a T (borrowed)
 impl<T> EncoderExt<T, SunByRef> for ProtoEncoder<T, SunByRef>
 where
     T: ProtoEncode + ProtoExt,
@@ -102,8 +98,6 @@ where
     }
 }
 
-// ----- Single blanket Encoder impl that delegates to the helper -----
-
 impl<T, Mode> Encoder for ProtoEncoder<T, Mode>
 where
     ProtoEncoder<T, Mode>: EncoderExt<T, Mode>,
@@ -125,7 +119,6 @@ where
     type Error = Status;
 
     fn decode(&mut self, src: &mut DecodeBuf<'_>) -> Result<Option<Self::Item>, Self::Error> {
-        // Always attempt to decode: tonic gives full frames, even empty ones
         match T::decode(src, DecodeContext::default()) {
             Ok(msg) => Ok(Some(msg)),
             Err(err) => Err(Status::data_loss(format!("failed to decode message: {err}"))),

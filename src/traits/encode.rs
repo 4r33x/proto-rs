@@ -11,11 +11,11 @@ use crate::traits::buffer::RevWriter;
 use crate::traits::utils::VarintConst;
 use crate::traits::utils::encode_varint_const;
 
-pub trait ProtoShadowEncode<'a, T: ?Sized>: Sized {
+pub trait ProtoShadowEncode<'a, T: ?Sized> {
     fn from_sun(value: &'a T) -> Self;
 }
 
-pub trait ProtoArchive: Sized {
+pub trait ProtoArchive {
     fn is_default(&self) -> bool;
     /// Reverse one-pass archive into a [`RevWriter`].
     ///
@@ -27,7 +27,7 @@ pub trait ProtoArchive: Sized {
 
 pub type ArchivedProtoMessageWriter<T> = ArchivedProtoMessage<T, RevVec>;
 
-pub trait ProtoEncode: Sized {
+pub trait ProtoEncode {
     type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
 
     #[inline(always)]

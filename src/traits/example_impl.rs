@@ -27,7 +27,7 @@ pub struct ID<'b, K, V> {
 }
 
 /// ---------- Shadow (borrows Sun for encoding) ----------
-pub struct IDShadow<'a, K: ProtoEncode + ?Sized, V: ProtoEncode + ?Sized> {
+pub struct IDShadow<'a, K: ProtoEncode , V: ProtoEncode > {
     pub id: u64,
     pub k: <K as ProtoEncode>::Shadow<'a>,
     pub v: <V as ProtoEncode>::Shadow<'a>,

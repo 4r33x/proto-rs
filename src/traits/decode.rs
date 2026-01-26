@@ -7,12 +7,12 @@ use crate::encoding::decode_varint;
 use crate::error::DecodeError;
 use crate::traits::ProtoExt;
 
-pub trait ProtoShadowDecode<T>: Sized {
+pub trait ProtoShadowDecode<T> {
     /// Convert shadow -> final owned type.
     fn to_sun(self) -> Result<T, DecodeError>;
 }
 
-pub trait ProtoDecoder: Sized + ProtoExt {
+pub trait ProtoDecoder: ProtoExt {
     /// default value used for decoding
     /// should be real default value as protobuf spec
     fn proto_default() -> Self;
