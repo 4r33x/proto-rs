@@ -1,0 +1,126 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package api;
+
+import "google.protobuf.proto";
+
+enum SubmitProtection {
+  SP_L_OW = 0;
+  SP_M_E_D_I_UM = 1;
+  SP_H_I_GH = 2;
+}
+
+enum SubmitStrategy {
+  P_U_K_N_O_WN = 0;
+  P_S_U_B_M_IT_A_LL = 1;
+  P_A_B_O_RT_ON_F_I_R_ST_E_R_R_OR = 2;
+  P_W_A_IT_F_OR_C_O_N_F_I_R_M_A_T_I_ON = 3;
+}
+
+message GetRateLimitRequest {}
+
+message GetRateLimitResponse {
+  string account_id = 1;
+  string tier = 2;
+  string interval = 3;
+  uint64 interval_num = 4;
+  uint64 limit = 5;
+  uint64 count = 6;
+  uint64 reset = 7;
+  repeated StreamInfo stream_infos = 8;
+}
+
+message GetServerTimeRequest {}
+
+message GetServerTimeResponse {
+  string timestamp = 1;
+}
+
+message GetTransactionTraceRequest {}
+
+message GetTransactionTraceResponse {}
+
+message PostSubmitBatchRequest {
+  repeated PostSubmitRequestEntry entries = 1;
+  SubmitStrategy submit_strategy = 2;
+  optional bool use_bundle = 3;
+  optional bool front_running_protection = 4;
+  optional google.protobuf.Timestamp timestamp = 5;
+  optional SubmitProtection submit_protection = 6;
+}
+
+message PostSubmitBatchResponse {
+  repeated PostSubmitBatchResponseEntry transactions = 1;
+}
+
+message PostSubmitBatchResponseEntry {
+  string signature = 1;
+  string error = 2;
+  bool submitted = 3;
+}
+
+message PostSubmitPaladinRequest {
+  TransactionMessageV2 transaction = 1;
+  optional bool revert_protection = 2;
+  optional google.protobuf.Timestamp timestamp = 3;
+}
+
+message PostSubmitRequest {
+  TransactionMessage transaction = 1;
+  bool skip_pre_flight = 2;
+  optional bool front_running_protection = 3;
+  optional uint64 tip = 4;
+  optional bool use_staked_rpcs = 6;
+  optional bool fast_best_effort = 7;
+  optional bool allow_back_run = 8;
+  optional string revenue_address = 9;
+  optional bool sniping = 10;
+  optional google.protobuf.Timestamp timestamp = 11;
+  optional SubmitProtection submit_protection = 12;
+  optional bool revert_protection = 13;
+}
+
+message PostSubmitRequestEntry {
+  TransactionMessage transaction = 1;
+  bool skip_pre_flight = 2;
+}
+
+message PostSubmitResponse {
+  string signature = 1;
+}
+
+message PostSubmitSnipeRequest {
+  repeated PostSubmitRequestEntry entries = 1;
+  optional bool use_staked_rpcs = 2;
+  optional google.protobuf.Timestamp timestamp = 3;
+}
+
+message PostSubmitSnipeResponse {
+  repeated PostSubmitBatchResponseEntry transactions = 1;
+}
+
+message StreamInfo {
+  string stream_name = 1;
+  string subscription_id = 2;
+  int64 start_time = 3;
+  int64 credit_used = 4;
+}
+
+message TransactionMessage {
+  string content = 1;
+  bool is_cleanup = 2;
+}
+
+message TransactionMessageV2 {
+  string content = 1;
+}
+
+service Api {
+  rpc GetServerTime(GetServerTimeRequest) returns (GetServerTimeResponse) {}
+  rpc PostSubmitV2(PostSubmitRequest) returns (PostSubmitResponse) {}
+  rpc PostSubmitBatchV2(PostSubmitBatchRequest) returns (PostSubmitBatchResponse) {}
+  rpc PostSubmitSnipeV2(PostSubmitSnipeRequest) returns (PostSubmitSnipeResponse) {}
+  rpc GetRateLimit(GetRateLimitRequest) returns (GetRateLimitResponse) {}
+  rpc GetTransactionTrace(GetTransactionTraceRequest) returns (GetTransactionTraceResponse) {}
+  rpc PostSubmitPaladinV2(PostSubmitPaladinRequest) returns (PostSubmitResponse) {}
+}

@@ -8,3 +8,5 @@ pub mod solana;
 pub mod chrono;
 
 mod hashers;
+
+pub mod well_known;
