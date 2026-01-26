@@ -130,7 +130,7 @@ pub mod rizz_types {
     pub struct FooResponse;
 
 }
-pub mod sigma_rpc_simple {
+pub mod sigma_rpc {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
     use crate::custom_types::CustomEx;

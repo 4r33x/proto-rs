@@ -1,6 +1,6 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
-package block_razor_rpc;
+package serverpb;
 
 message HealthRequest {}
 

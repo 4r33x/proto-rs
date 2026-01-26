@@ -1,6 +1,6 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
 syntax = "proto3";
-package sigma_rpc_complex;
+package sigma_rpc;
 
 import "goon_types.proto";
 import "rizz_types.proto";
