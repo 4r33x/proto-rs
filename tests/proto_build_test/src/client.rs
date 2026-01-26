@@ -383,3 +383,14 @@ pub mod solana {
     }
 
 }
+pub mod well_known {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct Timestamp {
+        pub seconds: i64,
+        pub nanos: i32,
+    }
+
+}
