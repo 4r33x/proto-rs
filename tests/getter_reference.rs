@@ -26,6 +26,11 @@ mod private {
     }
 }
 
+#[proto_message]
+struct TaskWapper {
+    innner: Task,
+}
+
 #[derive(Clone, PartialEq, Debug)]
 struct Task {
     cfg_id: u64,
