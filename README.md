@@ -1,6 +1,6 @@
 # Rust as first-class citizen for gRPC ecosystem
 
-`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all. The crate ships batteries-included attribute support, a reverse encoder, and a rich catalog of built-in wrappers so your Rust types map cleanly onto auto-generated Protobuf schemas.
+`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing macros that handle all proto-related work so you don't need to touch `.proto` files at all. The crate ships a reverse encoder, a modular trait system for encoding/decoding, and a rich catalog of built-in wrappers so your Rust types map cleanly onto auto-generated Protobuf schemas.
 
 ## Motivation
 
@@ -12,23 +12,23 @@
 ## What can you build with `proto_rs`?
 
 * **Pure-Rust schema definitions.** Use `#[proto_message]`, `#[proto_rpc]`, and `#[proto_dump]` to declare every message and service in idiomatic Rust while the derive machinery keeps `.proto` files in sync for external consumers.
-* **Tailored encoding pipelines.** `ProtoShadow` lets you bolt custom serialization logic onto any message, opt into multiple domain "suns", and keep performance-sensitive conversions entirely under your control.
+* **Tailored encoding pipelines.** The Shadow pattern lets you bolt custom serialization logic onto any message, target multiple domain "sun" types, and keep performance-sensitive conversions entirely under your control.
 * **Reverse encoder.** The single-pass reverse writer avoids precomputing lengths and keeps payload emission deterministic with reverse field order.
 * **Workspace-wide schema registries.** The build-time inventory collects every emitted `.proto`, making it easy to materialize or lint schemas from a single crate.
 
-For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this crate implement different approach
+For fellow proto <-> native type conversions enjoyers <=0.5.0 versions of this crate implement different approach
 
 ## Key capabilities
 
-- **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code. The generated codec now reuses internal helpers to avoid redundant buffering and unnecessary copies.
-- **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts, and the macro avoids needless boxing/casting in the conversion layer.
-- **Attribute-level control** – Fine-tune your schema surface with `treat_as` for ad-hoc type substitutions, `transparent` for single-field wrappers, concrete `sun` targets (including generic forms like `Sun<T>`), and optional tags/import paths. Built-in wrappers cover `ArcSwap`, `CachePadded`, atomics, and other common containers so everyday Rust types round-trip without extra glue.
+- **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing the encoding/decoding traits so the type can be serialized without extra glue code.
+- **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts.
+- **Attribute-level control** – Fine-tune your schema surface with `treat_as` for ad-hoc type substitutions, `transparent` for single-field wrappers, concrete `sun` targets (including generic forms like `Sun<T>`), and optional tags/import paths. Built-in wrappers cover `ArcSwap`, `CachePadded`, atomics, mutexes, and other common containers so everyday Rust types round-trip without extra glue.
 - **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
 - **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs). The helper deduplicates inputs and writes canonical packages derived from the file path.
 - **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
 
 
-Define your messages and services using the derive macros with native rust types:
+Define your messages and services using the derive macros with native Rust types:
 
 ```rust
 #[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
@@ -56,16 +56,90 @@ pub trait SigmaRpc {
 Yep, all types here are Rust types. We can then implement the server just like a normal Tonic service, and the `.proto` schema is generated for you whenever emission is enabled.
 
 
+## Core Trait Architecture
+
+The encoding/decoding system is built around a modular trait hierarchy that separates concerns cleanly:
+
+### Marker and Kind
+
+```rust
+pub trait ProtoExt {
+    const KIND: ProtoKind;  // Message, Primitive, SimpleEnum, Bytes, String, Repeated
+}
+```
+
+`ProtoKind` categorizes how a type is encoded on the wire and determines the wire type.
+
+### Encoding Traits
+
+```rust
+pub trait ProtoEncode {
+    type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
+
+    fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>;
+    fn encode_to_vec(&self) -> Vec<u8>;
+    fn to_zero_copy(&self) -> ZeroCopy<Self>;
+}
+
+pub trait ProtoShadowEncode<'a, T: ?Sized> {
+    fn from_sun(value: &'a T) -> Self;
+}
+
+pub trait ProtoArchive {
+    fn is_default(&self) -> bool;
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter);
+}
+```
+
+- **`ProtoEncode`**: Main encoding trait. Associates the type with its encoding shadow.
+- **`ProtoShadowEncode`**: Converts a reference to the "sun" type into the encoding shadow.
+- **`ProtoArchive`**: Performs the actual reverse-pass encoding into a `RevWriter`.
+
+### Decoding Traits
+
+```rust
+pub trait ProtoDecode: Sized {
+    type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self>;
+
+    fn decode(buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError>;
+}
+
+pub trait ProtoShadowDecode<T> {
+    fn to_sun(self) -> Result<T, DecodeError>;
+}
+
+pub trait ProtoDecoder: ProtoExt {
+    fn proto_default() -> Self;
+    fn clear(&mut self);
+    fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+}
+```
+
+- **`ProtoDecode`**: Main decoding trait. Associates the type with its decoding shadow.
+- **`ProtoShadowDecode`**: Converts the decoded shadow into the final "sun" type.
+- **`ProtoDecoder`**: Low-level field-by-field decoding logic.
+
+### The Shadow Pattern
+
+The "shadow" pattern separates wire representation from your domain types:
+
+- **Sun Type**: Your actual Rust type (e.g., `DateTime<Utc>`, `D128`)
+- **Encoding Shadow**: Borrows from the sun for encoding (lifetime-bound, zero-copy friendly)
+- **Decoding Shadow**: Owned type accumulated during decode, then converted to sun
+
+This separation allows custom wire formats without polluting your domain model.
+
+
 ## Advanced Features
 
-Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
+Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums and prost enumerations.
 
-### Attribute quick hits (there are more attributes, view examples and tests)
+### Attribute quick hits
 
 - Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, for properly treating a type alias).
-- Add `transparent` to skip tag and use this type as zerocost newtype wrapper.
+- Add `transparent` to skip tag and use this type as zero-cost newtype wrapper.
 - Target multiple `sun` domains, including concrete generics like `Sun<MyType<u64>>`, so a single shadow can serve several variants.
-- Mix and match built-in wrappers such as `ArcSwap`, `CachePadded`, and atomic integers; the derive machinery already knows how to serialize them.
+- Mix and match built-in wrappers such as `ArcSwap`, `CachePadded`, `Mutex`, `RwLock`, and atomic integers; the derive machinery already knows how to serialize them.
 
 ### Feature examples
 
@@ -255,7 +329,7 @@ message VeryComplexProtoAttr {
 
 ## Inject Proto Imports
 
-It's not mandatory to use this macro at all, macros above derive and inject imports from attributes automaticly
+It's not mandatory to use this macro at all, macros above derive and inject imports from attributes automatically.
 
 But in case you need it, to add custom imports to your generated .proto files use the `inject_proto_import!` macro:
 
@@ -263,12 +337,12 @@ But in case you need it, to add custom imports to your generated .proto files us
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common");
 ```
 
-This will inject the specified import statements into the target .proto file
+This will inject the specified import statements into the target .proto file.
 
 
-## Custom encode/decode pipelines with `ProtoShadow`
+## Custom encode/decode pipelines with Shadows
 
-`ProtoExt` types pair with a companion `Shadow` type that implements [`ProtoShadow`](src/traits.rs). This trait defines how a value is lowered into the bytes that will be sent over the wire and how it is rebuilt during decoding. The default derive covers most standard Rust types, but you can substitute a custom representation when you need to interoperate with an existing protocol or avoid lossy conversions. Default Shadow of type is &Self for complex types and Self for primitive
+Types implement `ProtoEncode` and `ProtoDecode` which pair with companion shadow types. The encoding shadow implements `ProtoShadowEncode` to borrow from your type, and `ProtoArchive` to write bytes. The decoding shadow implements `ProtoDecoder` for field-by-field parsing and `ProtoShadowDecode` to convert to your final type.
 
 The [`fastnum` decimal adapter](src/custom_types/fastnum/signed.rs) shows how to map `fastnum::D128` into a compact integer layout while still exposing ergonomic Rust APIs:
 
@@ -285,13 +359,14 @@ pub struct D128Proto {
     pub is_negative: bool,
 }
 
-impl ProtoShadow for D128Proto {
-    type Sun<'a> = &'a D128;
-    type OwnedSun = D128;
-    type View<'a> = Self;
+// Encoding: borrow from D128 to create the shadow
+impl<'a> ProtoShadowEncode<'a, D128> for D128Proto {
+    fn from_sun(value: &'a D128) -> Self { /* extract fields */ }
+}
 
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> { /* deserialize */ }
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> { /* serialize */ }
+// Decoding: convert shadow back to D128
+impl ProtoShadowDecode<D128> for D128Proto {
+    fn to_sun(self) -> Result<D128, DecodeError> { /* reconstruct */ }
 }
 ```
 
@@ -308,48 +383,55 @@ pub struct LineShadow {
     pub description: String,
 }
 
-impl ProtoShadow<InvoiceLine> for LineShadow {
-    type Sun<'a> = &'a InvoiceLine;
-    type OwnedSun = InvoiceLine;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(InvoiceLine::new(self.cents, self.description))
-    }
-
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, InvoiceLine> for LineShadow {
+    fn from_sun(value: &'a InvoiceLine) -> Self {
         LineShadow { cents: value.total_cents(), description: value.title().to_owned() }
     }
 }
 
-impl ProtoShadow<AccountingLine> for LineShadow {
-    type Sun<'a> = &'a AccountingLine;
-    type OwnedSun = AccountingLine;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(AccountingLine::from_parts(self.cents, self.description))
+impl ProtoShadowDecode<InvoiceLine> for LineShadow {
+    fn to_sun(self) -> Result<InvoiceLine, DecodeError> {
+        Ok(InvoiceLine::new(self.cents, self.description))
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
+impl<'a> ProtoShadowEncode<'a, AccountingLine> for LineShadow {
+    fn from_sun(value: &'a AccountingLine) -> Self {
         LineShadow { cents: value.cents(), description: value.label().to_owned() }
+    }
+}
+
+impl ProtoShadowDecode<AccountingLine> for LineShadow {
+    fn to_sun(self) -> Result<AccountingLine, DecodeError> {
+        Ok(AccountingLine::from_parts(self.cents, self.description))
     }
 }
 ```
 
-Each `sun` entry generates a full `ProtoExt` implementation so the same shadow type can round-trip either domain struct without code duplication.
+Each `sun` entry generates full `ProtoEncode` and `ProtoDecode` implementations so the same shadow type can round-trip either domain struct without code duplication.
 
 ## Reverse encoding
 
-The encoder now writes in a single reverse pass, upb-style. Implementations write payload bytes first, then prefix
-lengths and tags as needed. This has a few implications:
+The encoder writes in a single reverse pass, upb-style. Implementations write payload bytes first, then prefix lengths and tags as needed. This has a few implications:
 
 - `TAG == 0` encodes a root payload with **no** field key or length prefix.
 - `TAG != 0` encodes a field payload and then prefixes the field key (and length for length-delimited payloads).
 - Deterministic output requires message fields (and repeated elements) to be emitted **in reverse order**.
-- `RevWriter::finish()` returns the backing buffer without copying; the resulting buffer may include prefix slack.
-  Use the provided slice views (`start` + `len`) to target the written range when needed.
+- `RevWriter::finish_tight()` returns the backing buffer without copying; the resulting buffer is compacted with data at offset 0.
 
+The `RevWriter` trait and `RevVec` implementation handle the reverse-writing mechanics:
+
+```rust
+pub trait RevWriter {
+    fn with_capacity(cap: usize) -> Self;
+    fn mark(&self) -> Self::Mark;
+    fn written_since(&self, mark: Self::Mark) -> usize;
+    fn put_u8(&mut self, b: u8);
+    fn put_slice(&mut self, s: &[u8]);
+    fn put_varint(&mut self, v: u64);
+    fn finish_tight(self) -> Self::TightBuf;
+}
+```
 
 
 ## Collecting schemas across a workspace
@@ -380,6 +462,34 @@ This walks the inventory of registered schemas and writes deduplicated `.proto` 
 
 The emission logic is shared by all macros so you can switch behaviours without code changes.
 
+## Built-in Wrapper Support
+
+The crate provides out-of-the-box encoding/decoding for many common Rust types:
+
+### Collections
+- `Vec<T>`, `VecDeque<T>` - repeated fields
+- `HashMap<K, V>`, `BTreeMap<K, V>` - map fields
+- `HashSet<T>`, `BTreeSet<T>` - repeated fields
+- Fixed-size arrays `[T; N]`
+
+### Smart Pointers
+- `Box<T>`, `Arc<T>` - transparent wrappers
+- `Option<T>` - optional fields
+
+### Concurrency Primitives
+- `Mutex<T>`, `RwLock<T>` - with `parking_lot` feature for parking_lot variants
+- `ArcSwap<T>` - with `arc_swap` feature
+- `CachePadded<T>` - with `cache_padded` feature
+- Concurrent collections via `papaya` feature
+
+### Atomics
+- `AtomicBool`, `AtomicI32`, `AtomicU32`, `AtomicI64`, `AtomicU64`, `AtomicUsize`
+
+### Domain Types (feature-gated)
+- `DateTime<Utc>`, `TimeDelta` - with `chrono` feature
+- `D128`, `UD128` - with `fastnum` feature
+- `Address`, `Keypair`, `Signature`, transaction errors - with `solana` feature
+
 ## Examples and tests
 
 Explore the `examples/` directory and the integration tests under `tests/` for end-to-end usage patterns, including schema-only builds and cross-compatibility checks.
@@ -404,12 +514,25 @@ Each run appends a markdown report to `benches/bench.md`, including the `bench_z
 
 ## Optional features
 
-- `std` *(default)* – pulls in the Tonic dependency tree and enables the RPC helpers.
-- `tonic` *(default)* – compiles the gRPC integration layer, including the drop-in codecs, zero-copy request/response wrappers, and Tonic service/client generators.
-- `build-schemas` – register generated schemas at compile time so they can be written later.
-- `emit-proto-files` – eagerly write `.proto` files during compilation.
-- `stable` – compile everything on the stable toolchain by boxing async state. See below for trade-offs.
-- `fastnum`, `solana` – enable extra type support.
+| Feature | Description |
+|---------|-------------|
+| `tonic` *(default)* | gRPC integration layer: codecs, zero-copy request/response wrappers, service/client generators |
+| `build-schemas` | Register generated schemas at compile time for later aggregation |
+| `emit-proto-files` | Eagerly write `.proto` files during compilation |
+| `stable` | Compile on the stable toolchain by boxing async state (see below) |
+| `chrono` | `DateTime<Utc>` and `TimeDelta` support |
+| `fastnum` | `D128` / `UD128` decimal number support |
+| `solana` | Solana blockchain types: `Address`, `Keypair`, `Signature`, transaction errors |
+| `solana_address_hash` | Hash randomization for Solana addresses |
+| `arc_swap` | `ArcSwap<T>` wrapper support |
+| `cache_padded` | `CachePadded<T>` (crossbeam-utils) support |
+| `papaya` | Concurrent `HashMap`/`HashSet` via papaya crate |
+| `parking_lot` | `Mutex`/`RwLock` backed by parking_lot |
+| `block_razor` | Block Razor MEV service client |
+| `next_block` | NextBlock RPC client |
+| `bloxroute` | Bloxroute service client |
+| `jito` | Jito bundle service client |
+| `no-recursion-limit` | Disable recursion depth checking during decode |
 
 ### Stable vs. nightly builds
 
