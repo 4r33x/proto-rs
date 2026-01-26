@@ -18,7 +18,22 @@ pub struct DateTimeProto {
     pub ns: u32,
 }
 
-#[proto_message(proto_path = "protos/chrono.proto", sun = [ TimeDelta])]
+impl ProtoShadowDecode<DateTime<Utc>> for DateTimeProto {
+    fn to_sun(self) -> Result<DateTime<Utc>, DecodeError> {
+        DateTime::from_timestamp(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
+    }
+}
+
+impl<'a> ProtoShadowEncode<'a, DateTime<Utc>> for DateTimeProto {
+    fn from_sun(value: &'a DateTime<Utc>) -> Self {
+        Self {
+            secs: value.timestamp(),
+            ns: value.timestamp_subsec_nanos(),
+        }
+    }
+}
+
+#[proto_message(proto_path = "protos/chrono.proto", sun = [TimeDelta])]
 pub struct TimeDeltaProto {
     #[proto(tag = 1)]
     pub secs: i64,
@@ -46,21 +61,6 @@ impl<'a> ProtoShadowEncode<'a, TimeDelta> for TimeDeltaProto {
                 secs: secs - 1,
                 ns: (sub + 1_000_000_000) as u32,
             }
-        }
-    }
-}
-
-impl ProtoShadowDecode<DateTime<Utc>> for DateTimeProto {
-    fn to_sun(self) -> Result<DateTime<Utc>, DecodeError> {
-        DateTime::from_timestamp(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, DateTime<Utc>> for DateTimeProto {
-    fn from_sun(value: &'a DateTime<Utc>) -> Self {
-        Self {
-            secs: value.timestamp(),
-            ns: value.timestamp_subsec_nanos(),
         }
     }
 }

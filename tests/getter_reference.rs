@@ -40,7 +40,7 @@ struct TaskRef<'a> {
 }
 
 //flattened with getters
-#[proto_message(sun = Task)]
+#[proto_message(sun = [Task])]
 struct TaskProto {
     cfg_id: u64,
     user_id: u64,
@@ -50,16 +50,6 @@ struct TaskProto {
     values: u32,
 }
 
-impl ProtoShadowDecode<Task> for TaskProto {
-    fn to_sun(self) -> Result<Task, DecodeError> {
-        Ok(Task {
-            cfg_id: self.cfg_id,
-            user_id: self.user_id,
-            ctx: TaskCtx::new(self.flags, self.values),
-        })
-    }
-}
-
 impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
     fn from_sun(value: &'a Task) -> Self {
         TaskRef {
@@ -67,6 +57,16 @@ impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
             user_id: value.user_id,
             ctx: &value.ctx,
         }
+    }
+}
+
+impl ProtoShadowDecode<Task> for TaskProto {
+    fn to_sun(self) -> Result<Task, DecodeError> {
+        Ok(Task {
+            cfg_id: self.cfg_id,
+            user_id: self.user_id,
+            ctx: TaskCtx::new(self.flags, self.values),
+        })
     }
 }
 
