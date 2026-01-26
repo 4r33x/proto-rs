@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.1]
+- Add init impl of jito rpc client
+- Add init impl of bloxroute rpc client
+- Add init impl of blockrazor rpc client
+- Add init impl of nextblock rpc client 
+
 ## [0.9.0]
 - Introduced new trait design - codegen and encoding/decoding paths changed to new algo
 - Encoding path now uses upb-style reverse writing
