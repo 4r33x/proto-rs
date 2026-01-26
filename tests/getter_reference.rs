@@ -3,7 +3,6 @@ use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoShadowDecode;
-use proto_rs::ProtoShadowEncode;
 use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
 mod private {
@@ -33,13 +32,19 @@ struct Task {
     ctx: TaskCtx,
 }
 
+// TaskRef is no longer needed for the default encoding path since the generated
+// shadow struct is used directly. This is kept for documentation purposes.
+#[allow(dead_code)]
 struct TaskRef<'a> {
     cfg_id: u64,
     user_id: u64,
     ctx: &'a TaskCtx,
 }
 
-//flattened with getters
+// Flattened with getters.
+// The codegen now uses the shadow struct (TaskProtoShadow<'a>) directly for encoding,
+// which enables zero-copy encoding: Task -> TaskProtoShadow<'a> -> wire.
+// The user only needs to provide ProtoShadowDecode for the decoding path.
 #[proto_message(sun = Task)]
 struct TaskProto {
     cfg_id: u64,
@@ -57,16 +62,6 @@ impl ProtoShadowDecode<Task> for TaskProto {
             user_id: self.user_id,
             ctx: TaskCtx::new(self.flags, self.values),
         })
-    }
-}
-
-impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
-    fn from_sun(value: &'a Task) -> Self {
-        TaskRef {
-            cfg_id: value.cfg_id,
-            user_id: value.user_id,
-            ctx: &value.ctx,
-        }
     }
 }
 

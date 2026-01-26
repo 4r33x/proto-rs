@@ -168,6 +168,7 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
     fields
 }
 
+#[allow(dead_code)]
 pub fn is_value_encode_type(ty: &Type) -> bool {
     matches!(ty, Type::Path(type_path)
     if type_path.qself.is_none()

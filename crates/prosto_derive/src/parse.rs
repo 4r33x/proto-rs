@@ -87,7 +87,15 @@ pub struct UnifiedProtoConfig {
 pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
+    /// Whether the sun type was specified as a reference (e.g., `&TaskRef`).
+    /// Currently unused but preserved for potential future use.
+    #[allow(dead_code)]
     pub by_ref: bool,
+    /// Optional encoding shadow type. When specified:
+    /// - `ProtoEncode::Shadow<'a>` will use this type
+    /// - `ProtoShadowEncode` impl will NOT be generated (user provides it)
+    /// - Decoding still uses the proto struct
+    pub encode_shadow: Option<Type>,
 }
 
 #[derive(Clone)]
@@ -214,21 +222,28 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 config.proto_path = Some(lit_str.value());
             }
         } else if meta.path.is_ident("sun") {
-            // Parse as Type instead of Expr to handle generics like DateTime<Utc>
+            // Parse sun attribute with optional encode shadow type.
+            // Supports:
+            // - sun = Type                    (single type)
+            // - sun = [Type1, Type2]          (array of types)
+            // - sun = (Type, EncodeShadow)    (tuple with encode shadow)
+            // - sun = [(Type1, Enc1), Type2]  (mixed array)
             let value = meta.value()?;
             let lookahead = value.lookahead1();
             if lookahead.peek(syn::token::Bracket) {
-                // Handle array syntax: sun = [Type1, Type2]
+                // Handle array syntax: sun = [...]
                 let content;
                 syn::bracketed!(content in value);
                 let types: syn::punctuated::Punctuated<Type, syn::Token![,]> = content.parse_terminated(Type::parse, syn::Token![,])?;
                 for ty in types {
-                    config.push_sun(ty);
+                    let (sun_ty, enc_shadow) = extract_sun_tuple(ty);
+                    config.push_sun(sun_ty, enc_shadow);
                 }
             } else {
-                // Handle single type: sun = Type
+                // Handle single type or tuple: sun = Type or sun = (Type, EncodeShadow)
                 let ty: Type = value.parse()?;
-                config.push_sun(ty);
+                let (sun_ty, enc_shadow) = extract_sun_tuple(ty);
+                config.push_sun(sun_ty, enc_shadow);
             }
             return Ok(());
         } else if meta.path.is_ident("rpc_server") {
@@ -370,11 +385,11 @@ impl UnifiedProtoConfig {
         Ok(variants)
     }
 
-    fn push_sun(&mut self, ty: Type) {
+    fn push_sun(&mut self, ty: Type, encode_shadow: Option<Type>) {
         let by_ref = is_reference_sun(&ty);
         let ty = normalize_sun_type(ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
-        self.suns.push(SunConfig { ty, message_ident, by_ref });
+        self.suns.push(SunConfig { ty, message_ident, by_ref, encode_shadow });
     }
 }
 
@@ -394,6 +409,21 @@ fn is_reference_sun(ty: &Type) -> bool {
         Type::Paren(paren) => is_reference_sun(&paren.elem),
         _ => false,
     }
+}
+
+/// Extract sun type and optional encode shadow from a type.
+/// Supports tuple syntax: `(SunType, EncodeShadow)` returns (SunType, Some(EncodeShadow))
+/// Single type: `SunType` returns (SunType, None)
+fn extract_sun_tuple(ty: Type) -> (Type, Option<Type>) {
+    if let Type::Tuple(tuple) = &ty {
+        if tuple.elems.len() == 2 {
+            let mut iter = tuple.elems.clone().into_iter();
+            let sun_ty = iter.next().expect("first tuple element");
+            let enc_shadow = iter.next().expect("second tuple element");
+            return (sun_ty, Some(enc_shadow));
+        }
+    }
+    (ty, None)
 }
 
 pub struct ItemValidators {
