@@ -90,11 +90,7 @@ pub(super) fn generate_simple_enum_impl(
     let sun_impls = if config.has_suns() {
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
-            let encode_shadow_ty = sun
-                .encode_ty
-                .as_ref()
-                .map(|encode_ty| quote! { #encode_ty })
-                .unwrap_or_else(|| quote! { #name #ty_generics });
+            let encode_shadow_ty = sun.encode_ty.as_ref().map_or_else(|| quote! { #name #ty_generics }, |encode_ty| quote! { #encode_ty });
             let decode_shadow_ty = quote! { #name #ty_generics };
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {

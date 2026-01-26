@@ -602,11 +602,7 @@ fn generate_proto_impls(
     let sun_impls = if config.has_suns() {
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
-            let encode_shadow_ty = sun
-                .encode_ty
-                .as_ref()
-                .map(|encode_ty| quote! { #encode_ty })
-                .unwrap_or_else(|| quote! { #name #ty_generics });
+            let encode_shadow_ty = sun.encode_ty.as_ref().map_or_else(|| quote! { #name #ty_generics }, |encode_ty| quote! { #encode_ty });
             let decode_shadow_ty = quote! { #name #ty_generics };
             let sun_post_decode = if post_decode_hooks.is_empty() && config.validator.is_none() {
                 quote! {}
