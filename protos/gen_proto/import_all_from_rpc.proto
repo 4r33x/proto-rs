@@ -7,3 +7,4 @@ import "types.proto";
 service ImportAllFromRpc {
   rpc GetUser(types.UserType) returns (types.UserType) {}
 }
+

@@ -120,6 +120,7 @@ solana_address_hash = ["solana", "solana-address/rand"]
 block_razor = ["dep:tokio-stream", "tonic"]
 next_block = ["tonic"]
 bloxroute = ["tonic"]
+jito = ["dep:tokio-stream", "tonic"]
 
 chrono = ["dep:chrono"]
 # Lock-free atomic Arc wrappers

@@ -1,0 +1,161 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package jito;
+
+import "google.protobuf.proto";
+
+enum Role {
+  RELAYER = 0;
+  SEARCHER = 1;
+  VALIDATOR = 2;
+  SHREDSTREAM_SUBSCRIBER = 3;
+}
+
+message Bundle {
+  Header header = 2;
+  repeated Packet packets = 3;
+}
+
+message BundleResult {}
+
+message BundleUuid {
+  Bundle bundle = 1;
+  string uuid = 2;
+}
+
+message ConnectedLeadersRegionedRequest {
+  repeated string regions = 1;
+}
+
+message ConnectedLeadersRegionedResponse {
+  map<string, ConnectedLeadersResponse> connected_validators = 1;
+}
+
+message ConnectedLeadersRequest {}
+
+message ConnectedLeadersResponse {
+  map<string, SlotList> connected_validators = 1;
+}
+
+message GenerateAuthChallengeRequest {
+  Role role = 1;
+  bytes pubkey = 2;
+}
+
+message GenerateAuthChallengeResponse {
+  string challenge = 1;
+}
+
+message GenerateAuthTokensRequest {
+  string challenge = 1;
+  bytes client_pubkey = 2;
+  bytes signed_challenge = 3;
+}
+
+message GenerateAuthTokensResponse {
+  Token access_token = 1;
+  Token refresh_token = 2;
+}
+
+message GetRegionsRequest {}
+
+message GetRegionsResponse {
+  string current_region = 1;
+  repeated string available_regions = 2;
+}
+
+message GetTipAccountsRequest {}
+
+message GetTipAccountsResponse {
+  repeated string accounts = 1;
+}
+
+message Header {
+  google.protobuf.Timestamp ts = 1;
+}
+
+message Heartbeat {
+  uint64 count = 1;
+}
+
+message Meta {
+  uint64 size = 1;
+  string addr = 2;
+  uint32 port = 3;
+  PacketFlags flags = 4;
+  uint64 sender_stake = 5;
+}
+
+message NextScheduledLeaderRequest {
+  repeated string regions = 1;
+}
+
+message NextScheduledLeaderResponse {
+  uint64 current_slot = 1;
+  uint64 next_leader_slot = 2;
+  string next_leader_identity = 3;
+  string next_leader_region = 4;
+}
+
+message Packet {
+  bytes data = 1;
+  Meta meta = 2;
+}
+
+message PacketFlags {
+  bool discard = 1;
+  bool forwarded = 2;
+  bool repair = 3;
+  bool simple_vote_tx = 4;
+  bool tracer_packet = 5;
+  bool from_staked_node = 6;
+}
+
+message RefreshAccessTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshAccessTokenResponse {
+  Token access_token = 1;
+}
+
+message SendBundleRequest {
+  Bundle bundle = 1;
+}
+
+message SendBundleResponse {
+  string uuid = 1;
+}
+
+message SlotList {
+  repeated uint64 slots = 1;
+}
+
+message Socket {
+  string ip = 1;
+  int64 port = 2;
+}
+
+message SubscribeBundleResultsRequest {}
+
+message Token {
+  string value = 1;
+  google.protobuf.Timestamp expires_at_utc = 2;
+}
+
+service AuthService {
+  rpc GenerateAuthChallenge(GenerateAuthChallengeRequest) returns (GenerateAuthChallengeResponse) {}
+  rpc GenerateAuthTokens(GenerateAuthTokensRequest) returns (GenerateAuthTokensResponse) {}
+  rpc RefreshAccessToken(RefreshAccessTokenRequest) returns (RefreshAccessTokenResponse) {}
+}
+
+service SearcherService {
+  rpc SubscribeBundleResults(SubscribeBundleResultsRequest) returns (stream BundleResult) {}
+  rpc SendBundle(SendBundleRequest) returns (SendBundleResponse) {}
+  rpc GetNextScheduledLeader(NextScheduledLeaderRequest) returns (NextScheduledLeaderResponse) {}
+  rpc GetConnectedLeaders(ConnectedLeadersRequest) returns (ConnectedLeadersResponse) {}
+  rpc GetConnectedLeadersRegioned(ConnectedLeadersRegionedRequest) returns (ConnectedLeadersRegionedResponse) {}
+  rpc GetTipAccounts(GetTipAccountsRequest) returns (GetTipAccountsResponse) {}
+  rpc GetRegions(GetRegionsRequest) returns (GetRegionsResponse) {}
+}
+

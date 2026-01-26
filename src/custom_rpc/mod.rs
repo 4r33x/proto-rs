@@ -5,3 +5,6 @@ pub mod next_block;
 
 #[cfg(feature = "bloxroute")]
 pub mod bloxroute;
+
+#[cfg(feature = "jito")]
+pub mod jito;

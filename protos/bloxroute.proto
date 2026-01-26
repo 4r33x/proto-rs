@@ -124,3 +124,4 @@ service Api {
   rpc GetTransactionTrace(GetTransactionTraceRequest) returns (GetTransactionTraceResponse) {}
   rpc PostSubmitPaladinV2(PostSubmitPaladinRequest) returns (PostSubmitResponse) {}
 }
+

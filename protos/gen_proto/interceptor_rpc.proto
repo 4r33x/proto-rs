@@ -7,3 +7,4 @@ import "goon_types.proto";
 service InterceptorRpc {
   rpc Ping(goon_types.RizzPing) returns (goon_types.GoonPong) {}
 }
+

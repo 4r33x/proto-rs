@@ -32,3 +32,4 @@ message WithPongs {
 service ValidationWithExt {
   rpc Check(Pong) returns (Pong) {}
 }
+

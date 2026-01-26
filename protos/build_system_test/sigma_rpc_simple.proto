@@ -26,3 +26,4 @@ service SigmaRpc {
   rpc MexEcho(CustomEx) returns (MEx) {}
   rpc TestDecimals(UD128) returns (D64) {}
 }
+

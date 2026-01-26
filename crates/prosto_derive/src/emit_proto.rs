@@ -335,7 +335,7 @@ pub fn generate_service_content(
         lines.push(rpc_def);
     }
 
-    lines.push("}".to_string());
+    lines.push("}\n\n".to_string());
     lines.join("\n")
 }
 

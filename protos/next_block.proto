@@ -64,3 +64,4 @@ service Api {
   rpc GetTipFloor(TipFloorRequest) returns (TipFloorResponse) {}
   rpc StreamTipFloor(TipFloorStreamRequest) returns (stream TipFloorResponse) {}
 }
+
