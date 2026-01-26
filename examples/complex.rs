@@ -150,8 +150,9 @@ impl SigmaRpc for S {
 
     #[cfg(feature = "stable")]
     type GenericUniStream = Pin<Box<dyn Stream<Item = Result<ZeroCopy<IdGeneric<u64>>, Status>> + Send>>;
+
     #[cfg(not(feature = "stable"))]
-    type GenericUniStream = impl Stream<Item = Result<IdGeneric<u64>, Status>> + Send;
+    type GenericUniStream = impl Stream<Item = Result<ZeroCopy<IdGeneric<u64>>, Status>> + Send;
 
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
