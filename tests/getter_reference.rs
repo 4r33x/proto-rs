@@ -30,7 +30,7 @@ mod private {
 struct Task {
     cfg_id: u64,
     user_id: u64,
-    ctx: TaskCtx,
+    some_complex_ctx_that_need_ir_type: TaskCtx,
 }
 
 struct TaskRef<'a> {
@@ -40,7 +40,7 @@ struct TaskRef<'a> {
 }
 
 //flattened with getters
-#[proto_message(sun = [Task])]
+#[proto_message(sun = [Task], sun_ir = TaskRef<'a>)]
 struct TaskProto {
     cfg_id: u64,
     user_id: u64,
@@ -55,7 +55,7 @@ impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
         TaskRef {
             cfg_id: value.cfg_id,
             user_id: value.user_id,
-            ctx: &value.ctx,
+            ctx: &value.some_complex_ctx_that_need_ir_type,
         }
     }
 }
@@ -65,7 +65,7 @@ impl ProtoShadowDecode<Task> for TaskProto {
         Ok(Task {
             cfg_id: self.cfg_id,
             user_id: self.user_id,
-            ctx: TaskCtx::new(self.flags, self.values),
+            some_complex_ctx_that_need_ir_type: TaskCtx::new(self.flags, self.values),
         })
     }
 }
@@ -75,7 +75,7 @@ fn encode_decode_reference_with_getter() {
     let task = Task {
         cfg_id: 7,
         user_id: 9,
-        ctx: TaskCtx::new(1, 2),
+        some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2),
     };
     let bytes = Task::encode_to_vec(&task);
     let decoded = <Task as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode task with getters");
