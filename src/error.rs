@@ -57,10 +57,8 @@ impl fmt::Display for DecodeError {
     }
 }
 
-#[cfg(feature = "std")]
 impl std::error::Error for DecodeError {}
 
-#[cfg(feature = "std")]
 impl From<DecodeError> for std::io::Error {
     fn from(error: DecodeError) -> std::io::Error {
         std::io::Error::new(std::io::ErrorKind::InvalidData, error)
@@ -105,10 +103,8 @@ impl fmt::Display for EncodeError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for EncodeError {}
+impl core::error::Error for EncodeError {}
 
-#[cfg(feature = "std")]
 impl From<EncodeError> for std::io::Error {
     fn from(error: EncodeError) -> std::io::Error {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, error)
@@ -129,13 +125,11 @@ impl fmt::Display for UnknownEnumValue {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for UnknownEnumValue {}
+impl core::error::Error for UnknownEnumValue {}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    #[cfg(not(feature = "std"))]
     use crate::alloc::string::ToString;
     #[test]
     fn test_push() {
@@ -149,7 +143,6 @@ mod test {
         );
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn test_into_std_io_error() {
         let decode_error = DecodeError::new("something failed");

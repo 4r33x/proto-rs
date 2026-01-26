@@ -359,7 +359,7 @@ mod test {
     /// This big bowl o' macro soup generates an encoding property test for each combination of map
     /// type, scalar map key, and value type.
     /// TODO: these tests take a long time to compile, can this be improved?
-    #[cfg(feature = "std")]
+    #[cfg(feature = "std_legacy")]
     macro_rules! map_tests {
         (keys: $keys:tt,
          vals: $vals:tt) => {
@@ -427,7 +427,7 @@ mod test {
         };
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "std_legacy")]
     map_tests!(keys: [
         (i32, int32),
         (i64, int64),

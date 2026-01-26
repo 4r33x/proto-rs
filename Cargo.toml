@@ -105,8 +105,8 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 [features]
 ahash = ["dep:ahash"]
-std = ["bytes/std"]
-tonic = ["dep:tonic", "bytes/std", "std", "prosto_derive/tonic"]
+std_legacy = []
+tonic = ["dep:tonic", "bytes/std", "prosto_derive/tonic"]
 fastnum = ["dep:fastnum"]
 cache_padded = ["dep:crossbeam-utils"]
 solana = [
@@ -134,7 +134,7 @@ stable = ["prosto_derive/stable"]
 
 no-recursion-limit = []
 #TODO!
-default = ["std", "tonic"]
+default = ["tonic"]
 #derive = ["dep:prost-derive"]
 
 

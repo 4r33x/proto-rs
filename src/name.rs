@@ -1,8 +1,6 @@
 //! Support for associating type name information with a [`Message`].
 
-#[cfg(not(feature = "std"))]
 use alloc::format;
-#[cfg(not(feature = "std"))]
 use alloc::string::String;
 
 /// Associate a type name with a [`Message`] type.

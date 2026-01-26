@@ -11,7 +11,6 @@
 #![allow(clippy::inline_always)]
 #![allow(clippy::if_not_else)]
 #![allow(clippy::match_same_arms)]
-#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate self as proto_rs;
 
@@ -57,7 +56,7 @@ mod traits;
 
 /// Build-time proto schema registry
 /// Only available when "build-schemas" feature is enabled
-#[cfg(all(feature = "build-schemas", feature = "std"))]
+#[cfg(feature = "build-schemas")]
 pub mod schemas;
 
 pub use crate::coders::BytesMode;
@@ -95,7 +94,7 @@ pub use crate::traits::ProtoKind;
 // pub use crate::wrappers::conc_set::papaya_set_encode_input;
 
 // Example build.rs that users can copy:
-#[cfg(all(feature = "build-schemas", feature = "std", doc))]
+#[cfg(all(feature = "build-schemas", doc))]
 /// Example build.rs for consuming projects
 ///
 /// ```no_run

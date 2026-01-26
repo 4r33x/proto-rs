@@ -182,7 +182,7 @@ macro_rules! map {
     };
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "std_legacy")]
 pub mod hash_map {
     use std::collections::HashMap;
     map!(HashMap);
