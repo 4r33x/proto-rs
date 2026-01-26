@@ -74,7 +74,7 @@ where
     }
 }
 
-impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for std::sync::Mutex<T>
+impl<T: ProtoEncode + ProtoExt> ProtoEncode for std::sync::Mutex<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
@@ -83,12 +83,13 @@ where
 
 impl<'a, T> ProtoShadowEncode<'a, std::sync::Mutex<T>> for MutexShadow<T>
 where
-    T: ProtoEncode + ProtoArchive + ProtoExt,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from_sun(value: &'a std::sync::Mutex<T>) -> Self {
         let guard = value.lock().expect("Mutex lock poisoned");
-        let is_default = T::is_default(&*guard);
+        let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(&*guard);
+        let is_default = <T::Shadow<'_> as ProtoArchive>::is_default(&shadow);
         let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
         Self {
             bytes,
@@ -177,7 +178,7 @@ where
 }
 
 #[cfg(feature = "parking_lot")]
-impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for parking_lot::Mutex<T>
+impl<T: ProtoEncode + ProtoExt> ProtoEncode for parking_lot::Mutex<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
@@ -187,12 +188,13 @@ where
 #[cfg(feature = "parking_lot")]
 impl<'a, T> ProtoShadowEncode<'a, parking_lot::Mutex<T>> for MutexShadow<T>
 where
-    T: ProtoEncode + ProtoArchive + ProtoExt,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from_sun(value: &'a parking_lot::Mutex<T>) -> Self {
         let guard = value.lock();
-        let is_default = T::is_default(&*guard);
+        let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(&*guard);
+        let is_default = <T::Shadow<'_> as ProtoArchive>::is_default(&shadow);
         let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
         Self {
             bytes,

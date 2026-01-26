@@ -38,6 +38,15 @@ pub use encoding_messages::ZeroCopyEnumContainer;
 pub use encoding_messages::ZeroCopyEnumMessage;
 pub use encoding_messages::ZeroCopyMessage;
 pub use encoding_messages::complex_enum_list_fixture;
+
+fn is_default_via_shadow<T>(value: &T) -> bool
+where
+    T: ProtoEncode + ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoShadowEncode<'a, T>,
+{
+    let shadow = T::Shadow::from_sun(value);
+    <T::Shadow<'_> as ProtoArchive>::is_default(&shadow)
+}
 pub use encoding_messages::nested_complex_enum_list_fixture;
 pub use encoding_messages::sample_collections_messages as shared_sample_collections_messages;
 pub use encoding_messages::sample_message as shared_sample_message;
@@ -789,17 +798,17 @@ enum SkippedTupleDefault {
 #[test]
 fn complex_enum_is_default_checks_variant_and_fields() {
     let default_method = <PaymentMethod as ProtoDecoder>::proto_default();
-    assert!(<PaymentMethod as ProtoArchive>::is_default(&default_method));
+    assert!(is_default_via_shadow(&default_method));
 
     let non_default_variant = PaymentMethod::Card(String::new());
-    assert!(!<PaymentMethod as ProtoArchive>::is_default(&non_default_variant));
+    assert!(!is_default_via_shadow(&non_default_variant));
 
     let non_default_field = PaymentMethod::Cash(5);
-    assert!(!<PaymentMethod as ProtoArchive>::is_default(&non_default_field));
+    assert!(!is_default_via_shadow(&non_default_field));
 
     let nested_default = PaymentMethod::Crypto(<QuoteLamports as ProtoDecoder>::proto_default());
     assert!(matches!(nested_default, PaymentMethod::Crypto(_)));
-    assert!(!<PaymentMethod as ProtoArchive>::is_default(&nested_default));
+    assert!(!is_default_via_shadow(&nested_default));
 }
 
 #[test]
@@ -808,11 +817,11 @@ fn complex_enum_default_tuple_skip_is_ignored() {
 
     let default_value = <SkippedTupleDefault as ProtoDecoder>::proto_default();
     assert!(matches!(default_value, SkippedTupleDefault::Ephemeral(_)));
-    assert!(<SkippedTupleDefault as ProtoArchive>::is_default(&default_value));
+    assert!(is_default_via_shadow(&default_value));
 
     let non_default_variant = SkippedTupleDefault::Persistent(0);
-    assert!(!<SkippedTupleDefault as ProtoArchive>::is_default(&non_default_variant));
+    assert!(!is_default_via_shadow(&non_default_variant));
 
     let non_default_field = SkippedTupleDefault::Ephemeral(Rc::new("runtime".to_string()));
-    assert!(<SkippedTupleDefault as ProtoArchive>::is_default(&non_default_field));
+    assert!(is_default_via_shadow(&non_default_field));
 }

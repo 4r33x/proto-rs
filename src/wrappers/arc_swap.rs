@@ -110,7 +110,7 @@ impl<T: ProtoExt> ProtoArchive for ArcSwapShadow<T> {
     }
 }
 
-impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for ArcSwap<T>
+impl<T: ProtoEncode + ProtoExt> ProtoEncode for ArcSwap<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
@@ -119,12 +119,13 @@ where
 
 impl<'a, T> ProtoShadowEncode<'a, ArcSwap<T>> for ArcSwapShadow<T>
 where
-    T: ProtoEncode + ProtoArchive + ProtoExt,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from_sun(value: &'a ArcSwap<T>) -> Self {
         let guard = value.load_full();
-        let is_default = T::is_default(guard.as_ref());
+        let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(guard.as_ref());
+        let is_default = <T::Shadow<'_> as ProtoArchive>::is_default(&shadow);
         let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
         Self {
             bytes,
@@ -218,7 +219,7 @@ impl<T: ProtoExt> ProtoArchive for ArcSwapOptionShadow<T> {
     }
 }
 
-impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for ArcSwapOption<T>
+impl<T: ProtoEncode + ProtoExt> ProtoEncode for ArcSwapOption<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
 {
@@ -227,14 +228,15 @@ where
 
 impl<'a, T> ProtoShadowEncode<'a, ArcSwapOption<T>> for ArcSwapOptionShadow<T>
 where
-    T: ProtoEncode + ProtoArchive + ProtoExt,
+    T: ProtoEncode + ProtoExt,
 {
     #[inline]
     fn from_sun(value: &'a ArcSwapOption<T>) -> Self {
         let guard = value.load_full();
         match guard.as_ref() {
             Some(inner) => {
-                let is_default = T::is_default(inner.as_ref());
+                let shadow = <T::Shadow<'_> as ProtoShadowEncode<'_, T>>::from_sun(inner.as_ref());
+                let is_default = <T::Shadow<'_> as ProtoArchive>::is_default(&shadow);
                 let bytes = if is_default { Vec::new() } else { inner.encode_to_vec() };
                 Self {
                     bytes,

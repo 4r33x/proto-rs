@@ -126,7 +126,8 @@ where
 
 impl<T, S> ProtoArchive for &HashSet<T, S>
 where
-    T: ProtoArchive + ProtoExt + Eq + core::hash::Hash,
+    T: ProtoEncode + ProtoExt + Eq + core::hash::Hash,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
     #[inline(always)]
     fn is_default(&self) -> bool {
@@ -140,7 +141,8 @@ where
                 let items: Vec<&T> = self.iter().collect();
                 let mark = w.mark();
                 for item in items.into_iter().rev() {
-                    item.archive::<0>(w);
+                    let shadow = T::Shadow::from_sun(item);
+                    shadow.archive::<0>(w);
                 }
                 if TAG != 0 {
                     let payload_len = w.written_since(mark);
@@ -151,7 +153,8 @@ where
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 let items: Vec<&T> = self.iter().collect();
                 for item in items.into_iter().rev() {
-                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                    let shadow = T::Shadow::from_sun(item);
+                    ArchivedProtoField::<TAG, T::Shadow<'_>>::new_always(&shadow, w);
                 }
             }
             ProtoKind::Repeated(_) => unreachable!(),

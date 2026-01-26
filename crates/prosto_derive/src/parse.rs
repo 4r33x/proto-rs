@@ -20,8 +20,8 @@ use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
 use crate::utils::type_name_with_generics_for_path;
 use crate::write_file::register_and_emit_proto_inner;
-use crate::write_file::register_package;
 use crate::write_file::register_imports;
+use crate::write_file::register_package;
 
 pub trait ParseFieldAttr {
     fn extract_field_imports(&self, map: &mut BTreeMap<String, BTreeSet<String>>);
@@ -75,6 +75,7 @@ pub struct UnifiedProtoConfig {
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
+    pub sun_ir: Option<Type>,
     pub transparent: bool,
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
@@ -230,6 +231,11 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 let ty: Type = value.parse()?;
                 config.push_sun(ty);
             }
+            return Ok(());
+        } else if meta.path.is_ident("sun_ir") {
+            let value = meta.value()?;
+            let ty: Type = value.parse()?;
+            config.sun_ir = Some(ty);
             return Ok(());
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {

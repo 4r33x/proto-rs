@@ -1,8 +1,10 @@
 use crate::ProtoArchive;
+use crate::ProtoEncode;
 use crate::ProtoExt;
 use crate::ProtoKind;
 use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
+use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
 mod arrays;
@@ -22,7 +24,8 @@ impl<T: ProtoExt> ProtoExt for &[T] {
 
 impl<T> ProtoArchive for &[T]
 where
-    T: ProtoArchive + ProtoExt,
+    T: ProtoEncode + ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
     #[inline(always)]
     fn is_default(&self) -> bool {
@@ -46,7 +49,8 @@ where
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 let mark = w.mark();
                 for item in self.iter().rev() {
-                    item.archive::<0>(w);
+                    let shadow = T::Shadow::from_sun(item);
+                    shadow.archive::<0>(w);
                 }
                 if TAG != 0 {
                     let payload_len = w.written_since(mark);
@@ -56,7 +60,8 @@ where
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for item in self.iter().rev() {
-                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                    let shadow = T::Shadow::from_sun(item);
+                    ArchivedProtoField::<TAG, T::Shadow<'_>>::new_always(&shadow, w);
                 }
             }
             ProtoKind::Repeated(_) => unreachable!(),

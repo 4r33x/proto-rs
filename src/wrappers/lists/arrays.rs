@@ -150,11 +150,15 @@ where
 
 impl<T, const N: usize> ProtoArchive for [T; N]
 where
-    T: ProtoArchive + ProtoExt,
+    T: ProtoEncode + ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
     #[inline(always)]
     fn is_default(&self) -> bool {
-        self.iter().all(|item| <T as ProtoArchive>::is_default(item))
+        self.iter().all(|item| {
+            let shadow = T::Shadow::from_sun(item);
+            <T::Shadow<'_> as ProtoArchive>::is_default(&shadow)
+        })
     }
 
     #[inline(always)]
@@ -173,7 +177,8 @@ where
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 let mark = w.mark();
                 for item in self.iter().rev() {
-                    item.archive::<0>(w);
+                    let shadow = T::Shadow::from_sun(item);
+                    shadow.archive::<0>(w);
                 }
                 if TAG != 0 {
                     let payload_len = w.written_since(mark);
@@ -183,7 +188,8 @@ where
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for item in self.iter().rev() {
-                    ArchivedProtoField::<TAG, T>::new_always(item, w);
+                    let shadow = T::Shadow::from_sun(item);
+                    ArchivedProtoField::<TAG, T::Shadow<'_>>::new_always(&shadow, w);
                 }
             }
             ProtoKind::Repeated(_) => unreachable!(),
@@ -195,20 +201,26 @@ where
 /// Arrays are considered default when all elements are default, unlike slices/vecs
 /// which are only default when empty.
 #[doc(hidden)]
-pub struct ArrayShadow<'a, T: ProtoArchive + ProtoExt, const N: usize> {
+pub struct ArrayShadow<'a, T: ProtoEncode + ProtoExt, const N: usize> {
     slice: &'a [T],
 }
 
-impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T, N> {
+impl<T: ProtoEncode + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T, N> {
     const KIND: ProtoKind = <[T; N] as ProtoExt>::KIND;
     const _REPEATED_SUPPORT: Option<&'static str> = <[T; N] as ProtoExt>::_REPEATED_SUPPORT;
 }
 
-impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N> {
+impl<T: ProtoEncode + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N>
+where
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
+{
     #[inline(always)]
     fn is_default(&self) -> bool {
         // Arrays are default when all elements are default (unlike slices which are default when empty)
-        self.slice.iter().all(|item| <T as ProtoArchive>::is_default(item))
+        self.slice.iter().all(|item| {
+            let shadow = T::Shadow::from_sun(item);
+            <T::Shadow<'_> as ProtoArchive>::is_default(&shadow)
+        })
     }
 
     #[inline(always)]
@@ -220,12 +232,12 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_
 impl<T: ProtoEncode, const N: usize> ProtoEncode for [T; N]
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
-    for<'a> T: 'a + ProtoExt + ProtoArchive,
+    for<'a> T: 'a + ProtoExt,
 {
     type Shadow<'a> = ArrayShadow<'a, T, N>;
 }
 
-impl<'a, T: ProtoArchive + ProtoExt, const N: usize> ProtoShadowEncode<'a, [T; N]> for ArrayShadow<'a, T, N> {
+impl<'a, T: ProtoEncode + ProtoExt, const N: usize> ProtoShadowEncode<'a, [T; N]> for ArrayShadow<'a, T, N> {
     #[inline]
     fn from_sun(value: &'a [T; N]) -> Self {
         ArrayShadow { slice: value.as_slice() }

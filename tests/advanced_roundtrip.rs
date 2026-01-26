@@ -13,10 +13,20 @@ use prost::Message as ProstMessage;
 use proto_rs::ProtoArchive;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoEncode;
+use proto_rs::ProtoExt;
 use proto_rs::ProtoShadowEncode;
 use proto_rs::RevWriter;
 use proto_rs::encoding::DecodeContext;
 use proto_rs::proto_message;
+
+fn is_default_via_shadow<T>(value: &T) -> bool
+where
+    T: ProtoEncode + ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoShadowEncode<'a, T>,
+{
+    let shadow = T::Shadow::from_sun(value);
+    <T::Shadow<'_> as ProtoArchive>::is_default(&shadow)
+}
 
 #[proto_message(proto_path = "protos/tests/advanced_features.proto")]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -302,7 +312,7 @@ impl From<&AdvancedEdgeCase> for tonic_prost_test::advanced::AdvancedEdgeCase {
             zipped: value.zipped.clone(),
             stage_lookup,
             ordered_lookup,
-            origin: if value.origin.is_default() {
+            origin: if is_default_via_shadow(&value.origin) {
                 None
             } else {
                 Some(tonic_prost_test::advanced::AdvancedOrigin::from(&value.origin))
