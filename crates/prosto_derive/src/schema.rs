@@ -1561,17 +1561,11 @@ fn parse_map_proto_type(proto_type: &str) -> Option<(&str, &str)> {
 }
 
 fn proto_path_info(config: &UnifiedProtoConfig) -> (String, String) {
-    config.proto_path().map_or_else(
-        || (String::new(), String::new()),
-        |path| {
-            let file_name = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
-            let package_name = config
-                .rpc_package_override()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| derive_package_name(file_name));
-            (package_name, path.to_string())
-        },
-    )
+    config.proto_path().map_or((String::new(), String::new()), |path| {
+        let file_name = std::path::Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path);
+        let package_name = config.rpc_package_override().map_or(derive_package_name(file_name), ToString::to_string);
+        (package_name, path.to_string())
+    })
 }
 
 fn schema_ident(type_ident: &syn::Ident, suffix: &str) -> syn::Ident {

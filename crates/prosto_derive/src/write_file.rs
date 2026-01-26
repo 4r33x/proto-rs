@@ -172,7 +172,7 @@ fn build_complete_proto_file(package_name: &str, imports: &[String], content_ite
     // Header
     output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
     output.push_str("syntax = \"proto3\";\n");
-    writeln!(&mut output, "package {};", package_name).unwrap();
+    writeln!(&mut output, "package {package_name};").unwrap();
 
     // Imports
     if !imports.is_empty() {
