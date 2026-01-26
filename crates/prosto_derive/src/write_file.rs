@@ -21,6 +21,9 @@ const IMPORT_PREFIX: &str = "__IMPORT__";
 /// Global registry: filename -> `BTreeSet`<proto definitions>
 static REGISTRY: LazyLock<Mutex<HashMap<String, BTreeSet<String>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Registry: filename -> package name override
+static PACKAGE_REGISTRY: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
 /// Track initialized files
 static INITIALIZED_FILES: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(|| Mutex::new(BTreeSet::new()));
 
@@ -39,6 +42,12 @@ pub fn register_and_emit_proto_inner(file_name: &str, content: &str) {
     if should_emit_file() {
         write_proto_file(file_name, content);
     }
+}
+
+/// Register a package name override for a proto file
+pub fn register_package(file_name: &str, package_name: &str) {
+    let mut registry = PACKAGE_REGISTRY.lock().unwrap();
+    registry.insert(file_name.to_string(), package_name.to_string());
 }
 
 /// Register imports for a proto file
@@ -126,7 +135,12 @@ fn write_proto_file_internal(file_name_path: &str) {
 
     // Build complete file
     let file_name = path.file_name().unwrap().to_str().unwrap();
-    let file_content = build_complete_proto_file(file_name, &imports, &content_items);
+    let package_override = {
+        let registry = PACKAGE_REGISTRY.lock().unwrap();
+        registry.get(file_name_path).cloned()
+    };
+    let package_name = package_override.unwrap_or_else(|| derive_package_name(file_name));
+    let file_content = build_complete_proto_file(&package_name, &imports, &content_items);
 
     // Write atomically
     write_file_atomically(&path, &file_content);
@@ -151,14 +165,14 @@ fn separate_imports_and_content(defs: &BTreeSet<String>) -> (Vec<String>, Vec<St
     (imports, content)
 }
 
-fn build_complete_proto_file(file_name: &str, imports: &[String], content_items: &[String]) -> String {
+fn build_complete_proto_file(package_name: &str, imports: &[String], content_items: &[String]) -> String {
     use std::fmt::Write;
     let mut output = String::new();
 
     // Header
     output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
     output.push_str("syntax = \"proto3\";\n");
-    writeln!(&mut output, "package {};", derive_package_name(file_name)).unwrap();
+    writeln!(&mut output, "package {};", package_name).unwrap();
 
     // Imports
     if !imports.is_empty() {

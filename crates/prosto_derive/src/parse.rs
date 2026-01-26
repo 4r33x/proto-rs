@@ -20,6 +20,7 @@ use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
 use crate::utils::type_name_with_generics_for_path;
 use crate::write_file::register_and_emit_proto_inner;
+use crate::write_file::register_package;
 use crate::write_file::register_imports;
 
 pub trait ParseFieldAttr {
@@ -105,6 +106,9 @@ impl UnifiedProtoConfig {
     /// Register and emit proto content (only if `proto_path` is specified)
     pub fn register_and_emit_proto(&mut self, content: &str) {
         if let Some(proto_path) = self.proto_path() {
+            if let Some(rpc_package) = self.rpc_package.as_deref() {
+                register_package(proto_path, rpc_package);
+            }
             register_and_emit_proto_inner(proto_path, content);
             let imports = &self.imports_mat;
             self.imports_mat = quote::quote! { #imports };
