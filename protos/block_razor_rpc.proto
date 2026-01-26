@@ -1,0 +1,25 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package block_razor_rpc;
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+}
+
+message SendRequest {
+  string transaction = 1;
+  string mode = 2;
+  optional int32 safe_window = 3;
+  bool revert_protection = 4;
+}
+
+message SendResponse {
+  string signature = 1;
+}
+
+service Server {
+  rpc SendTransaction(SendRequest) returns (SendResponse) {}
+  rpc GetHealth(HealthRequest) returns (HealthResponse) {}
+}

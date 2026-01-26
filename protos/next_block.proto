@@ -1,0 +1,66 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package next_block;
+
+message PingRequest {}
+
+message PongResponse {}
+
+message PostSubmitBatchRequest {
+  repeated PostSubmitRequestEntry entries = 1;
+}
+
+message PostSubmitRequest {
+  TransactionMessage transaction = 1;
+  bool skip_pre_flight = 2;
+  optional bool front_running_protection = 3;
+  optional bool experimental_front_running_protection = 8;
+  optional bool snipe_transaction = 9;
+  optional bool disable_retries = 10;
+  optional bool revert_on_fail = 11;
+}
+
+message PostSubmitRequestEntry {
+  TransactionMessage transaction = 1;
+}
+
+message PostSubmitResponse {
+  string signature = 1;
+}
+
+message TipFloorRequest {}
+
+message TipFloorResponse {
+  repeated TipStats stats = 1;
+}
+
+message TipFloorStreamRequest {
+  string update_frequency = 1;
+}
+
+message TipStats {
+  string time = 1;
+  double landed_tips_25th_percentile = 2;
+  double landed_tips_50th_percentile = 3;
+  double landed_tips_75th_percentile = 4;
+  double landed_tips_95th_percentile = 5;
+  double landed_tips_99th_percentile = 6;
+  double ema_landed_tips_50th_percentile = 7;
+}
+
+message TransactionMessage {
+  string content = 1;
+  bool is_cleanup = 2;
+}
+
+message TransactionMessageV2 {
+  string content = 1;
+}
+
+service Api {
+  rpc PostSubmitV2(PostSubmitRequest) returns (PostSubmitResponse) {}
+  rpc PostSubmitBatchV2(PostSubmitBatchRequest) returns (PostSubmitResponse) {}
+  rpc Ping(PingRequest) returns (PongResponse) {}
+  rpc GetTipFloor(TipFloorRequest) returns (TipFloorResponse) {}
+  rpc StreamTipFloor(TipFloorStreamRequest) returns (stream TipFloorResponse) {}
+}

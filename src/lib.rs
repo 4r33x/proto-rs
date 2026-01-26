@@ -42,6 +42,7 @@ pub extern crate std;
 pub use bytes;
 
 mod coders;
+pub mod custom_rpc;
 mod custom_types;
 #[cfg(feature = "tonic")]
 mod tonic;
