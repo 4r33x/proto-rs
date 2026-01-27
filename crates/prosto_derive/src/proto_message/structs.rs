@@ -591,6 +591,26 @@ fn generate_proto_impls(
     let shadow_ty = shadow_type_tokens(generics, shadow_ident);
     let shadow_ty_short = shadow_type_tokens_with_lifetime(generics, shadow_ident, quote! { '_ });
     let has_getters = fields.iter().any(|info| info.config.getter.is_some());
+    let has_sun_ir = config.suns.iter().any(|sun| sun.ir_ty.is_some());
+    let proto_archive_impl = if has_sun_ir {
+        quote! {}
+    } else {
+        quote! {
+            impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+                #[inline(always)]
+                fn is_default(&self) -> bool {
+                    let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+                    ::proto_rs::ProtoArchive::is_default(&shadow)
+                }
+
+                #[inline(always)]
+                fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                    let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+                    <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
+                }
+            }
+        }
+    };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
     let (shadow_impl_generics, _shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
@@ -632,7 +652,9 @@ fn generate_proto_impls(
                             {
                                 let __proto_value = #access_expr;
                                 let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#ref_expr);
-                                __proto_is_default &= ::proto_rs::ProtoArchive::is_default(&__proto_shadow);
+                                if !::proto_rs::ProtoArchive::is_default(&__proto_shadow) {
+                                    return false;
+                                }
                             }
                         }
                     });
@@ -667,9 +689,8 @@ fn generate_proto_impls(
                         impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
                             #[inline(always)]
                             fn is_default(&self) -> bool {
-                                let mut __proto_is_default = true;
                                 #( #is_default_checks )*
-                                __proto_is_default
+                                true
                             }
 
                             #[inline(always)]
@@ -877,19 +898,7 @@ fn generate_proto_impls(
             type Shadow<'a> = #shadow_ty;
         }
 
-        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            #[inline(always)]
-            fn is_default(&self) -> bool {
-                let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                ::proto_rs::ProtoArchive::is_default(&shadow)
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
-            }
-        }
+        #proto_archive_impl
 
         #sun_impls
     }
