@@ -16,6 +16,15 @@ use serde::Serialize;
 
 inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common.types");
 
+#[proto_message]
+#[derive(Clone)]
+pub struct EntryData {
+    pub slot: u64,
+    pub entries_bytes: std::sync::Arc<[u8]>,
+    #[proto(skip)]
+    pub ingress_timestamp: std::time::Instant,
+}
+
 //example of custom encode\decode impl
 pub struct ValueCanBeFolded {
     a: u64,
