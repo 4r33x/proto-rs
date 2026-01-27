@@ -28,21 +28,26 @@ mod private {
 
 #[derive(Clone, PartialEq, Debug)]
 struct Task {
-    cfg_id: u64,
+    cfg_id: TaskId,
     user_id: u64,
     some_complex_ctx_that_need_ir_type: TaskCtx,
 }
 
 struct TaskRef<'a> {
-    cfg_id: u64,
+    cfg_id: TaskId,
     user_id: u64,
     ctx: &'a TaskCtx,
 }
 
+#[proto_message]
+#[derive(Clone, PartialEq, Debug)]
+struct TaskId;
+
 //flattened with getters
 #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)]
 struct TaskProto {
-    cfg_id: u64,
+    #[proto(getter = "Some($.cfg_id)")]
+    cfg_id: Option<TaskId>,
     user_id: u64,
     #[proto(getter = "&*$.ctx.flags()")]
     flags: u32,
@@ -53,7 +58,7 @@ struct TaskProto {
 impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
     fn from_sun(value: &'a Task) -> Self {
         TaskRef {
-            cfg_id: value.cfg_id,
+            cfg_id: value.cfg_id.clone(),
             user_id: value.user_id,
             ctx: &value.some_complex_ctx_that_need_ir_type,
         }
@@ -63,7 +68,7 @@ impl<'a> ProtoShadowEncode<'a, Task> for TaskRef<'a> {
 impl ProtoShadowDecode<Task> for TaskProto {
     fn to_sun(self) -> Result<Task, DecodeError> {
         Ok(Task {
-            cfg_id: self.cfg_id,
+            cfg_id: self.cfg_id.unwrap(),
             user_id: self.user_id,
             some_complex_ctx_that_need_ir_type: TaskCtx::new(self.flags, self.values),
         })
@@ -73,7 +78,7 @@ impl ProtoShadowDecode<Task> for TaskProto {
 #[test]
 fn encode_decode_reference_with_getter() {
     let task = Task {
-        cfg_id: 7,
+        cfg_id: TaskId,
         user_id: 9,
         some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2),
     };
