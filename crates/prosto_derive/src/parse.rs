@@ -75,6 +75,9 @@ pub struct UnifiedProtoConfig {
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
+    /// Intermediate representation type for encoding sun types with getters.
+    /// When specified, the encoding path becomes: Sun -> SunIR -> Shadow -> wire
+    pub sun_ir: Option<Type>,
     pub transparent: bool,
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
@@ -230,6 +233,12 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 let ty: Type = value.parse()?;
                 config.push_sun(ty);
             }
+            return Ok(());
+        } else if meta.path.is_ident("sun_ir") {
+            // Parse sun_ir = Type<'a> - intermediate representation for encoding
+            let value = meta.value()?;
+            let ty: Type = value.parse()?;
+            config.sun_ir = Some(ty);
             return Ok(());
         } else if meta.path.is_ident("rpc_server") {
             if let Ok(lit_bool) = meta.value()?.parse::<syn::LitBool>() {
