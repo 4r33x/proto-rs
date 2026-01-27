@@ -13,13 +13,7 @@ pub trait ProtoShadowDecode<T> {
 }
 
 /// “Message-level” decoder: knows how to dispatch tags inside a message.
-pub trait ProtoDecoder: ProtoExt {
-    /// default value used for decoding
-    /// should be real default value as protobuf spec
-    fn proto_default() -> Self;
-    /// Reset to default.
-    fn clear(&mut self);
-
+pub trait ProtoDecoder: ProtoExt + ProtoDefault {
     /// User (or macro-generated code) implements this.
     ///
     /// Contract:
@@ -112,7 +106,9 @@ pub trait ProtoFieldMerge: ProtoExt {
 }
 
 pub trait ProtoDefault: Sized {
-    fn proto_default_value() -> Self;
+    /// default value used for decoding
+    /// should be real default value as protobuf spec
+    fn proto_default() -> Self;
 }
 
 impl<T> ProtoFieldMerge for T
@@ -122,15 +118,5 @@ where
     #[inline(always)]
     fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
-    }
-}
-
-impl<T> ProtoDefault for T
-where
-    T: ProtoDecoder,
-{
-    #[inline(always)]
-    fn proto_default_value() -> Self {
-        T::proto_default()
     }
 }
