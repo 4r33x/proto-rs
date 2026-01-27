@@ -75,6 +75,7 @@ pub struct UnifiedProtoConfig {
     file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
+    pub sun_ir_types: Vec<Type>,
     pub transparent: bool,
     pub validator: Option<String>,
     pub validator_with_ext: Option<String>,
@@ -88,6 +89,7 @@ pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
     pub by_ref: bool,
+    pub ir_ty: Option<Type>,
 }
 
 #[derive(Clone)]
@@ -132,6 +134,7 @@ impl UnifiedProtoConfig {
         if !attr.is_empty() {
             parse_attr_params(attr, &mut config);
         }
+        config.apply_sun_ir();
 
         config.item_generics = generics;
         config.item_attrs = item_attrs.to_vec();
@@ -229,6 +232,21 @@ fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
                 // Handle single type: sun = Type
                 let ty: Type = value.parse()?;
                 config.push_sun(ty);
+            }
+            return Ok(());
+        } else if meta.path.is_ident("sun_ir") {
+            let value = meta.value()?;
+            let lookahead = value.lookahead1();
+            if lookahead.peek(syn::token::Bracket) {
+                let content;
+                syn::bracketed!(content in value);
+                let types: syn::punctuated::Punctuated<Type, syn::Token![,]> = content.parse_terminated(Type::parse, syn::Token![,])?;
+                for ty in types {
+                    config.sun_ir_types.push(ty);
+                }
+            } else {
+                let ty: Type = value.parse()?;
+                config.sun_ir_types.push(ty);
             }
             return Ok(());
         } else if meta.path.is_ident("rpc_server") {
@@ -374,7 +392,42 @@ impl UnifiedProtoConfig {
         let by_ref = is_reference_sun(&ty);
         let ty = normalize_sun_type(ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
-        self.suns.push(SunConfig { ty, message_ident, by_ref });
+        self.suns.push(SunConfig {
+            ty,
+            message_ident,
+            by_ref,
+            ir_ty: None,
+        });
+    }
+
+    fn apply_sun_ir(&mut self) {
+        if self.sun_ir_types.is_empty() {
+            return;
+        }
+
+        if self.suns.is_empty() {
+            panic!("sun_ir requires at least one sun type");
+        }
+
+        if self.sun_ir_types.len() == 1 {
+            let ir_ty = self.sun_ir_types[0].clone();
+            for sun in &mut self.suns {
+                sun.ir_ty = Some(ir_ty.clone());
+            }
+            return;
+        }
+
+        if self.sun_ir_types.len() != self.suns.len() {
+            panic!(
+                "sun_ir requires either a single type or the same number of entries as sun ({} vs {})",
+                self.sun_ir_types.len(),
+                self.suns.len()
+            );
+        }
+
+        for (sun, ir_ty) in self.suns.iter_mut().zip(self.sun_ir_types.iter()) {
+            sun.ir_ty = Some(ir_ty.clone());
+        }
     }
 }
 
