@@ -626,8 +626,15 @@ fn generate_proto_impls(
             let sun_ir_archive_impl = sun_ir_ty
                 .map(|sun_ir_ty| {
                     let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
+                    let mut sun_ir_archive_generics = shadow_generics.clone();
+                    sun_ir_archive_generics
+                        .make_where_clause()
+                        .predicates
+                        .push(parse_quote!(#sun_ir_ty: 'a));
+                    let (sun_ir_archive_impl_generics, _sun_ir_archive_ty_generics, sun_ir_archive_where_clause) =
+                        sun_ir_archive_generics.split_for_impl();
                     quote! {
-                        impl #shadow_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #shadow_where_clause {
+                        impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
                             #[inline(always)]
                             fn is_default(&self) -> bool {
                                 let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #sun_ir_ty_short>>::from_sun(self);
@@ -645,8 +652,15 @@ fn generate_proto_impls(
                 .unwrap_or_default();
             let sun_ir_ext_impl = sun_ir_ty
                 .map(|sun_ir_ty| {
+                    let mut sun_ir_ext_generics = shadow_generics.clone();
+                    sun_ir_ext_generics
+                        .make_where_clause()
+                        .predicates
+                        .push(parse_quote!(#sun_ir_ty: 'a));
+                    let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) =
+                        sun_ir_ext_generics.split_for_impl();
                     quote! {
-                        impl #shadow_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #shadow_where_clause {
+                        impl #sun_ir_ext_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #sun_ir_ext_where_clause {
                             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
                         }
                     }
