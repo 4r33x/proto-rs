@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.10.0]
+- Better decode path codegen
+
 ## [0.9.2]
 - Added sun_ir #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)] for encoding path override 
 
