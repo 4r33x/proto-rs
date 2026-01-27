@@ -631,10 +631,7 @@ fn generate_proto_impls(
             let sun_ir_archive_impl = sun_ir_ty
                 .map(|sun_ir_ty| {
                     let mut sun_ir_archive_generics = shadow_generics.clone();
-                    sun_ir_archive_generics
-                        .make_where_clause()
-                        .predicates
-                        .push(parse_quote!(#sun_ir_ty: 'a));
+                    sun_ir_archive_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
                     let (sun_ir_archive_impl_generics, _sun_ir_archive_ty_generics, sun_ir_archive_where_clause) =
                         sun_ir_archive_generics.split_for_impl();
                     let shadow_lifetime = quote! { '_ };
@@ -741,12 +738,8 @@ fn generate_proto_impls(
             let sun_ir_ext_impl = sun_ir_ty
                 .map(|sun_ir_ty| {
                     let mut sun_ir_ext_generics = shadow_generics.clone();
-                    sun_ir_ext_generics
-                        .make_where_clause()
-                        .predicates
-                        .push(parse_quote!(#sun_ir_ty: 'a));
-                    let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) =
-                        sun_ir_ext_generics.split_for_impl();
+                    sun_ir_ext_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
+                    let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) = sun_ir_ext_generics.split_for_impl();
                     quote! {
                         impl #sun_ir_ext_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #sun_ir_ext_where_clause {
                             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
@@ -794,7 +787,8 @@ fn generate_proto_impls(
             let sun_decode_shadow_init_self = if let Some(sun_ir_ty) = sun_ir_ty {
                 let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
                 let base = quote! { __proto_ir };
-                let shadow_init = build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
+                let shadow_init =
+                    build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
                 quote! {
                     let __proto_ir = <#sun_ir_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                     let mut shadow = #shadow_init;
@@ -968,11 +962,6 @@ fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &syn::Field) -> (
     });
     let is_ref = matches!(expr, syn::Expr::Reference(_));
     (quote! { #expr }, is_ref)
-}
-
-fn sun_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
-    let base = quote! { value };
-    sun_field_init_with_base(info, &base, true, false)
 }
 
 fn sun_field_init_with_base(

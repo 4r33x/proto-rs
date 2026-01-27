@@ -319,18 +319,3 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
         })
         .collect()
 }
-
-pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -> Vec<TokenStream2> {
-    fields
-        .iter()
-        .map(|info| {
-            let access = info.access.access_tokens(self_tokens.clone());
-            if uses_proto_wire_directly(info) {
-                let default_expr = field_proto_default_expr(info);
-                quote! { #access = #default_expr }
-            } else {
-                quote! { #access = ::core::default::Default::default() }
-            }
-        })
-        .collect()
-}
