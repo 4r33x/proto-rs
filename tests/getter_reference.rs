@@ -48,16 +48,18 @@ struct TaskRef<'a> {
 struct TaskId;
 
 //flattened with getters
+// For sun_ir encoding: zero-copy path
+// Getter can return owned T or &T - macro uses Borrow to normalize to &T
 #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)]
 struct TaskProto {
     #[proto(getter = "Some($.cfg_id.clone())")]
     cfg_id: Option<TaskId>,
     user_id: u64,
-    #[proto(getter = "&*$.ctx.flags()")]
+    #[proto(getter = "$.ctx.flags()")]
     flags: u32,
     #[proto(getter = "$.ctx.name()")]
     name: String,
-    #[proto(tag = 5, getter = "&*$.ctx.values()")]
+    #[proto(tag = 5, getter = "$.ctx.values()")]
     values: u32,
 }
 

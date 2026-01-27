@@ -22,7 +22,6 @@ use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::encode_conversion_expr;
-use super::unified_field_handler::encode_conversion_expr_owned;
 use super::unified_field_handler::is_value_encode_type;
 use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
@@ -616,28 +615,25 @@ fn generate_proto_impls(
                         sun_ir_archive_generics.split_for_impl();
                     let shadow_lifetime = quote! { '_ };
                     let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
+                    // For sun_ir encoding: zero-copy path
+                    // Getter result is stored in let binding (extends lifetime for owned values)
+                    // Then Borrow normalizes &T or &&T to &T for shadow creation
+                    // No clones - strictly zero-copy via references
                     let is_default_checks = encoded_fields.iter().map(|info| {
                         let base = quote! { self };
-                        let (access_expr, getter_is_ref) = if has_getters && info.config.getter.is_some() {
-                            parse_getter_expr(info.config.getter.as_ref().expect("getter"), &base, info.field)
+                        let access_expr = if has_getters && info.config.getter.is_some() {
+                            parse_getter_expr(info.config.getter.as_ref().expect("getter"), &base, info.field).0
                         } else {
-                            (info.access.access_tokens(base), false)
-                        };
-                        let ref_expr = if has_getters && info.config.getter.is_some() {
-                            if getter_is_ref {
-                                quote! { __proto_value }
-                            } else {
-                                quote! { &__proto_value }
-                            }
-                        } else {
-                            quote! { &__proto_value }
+                            let access = info.access.access_tokens(base);
+                            quote! { &#access }
                         };
                         let field_ty = &info.field.ty;
                         let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
                         quote! {
                             {
                                 let __proto_value = #access_expr;
-                                let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#ref_expr);
+                                let __proto_ref: &#field_ty = ::core::borrow::Borrow::borrow(&__proto_value);
+                                let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(__proto_ref);
                                 __proto_is_default &= ::proto_rs::ProtoArchive::is_default(&__proto_shadow);
                             }
                         }
@@ -645,26 +641,19 @@ fn generate_proto_impls(
                     let archive_fields = encoded_fields.iter().rev().map(|info| {
                         let tag = info.tag.expect("tag required");
                         let base = quote! { self };
-                        let (access_expr, getter_is_ref) = if has_getters && info.config.getter.is_some() {
-                            parse_getter_expr(info.config.getter.as_ref().expect("getter"), &base, info.field)
+                        let access_expr = if has_getters && info.config.getter.is_some() {
+                            parse_getter_expr(info.config.getter.as_ref().expect("getter"), &base, info.field).0
                         } else {
-                            (info.access.access_tokens(base), false)
-                        };
-                        let ref_expr = if has_getters && info.config.getter.is_some() {
-                            if getter_is_ref {
-                                quote! { __proto_value }
-                            } else {
-                                quote! { &__proto_value }
-                            }
-                        } else {
-                            quote! { &__proto_value }
+                            let access = info.access.access_tokens(base);
+                            quote! { &#access }
                         };
                         let field_ty = &info.field.ty;
                         let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
                         quote! {
                             {
                                 let __proto_value = #access_expr;
-                                let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#ref_expr);
+                                let __proto_ref: &#field_ty = ::core::borrow::Borrow::borrow(&__proto_value);
+                                let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(__proto_ref);
                                 ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&__proto_shadow, w);
                             }
                         }
@@ -929,15 +918,8 @@ fn shadow_field_init_with_lifetime(
         (info.access.access_tokens(base.clone()), false)
     };
 
-    // Check if getter explicitly produces owned value
-    let getter_str = if use_getters { info.config.getter.as_deref().unwrap_or("") } else { "" };
-    let getter_produces_owned = getter_str.contains(".clone()")
-        || getter_str.contains(".to_owned()")
-        || getter_str.contains(".to_string()")
-        || getter_str.starts_with("Some(")
-        || getter_str.starts_with("Ok(")
-        || getter_str.starts_with("Err(");
-
+    // If getter returns reference (starts with &), use directly
+    // Otherwise take reference of the expression
     let ref_expr = if use_getters && info.config.getter.is_some() {
         if getter_is_ref {
             access_expr.clone()
@@ -949,12 +931,7 @@ fn shadow_field_init_with_lifetime(
     };
 
     if needs_encode_conversion(&info.config, &info.parsed) {
-        if getter_produces_owned {
-            // Getter explicitly produces owned value, handle conversion without clone
-            encode_conversion_expr_owned(info, &access_expr)
-        } else {
-            encode_conversion_expr(info, &ref_expr)
-        }
+        encode_conversion_expr(info, &ref_expr)
     } else {
         let field_ty = &info.field.ty;
         let shadow_ty = shadow_field_ty_with_lifetime(info, lifetime);
@@ -977,47 +954,23 @@ fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &syn::Field) -> (
 
 fn sun_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
     let base = quote! { value };
-    let (access_expr, getter_is_ref) = if let Some(getter) = &info.config.getter {
-        parse_getter_expr(getter, &base, info.field)
+    let access_expr = if let Some(getter) = &info.config.getter {
+        parse_getter_expr(getter, &base, info.field).0
     } else {
-        (info.access.access_tokens(base), false)
+        info.access.access_tokens(base)
     };
-
-    // Check if getter explicitly produces owned value (contains .clone(), .to_owned(), etc.
-    // or is a constructor like Some(...), Ok(...))
-    let getter_str = info.config.getter.as_deref().unwrap_or("");
-    let getter_produces_owned = getter_str.contains(".clone()")
-        || getter_str.contains(".to_owned()")
-        || getter_str.contains(".to_string()")
-        || getter_str.starts_with("Some(")
-        || getter_str.starts_with("Ok(")
-        || getter_str.starts_with("Err(");
+    let field_ty = &info.field.ty;
+    // Use Borrow to normalize both owned T and &T to &T
+    let borrowed_expr = quote! { ::core::borrow::Borrow::<#field_ty>::borrow(&#access_expr) };
 
     if needs_encode_conversion(&info.config, &info.parsed) {
-        if getter_produces_owned {
-            // Getter explicitly produces owned value, convert without clone
-            encode_conversion_expr_owned(info, &access_expr)
-        } else if getter_is_ref {
-            encode_conversion_expr(info, &access_expr)
-        } else {
-            let ref_expr = quote! { &#access_expr };
-            encode_conversion_expr(info, &ref_expr)
-        }
+        encode_conversion_expr(info, &borrowed_expr)
     } else if is_value_encode_type(&info.field.ty) {
-        if getter_is_ref {
-            quote! { *#access_expr }
-        } else {
-            access_expr
-        }
+        // Value types (Copy): dereference to get owned value
+        quote! { *#borrowed_expr }
     } else {
-        // Non-value types need owned values for the proto struct
-        if getter_produces_owned {
-            // Getter explicitly produces owned value, use directly
-            access_expr
-        } else {
-            // Field access or method call - need to clone to ensure owned value
-            quote! { (#access_expr).clone() }
-        }
+        // Non-value types: clone to get owned value (decode path requires owned values)
+        quote! { (*#borrowed_expr).clone() }
     }
 }
 
