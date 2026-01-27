@@ -1,6 +1,7 @@
 use private::TaskCtx;
 use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
+use proto_rs::ProtoDecoder;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoShadowDecode;
 use proto_rs::ProtoShadowEncode;
@@ -53,11 +54,11 @@ struct TaskProto {
     #[proto(getter = "Some($.cfg_id.clone())")]
     cfg_id: Option<TaskId>,
     user_id: u64,
-    #[proto(getter = "&*$.ctx.flags()")]
+    #[proto(getter = "*$.ctx.flags()")]
     flags: u32,
-    #[proto(getter = "$.ctx.name()")]
+    #[proto(getter = "&*$.ctx.name()")]
     name: String,
-    #[proto(tag = 5, getter = "&*$.ctx.values()")]
+    #[proto(tag = 5, getter = "*$.ctx.values()")]
     values: u32,
 }
 
@@ -90,6 +91,25 @@ fn encode_decode_reference_with_getter() {
     };
     let bytes = Task::encode_to_vec(&task);
     let decoded = <Task as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode task with getters");
+
+    assert_eq!(decoded, task);
+}
+
+#[test]
+fn decode_into_preserves_sun_ir_fields() {
+    let task = Task {
+        cfg_id: TaskId,
+        user_id: 9,
+        some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2, String::from("name")),
+    };
+    let bytes = Task::encode_to_vec(&task);
+    let mut decoded = Task {
+        cfg_id: TaskId,
+        user_id: 0,
+        some_complex_ctx_that_need_ir_type: TaskCtx::new(0, 0, String::new()),
+    };
+    <Task as ProtoDecoder>::decode_into(&mut decoded, &mut bytes.as_slice(), DecodeContext::default())
+        .expect("decode into task with getters");
 
     assert_eq!(decoded, task);
 }

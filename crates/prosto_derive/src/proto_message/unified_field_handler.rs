@@ -168,17 +168,6 @@ pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
     fields
 }
 
-pub fn is_value_encode_type(ty: &Type) -> bool {
-    matches!(ty, Type::Path(type_path)
-    if type_path.qself.is_none()
-        && type_path.path.segments.len() == 1
-        && matches!(type_path.path.segments[0].ident.to_string().as_str(),
-            "bool" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
-            "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
-            "f32" | "f64"
-        ))
-}
-
 pub fn build_proto_default_expr(fields: &[FieldInfo<'_>], original: &syn::Fields) -> TokenStream2 {
     match original {
         syn::Fields::Unit => quote! { Self },
@@ -223,6 +212,20 @@ pub fn encode_conversion_expr(field: &FieldInfo<'_>, access: &TokenStream2) -> T
     } else if field.config.into_type.is_some() {
         let ty = &field.proto_ty;
         quote! { <#ty as ::core::convert::From<_>>::from((*(#access)).clone()) }
+    } else {
+        access.clone()
+    }
+}
+
+pub fn encode_conversion_expr_direct(field: &FieldInfo<'_>, access: &TokenStream2) -> TokenStream2 {
+    if is_numeric_enum(&field.config, &field.parsed) {
+        quote! { (#access) as i32 }
+    } else if let Some(fun) = &field.config.into_fn {
+        let fun_path = parse_path_string(field.field, fun);
+        quote! { #fun_path(#access) }
+    } else if field.config.into_type.is_some() {
+        let ty = &field.proto_ty;
+        quote! { <#ty as ::core::convert::From<_>>::from(#access) }
     } else {
         access.clone()
     }

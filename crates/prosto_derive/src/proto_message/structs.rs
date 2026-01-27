@@ -22,7 +22,7 @@ use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::encode_conversion_expr;
-use super::unified_field_handler::is_value_encode_type;
+use super::unified_field_handler::encode_conversion_expr_direct;
 use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
@@ -121,17 +121,22 @@ pub(super) fn generate_struct_impl(
     let shadow_ident = syn::Ident::new(&format!("{name}Shadow"), name.span());
     let archived_ident = syn::Ident::new(&format!("{name}Archived"), name.span());
 
-    let shadow_impls = generate_shadow_impls(
-        name,
-        &shadow_ident,
-        &archived_ident,
-        &item_struct.vis,
-        &data.fields,
-        &fields,
-        &bounded_generics,
-        &ty_generics,
-        config.suns.is_empty(),
-    );
+    let has_sun_ir = config.suns.iter().any(|sun| sun.ir_ty.is_some());
+    let shadow_impls = if has_sun_ir {
+        TokenStream2::new()
+    } else {
+        generate_shadow_impls(
+            name,
+            &shadow_ident,
+            &archived_ident,
+            &item_struct.vis,
+            &data.fields,
+            &fields,
+            &bounded_generics,
+            &ty_generics,
+            config.suns.is_empty(),
+        )
+    };
     let proto_impls = generate_proto_impls(
         name,
         &shadow_ident,
@@ -591,10 +596,34 @@ fn generate_proto_impls(
     let shadow_ty = shadow_type_tokens(generics, shadow_ident);
     let shadow_ty_short = shadow_type_tokens_with_lifetime(generics, shadow_ident, quote! { '_ });
     let has_getters = fields.iter().any(|info| info.config.getter.is_some());
-    let sun_shadow_encode_init = if has_getters {
-        Some(build_sun_shadow_encode_init(fields, original_fields))
+    let has_sun_ir = config.suns.iter().any(|sun| sun.ir_ty.is_some());
+    let proto_archive_impl = if has_sun_ir {
+        quote! {}
     } else {
-        None
+        quote! {
+            impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
+                #[inline(always)]
+                fn is_default(&self) -> bool {
+                    let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+                    ::proto_rs::ProtoArchive::is_default(&shadow)
+                }
+
+                #[inline(always)]
+                fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                    let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+                    <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
+                }
+            }
+        }
+    };
+    let proto_encode_impl = if has_sun_ir {
+        quote! {}
+    } else {
+        quote! {
+            impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
+                type Shadow<'a> = #shadow_ty;
+            }
+        }
     };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
@@ -622,22 +651,35 @@ fn generate_proto_impls(
                         } else {
                             (info.access.access_tokens(base), false)
                         };
-                        let ref_expr = if has_getters && info.config.getter.is_some() {
-                            if getter_is_ref {
-                                quote! { __proto_value }
+                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
+                        let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
+                            let ref_expr = if getter_is_ref {
+                                access_expr.clone()
                             } else {
-                                quote! { &__proto_value }
+                                quote! { &#access_expr }
+                            };
+                            let converted = encode_conversion_expr(info, &ref_expr);
+                            quote! { let __proto_shadow = #converted; }
+                        } else if getter_is_ref {
+                            let field_ty = &info.field.ty;
+                            quote! {
+                                let __proto_shadow =
+                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#access_expr);
                             }
                         } else {
-                            quote! { &__proto_value }
+                            let field_ty = &info.field.ty;
+                            quote! {
+                                let __proto_value = #access_expr;
+                                let __proto_shadow =
+                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
+                            }
                         };
-                        let field_ty = &info.field.ty;
-                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
                         quote! {
                             {
-                                let __proto_value = #access_expr;
-                                let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#ref_expr);
-                                __proto_is_default &= ::proto_rs::ProtoArchive::is_default(&__proto_shadow);
+                                #shadow_init
+                                if !::proto_rs::ProtoArchive::is_default(&__proto_shadow) {
+                                    return false;
+                                }
                             }
                         }
                     });
@@ -649,21 +691,32 @@ fn generate_proto_impls(
                         } else {
                             (info.access.access_tokens(base), false)
                         };
-                        let ref_expr = if has_getters && info.config.getter.is_some() {
-                            if getter_is_ref {
-                                quote! { __proto_value }
+                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
+                        let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
+                            let ref_expr = if getter_is_ref {
+                                access_expr.clone()
                             } else {
-                                quote! { &__proto_value }
+                                quote! { &#access_expr }
+                            };
+                            let converted = encode_conversion_expr(info, &ref_expr);
+                            quote! { let __proto_shadow = #converted; }
+                        } else if getter_is_ref {
+                            let field_ty = &info.field.ty;
+                            quote! {
+                                let __proto_shadow =
+                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#access_expr);
                             }
                         } else {
-                            quote! { &__proto_value }
+                            let field_ty = &info.field.ty;
+                            quote! {
+                                let __proto_value = #access_expr;
+                                let __proto_shadow =
+                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
+                            }
                         };
-                        let field_ty = &info.field.ty;
-                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
                         quote! {
                             {
-                                let __proto_value = #access_expr;
-                                let __proto_shadow = <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#ref_expr);
+                                #shadow_init
                                 ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&__proto_shadow, w);
                             }
                         }
@@ -672,9 +725,8 @@ fn generate_proto_impls(
                         impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
                             #[inline(always)]
                             fn is_default(&self) -> bool {
-                                let mut __proto_is_default = true;
                                 #( #is_default_checks )*
-                                __proto_is_default
+                                true
                             }
 
                             #[inline(always)]
@@ -720,20 +772,12 @@ fn generate_proto_impls(
                     }
                 }
             };
-            let sun_shadow_encode_impl = if let Some(init) = &sun_shadow_encode_init {
-                let sun_ir_binding = sun_ir_ty
-                    .map(|sun_ir_ty| {
-                        quote! {
-                            let sun_ir = <#sun_ir_ty as ::proto_rs::ProtoShadowEncode<'a, #target_ty>>::from_sun(value);
-                            let value = &sun_ir;
-                        }
-                    })
-                    .unwrap_or_default();
+            let sun_shadow_encode_impl = if sun_ir_ty.is_none() && has_getters {
+                let init = build_sun_shadow_encode_init(fields, original_fields);
                 quote! {
                     impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #target_ty> for #name #ty_generics #shadow_where_clause {
                         #[inline(always)]
                         fn from_sun(value: &'a #target_ty) -> Self {
-                            #sun_ir_binding
                             #init
                         }
                     }
@@ -751,6 +795,28 @@ fn generate_proto_impls(
                 quote! { #sun_ir_ty_short }
             } else {
                 quote! { #name #ty_generics }
+            };
+            let sun_decode_shadow_init = if let Some(sun_ir_ty) = sun_ir_ty {
+                let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
+                let base = quote! { __proto_ir };
+                let shadow_init = build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
+                quote! {
+                    let __proto_ir = <#sun_ir_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                    let mut shadow = #shadow_init;
+                }
+            } else {
+                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value); }
+            };
+            let sun_decode_shadow_init_self = if let Some(sun_ir_ty) = sun_ir_ty {
+                let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
+                let base = quote! { __proto_ir };
+                let shadow_init = build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
+                quote! {
+                    let __proto_ir = <#sun_ir_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                    let mut shadow = #shadow_init;
+                }
+            } else {
+                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self); }
             };
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
@@ -792,7 +858,7 @@ fn generate_proto_impls(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                        #sun_decode_shadow_init
                         <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
                         *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
@@ -805,7 +871,7 @@ fn generate_proto_impls(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        #sun_decode_shadow_init_self
                         <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
                         *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
@@ -876,23 +942,9 @@ fn generate_proto_impls(
             }
         }
 
-        impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
-            type Shadow<'a> = #shadow_ty;
-        }
+        #proto_encode_impl
 
-        impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            #[inline(always)]
-            fn is_default(&self) -> bool {
-                let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                ::proto_rs::ProtoArchive::is_default(&shadow)
-            }
-
-            #[inline(always)]
-            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
-            }
-        }
+        #proto_archive_impl
 
         #sun_impls
     }
@@ -956,38 +1008,57 @@ fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &syn::Field) -> (
 
 fn sun_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
     let base = quote! { value };
-    let access_expr = if let Some(getter) = &info.config.getter {
-        parse_getter_expr(getter, &base, info.field).0
-    } else {
-        info.access.access_tokens(base)
-    };
-    let field_ty = &info.field.ty;
-    let borrowed_expr = quote! { ::core::borrow::Borrow::<#field_ty>::borrow(&#access_expr) };
+    sun_field_init_with_base(info, &base, true, false)
+}
 
-    if needs_encode_conversion(&info.config, &info.parsed) {
-        encode_conversion_expr(info, &borrowed_expr)
-    } else if is_value_encode_type(&info.field.ty) {
-        quote! { *#borrowed_expr }
+fn sun_field_init_with_base(
+    info: &FieldInfo<'_>,
+    base: &TokenStream2,
+    apply_encode_conversion: bool,
+    clone_getter_refs: bool,
+) -> TokenStream2 {
+    let (access_expr, getter_is_ref) = if let Some(getter) = &info.config.getter {
+        parse_getter_expr(getter, base, info.field)
     } else {
-        quote! { (*#borrowed_expr).clone() }
+        (info.access.access_tokens(base.clone()), false)
+    };
+
+    if apply_encode_conversion && needs_encode_conversion(&info.config, &info.parsed) {
+        encode_conversion_expr_direct(info, &access_expr)
+    } else if clone_getter_refs && getter_is_ref && !matches!(info.field.ty, syn::Type::Reference(_)) {
+        quote! { (#access_expr).clone() }
+    } else {
+        access_expr
     }
 }
 
 fn build_sun_shadow_encode_init(fields: &[FieldInfo<'_>], original_fields: &syn::Fields) -> TokenStream2 {
+    let base = quote! { value };
+    build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { Self }, true, false)
+}
+
+fn build_sun_struct_init_with_base(
+    fields: &[FieldInfo<'_>],
+    original_fields: &syn::Fields,
+    base: &TokenStream2,
+    struct_ty: &TokenStream2,
+    apply_encode_conversion: bool,
+    clone_getter_refs: bool,
+) -> TokenStream2 {
     match original_fields {
         syn::Fields::Named(_) => {
             let inits = fields.iter().map(|info| {
                 let ident = info.access.ident().expect("expected named field ident");
-                let init = sun_field_init(info);
+                let init = sun_field_init_with_base(info, base, apply_encode_conversion, clone_getter_refs);
                 quote! { #ident: #init }
             });
-            quote! { Self { #( #inits, )* } }
+            quote! { #struct_ty { #( #inits, )* } }
         }
         syn::Fields::Unnamed(_) => {
-            let inits = fields.iter().map(sun_field_init);
-            quote! { Self( #( #inits, )* ) }
+            let inits = fields.iter().map(|info| sun_field_init_with_base(info, base, apply_encode_conversion, clone_getter_refs));
+            quote! { #struct_ty( #( #inits, )* ) }
         }
-        syn::Fields::Unit => quote! { Self },
+        syn::Fields::Unit => quote! { #struct_ty },
     }
 }
 
