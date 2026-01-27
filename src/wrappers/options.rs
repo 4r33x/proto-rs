@@ -7,6 +7,8 @@ use crate::encoding::skip_field;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -18,22 +20,12 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Option<T> {
-    #[inline(always)]
-    fn proto_default() -> Self {
-        None
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        *self = None;
-    }
-
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
     #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            let inner = value.get_or_insert_with(T::proto_default);
-            T::merge(inner, wire_type, buf, ctx)
+            let inner = value.get_or_insert_with(<T as ProtoDefault>::proto_default);
+            T::merge_value(inner, wire_type, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
         }
@@ -41,8 +33,15 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Option<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = self.get_or_insert_with(T::proto_default);
-        T::merge(inner, wire_type, buf, ctx)
+        let inner = self.get_or_insert_with(<T as ProtoDefault>::proto_default);
+        T::merge_value(inner, wire_type, buf, ctx)
+    }
+}
+
+impl<T> ProtoDefault for Option<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        None
     }
 }
 

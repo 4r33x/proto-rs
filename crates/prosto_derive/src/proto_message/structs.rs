@@ -15,7 +15,6 @@ use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
-use super::unified_field_handler::build_clear_stmts;
 use super::unified_field_handler::build_decode_match_arms;
 use super::unified_field_handler::build_post_decode_hooks;
 use super::unified_field_handler::build_proto_default_expr;
@@ -318,10 +317,10 @@ fn generate_transparent_struct_impl(
     };
 
     let default_expr = match original_fields {
-        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoDecoder>::proto_default()) },
+        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoDefault>::proto_default()) },
         syn::Fields::Named(_) => {
             let ident = field.access.ident().expect("expected named field ident for transparent struct");
-            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoDecoder>::proto_default() } }
+            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoDefault>::proto_default() } }
         }
         syn::Fields::Unit => quote! { Self },
     };
@@ -362,16 +361,6 @@ fn generate_transparent_struct_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn proto_default() -> Self {
-                #default_expr
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::clear(&mut #mut_self_access);
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -385,6 +374,13 @@ fn generate_transparent_struct_impl(
             #[inline(always)]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
                 <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #default_expr
             }
         }
 
@@ -402,7 +398,7 @@ fn generate_transparent_struct_impl(
                     Ok(#wrap_expr)
                 } else {
                     // Primitive type - read raw value using merge
-                    let mut inner = <#inner_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                    let mut inner = <#inner_ty as ::proto_rs::ProtoDefault>::proto_default();
                     <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut inner, <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE, &mut buf, ctx)?;
                     Ok(#wrap_expr)
                 }
@@ -563,7 +559,6 @@ fn generate_proto_impls(
 ) -> TokenStream2 {
     let decode_arms = build_decode_match_arms(fields, &quote! { value });
     let proto_default_expr = build_proto_default_expr(fields, original_fields);
-    let clear_stmts = build_clear_stmts(fields, &quote! { self });
     let post_decode_hooks = build_post_decode_hooks(fields);
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
     let validate_with_ext_proto_impl = if config.has_suns() {
@@ -636,10 +631,7 @@ fn generate_proto_impls(
             let sun_ir_archive_impl = sun_ir_ty
                 .map(|sun_ir_ty| {
                     let mut sun_ir_archive_generics = shadow_generics.clone();
-                    sun_ir_archive_generics
-                        .make_where_clause()
-                        .predicates
-                        .push(parse_quote!(#sun_ir_ty: 'a));
+                    sun_ir_archive_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
                     let (sun_ir_archive_impl_generics, _sun_ir_archive_ty_generics, sun_ir_archive_where_clause) =
                         sun_ir_archive_generics.split_for_impl();
                     let shadow_lifetime = quote! { '_ };
@@ -746,12 +738,8 @@ fn generate_proto_impls(
             let sun_ir_ext_impl = sun_ir_ty
                 .map(|sun_ir_ty| {
                     let mut sun_ir_ext_generics = shadow_generics.clone();
-                    sun_ir_ext_generics
-                        .make_where_clause()
-                        .predicates
-                        .push(parse_quote!(#sun_ir_ty: 'a));
-                    let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) =
-                        sun_ir_ext_generics.split_for_impl();
+                    sun_ir_ext_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
+                    let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) = sun_ir_ext_generics.split_for_impl();
                     quote! {
                         impl #sun_ir_ext_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #sun_ir_ext_where_clause {
                             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
@@ -796,21 +784,11 @@ fn generate_proto_impls(
             } else {
                 quote! { #name #ty_generics }
             };
-            let sun_decode_shadow_init = if let Some(sun_ir_ty) = sun_ir_ty {
-                let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
-                let base = quote! { __proto_ir };
-                let shadow_init = build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
-                quote! {
-                    let __proto_ir = <#sun_ir_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
-                    let mut shadow = #shadow_init;
-                }
-            } else {
-                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value); }
-            };
             let sun_decode_shadow_init_self = if let Some(sun_ir_ty) = sun_ir_ty {
                 let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
                 let base = quote! { __proto_ir };
-                let shadow_init = build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
+                let shadow_init =
+                    build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
                 quote! {
                     let __proto_ir = <#sun_ir_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                     let mut shadow = #shadow_init;
@@ -837,35 +815,18 @@ fn generate_proto_impls(
                     #validate_with_ext_impl
                 }
 
-                impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
                     #[inline(always)]
                     fn proto_default() -> Self {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDefault>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                             .expect("failed to build default sun value")
                     }
+                }
 
+                impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
                     #[inline(always)]
-                    fn clear(&mut self) {
-                        *self = Self::proto_default();
-                    }
-
-                    #[inline(always)]
-                    fn merge_field(
-                        value: &mut Self,
-                        tag: u32,
-                        wire_type: ::proto_rs::encoding::WireType,
-                        buf: &mut impl ::proto_rs::bytes::Buf,
-                        ctx: ::proto_rs::encoding::DecodeContext,
-                    ) -> Result<(), ::proto_rs::DecodeError> {
-                        #sun_decode_shadow_init
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
-                        *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
-                        Ok(())
-                    }
-
-                    #[inline(always)]
-                    fn merge(
+                    fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
                         buf: &mut impl ::proto_rs::bytes::Buf,
@@ -905,16 +866,6 @@ fn generate_proto_impls(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn proto_default() -> Self {
-                #proto_default_expr
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                #(#clear_stmts;)*
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -926,6 +877,13 @@ fn generate_proto_impls(
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #proto_default_expr
             }
         }
 
@@ -1004,11 +962,6 @@ fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &syn::Field) -> (
     });
     let is_ref = matches!(expr, syn::Expr::Reference(_));
     (quote! { #expr }, is_ref)
-}
-
-fn sun_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
-    let base = quote! { value };
-    sun_field_init_with_base(info, &base, true, false)
 }
 
 fn sun_field_init_with_base(

@@ -10,7 +10,7 @@ use prost::Message as ProstMessage;
 use proto_rs::DecodeError;
 use proto_rs::ProtoArchive;
 use proto_rs::ProtoDecode;
-use proto_rs::ProtoDecoder;
+use proto_rs::ProtoDefault;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoExt;
 use proto_rs::ProtoShadowEncode;
@@ -437,7 +437,7 @@ fn encode_prost_length_delimited<M: ProstMessage>(value: &M) -> Bytes {
 
 #[test]
 fn enum_default_attribute_maps_to_zero_discriminant() {
-    assert_eq!(StatusWithDefaultAttribute::proto_default(), StatusWithDefaultAttribute::Active);
+    assert_eq!(<StatusWithDefaultAttribute as ProtoDefault>::proto_default(), StatusWithDefaultAttribute::Active);
     assert_eq!(StatusWithDefaultAttribute::Active as i32, 0);
     assert_eq!(StatusWithDefaultAttribute::Pending as i32, 1);
     assert_eq!(StatusWithDefaultAttribute::Inactive as i32, 2);
@@ -788,7 +788,7 @@ enum SkippedTupleDefault {
 
 #[test]
 fn complex_enum_is_default_checks_variant_and_fields() {
-    let default_method = <PaymentMethod as ProtoDecoder>::proto_default();
+    let default_method = <PaymentMethod as ProtoDefault>::proto_default();
     assert!(<PaymentMethod as ProtoArchive>::is_default(&default_method));
 
     let non_default_variant = PaymentMethod::Card(String::new());
@@ -797,7 +797,7 @@ fn complex_enum_is_default_checks_variant_and_fields() {
     let non_default_field = PaymentMethod::Cash(5);
     assert!(!<PaymentMethod as ProtoArchive>::is_default(&non_default_field));
 
-    let nested_default = PaymentMethod::Crypto(<QuoteLamports as ProtoDecoder>::proto_default());
+    let nested_default = PaymentMethod::Crypto(<QuoteLamports as ProtoDefault>::proto_default());
     assert!(matches!(nested_default, PaymentMethod::Crypto(_)));
     assert!(!<PaymentMethod as ProtoArchive>::is_default(&nested_default));
 }
@@ -806,7 +806,7 @@ fn complex_enum_is_default_checks_variant_and_fields() {
 fn complex_enum_default_tuple_skip_is_ignored() {
     use std::rc::Rc;
 
-    let default_value = <SkippedTupleDefault as ProtoDecoder>::proto_default();
+    let default_value = <SkippedTupleDefault as ProtoDefault>::proto_default();
     assert!(matches!(default_value, SkippedTupleDefault::Ephemeral(_)));
     assert!(<SkippedTupleDefault as ProtoArchive>::is_default(&default_value));
 
