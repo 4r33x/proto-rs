@@ -20,8 +20,8 @@ use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
 use crate::utils::type_name_with_generics_for_path;
 use crate::write_file::register_and_emit_proto_inner;
-use crate::write_file::register_package;
 use crate::write_file::register_imports;
+use crate::write_file::register_package;
 
 pub trait ParseFieldAttr {
     fn extract_field_imports(&self, map: &mut BTreeMap<String, BTreeSet<String>>);
@@ -405,9 +405,7 @@ impl UnifiedProtoConfig {
             return;
         }
 
-        if self.suns.is_empty() {
-            panic!("sun_ir requires at least one sun type");
-        }
+        assert!(!self.suns.is_empty(), "sun_ir requires at least one sun type");
 
         if self.sun_ir_types.len() == 1 {
             let ir_ty = self.sun_ir_types[0].clone();
@@ -417,13 +415,12 @@ impl UnifiedProtoConfig {
             return;
         }
 
-        if self.sun_ir_types.len() != self.suns.len() {
-            panic!(
-                "sun_ir requires either a single type or the same number of entries as sun ({} vs {})",
-                self.sun_ir_types.len(),
-                self.suns.len()
-            );
-        }
+        assert!(
+            self.sun_ir_types.len() != self.suns.len(),
+            "sun_ir requires either a single type or the same number of entries as sun ({} vs {})",
+            self.sun_ir_types.len(),
+            self.suns.len()
+        );
 
         for (sun, ir_ty) in self.suns.iter_mut().zip(self.sun_ir_types.iter()) {
             sun.ir_ty = Some(ir_ty.clone());

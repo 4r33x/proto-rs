@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.9.2]
+- Added sun_ir #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)] for encoding path override 
+
 ## [0.9.1]
 - Add init impl of jito rpc client
 - Add init impl of bloxroute rpc client

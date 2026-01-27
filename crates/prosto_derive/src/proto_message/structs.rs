@@ -942,29 +942,32 @@ fn build_shadow_encode_init(fields: &[FieldInfo<'_>], original_fields: &syn::Fie
     }
 }
 
+struct AnonLifetimes;
+impl VisitMut for AnonLifetimes {
+    fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
+        *lifetime = syn::Lifetime::new("'_", lifetime.span());
+    }
+}
+
 fn anonymize_type_lifetimes(ty: &Type) -> Type {
     let mut ty = ty.clone();
-    struct AnonLifetimes;
-    impl VisitMut for AnonLifetimes {
-        fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
-            *lifetime = syn::Lifetime::new("'_", lifetime.span());
-        }
-    }
+
     let mut visitor = AnonLifetimes;
     visitor.visit_type_mut(&mut ty);
     ty
 }
 
+struct ReplaceLifetimes<'a> {
+    replacement: &'a syn::Lifetime,
+}
+impl VisitMut for ReplaceLifetimes<'_> {
+    fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
+        *lifetime = self.replacement.clone();
+    }
+}
 fn replace_type_lifetimes(ty: &Type, replacement: &syn::Lifetime) -> Type {
     let mut ty = ty.clone();
-    struct ReplaceLifetimes<'a> {
-        replacement: &'a syn::Lifetime,
-    }
-    impl<'a> VisitMut for ReplaceLifetimes<'a> {
-        fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
-            *lifetime = self.replacement.clone();
-        }
-    }
+
     let mut visitor = ReplaceLifetimes { replacement };
     visitor.visit_type_mut(&mut ty);
     ty
