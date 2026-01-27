@@ -11,10 +11,11 @@ mod private {
     pub struct TaskCtx {
         flags: u32,
         values: u32,
+        name: String,
     }
     impl TaskCtx {
-        pub const fn new(flags: u32, values: u32) -> Self {
-            Self { flags, values }
+        pub const fn new(flags: u32, values: u32, name: String) -> Self {
+            Self { flags, values, name }
         }
         pub const fn flags(&self) -> &u32 {
             &self.flags
@@ -22,6 +23,9 @@ mod private {
 
         pub const fn values(&self) -> &u32 {
             &self.values
+        }
+        pub const fn name(&self) -> &str {
+            &self.name.as_str()
         }
     }
 }
@@ -46,12 +50,14 @@ struct TaskId;
 //flattened with getters
 #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)]
 struct TaskProto {
-    #[proto(getter = "Some($.cfg_id)")]
+    #[proto(getter = "Some($.cfg_id.clone())")]
     cfg_id: Option<TaskId>,
     user_id: u64,
     #[proto(getter = "&*$.ctx.flags()")]
     flags: u32,
-    #[proto(tag = 4, getter = "&*$.ctx.values()")]
+    #[proto(getter = "&*$.ctx.name()")]
+    name: String,
+    #[proto(tag = 5, getter = "&*$.ctx.values()")]
     values: u32,
 }
 
@@ -70,7 +76,7 @@ impl ProtoShadowDecode<Task> for TaskProto {
         Ok(Task {
             cfg_id: self.cfg_id.unwrap(),
             user_id: self.user_id,
-            some_complex_ctx_that_need_ir_type: TaskCtx::new(self.flags, self.values),
+            some_complex_ctx_that_need_ir_type: TaskCtx::new(self.flags, self.values, self.name),
         })
     }
 }
@@ -80,7 +86,7 @@ fn encode_decode_reference_with_getter() {
     let task = Task {
         cfg_id: TaskId,
         user_id: 9,
-        some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2),
+        some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2, String::new()),
     };
     let bytes = Task::encode_to_vec(&task);
     let decoded = <Task as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode task with getters");
