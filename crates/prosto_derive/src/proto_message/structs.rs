@@ -617,8 +617,8 @@ fn generate_proto_impls(
                     let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
                     let is_default_checks = encoded_fields.iter().map(|info| {
                         let base = quote! { self };
-                        let (access_expr, getter_is_ref) = if has_getters && info.config.getter.is_some() {
-                            parse_getter_expr(info.config.getter.as_ref().expect("getter"), &base, info.field)
+                        let (access_expr, getter_is_ref) = if has_getters && let Some(get) = &info.config.getter {
+                            parse_getter_expr(get, &base, info.field)
                         } else {
                             (info.access.access_tokens(base), false)
                         };
@@ -644,8 +644,8 @@ fn generate_proto_impls(
                     let archive_fields = encoded_fields.iter().rev().map(|info| {
                         let tag = info.tag.expect("tag required");
                         let base = quote! { self };
-                        let (access_expr, getter_is_ref) = if has_getters && info.config.getter.is_some() {
-                            parse_getter_expr(info.config.getter.as_ref().expect("getter"), &base, info.field)
+                        let (access_expr, getter_is_ref) = if has_getters && let Some(get) = &info.config.getter {
+                            parse_getter_expr(get, &base, info.field)
                         } else {
                             (info.access.access_tokens(base), false)
                         };
@@ -916,12 +916,7 @@ fn shadow_field_init(info: &FieldInfo<'_>, use_getters: bool) -> TokenStream2 {
     shadow_field_init_with_lifetime(info, use_getters, &quote! { 'a }, &quote! { value })
 }
 
-fn shadow_field_init_with_lifetime(
-    info: &FieldInfo<'_>,
-    use_getters: bool,
-    lifetime: &TokenStream2,
-    base: &TokenStream2,
-) -> TokenStream2 {
+fn shadow_field_init_with_lifetime(info: &FieldInfo<'_>, use_getters: bool, lifetime: &TokenStream2, base: &TokenStream2) -> TokenStream2 {
     let (access_expr, getter_is_ref) = if use_getters && let Some(getter) = &info.config.getter {
         parse_getter_expr(getter, base, info.field)
     } else {
