@@ -39,16 +39,6 @@ impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        ArcSwap::from_pointee(<T as ProtoDefault>::proto_default_value())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        self.store(Arc::new(<T as ProtoDefault>::proto_default_value()));
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -59,10 +49,17 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = <T as ProtoDefault>::proto_default_value();
+        let mut inner = <T as ProtoDefault>::proto_default();
         T::merge_value(&mut inner, wire_type, buf, ctx)?;
         self.store(Arc::new(inner));
         Ok(())
+    }
+}
+
+impl<T: ProtoDefault> ProtoDefault for ArcSwap<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        ArcSwap::from_pointee(<T as ProtoDefault>::proto_default())
     }
 }
 
@@ -142,16 +139,6 @@ impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        ArcSwapOption::from_pointee(None)
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        self.store(None);
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -162,10 +149,17 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = <T as ProtoDefault>::proto_default_value();
+        let mut inner = <T as ProtoDefault>::proto_default();
         T::merge_value(&mut inner, wire_type, buf, ctx)?;
         self.store(Some(Arc::new(inner)));
         Ok(())
+    }
+}
+
+impl<T> ProtoDefault for ArcSwapOption<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        ArcSwapOption::from_pointee(None)
     }
 }
 

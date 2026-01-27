@@ -24,6 +24,7 @@ use ::bytes::Bytes;
 use crate::DecodeError;
 use crate::Name;
 use crate::ProtoDecoder;
+use crate::ProtoDefault;
 use crate::ProtoEncode;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
@@ -64,16 +65,6 @@ macro_rules! impl_proto_primitive_varint_by_value {
 
         impl ProtoDecoder for $ty {
             #[inline(always)]
-            fn proto_default() -> Self {
-                $default
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = $default;
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -91,6 +82,13 @@ macro_rules! impl_proto_primitive_varint_by_value {
             #[inline(always)]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 crate::encoding::$module::merge(wire_type, self, buf, ctx)
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                $default
             }
         }
 
@@ -151,16 +149,6 @@ macro_rules! impl_proto_primitive_fixed_by_value {
 
         impl ProtoDecoder for $ty {
             #[inline(always)]
-            fn proto_default() -> Self {
-                $default
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = $default;
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -178,6 +166,13 @@ macro_rules! impl_proto_primitive_fixed_by_value {
             #[inline(always)]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 crate::encoding::$module::merge(wire_type, self, buf, ctx)
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                $default
             }
         }
 
@@ -242,16 +237,6 @@ macro_rules! impl_proto_primitive_by_ref {
 
         impl ProtoDecoder for $ty {
             #[inline(always)]
-            fn proto_default() -> Self {
-                Default::default()
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                <$ty>::clear(self);
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -269,6 +254,13 @@ macro_rules! impl_proto_primitive_by_ref {
             #[inline(always)]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 crate::encoding::$module::merge(wire_type, self, buf, ctx)
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Default::default()
             }
         }
 
@@ -434,16 +426,6 @@ macro_rules! impl_narrow_varint {
 
         impl ProtoDecoder for $ty {
             #[inline(always)]
-            fn proto_default() -> Self {
-                0
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = 0;
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -464,6 +446,13 @@ macro_rules! impl_narrow_varint {
                 let widened: $wide_ty = crate::encoding::decode_varint(buf)? as $wide_ty;
                 *self = widened.try_into().map_err(|_| DecodeError::new($err))?;
                 Ok(())
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                0
             }
         }
 
@@ -527,16 +516,6 @@ macro_rules! impl_atomic_primitive {
 
         impl ProtoDecoder for $ty {
             #[inline(always)]
-            fn proto_default() -> Self {
-                Self::new($default)
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                ($store)(self, $default);
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -557,6 +536,13 @@ macro_rules! impl_atomic_primitive {
                 crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
                 ($store)(self, raw);
                 Ok(())
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self::new($default)
             }
         }
 
@@ -627,16 +613,6 @@ macro_rules! impl_atomic_narrow_primitive {
 
         impl ProtoDecoder for $ty {
             #[inline(always)]
-            fn proto_default() -> Self {
-                Self::new($default)
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                ($store)(self, $default);
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -659,6 +635,13 @@ macro_rules! impl_atomic_narrow_primitive {
                     <$narrow>::try_from(raw).map_err(|_| DecodeError::new(concat!(stringify!($narrow), " overflow")))?;
                 ($store)(self, narrowed);
                 Ok(())
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self::new($default)
             }
         }
 
@@ -842,15 +825,14 @@ impl<'a> ProtoShadowEncode<'a, ()> for () {
 
 impl ProtoDecoder for () {
     #[inline(always)]
-    fn proto_default() -> Self {}
-
-    #[inline(always)]
-    fn clear(&mut self) {}
-
-    #[inline(always)]
     fn merge_field(_value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         skip_field(wire_type, tag, buf, ctx)
     }
+}
+
+impl ProtoDefault for () {
+    #[inline(always)]
+    fn proto_default() -> Self {}
 }
 
 impl ProtoDecode for () {

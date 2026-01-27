@@ -9,7 +9,7 @@ use proto_rs::proto_message;
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Fancy(u64);
 
-fn u64_to_fancy(value: u64) -> Fancy {
+const fn u64_to_fancy(value: u64) -> Fancy {
     Fancy(value - 5)
 }
 

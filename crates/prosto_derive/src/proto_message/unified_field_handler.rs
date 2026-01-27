@@ -197,7 +197,7 @@ pub fn build_proto_default_expr(fields: &[FieldInfo<'_>], original: &syn::Fields
 pub fn field_proto_default_expr(info: &FieldInfo<'_>) -> TokenStream2 {
     if uses_proto_wire_directly(info) {
         let ty = &info.field.ty;
-        quote! { <#ty as ::proto_rs::ProtoDefault>::proto_default_value() }
+        quote! { <#ty as ::proto_rs::ProtoDefault>::proto_default() }
     } else {
         quote! { ::core::default::Default::default() }
     }
@@ -299,7 +299,7 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                 let assign = decode_conversion_assign(info, &access, &tmp_ident);
                 Some(quote! {
                     #tag => {
-                        let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                        let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDefault>::proto_default();
                         <#decode_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #tmp_ident, wire_type, buf, ctx)?;
                         #assign
                         #validation
@@ -315,21 +315,6 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                         Ok(())
                     }
                 })
-            }
-        })
-        .collect()
-}
-
-pub fn build_clear_stmts(fields: &[FieldInfo<'_>], self_tokens: &TokenStream2) -> Vec<TokenStream2> {
-    fields
-        .iter()
-        .map(|info| {
-            let access = info.access.access_tokens(self_tokens.clone());
-            if uses_proto_wire_directly(info) {
-                let default_expr = field_proto_default_expr(info);
-                quote! { #access = #default_expr }
-            } else {
-                quote! { #access = ::core::default::Default::default() }
             }
         })
         .collect()

@@ -51,18 +51,6 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
 
 impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] {
     #[inline(always)]
-    fn proto_default() -> Self {
-        array::from_fn(|_| <T as ProtoDefault>::proto_default_value())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        for v in self.iter_mut() {
-            *v = <T as ProtoDefault>::proto_default_value();
-        }
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -116,6 +104,13 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
             }
             ProtoKind::Repeated(_) => unreachable!(),
         }
+    }
+}
+
+impl<T: ProtoDefault, const N: usize> ProtoDefault for [T; N] {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        array::from_fn(|_| <T as ProtoDefault>::proto_default())
     }
 }
 

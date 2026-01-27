@@ -31,18 +31,6 @@ impl<T: ProtoExt> ProtoExt for std::sync::Mutex<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for std::sync::Mutex<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        std::sync::Mutex::new(<T as ProtoDefault>::proto_default_value())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        if let Ok(inner) = self.get_mut() {
-            *inner = <T as ProtoDefault>::proto_default_value();
-        }
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -55,6 +43,13 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for std::sync::Mutex<T> {
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let inner = self.get_mut().map_err(|_| DecodeError::new("Mutex lock poisoned"))?;
         T::merge_value(inner, wire_type, buf, ctx)
+    }
+}
+
+impl<T: ProtoDefault> ProtoDefault for std::sync::Mutex<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        std::sync::Mutex::new(<T as ProtoDefault>::proto_default())
     }
 }
 
@@ -133,16 +128,6 @@ impl<T: ProtoExt> ProtoExt for parking_lot::Mutex<T> {
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for parking_lot::Mutex<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        parking_lot::Mutex::new(<T as ProtoDefault>::proto_default_value())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        *self.get_mut() = <T as ProtoDefault>::proto_default_value();
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -155,6 +140,14 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for parking_lot::Mutex<T> {
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let inner = self.get_mut();
         T::merge_value(inner, wire_type, buf, ctx)
+    }
+}
+
+#[cfg(feature = "parking_lot")]
+impl<T: ProtoDefault> ProtoDefault for parking_lot::Mutex<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        parking_lot::Mutex::new(<T as ProtoDefault>::proto_default())
     }
 }
 

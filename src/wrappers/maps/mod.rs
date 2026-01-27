@@ -3,6 +3,8 @@ use bytes::Buf;
 use crate::DecodeError;
 use crate::ProtoDecode;
 use crate::ProtoDecoder;
+use crate::ProtoDefault;
+use crate::ProtoFieldMerge;
 use crate::ProtoExt;
 use crate::ProtoKind;
 use crate::encoding::DecodeContext;
@@ -32,25 +34,25 @@ where
     Vd: ProtoDecoder,
 {
     #[inline]
-    fn proto_default() -> Self {
-        Self {
-            key: Kd::proto_default(),
-            value: Vd::proto_default(),
-        }
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        self.key.clear();
-        self.value.clear();
-    }
-
-    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         match tag {
-            1 => value.key.merge(wire_type, buf, ctx),
-            2 => value.value.merge(wire_type, buf, ctx),
+            1 => ProtoFieldMerge::merge_value(&mut value.key, wire_type, buf, ctx),
+            2 => ProtoFieldMerge::merge_value(&mut value.value, wire_type, buf, ctx),
             _ => skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+}
+
+impl<Kd, Vd> ProtoDefault for MapEntryDecoded<Kd, Vd>
+where
+    Kd: ProtoDefault,
+    Vd: ProtoDefault,
+{
+    #[inline]
+    fn proto_default() -> Self {
+        Self {
+            key: <Kd as ProtoDefault>::proto_default(),
+            value: <Vd as ProtoDefault>::proto_default(),
         }
     }
 }
@@ -64,8 +66,8 @@ impl<K, V> ProtoShadowDecode<MapEntryDecoded<K, V>> for MapEntryDecoded<K, V> {
 
 impl<K, V> ProtoDecode for MapEntryDecoded<K, V>
 where
-    K: ProtoDecoder,
-    V: ProtoDecoder,
+    K: ProtoDecoder + ProtoDefault,
+    V: ProtoDecoder + ProtoDefault,
 {
     type ShadowDecoded = Self;
 }

@@ -43,7 +43,7 @@ pub use bytes;
 
 mod coders;
 pub mod custom_rpc;
-mod custom_types;
+pub mod custom_types;
 #[cfg(feature = "tonic")]
 mod tonic;
 mod types;
@@ -86,9 +86,9 @@ pub use crate::tonic::map_proto_stream_result;
 pub use crate::traits::ProtoArchive;
 pub use crate::traits::ProtoDecode;
 pub use crate::traits::ProtoDecoder;
+pub use crate::traits::ProtoDefault;
 pub use crate::traits::ProtoEncode;
 pub use crate::traits::ProtoExt;
-pub use crate::traits::ProtoDefault;
 pub use crate::traits::ProtoFieldMerge;
 pub use crate::traits::ProtoKind;
 // #[cfg(feature = "papaya")]

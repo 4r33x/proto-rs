@@ -22,19 +22,9 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        None
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        *self = None;
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            let inner = value.get_or_insert_with(<T as ProtoDefault>::proto_default_value);
+            let inner = value.get_or_insert_with(<T as ProtoDefault>::proto_default);
             T::merge_value(inner, wire_type, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
@@ -43,8 +33,15 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let inner = self.get_or_insert_with(<T as ProtoDefault>::proto_default_value);
+        let inner = self.get_or_insert_with(<T as ProtoDefault>::proto_default);
         T::merge_value(inner, wire_type, buf, ctx)
+    }
+}
+
+impl<T> ProtoDefault for Option<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        None
     }
 }
 

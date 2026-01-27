@@ -30,20 +30,6 @@ where
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        Arc::new(<T as ProtoDefault>::proto_default_value())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        if let Some(inner) = Arc::get_mut(self) {
-            *inner = <T as ProtoDefault>::proto_default_value();
-        } else {
-            *self = Arc::new(<T as ProtoDefault>::proto_default_value());
-        }
-    }
-
-    #[inline(always)]
     fn merge_field(
         value: &mut Self,
         tag: u32,
@@ -63,11 +49,18 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
         if let Some(inner) = Arc::get_mut(self) {
             T::merge_value(inner, wire_type, buf, ctx)
         } else {
-            let mut value = <T as ProtoDefault>::proto_default_value();
+            let mut value = <T as ProtoDefault>::proto_default();
             T::merge_value(&mut value, wire_type, buf, ctx)?;
             *self = Arc::new(value);
             Ok(())
         }
+    }
+}
+
+impl<T: ProtoDefault> ProtoDefault for Arc<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Arc::new(<T as ProtoDefault>::proto_default())
     }
 }
 
