@@ -53,11 +53,11 @@ struct TaskProto {
     #[proto(getter = "Some($.cfg_id.clone())")]
     cfg_id: Option<TaskId>,
     user_id: u64,
-    #[proto(getter = "&*$.ctx.flags()")]
+    #[proto(getter = "*$.ctx.flags()")]
     flags: u32,
-    #[proto(getter = "$.ctx.name()")]
+    #[proto(getter = "&*$.ctx.name()")]
     name: String,
-    #[proto(tag = 5, getter = "&*$.ctx.values()")]
+    #[proto(tag = 5, getter = "*$.ctx.values()")]
     values: u32,
 }
 

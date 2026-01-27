@@ -22,7 +22,7 @@ use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::encode_conversion_expr;
-use super::unified_field_handler::is_value_encode_type;
+use super::unified_field_handler::encode_conversion_expr_direct;
 use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
@@ -591,11 +591,6 @@ fn generate_proto_impls(
     let shadow_ty = shadow_type_tokens(generics, shadow_ident);
     let shadow_ty_short = shadow_type_tokens_with_lifetime(generics, shadow_ident, quote! { '_ });
     let has_getters = fields.iter().any(|info| info.config.getter.is_some());
-    let sun_shadow_encode_init = if has_getters {
-        Some(build_sun_shadow_encode_init(fields, original_fields))
-    } else {
-        None
-    };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
     let (shadow_impl_generics, _shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
@@ -720,20 +715,12 @@ fn generate_proto_impls(
                     }
                 }
             };
-            let sun_shadow_encode_impl = if let Some(init) = &sun_shadow_encode_init {
-                let sun_ir_binding = sun_ir_ty
-                    .map(|sun_ir_ty| {
-                        quote! {
-                            let sun_ir = <#sun_ir_ty as ::proto_rs::ProtoShadowEncode<'a, #target_ty>>::from_sun(value);
-                            let value = &sun_ir;
-                        }
-                    })
-                    .unwrap_or_default();
+            let sun_shadow_encode_impl = if sun_ir_ty.is_none() && has_getters {
+                let init = build_sun_shadow_encode_init(fields, original_fields);
                 quote! {
                     impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #target_ty> for #name #ty_generics #shadow_where_clause {
                         #[inline(always)]
                         fn from_sun(value: &'a #target_ty) -> Self {
-                            #sun_ir_binding
                             #init
                         }
                     }
@@ -751,6 +738,16 @@ fn generate_proto_impls(
                 quote! { #sun_ir_ty_short }
             } else {
                 quote! { #name #ty_generics }
+            };
+            let sun_decode_shadow_init = if sun_ir_ty.is_some() {
+                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default(); }
+            } else {
+                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value); }
+            };
+            let sun_decode_shadow_init_self = if sun_ir_ty.is_some() {
+                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default(); }
+            } else {
+                quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self); }
             };
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
@@ -792,7 +789,7 @@ fn generate_proto_impls(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
+                        #sun_decode_shadow_init
                         <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
                         *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
@@ -805,7 +802,7 @@ fn generate_proto_impls(
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
                     ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        #sun_decode_shadow_init_self
                         <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge(&mut shadow, wire_type, buf, ctx)?;
                         *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
@@ -966,15 +963,11 @@ fn sun_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
     } else {
         info.access.access_tokens(base)
     };
-    let field_ty = &info.field.ty;
-    let borrowed_expr = quote! { ::core::borrow::Borrow::<#field_ty>::borrow(&#access_expr) };
 
     if needs_encode_conversion(&info.config, &info.parsed) {
-        encode_conversion_expr(info, &borrowed_expr)
-    } else if is_value_encode_type(&info.field.ty) {
-        quote! { *#borrowed_expr }
+        encode_conversion_expr_direct(info, &access_expr)
     } else {
-        quote! { (*#borrowed_expr).clone() }
+        access_expr
     }
 }
 
