@@ -14,6 +14,8 @@ use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -32,7 +34,7 @@ impl<T: ProtoExt> ProtoExt for VecDeque<T> {
     };
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
     #[inline(always)]
     fn proto_default() -> Self {
         VecDeque::new()
@@ -65,21 +67,21 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for VecDeque<T> {
                     let len = decode_varint(buf)? as usize;
                     let mut slice = buf.take(len);
                     while slice.has_remaining() {
-                        let mut v = T::proto_default();
-                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        let mut v = <T as ProtoDefault>::proto_default_value();
+                        T::merge_value(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
                         self.push_back(v);
                     }
                     debug_assert!(!slice.has_remaining());
                 } else {
-                    let mut v = T::proto_default();
-                    T::merge(&mut v, wire_type, buf, ctx)?;
+                    let mut v = <T as ProtoDefault>::proto_default_value();
+                    T::merge_value(&mut v, wire_type, buf, ctx)?;
                     self.push_back(v);
                 }
                 Ok(())
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = T::proto_default();
-                T::merge(&mut v, wire_type, buf, ctx)?;
+                let mut v = <T as ProtoDefault>::proto_default_value();
+                T::merge_value(&mut v, wire_type, buf, ctx)?;
                 self.push_back(v);
                 Ok(())
             }

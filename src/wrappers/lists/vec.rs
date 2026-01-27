@@ -14,6 +14,8 @@ use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -32,7 +34,7 @@ impl<T: ProtoExt> ProtoExt for Vec<T> {
     };
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Vec<T> {
     #[inline(always)]
     fn proto_default() -> Self {
         Vec::new()
@@ -70,20 +72,20 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
                     // Use limit-based decoding to avoid Take wrapper overhead
                     let limit = remaining - len;
                     while buf.remaining() > limit {
-                        let mut v = T::proto_default();
-                        T::merge(&mut v, T::WIRE_TYPE, buf, ctx)?;
+                        let mut v = <T as ProtoDefault>::proto_default_value();
+                        T::merge_value(&mut v, T::WIRE_TYPE, buf, ctx)?;
                         self.push(v);
                     }
                 } else {
-                    let mut v = T::proto_default();
-                    T::merge(&mut v, wire_type, buf, ctx)?;
+                    let mut v = <T as ProtoDefault>::proto_default_value();
+                    T::merge_value(&mut v, wire_type, buf, ctx)?;
                     self.push(v);
                 }
                 Ok(())
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = T::proto_default();
-                T::merge(&mut v, wire_type, buf, ctx)?;
+                let mut v = <T as ProtoDefault>::proto_default_value();
+                T::merge_value(&mut v, wire_type, buf, ctx)?;
                 self.push(v);
                 Ok(())
             }

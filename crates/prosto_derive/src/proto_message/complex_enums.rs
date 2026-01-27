@@ -95,35 +95,18 @@ pub(super) fn generate_complex_enum_impl(
                     #validate_with_ext_impl
                 }
 
-                impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
                     #[inline(always)]
-                    fn proto_default() -> Self {
+                    fn proto_default_value() -> Self {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                             .expect("failed to build default sun value")
                     }
+                }
 
+                impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
                     #[inline(always)]
-                    fn clear(&mut self) {
-                        *self = Self::proto_default();
-                    }
-
-                    #[inline(always)]
-                    fn merge_field(
-                        value: &mut Self,
-                        tag: u32,
-                        wire_type: ::proto_rs::encoding::WireType,
-                        buf: &mut impl ::proto_rs::bytes::Buf,
-                        ctx: ::proto_rs::encoding::DecodeContext,
-                    ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
-                        *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
-                        Ok(())
-                    }
-
-                    #[inline(always)]
-                    fn merge(
+                    fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
                         buf: &mut impl ::proto_rs::bytes::Buf,
@@ -676,13 +659,13 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 let assign = decode_conversion_assign(&field.field, &quote! { #binding_ident }, &tmp_ident);
                 quote! {
                     let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
-                    <#decode_ty as ::proto_rs::ProtoDecoder>::merge(&mut #tmp_ident, wire_type, buf, ctx)?;
+                    <#decode_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #tmp_ident, wire_type, buf, ctx)?;
                     #assign
                 }
             } else {
                 let ty = &field.field.field.ty;
                 quote! {
-                    <#ty as ::proto_rs::ProtoDecoder>::merge(&mut #binding_ident, wire_type, buf, ctx)?;
+                    <#ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #binding_ident, wire_type, buf, ctx)?;
                 }
             };
 
@@ -745,7 +728,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         Some(quote! {
                             #field_tag => {
                                 let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
-                                <#decode_ty as ::proto_rs::ProtoDecoder>::merge(&mut #tmp_ident, field_wire_type, buf, inner_ctx)?;
+                                <#decode_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #tmp_ident, field_wire_type, buf, inner_ctx)?;
                                 #assign
                             }
                         })
@@ -753,7 +736,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let ty = &info.field.ty;
                         Some(quote! {
                             #field_tag => {
-                                <#ty as ::proto_rs::ProtoDecoder>::merge(&mut #field_ident, field_wire_type, buf, inner_ctx)?;
+                                <#ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #field_ident, field_wire_type, buf, inner_ctx)?;
                             }
                         })
                     }

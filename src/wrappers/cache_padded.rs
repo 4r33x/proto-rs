@@ -8,6 +8,8 @@ use crate::encoding::skip_field;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -19,15 +21,15 @@ impl<T: ProtoExt> ProtoExt for CachePadded<T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for CachePadded<T> {
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
     #[inline(always)]
     fn proto_default() -> Self {
-        CachePadded::new(T::proto_default())
+        CachePadded::new(<T as ProtoDefault>::proto_default_value())
     }
 
     #[inline(always)]
     fn clear(&mut self) {
-        T::clear(self);
+        *self = CachePadded::new(<T as ProtoDefault>::proto_default_value());
     }
 
     #[inline(always)]
@@ -41,7 +43,7 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for CachePadded<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        T::merge(self, wire_type, buf, ctx)
+        T::merge_value(self, wire_type, buf, ctx)
     }
 }
 

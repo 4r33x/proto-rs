@@ -12,6 +12,8 @@ use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -35,15 +37,15 @@ impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwap<T> {
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
     #[inline(always)]
     fn proto_default() -> Self {
-        ArcSwap::from_pointee(T::proto_default())
+        ArcSwap::from_pointee(<T as ProtoDefault>::proto_default_value())
     }
 
     #[inline(always)]
     fn clear(&mut self) {
-        self.store(Arc::new(T::proto_default()));
+        self.store(Arc::new(<T as ProtoDefault>::proto_default_value()));
     }
 
     #[inline(always)]
@@ -57,8 +59,8 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwap<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = T::proto_default();
-        T::merge(&mut inner, wire_type, buf, ctx)?;
+        let mut inner = <T as ProtoDefault>::proto_default_value();
+        T::merge_value(&mut inner, wire_type, buf, ctx)?;
         self.store(Arc::new(inner));
         Ok(())
     }
@@ -138,7 +140,7 @@ impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwapOption<T> {
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
     #[inline(always)]
     fn proto_default() -> Self {
         ArcSwapOption::from_pointee(None)
@@ -160,8 +162,8 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwapOption<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = T::proto_default();
-        T::merge(&mut inner, wire_type, buf, ctx)?;
+        let mut inner = <T as ProtoDefault>::proto_default_value();
+        T::merge_value(&mut inner, wire_type, buf, ctx)?;
         self.store(Some(Arc::new(inner)));
         Ok(())
     }

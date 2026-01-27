@@ -111,6 +111,10 @@ pub trait ProtoFieldMerge: ProtoExt {
     fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 }
 
+pub trait ProtoDefault: Sized {
+    fn proto_default_value() -> Self;
+}
+
 impl<T> ProtoFieldMerge for T
 where
     T: ProtoDecoder,
@@ -118,5 +122,15 @@ where
     #[inline(always)]
     fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
+    }
+}
+
+impl<T> ProtoDefault for T
+where
+    T: ProtoDecoder,
+{
+    #[inline(always)]
+    fn proto_default_value() -> Self {
+        T::proto_default()
     }
 }

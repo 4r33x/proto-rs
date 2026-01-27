@@ -55,6 +55,21 @@ where
     }
 }
 
+impl<K, V> ProtoShadowDecode<MapEntryDecoded<K, V>> for MapEntryDecoded<K, V> {
+    #[inline]
+    fn to_sun(self) -> Result<MapEntryDecoded<K, V>, DecodeError> {
+        Ok(self)
+    }
+}
+
+impl<K, V> ProtoDecode for MapEntryDecoded<K, V>
+where
+    K: ProtoDecoder,
+    V: ProtoDecoder,
+{
+    type ShadowDecoded = Self;
+}
+
 impl<K, V> ProtoShadowDecode<(K, V)> for MapEntryDecoded<<K as ProtoDecode>::ShadowDecoded, <V as ProtoDecode>::ShadowDecoded>
 where
     K: ProtoDecode,

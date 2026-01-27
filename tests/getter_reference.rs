@@ -103,13 +103,10 @@ fn decode_into_preserves_sun_ir_fields() {
         some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2, String::from("name")),
     };
     let bytes = Task::encode_to_vec(&task);
-    let mut decoded = Task {
-        cfg_id: TaskId,
-        user_id: 0,
-        some_complex_ctx_that_need_ir_type: TaskCtx::new(0, 0, String::new()),
-    };
-    <Task as ProtoDecoder>::decode_into(&mut decoded, &mut bytes.as_slice(), DecodeContext::default())
+    let mut shadow = <TaskProto as ProtoDecoder>::proto_default();
+    <TaskProto as ProtoDecoder>::decode_into(&mut shadow, &mut bytes.as_slice(), DecodeContext::default())
         .expect("decode into task with getters");
+    let decoded = <TaskProto as ProtoShadowDecode<Task>>::to_sun(shadow).expect("convert task shadow to sun");
 
     assert_eq!(decoded, task);
 }
