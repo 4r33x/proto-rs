@@ -11,8 +11,10 @@ use crate::traits::ProtoArchive; // NEW: single-pass reverse archive(TAG, writer
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
+use crate::traits::ProtoDefault;
 use crate::traits::buffer::RevWriter; // NEW: reverse writer trait
 use crate::traits::decode::ProtoDecoder;
 use crate::traits::encode::ProtoShadowEncode;
@@ -137,32 +139,31 @@ where
     Vd: ProtoDecoder,
 {
     #[inline(always)]
-    fn proto_default() -> Self {
-        Self {
-            id: 0,
-            k: Kd::proto_default(),
-            v: Vd::proto_default(),
-        }
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        self.id = 0;
-        self.k.clear();
-        self.v.clear();
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         match tag {
             1 => value.id.merge(wire_type, buf, ctx),
-            2 => value.k.merge(wire_type, buf, ctx),
-            3 => value.v.merge(wire_type, buf, ctx),
+            2 => ProtoFieldMerge::merge_value(&mut value.k, wire_type, buf, ctx),
+            3 => ProtoFieldMerge::merge_value(&mut value.v, wire_type, buf, ctx),
             _ => {
                 // Contract: unknown tags must be skipped.
                 encoding::skip_field(wire_type, tag, buf, ctx)?;
                 Ok(())
             }
+        }
+    }
+}
+
+impl<Kd, Vd> ProtoDefault for IDDecoded<Kd, Vd>
+where
+    Kd: ProtoDefault,
+    Vd: ProtoDefault,
+{
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Self {
+            id: 0,
+            k: <Kd as ProtoDefault>::proto_default(),
+            v: <Vd as ProtoDefault>::proto_default(),
         }
     }
 }

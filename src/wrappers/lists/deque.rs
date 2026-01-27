@@ -36,16 +36,6 @@ impl<T: ProtoExt> ProtoExt for VecDeque<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        VecDeque::new()
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        VecDeque::clear(self);
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -67,26 +57,33 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
                     let len = decode_varint(buf)? as usize;
                     let mut slice = buf.take(len);
                     while slice.has_remaining() {
-                        let mut v = <T as ProtoDefault>::proto_default_value();
+                        let mut v = <T as ProtoDefault>::proto_default();
                         T::merge_value(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
                         self.push_back(v);
                     }
                     debug_assert!(!slice.has_remaining());
                 } else {
-                    let mut v = <T as ProtoDefault>::proto_default_value();
+                    let mut v = <T as ProtoDefault>::proto_default();
                     T::merge_value(&mut v, wire_type, buf, ctx)?;
                     self.push_back(v);
                 }
                 Ok(())
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = <T as ProtoDefault>::proto_default_value();
+                let mut v = <T as ProtoDefault>::proto_default();
                 T::merge_value(&mut v, wire_type, buf, ctx)?;
                 self.push_back(v);
                 Ok(())
             }
             ProtoKind::Repeated(_) => unreachable!(),
         }
+    }
+}
+
+impl<T> ProtoDefault for VecDeque<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        VecDeque::new()
     }
 }
 

@@ -23,16 +23,6 @@ impl<T: ProtoExt> ProtoExt for CachePadded<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
     #[inline(always)]
-    fn proto_default() -> Self {
-        CachePadded::new(<T as ProtoDefault>::proto_default_value())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        *self = CachePadded::new(<T as ProtoDefault>::proto_default_value());
-    }
-
-    #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -44,6 +34,13 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         T::merge_value(self, wire_type, buf, ctx)
+    }
+}
+
+impl<T: ProtoDefault> ProtoDefault for CachePadded<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        CachePadded::new(<T as ProtoDefault>::proto_default())
     }
 }
 

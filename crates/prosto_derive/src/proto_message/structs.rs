@@ -15,7 +15,6 @@ use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
-use super::unified_field_handler::build_clear_stmts;
 use super::unified_field_handler::build_decode_match_arms;
 use super::unified_field_handler::build_post_decode_hooks;
 use super::unified_field_handler::build_proto_default_expr;
@@ -318,10 +317,10 @@ fn generate_transparent_struct_impl(
     };
 
     let default_expr = match original_fields {
-        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoDecoder>::proto_default()) },
+        syn::Fields::Unnamed(_) => quote! { Self(<#inner_ty as ::proto_rs::ProtoDefault>::proto_default()) },
         syn::Fields::Named(_) => {
             let ident = field.access.ident().expect("expected named field ident for transparent struct");
-            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoDecoder>::proto_default() } }
+            quote! { Self { #ident: <#inner_ty as ::proto_rs::ProtoDefault>::proto_default() } }
         }
         syn::Fields::Unit => quote! { Self },
     };
@@ -362,16 +361,6 @@ fn generate_transparent_struct_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn proto_default() -> Self {
-                #default_expr
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::clear(&mut #mut_self_access);
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -385,6 +374,13 @@ fn generate_transparent_struct_impl(
             #[inline(always)]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
                 <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #default_expr
             }
         }
 
@@ -402,7 +398,7 @@ fn generate_transparent_struct_impl(
                     Ok(#wrap_expr)
                 } else {
                     // Primitive type - read raw value using merge
-                    let mut inner = <#inner_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                    let mut inner = <#inner_ty as ::proto_rs::ProtoDefault>::proto_default();
                     <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut inner, <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE, &mut buf, ctx)?;
                     Ok(#wrap_expr)
                 }
@@ -563,7 +559,6 @@ fn generate_proto_impls(
 ) -> TokenStream2 {
     let decode_arms = build_decode_match_arms(fields, &quote! { value });
     let proto_default_expr = build_proto_default_expr(fields, original_fields);
-    let clear_stmts = build_clear_stmts(fields, &quote! { self });
     let post_decode_hooks = build_post_decode_hooks(fields);
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
     let validate_with_ext_proto_impl = if config.has_suns() {
@@ -828,8 +823,8 @@ fn generate_proto_impls(
 
                 impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
                     #[inline(always)]
-                    fn proto_default_value() -> Self {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                    fn proto_default() -> Self {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDefault>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                             .expect("failed to build default sun value")
                     }
@@ -877,16 +872,6 @@ fn generate_proto_impls(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn proto_default() -> Self {
-                #proto_default_expr
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                #(#clear_stmts;)*
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -898,6 +883,13 @@ fn generate_proto_impls(
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #proto_default_expr
             }
         }
 

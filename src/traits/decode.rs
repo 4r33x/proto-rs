@@ -13,7 +13,7 @@ pub trait ProtoShadowDecode<T> {
 }
 
 /// “Message-level” decoder: knows how to dispatch tags inside a message.
-pub trait ProtoDecoder: ProtoExt + ProtoDefault {
+pub trait ProtoDecoder: ProtoExt {
     /// User (or macro-generated code) implements this.
     ///
     /// Contract:
@@ -49,10 +49,13 @@ pub trait ProtoDecoder: ProtoExt + ProtoDefault {
     ///top level decode entrypoint
     /// Decode a whole message from a buffer (top-level, not length-delimited wrapper).
     #[inline(always)]
-    fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
+    fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError>
+    where
+        Self: ProtoDefault,
+    {
         // Check recursion limit at top-level entry
         ctx.limit_reached()?;
-        let mut sh = Self::proto_default();
+        let mut sh = <Self as ProtoDefault>::proto_default();
         Self::decode_into(&mut sh, &mut buf, ctx)?;
         Ok(sh)
     }
@@ -78,10 +81,10 @@ pub trait ProtoDecoder: ProtoExt + ProtoDefault {
 }
 
 pub trait ProtoDecode: Sized {
-    type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self>;
+    type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self> + ProtoDefault;
     #[inline(always)]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
-        let mut sh = Self::ShadowDecoded::proto_default();
+        let mut sh = <Self::ShadowDecoded as ProtoDefault>::proto_default();
         Self::ShadowDecoded::decode_into(&mut sh, &mut buf, ctx)?;
         Self::post_decode(sh)
     }

@@ -2,6 +2,7 @@ use private::TaskCtx;
 use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoDecoder;
+use proto_rs::ProtoDefault;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoShadowDecode;
 use proto_rs::ProtoShadowEncode;
@@ -103,7 +104,7 @@ fn decode_into_preserves_sun_ir_fields() {
         some_complex_ctx_that_need_ir_type: TaskCtx::new(1, 2, String::from("name")),
     };
     let bytes = Task::encode_to_vec(&task);
-    let mut shadow = <TaskProto as ProtoDecoder>::proto_default();
+    let mut shadow = <TaskProto as ProtoDefault>::proto_default();
     <TaskProto as ProtoDecoder>::decode_into(&mut shadow, &mut bytes.as_slice(), DecodeContext::default())
         .expect("decode into task with getters");
     let decoded = <TaskProto as ProtoShadowDecode<Task>>::to_sun(shadow).expect("convert task shadow to sun");

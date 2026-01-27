@@ -97,8 +97,8 @@ pub(super) fn generate_complex_enum_impl(
 
                 impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
                     #[inline(always)]
-                    fn proto_default_value() -> Self {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                    fn proto_default() -> Self {
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDefault>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                             .expect("failed to build default sun value")
                     }
@@ -148,16 +148,6 @@ pub(super) fn generate_complex_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn proto_default() -> Self {
-                #default_expr
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = Self::proto_default();
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -169,6 +159,13 @@ pub(super) fn generate_complex_enum_impl(
                     #(#merge_field_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                #default_expr
             }
         }
 
@@ -658,7 +655,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 let decode_ty = &field.field.decode_ty;
                 let assign = decode_conversion_assign(&field.field, &quote! { #binding_ident }, &tmp_ident);
                 quote! {
-                    let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                    let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDefault>::proto_default();
                     <#decode_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #tmp_ident, wire_type, buf, ctx)?;
                     #assign
                 }
@@ -727,7 +724,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let assign = decode_conversion_assign(info, &access, &tmp_ident);
                         Some(quote! {
                             #field_tag => {
-                                let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDecoder>::proto_default();
+                                let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDefault>::proto_default();
                                 <#decode_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #tmp_ident, field_wire_type, buf, inner_ctx)?;
                                 #assign
                             }
