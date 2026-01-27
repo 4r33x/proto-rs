@@ -24,8 +24,8 @@ mod private {
         pub const fn values(&self) -> &u32 {
             &self.values
         }
-        pub const fn name(&self) -> &str {
-            &self.name.as_str()
+        pub const fn name(&self) -> &String {
+            &self.name
         }
     }
 }
@@ -55,7 +55,7 @@ struct TaskProto {
     user_id: u64,
     #[proto(getter = "&*$.ctx.flags()")]
     flags: u32,
-    #[proto(getter = "&*$.ctx.name()")]
+    #[proto(getter = "$.ctx.name()")]
     name: String,
     #[proto(tag = 5, getter = "&*$.ctx.values()")]
     values: u32,
