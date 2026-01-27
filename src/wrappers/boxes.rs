@@ -4,6 +4,8 @@ use bytes::Buf;
 
 use crate::DecodeError;
 use crate::ProtoDecoder;
+use crate::ProtoDefault;
+use crate::ProtoFieldMerge;
 use crate::ProtoEncode;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
@@ -20,21 +22,11 @@ impl<T: ProtoExt> ProtoExt for Box<T> {
     const KIND: ProtoKind = T::KIND;
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Box<T> {
-    #[inline(always)]
-    fn proto_default() -> Self {
-        Box::new(T::proto_default())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        T::clear(self.as_mut());
-    }
-
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Box<T> {
     #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
-            T::merge(value.as_mut(), wire_type, buf, ctx)
+            T::merge_value(value.as_mut(), wire_type, buf, ctx)
         } else {
             skip_field(wire_type, tag, buf, ctx)
         }
@@ -42,7 +34,14 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Box<T> {
 
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        T::merge(self.as_mut(), wire_type, buf, ctx)
+        T::merge_value(self.as_mut(), wire_type, buf, ctx)
+    }
+}
+
+impl<T: ProtoDefault> ProtoDefault for Box<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Box::new(<T as ProtoDefault>::proto_default())
     }
 }
 

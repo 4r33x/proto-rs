@@ -15,6 +15,8 @@ use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -35,7 +37,7 @@ impl<T: ProtoExt + Eq + Hash, S> ProtoExt for HashSet<T, S> {
 
 impl<T: ProtoDecode + Eq + Hash, S> ProtoDecode for HashSet<T, S>
 where
-    T::ShadowDecoded: ProtoDecoder + ProtoExt + Eq + Hash,
+    T::ShadowDecoded: ProtoDecoder + ProtoExt,
     S: BuildHasher + Default,
     Vec<<T as ProtoDecode>::ShadowDecoded>: ProtoShadowDecode<HashSet<T, S>>,
 {
@@ -44,20 +46,9 @@ where
 
 impl<T, S> ProtoDecoder for HashSet<T, S>
 where
-    T: ProtoDecoder + ProtoExt + Eq + Hash,
+    T: ProtoFieldMerge + ProtoDefault + Eq + Hash,
     S: BuildHasher + Default,
 {
-    #[inline(always)]
-    fn proto_default() -> Self {
-        HashSet::default()
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        let guard = self.pin();
-        guard.clear();
-    }
-
     #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
@@ -76,26 +67,36 @@ where
                     let len = decode_varint(buf)? as usize;
                     let mut slice = buf.take(len);
                     while slice.has_remaining() {
-                        let mut v = T::proto_default();
-                        T::merge(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        let mut v = <T as ProtoDefault>::proto_default();
+                        T::merge_value(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
                         guard.insert(v);
                     }
                     debug_assert!(!slice.has_remaining());
                 } else {
-                    let mut v = T::proto_default();
-                    T::merge(&mut v, wire_type, buf, ctx)?;
+                    let mut v = <T as ProtoDefault>::proto_default();
+                    T::merge_value(&mut v, wire_type, buf, ctx)?;
                     guard.insert(v);
                 }
                 Ok(())
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = T::proto_default();
-                T::merge(&mut v, wire_type, buf, ctx)?;
+                let mut v = <T as ProtoDefault>::proto_default();
+                T::merge_value(&mut v, wire_type, buf, ctx)?;
                 guard.insert(v);
                 Ok(())
             }
             ProtoKind::Repeated(_) => unreachable!(),
         }
+    }
+}
+
+impl<T, S> ProtoDefault for HashSet<T, S>
+where
+    S: BuildHasher + Default,
+{
+    #[inline(always)]
+    fn proto_default() -> Self {
+        HashSet::default()
     }
 }
 

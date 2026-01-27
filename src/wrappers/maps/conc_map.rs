@@ -14,6 +14,7 @@ use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -80,17 +81,6 @@ where
     MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
     #[inline]
-    fn proto_default() -> Self {
-        HashMap::default()
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        let guard = self.pin();
-        guard.clear();
-    }
-
-    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -111,7 +101,7 @@ where
         }
         let guard = self.pin();
         // Each merge call handles exactly one map entry
-        let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
+        let mut entry = <MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded> as ProtoDefault>::proto_default();
         if len > 0 {
             // Use limit-based decoding to avoid Take wrapper overhead
             let limit = remaining - len;
@@ -122,6 +112,16 @@ where
         let (key, value) = entry.to_sun()?;
         guard.insert(key, value);
         Ok(())
+    }
+}
+
+impl<K, V, S> ProtoDefault for HashMap<K, V, S>
+where
+    S: BuildHasher + Default,
+{
+    #[inline]
+    fn proto_default() -> Self {
+        HashMap::default()
     }
 }
 

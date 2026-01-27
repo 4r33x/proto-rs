@@ -14,6 +14,8 @@ use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -47,19 +49,7 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
     };
 }
 
-impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
-    #[inline(always)]
-    fn proto_default() -> Self {
-        array::from_fn(|_| T::proto_default())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        for v in self.iter_mut() {
-            v.clear();
-        }
-    }
-
+impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] {
     #[inline(always)]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
@@ -96,24 +86,31 @@ impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
                         if !slice.has_remaining() {
                             break;
                         }
-                        T::merge(v, T::WIRE_TYPE, &mut slice, ctx)?;
+                        T::merge_value(v, T::WIRE_TYPE, &mut slice, ctx)?;
                     }
                     debug_assert!(!slice.has_remaining());
                 } else {
                     for v in self.iter_mut() {
-                        T::merge(v, wire_type, buf, ctx)?;
+                        T::merge_value(v, wire_type, buf, ctx)?;
                     }
                 }
                 Ok(())
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
                 for v in self.iter_mut() {
-                    T::merge(v, wire_type, buf, ctx)?;
+                    T::merge_value(v, wire_type, buf, ctx)?;
                 }
                 Ok(())
             }
             ProtoKind::Repeated(_) => unreachable!(),
         }
+    }
+}
+
+impl<T: ProtoDefault, const N: usize> ProtoDefault for [T; N] {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        array::from_fn(|_| <T as ProtoDefault>::proto_default())
     }
 }
 

@@ -48,7 +48,7 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
     }
     for ident in used_encode {
         where_clause.predicates.push(
-            parse_quote!(#ident: ::proto_rs::ProtoEncode + ::proto_rs::ProtoDecode + ::proto_rs::ProtoDecoder + ::proto_rs::ProtoExt),
+            parse_quote!(#ident: ::proto_rs::ProtoEncode + ::proto_rs::ProtoDecode + ::proto_rs::ProtoDefault + ::proto_rs::ProtoFieldMerge + ::proto_rs::ProtoExt),
         );
         where_clause
             .predicates
@@ -57,7 +57,7 @@ pub fn add_proto_wire_bounds<'a>(generics: &Generics, fields: impl IntoIterator<
     for ty in bound_types {
         where_clause
             .predicates
-            .push(parse_quote!(#ty: ::proto_rs::ProtoEncode + ::proto_rs::ProtoDecode + ::proto_rs::ProtoDecoder + ::proto_rs::ProtoExt));
+            .push(parse_quote!(#ty: ::proto_rs::ProtoEncode + ::proto_rs::ProtoDecode + ::proto_rs::ProtoDefault + ::proto_rs::ProtoFieldMerge + ::proto_rs::ProtoExt));
         where_clause.predicates.push(
             parse_quote!(for<'__proto> <#ty as ::proto_rs::ProtoEncode>::Shadow<'__proto>: ::proto_rs::ProtoArchive + ::proto_rs::ProtoExt),
         );

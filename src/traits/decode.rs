@@ -12,13 +12,8 @@ pub trait ProtoShadowDecode<T> {
     fn to_sun(self) -> Result<T, DecodeError>;
 }
 
+/// “Message-level” decoder: knows how to dispatch tags inside a message.
 pub trait ProtoDecoder: ProtoExt {
-    /// default value used for decoding
-    /// should be real default value as protobuf spec
-    fn proto_default() -> Self;
-    /// Reset to default.
-    fn clear(&mut self);
-
     /// User (or macro-generated code) implements this.
     ///
     /// Contract:
@@ -26,6 +21,7 @@ pub trait ProtoDecoder: ProtoExt {
     /// - Must fully consume the field payload from `buf` (or skip it).
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
+    /// Merge an entire message payload
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         // Not work :C :C :C
@@ -51,11 +47,15 @@ pub trait ProtoDecoder: ProtoExt {
     }
 
     ///top level decode entrypoint
+    /// Decode a whole message from a buffer (top-level, not length-delimited wrapper).
     #[inline(always)]
-    fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
+    fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError>
+    where
+        Self: ProtoDefault,
+    {
         // Check recursion limit at top-level entry
         ctx.limit_reached()?;
-        let mut sh = Self::proto_default();
+        let mut sh = <Self as ProtoDefault>::proto_default();
         Self::decode_into(&mut sh, &mut buf, ctx)?;
         Ok(sh)
     }
@@ -81,10 +81,10 @@ pub trait ProtoDecoder: ProtoExt {
 }
 
 pub trait ProtoDecode: Sized {
-    type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self>;
+    type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self> + ProtoDefault;
     #[inline(always)]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
-        let mut sh = Self::ShadowDecoded::proto_default();
+        let mut sh = <Self::ShadowDecoded as ProtoDefault>::proto_default();
         Self::ShadowDecoded::decode_into(&mut sh, &mut buf, ctx)?;
         Self::post_decode(sh)
     }
@@ -100,5 +100,26 @@ pub trait ProtoDecode: Sized {
     #[inline(always)]
     fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {
         Ok(())
+    }
+}
+
+pub trait ProtoFieldMerge: ProtoExt {
+    /// Merge a single *field occurrence* into `self` given the field wire type.
+    fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+}
+
+pub trait ProtoDefault: Sized {
+    /// default value used for decoding
+    /// should be real default value as protobuf spec
+    fn proto_default() -> Self;
+}
+
+impl<T> ProtoFieldMerge for T
+where
+    T: ProtoDecoder,
+{
+    #[inline(always)]
+    fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
     }
 }

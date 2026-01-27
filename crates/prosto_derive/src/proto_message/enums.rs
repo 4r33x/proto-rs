@@ -110,35 +110,18 @@ pub(super) fn generate_simple_enum_impl(
                     #validate_with_ext_impl
                 }
 
-                impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
                     #[inline(always)]
                     fn proto_default() -> Self {
-                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
+                        let shadow = <#name #ty_generics as ::proto_rs::ProtoDefault>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                             .expect("failed to build default sun value")
                     }
+                }
 
+                impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
                     #[inline(always)]
-                    fn clear(&mut self) {
-                        *self = Self::proto_default();
-                    }
-
-                    #[inline(always)]
-                    fn merge_field(
-                        value: &mut Self,
-                        tag: u32,
-                        wire_type: ::proto_rs::encoding::WireType,
-                        buf: &mut impl ::proto_rs::bytes::Buf,
-                        ctx: ::proto_rs::encoding::DecodeContext,
-                    ) -> Result<(), ::proto_rs::DecodeError> {
-                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(value);
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_field(&mut shadow, tag, wire_type, buf, ctx)?;
-                        *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
-                        Ok(())
-                    }
-
-                    #[inline(always)]
-                    fn merge(
+                    fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
                         buf: &mut impl ::proto_rs::bytes::Buf,
@@ -222,16 +205,6 @@ pub(super) fn generate_simple_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline(always)]
-            fn proto_default() -> Self {
-                Self::#default_ident
-            }
-
-            #[inline(always)]
-            fn clear(&mut self) {
-                *self = Self::proto_default();
-            }
-
-            #[inline(always)]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -252,6 +225,13 @@ pub(super) fn generate_simple_enum_impl(
                 <i32 as ::proto_rs::ProtoDecoder>::merge(&mut raw, wire_type, buf, ctx)?;
                 *self = Self::try_from(raw)?;
                 Ok(())
+            }
+        }
+
+        impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn proto_default() -> Self {
+                Self::#default_ident
             }
         }
 

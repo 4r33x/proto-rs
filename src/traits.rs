@@ -3,6 +3,8 @@
 
 pub use decode::ProtoDecode;
 pub use decode::ProtoDecoder;
+pub use decode::ProtoDefault;
+pub use decode::ProtoFieldMerge;
 pub use decode::ProtoShadowDecode;
 pub use encode::ArchivedProtoField;
 pub use encode::ArchivedProtoMessage;

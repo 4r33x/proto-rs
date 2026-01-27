@@ -8,6 +8,8 @@ use crate::encoding::skip_field;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
+use crate::traits::ProtoDefault;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
@@ -26,21 +28,7 @@ where
     type ShadowDecoded = Box<T::ShadowDecoded>;
 }
 
-impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Arc<T> {
-    #[inline(always)]
-    fn proto_default() -> Self {
-        Arc::new(T::proto_default())
-    }
-
-    #[inline(always)]
-    fn clear(&mut self) {
-        if let Some(inner) = Arc::get_mut(self) {
-            inner.clear();
-        } else {
-            *self = Arc::new(T::proto_default());
-        }
-    }
-
+impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
     #[inline(always)]
     fn merge_field(
         value: &mut Self,
@@ -59,13 +47,20 @@ impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Arc<T> {
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if let Some(inner) = Arc::get_mut(self) {
-            T::merge(inner, wire_type, buf, ctx)
+            T::merge_value(inner, wire_type, buf, ctx)
         } else {
-            let mut value = T::proto_default();
-            T::merge(&mut value, wire_type, buf, ctx)?;
+            let mut value = <T as ProtoDefault>::proto_default();
+            T::merge_value(&mut value, wire_type, buf, ctx)?;
             *self = Arc::new(value);
             Ok(())
         }
+    }
+}
+
+impl<T: ProtoDefault> ProtoDefault for Arc<T> {
+    #[inline(always)]
+    fn proto_default() -> Self {
+        Arc::new(<T as ProtoDefault>::proto_default())
     }
 }
 

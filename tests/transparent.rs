@@ -1,6 +1,7 @@
 use bytes::Buf;
 use proto_rs::ProtoDecode;
 use proto_rs::ProtoDecoder;
+use proto_rs::ProtoDefault;
 use proto_rs::ProtoEncode;
 use proto_rs::RevWriter;
 use proto_rs::encoding::DecodeContext;
@@ -71,7 +72,7 @@ fn transparent_tuple_roundtrip() {
     let buf = writer.finish_tight();
     assert_eq!(buf.as_slice(), vec![123]);
 
-    let mut decoded = <UserIdTuple as ProtoDecoder>::proto_default();
+    let mut decoded = <UserIdTuple as ProtoDefault>::proto_default();
     <UserIdTuple as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut buf.as_slice(), DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
@@ -85,7 +86,7 @@ fn transparent_named_roundtrip() {
     let buf = writer.finish_tight();
     assert_eq!(buf.as_slice(), vec![77]);
 
-    let mut decoded = <UserIdNamed as ProtoDecoder>::proto_default();
+    let mut decoded = <UserIdNamed as ProtoDefault>::proto_default();
     <UserIdNamed as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut buf.as_slice(), DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
@@ -146,7 +147,7 @@ fn transparent_generic_roundtrip() {
     // For a primitive type like u64, the transparent wrapper should encode
     // just the raw varint. Let's decode using the merge method which handles
     // primitives directly
-    let mut decoded = <IdGenericTransparent<u64> as ProtoDecoder>::proto_default();
+    let mut decoded = <IdGenericTransparent<u64> as ProtoDefault>::proto_default();
     <IdGenericTransparent<u64> as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
@@ -172,7 +173,7 @@ fn transparent_generic_merge_field_forwards_correctly() {
     let buf = <IdGenericTransparent<InnerMessage> as ProtoEncode>::encode_to_vec(&original);
 
     // Decode using merge_field explicitly
-    let mut decoded = <IdGenericTransparent<InnerMessage> as ProtoDecoder>::proto_default();
+    let mut decoded = <IdGenericTransparent<InnerMessage> as ProtoDefault>::proto_default();
     let mut buf_slice = &buf[..];
     while buf_slice.has_remaining() {
         let (tag, wire_type) = proto_rs::encoding::decode_key(&mut buf_slice).unwrap();
