@@ -31,6 +31,8 @@ where
     Kd: ProtoDecoder,
     Vd: ProtoDecoder,
 {
+    type Shadow = Self;
+
     #[inline]
     fn proto_default() -> Self {
         Self {
@@ -52,6 +54,13 @@ where
             2 => value.value.merge(wire_type, buf, ctx),
             _ => skip_field(wire_type, tag, buf, ctx),
         }
+    }
+}
+
+impl<Kd, Vd> ProtoShadowDecode<MapEntryDecoded<Kd, Vd>> for MapEntryDecoded<Kd, Vd> {
+    #[inline]
+    fn to_sun(self) -> Result<MapEntryDecoded<Kd, Vd>, DecodeError> {
+        Ok(self)
     }
 }
 

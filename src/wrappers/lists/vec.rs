@@ -33,6 +33,8 @@ impl<T: ProtoExt> ProtoExt for Vec<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Vec<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         Vec::new()

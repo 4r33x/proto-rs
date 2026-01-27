@@ -13,6 +13,7 @@ pub trait ProtoShadowDecode<T> {
 }
 
 pub trait ProtoDecoder: ProtoExt {
+    type Shadow: ProtoDecoder + ProtoExt;
     /// default value used for decoding
     /// should be real default value as protobuf spec
     fn proto_default() -> Self;

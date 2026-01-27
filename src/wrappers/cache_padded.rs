@@ -20,6 +20,8 @@ impl<T: ProtoExt> ProtoExt for CachePadded<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for CachePadded<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         CachePadded::new(T::proto_default())

@@ -74,6 +74,8 @@ where
     V::ShadowDecoded: ProtoDecoder + ProtoExt,
     MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
+    type Shadow = Self;
+
     #[inline]
     fn proto_default() -> Self {
         BTreeMap::new()
@@ -126,6 +128,13 @@ where
     Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>: ProtoDecoder + ProtoExt,
 {
     type ShadowDecoded = Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>;
+}
+
+impl<K, V> ProtoShadowDecode<BTreeMap<K, V>> for BTreeMap<K, V> {
+    #[inline]
+    fn to_sun(self) -> Result<BTreeMap<K, V>, DecodeError> {
+        Ok(self)
+    }
 }
 
 impl<K, V> ProtoShadowDecode<BTreeMap<K, V>> for Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>

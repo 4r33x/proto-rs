@@ -79,6 +79,8 @@ where
     V::ShadowDecoded: ProtoDecoder + ProtoExt,
     MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
+    type Shadow = Self;
+
     #[inline]
     fn proto_default() -> Self {
         HashMap::default()
@@ -135,6 +137,13 @@ where
     Vec<MapEntryDecoded<<K as ProtoDecode>::ShadowDecoded, <V as ProtoDecode>::ShadowDecoded>>: ProtoShadowDecode<HashMap<K, V, S>>,
 {
     type ShadowDecoded = Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>;
+}
+
+impl<K, V, S> ProtoShadowDecode<HashMap<K, V, S>> for HashMap<K, V, S> {
+    #[inline]
+    fn to_sun(self) -> Result<HashMap<K, V, S>, DecodeError> {
+        Ok(self)
+    }
 }
 
 impl<K, V, S> ProtoShadowDecode<HashMap<K, V, S>> for Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>

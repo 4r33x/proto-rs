@@ -23,6 +23,8 @@ impl<T: ProtoExt + Ord> ProtoExt for BTreeSet<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt + Ord> ProtoDecoder for BTreeSet<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         BTreeSet::new()

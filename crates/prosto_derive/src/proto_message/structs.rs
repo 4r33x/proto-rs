@@ -361,6 +361,8 @@ fn generate_transparent_struct_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 #default_expr
@@ -838,6 +840,8 @@ fn generate_proto_impls(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoDecoder for #target_ty #where_clause {
+                    type Shadow = #name #ty_generics;
+
                     #[inline(always)]
                     fn proto_default() -> Self {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoDecoder>::proto_default();
@@ -848,6 +852,18 @@ fn generate_proto_impls(
                     #[inline(always)]
                     fn clear(&mut self) {
                         *self = Self::proto_default();
+                    }
+
+                    #[inline(always)]
+                    fn decode_into(
+                        value: &mut Self,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        #sun_decode_shadow_init
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::decode_into(&mut shadow, buf, ctx)?;
+                        *value = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
                     }
 
                     #[inline(always)]
@@ -904,6 +920,8 @@ fn generate_proto_impls(
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 #proto_default_expr

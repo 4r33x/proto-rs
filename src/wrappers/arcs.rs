@@ -27,6 +27,8 @@ where
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Arc<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         Arc::new(T::proto_default())

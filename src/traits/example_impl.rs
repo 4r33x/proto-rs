@@ -136,6 +136,8 @@ where
     Kd: ProtoDecoder,
     Vd: ProtoDecoder,
 {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         Self {

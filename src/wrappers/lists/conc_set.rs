@@ -42,11 +42,20 @@ where
     type ShadowDecoded = Vec<T::ShadowDecoded>;
 }
 
+impl<T, S> ProtoShadowDecode<HashSet<T, S>> for HashSet<T, S> {
+    #[inline]
+    fn to_sun(self) -> Result<HashSet<T, S>, DecodeError> {
+        Ok(self)
+    }
+}
+
 impl<T, S> ProtoDecoder for HashSet<T, S>
 where
     T: ProtoDecoder + ProtoExt + Eq + Hash,
     S: BuildHasher + Default,
 {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         HashSet::default()

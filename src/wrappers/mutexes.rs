@@ -28,6 +28,8 @@ impl<T: ProtoExt> ProtoExt for std::sync::Mutex<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for std::sync::Mutex<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         std::sync::Mutex::new(T::proto_default())
@@ -130,6 +132,8 @@ impl<T: ProtoExt> ProtoExt for parking_lot::Mutex<T> {
 
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for parking_lot::Mutex<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         parking_lot::Mutex::new(T::proto_default())

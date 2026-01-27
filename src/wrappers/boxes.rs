@@ -21,6 +21,8 @@ impl<T: ProtoExt> ProtoExt for Box<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Box<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         Box::new(T::proto_default())

@@ -48,6 +48,8 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
 }
 
 impl<T: ProtoDecoder + ProtoExt, const N: usize> ProtoDecoder for [T; N] {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         array::from_fn(|_| T::proto_default())

@@ -19,6 +19,8 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for Option<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         None

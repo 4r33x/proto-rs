@@ -63,6 +63,8 @@ macro_rules! impl_proto_primitive_varint_by_value {
         }
 
         impl ProtoDecoder for $ty {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 $default
@@ -150,6 +152,8 @@ macro_rules! impl_proto_primitive_fixed_by_value {
         }
 
         impl ProtoDecoder for $ty {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 $default
@@ -241,6 +245,8 @@ macro_rules! impl_proto_primitive_by_ref {
         }
 
         impl ProtoDecoder for $ty {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 Default::default()
@@ -433,6 +439,8 @@ macro_rules! impl_narrow_varint {
         }
 
         impl ProtoDecoder for $ty {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 0
@@ -526,6 +534,8 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl ProtoDecoder for $ty {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 Self::new($default)
@@ -626,6 +636,8 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl ProtoDecoder for $ty {
+            type Shadow = Self;
+
             #[inline(always)]
             fn proto_default() -> Self {
                 Self::new($default)
@@ -841,6 +853,8 @@ impl<'a> ProtoShadowEncode<'a, ()> for () {
 }
 
 impl ProtoDecoder for () {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {}
 

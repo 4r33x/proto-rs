@@ -36,6 +36,8 @@ impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwap<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         ArcSwap::from_pointee(T::proto_default())
@@ -139,6 +141,8 @@ impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
 }
 
 impl<T: ProtoDecoder + ProtoExt> ProtoDecoder for ArcSwapOption<T> {
+    type Shadow = Self;
+
     #[inline(always)]
     fn proto_default() -> Self {
         ArcSwapOption::from_pointee(None)
