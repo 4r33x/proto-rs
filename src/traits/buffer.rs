@@ -10,6 +10,8 @@ pub trait RevWriter {
     fn mark(&self) -> Self::Mark;
     fn written_since(&self, mark: Self::Mark) -> usize;
     fn as_written_slice(&self) -> &[u8];
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool;
 
     fn put_u8(&mut self, b: u8);
     fn put_slice(&mut self, s: &[u8]);
@@ -40,16 +42,6 @@ impl RevVec {
     #[inline(always)]
     const fn cap(&self) -> usize {
         self.buf.capacity()
-    }
-
-    #[inline(always)]
-    pub const fn len(&self) -> usize {
-        self.cap() - self.pos
-    }
-
-    #[inline(always)]
-    pub const fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 
     #[inline(always)]
@@ -100,6 +92,16 @@ impl RevWriter for RevVec {
     #[inline(always)]
     fn mark(&self) -> Self::Mark {
         self.cap() - self.pos
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.cap() - self.pos
+    }
+
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     #[inline(always)]
