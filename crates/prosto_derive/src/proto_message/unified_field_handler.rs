@@ -228,6 +228,23 @@ pub fn encode_conversion_expr(field: &FieldInfo<'_>, access: &TokenStream2) -> T
     }
 }
 
+/// Encode conversion for owned values - no cloning needed
+pub fn encode_conversion_expr_owned(field: &FieldInfo<'_>, access: &TokenStream2) -> TokenStream2 {
+    if is_numeric_enum(&field.config, &field.parsed) {
+        quote! { (#access) as i32 }
+    } else if let Some(fun) = &field.config.into_fn {
+        let fun_path = parse_path_string(field.field, fun);
+        // into_fn typically takes a reference, so pass reference to owned value
+        quote! { #fun_path(&#access) }
+    } else if field.config.into_type.is_some() {
+        let ty = &field.proto_ty;
+        // Value is already owned, convert directly without clone
+        quote! { <#ty as ::core::convert::From<_>>::from(#access) }
+    } else {
+        access.clone()
+    }
+}
+
 pub fn decode_conversion_assign(info: &FieldInfo<'_>, access: &TokenStream2, tmp_ident: &Ident) -> TokenStream2 {
     if is_numeric_enum(&info.config, &info.parsed) {
         let field_ty = &info.field.ty;

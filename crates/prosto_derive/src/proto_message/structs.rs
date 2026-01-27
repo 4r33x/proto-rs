@@ -22,6 +22,7 @@ use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::encode_conversion_expr;
+use super::unified_field_handler::encode_conversion_expr_owned;
 use super::unified_field_handler::is_value_encode_type;
 use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
@@ -927,6 +928,16 @@ fn shadow_field_init_with_lifetime(
     } else {
         (info.access.access_tokens(base.clone()), false)
     };
+
+    // Check if getter explicitly produces owned value
+    let getter_str = if use_getters { info.config.getter.as_deref().unwrap_or("") } else { "" };
+    let getter_produces_owned = getter_str.contains(".clone()")
+        || getter_str.contains(".to_owned()")
+        || getter_str.contains(".to_string()")
+        || getter_str.starts_with("Some(")
+        || getter_str.starts_with("Ok(")
+        || getter_str.starts_with("Err(");
+
     let ref_expr = if use_getters && info.config.getter.is_some() {
         if getter_is_ref {
             access_expr.clone()
@@ -938,7 +949,12 @@ fn shadow_field_init_with_lifetime(
     };
 
     if needs_encode_conversion(&info.config, &info.parsed) {
-        encode_conversion_expr(info, &ref_expr)
+        if getter_produces_owned {
+            // Getter explicitly produces owned value, handle conversion without clone
+            encode_conversion_expr_owned(info, &access_expr)
+        } else {
+            encode_conversion_expr(info, &ref_expr)
+        }
     } else {
         let field_ty = &info.field.ty;
         let shadow_ty = shadow_field_ty_with_lifetime(info, lifetime);
@@ -961,20 +977,47 @@ fn parse_getter_expr(getter: &str, base: &TokenStream2, field: &syn::Field) -> (
 
 fn sun_field_init(info: &FieldInfo<'_>) -> TokenStream2 {
     let base = quote! { value };
-    let access_expr = if let Some(getter) = &info.config.getter {
-        parse_getter_expr(getter, &base, info.field).0
+    let (access_expr, getter_is_ref) = if let Some(getter) = &info.config.getter {
+        parse_getter_expr(getter, &base, info.field)
     } else {
-        info.access.access_tokens(base)
+        (info.access.access_tokens(base), false)
     };
-    let field_ty = &info.field.ty;
-    let borrowed_expr = quote! { ::core::borrow::Borrow::<#field_ty>::borrow(&#access_expr) };
+
+    // Check if getter explicitly produces owned value (contains .clone(), .to_owned(), etc.
+    // or is a constructor like Some(...), Ok(...))
+    let getter_str = info.config.getter.as_deref().unwrap_or("");
+    let getter_produces_owned = getter_str.contains(".clone()")
+        || getter_str.contains(".to_owned()")
+        || getter_str.contains(".to_string()")
+        || getter_str.starts_with("Some(")
+        || getter_str.starts_with("Ok(")
+        || getter_str.starts_with("Err(");
 
     if needs_encode_conversion(&info.config, &info.parsed) {
-        encode_conversion_expr(info, &borrowed_expr)
+        if getter_produces_owned {
+            // Getter explicitly produces owned value, convert without clone
+            encode_conversion_expr_owned(info, &access_expr)
+        } else if getter_is_ref {
+            encode_conversion_expr(info, &access_expr)
+        } else {
+            let ref_expr = quote! { &#access_expr };
+            encode_conversion_expr(info, &ref_expr)
+        }
     } else if is_value_encode_type(&info.field.ty) {
-        quote! { *#borrowed_expr }
+        if getter_is_ref {
+            quote! { *#access_expr }
+        } else {
+            access_expr
+        }
     } else {
-        quote! { (*#borrowed_expr).clone() }
+        // Non-value types need owned values for the proto struct
+        if getter_produces_owned {
+            // Getter explicitly produces owned value, use directly
+            access_expr
+        } else {
+            // Field access or method call - need to clone to ensure owned value
+            quote! { (#access_expr).clone() }
+        }
     }
 }
 
