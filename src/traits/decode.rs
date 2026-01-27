@@ -12,6 +12,7 @@ pub trait ProtoShadowDecode<T> {
     fn to_sun(self) -> Result<T, DecodeError>;
 }
 
+/// “Message-level” decoder: knows how to dispatch tags inside a message.
 pub trait ProtoDecoder: ProtoExt {
     /// default value used for decoding
     /// should be real default value as protobuf spec
@@ -26,6 +27,7 @@ pub trait ProtoDecoder: ProtoExt {
     /// - Must fully consume the field payload from `buf` (or skip it).
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
+    /// Merge an entire message payload
     #[inline(always)]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         // Not work :C :C :C
@@ -51,6 +53,7 @@ pub trait ProtoDecoder: ProtoExt {
     }
 
     ///top level decode entrypoint
+    /// Decode a whole message from a buffer (top-level, not length-delimited wrapper).
     #[inline(always)]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
         // Check recursion limit at top-level entry
@@ -100,5 +103,20 @@ pub trait ProtoDecode: Sized {
     #[inline(always)]
     fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {
         Ok(())
+    }
+}
+
+pub trait ProtoFieldMerge: ProtoExt {
+    /// Merge a single *field occurrence* into `self` given the field wire type.
+    fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+}
+
+impl<T> ProtoFieldMerge for T
+where
+    T: ProtoDecoder,
+{
+    #[inline(always)]
+    fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
     }
 }
