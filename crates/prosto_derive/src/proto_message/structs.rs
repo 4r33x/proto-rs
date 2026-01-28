@@ -786,7 +786,7 @@ fn generate_proto_impls(
             };
             let sun_decode_shadow_init_self = if sun_ir_ty.is_some() {
                 quote! {
-                    let mut shadow = <#target_ty as ::proto_rs::DecodeIrBuilder<#name #ty_generics>>::build_ir(self);
+                    let mut shadow = <#target_ty as ::proto_rs::DecodeIrBuilder<#name #ty_generics>>::build_ir(self)?;
                 }
             } else {
                 quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self); }

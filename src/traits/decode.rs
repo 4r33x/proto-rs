@@ -125,5 +125,5 @@ where
 }
 
 pub trait DecodeIrBuilder<T> {
-    fn build_ir(&self) -> T;
+    fn build_ir(&self) -> Result<T, ::proto_rs::DecodeError>;
 }

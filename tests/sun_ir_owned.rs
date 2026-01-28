@@ -40,8 +40,8 @@ impl<'a> ProtoShadowEncode<'a, OwnedSun> for OwnedProto {
 }
 
 impl proto_rs::DecodeIrBuilder<OwnedProto> for OwnedSun {
-    fn build_ir(&self) -> OwnedProto {
-        OwnedProto { id: self.id }
+    fn build_ir(&self) -> Result<OwnedProto, DecodeError> {
+        Ok(OwnedProto { id: self.id })
     }
 }
 
@@ -49,8 +49,7 @@ impl proto_rs::DecodeIrBuilder<OwnedProto> for OwnedSun {
 fn encode_decode_owned_sun_ir() {
     let value = OwnedSun { id: 21 };
     let bytes = OwnedSun::encode_to_vec(&value);
-    let decoded =
-        <OwnedSun as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode owned sun");
+    let decoded = <OwnedSun as ProtoDecode>::decode(bytes.as_slice(), DecodeContext::default()).expect("decode owned sun");
 
     assert_eq!(decoded, value);
 }

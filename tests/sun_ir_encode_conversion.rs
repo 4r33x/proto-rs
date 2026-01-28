@@ -53,8 +53,8 @@ impl<'a> ProtoShadowEncode<'a, Sun> for SunIr<'a> {
 }
 
 impl proto_rs::DecodeIrBuilder<SunProto> for Sun {
-    fn build_ir(&self) -> SunProto {
-        SunProto { value: self.value.clone() }
+    fn build_ir(&self) -> Result<SunProto, DecodeError> {
+        Ok(SunProto { value: self.value.clone() })
     }
 }
 

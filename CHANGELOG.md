@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.0]
+- Changed decode path codegen for #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)] by using DecodeIrBuilder<T> trait
+
 ## [0.10.0]
 - Better decode path codegen
 
