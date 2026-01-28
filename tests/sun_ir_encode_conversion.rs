@@ -36,7 +36,7 @@ struct SunIr<'a> {
 
 #[proto_message(sun = [Sun], sun_ir = SunIr<'a>)]
 struct SunProto {
-    #[proto(getter = "(*$.value).clone()", into = "u64", from_fn = "u64_to_fancy")]
+    #[proto(getter = "($.value)", into = "u64", from_fn = "u64_to_fancy")]
     value: Fancy,
 }
 

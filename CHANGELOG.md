@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.1]
+- Improved encoding codegen path by binding temporaries 
+
 ## [0.11.0]
 - Changed decode path codegen for #[proto_message(sun = [Task], sun_ir = TaskRef<'a>)] by using DecodeIrBuilder<T> trait
 
