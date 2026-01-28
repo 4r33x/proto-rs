@@ -52,6 +52,12 @@ impl<'a> ProtoShadowEncode<'a, Sun> for SunIr<'a> {
     }
 }
 
+impl proto_rs::DecodeIrBuilder<SunProto> for Sun {
+    fn build_ir(&self) -> SunProto {
+        SunProto { value: self.value.clone() }
+    }
+}
+
 #[test]
 fn encode_decode_sun_ir_with_into_conversion() {
     let value = Sun { value: Fancy(10) };
