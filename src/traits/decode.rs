@@ -123,3 +123,7 @@ where
         <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
     }
 }
+
+pub trait DecodeIrBuilder<T> {
+    fn build_ir(&self) -> T;
+}

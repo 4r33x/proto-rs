@@ -1,6 +1,7 @@
 #![allow(clippy::inline_always)]
 #![allow(clippy::wrong_self_convention)]
 
+pub use decode::DecodeIrBuilder;
 pub use decode::ProtoDecode;
 pub use decode::ProtoDecoder;
 pub use decode::ProtoDefault;
