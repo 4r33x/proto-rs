@@ -39,6 +39,12 @@ impl<'a> ProtoShadowEncode<'a, OwnedSun> for OwnedProto {
     }
 }
 
+impl proto_rs::DecodeIrBuilder<OwnedProto> for OwnedSun {
+    fn build_ir(&self) -> OwnedProto {
+        OwnedProto { id: self.id }
+    }
+}
+
 #[test]
 fn encode_decode_owned_sun_ir() {
     let value = OwnedSun { id: 21 };

@@ -784,14 +784,9 @@ fn generate_proto_impls(
             } else {
                 quote! { #name #ty_generics }
             };
-            let sun_decode_shadow_init_self = if let Some(sun_ir_ty) = sun_ir_ty {
-                let sun_ir_ty_short = anonymize_type_lifetimes(sun_ir_ty);
-                let base = quote! { __proto_ir };
-                let shadow_init =
-                    build_sun_struct_init_with_base(fields, original_fields, &base, &quote! { #name #ty_generics }, false, true);
+            let sun_decode_shadow_init_self = if sun_ir_ty.is_some() {
                 quote! {
-                    let __proto_ir = <#sun_ir_ty_short as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                    let mut shadow = #shadow_init;
+                    let mut shadow = <#target_ty as ::proto_rs::DecodeIrBuilder<#name #ty_generics>>::build_ir(self);
                 }
             } else {
                 quote! { let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self); }

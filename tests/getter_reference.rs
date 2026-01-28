@@ -83,6 +83,18 @@ impl ProtoShadowDecode<Task> for TaskProto {
     }
 }
 
+impl proto_rs::DecodeIrBuilder<TaskProto> for Task {
+    fn build_ir(&self) -> TaskProto {
+        TaskProto {
+            cfg_id: Some(self.cfg_id.clone()),
+            user_id: self.user_id,
+            flags: *self.some_complex_ctx_that_need_ir_type.flags(),
+            name: self.some_complex_ctx_that_need_ir_type.name().clone(),
+            values: *self.some_complex_ctx_that_need_ir_type.values(),
+        }
+    }
+}
+
 #[test]
 fn encode_decode_reference_with_getter() {
     let task = Task {
