@@ -645,19 +645,9 @@ fn generate_proto_impls(
                         };
                         let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
                         let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
-                            let ref_expr = if getter_is_ref {
-                                access_expr.clone()
-                            } else {
-                                quote! { &#access_expr }
-                            };
+                            let ref_expr = quote! { &#access_expr };
                             let converted = encode_conversion_expr(info, &ref_expr);
                             quote! { let __proto_shadow = #converted; }
-                        } else if getter_is_ref {
-                            let field_ty = &info.field.ty;
-                            quote! {
-                                let __proto_shadow =
-                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(#access_expr);
-                            }
                         } else {
                             let field_ty = &info.field.ty;
                             quote! {
