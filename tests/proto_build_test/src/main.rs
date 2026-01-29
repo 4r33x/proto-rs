@@ -60,6 +60,33 @@ pub struct CustomEx {
     pub custom_vec_deque: CustomVecDeq<MEx>,
 }
 
+// Test case for const generics (Issue #1)
+#[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LruPair<K, V> {
+    pub key: K,
+    pub value: V,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lru<K, V, const CAP: usize> {
+    pub items: VecDeque<LruPair<K, V>>, // MRU..LRU
+}
+
+// Test case for getter attribute filtering (Issue #2)
+// Using getter attribute on a field - this is typically used with sun_ir types
+// but here we just test that the attribute is filtered from client output
+#[proto_message(proto_path = "protos/build_system_test/getter_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GetterTestStruct {
+    // The getter here just returns the same field - a simple case to test attribute filtering
+    #[proto(tag = 1, getter = "$.id")]
+    pub id: u64,
+    #[proto(tag = 2)]
+    pub name: String,
+}
+
 #[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq, Copy)]
 pub enum ServiceStatus {
@@ -337,6 +364,16 @@ fn main() {
     assert!(client_contents.contains("status: ::core::primitive::u32"));
     assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
     assert!(client_contents.contains("::tonic::Response<::core::primitive::u32>"));
+
+    // Test case #1: Verify const generics don't have malformed output
+    // The bug was: "const CAP: const CAP : usize.ty" instead of "const CAP: usize"
+    assert!(!client_contents.contains("usize.ty"), "Should not have malformed const generic type (.ty suffix)");
+    assert!(!client_contents.contains(": const"), "Should not have malformed const generic (: const pattern)");
+
+    // Test case #2: Verify getter attributes are filtered from client output
+    // The getter attribute is source-only and should never appear in generated clients
+    assert!(!client_contents.contains("getter ="), "Getter attributes should not appear in generated client");
+    assert!(!client_contents.contains("getter="), "Getter attributes should not appear in generated client (no space)");
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);

@@ -17,7 +17,7 @@ pub mod custom_types {
         pub box_copy: u64,
         pub boxed_custom: MEx,
         pub box_copy_custom: u64,
-        pub custom_map: ::proto_rs::alloc::collections::HashMap<u32, MEx>,
+        pub custom_map: ::proto_rs::std::collections::HashMap<u32, MEx>,
         pub custom_option: ::core::option::Option<MEx>,
         pub custom_option_copy: ::core::option::Option<u64>,
         pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u32>,
@@ -38,6 +38,7 @@ pub mod custom_types {
 pub mod extra_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
+    use crate::custom_types::MEx;
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
     use crate::goon_types::RizzPing;
@@ -88,6 +89,17 @@ pub mod fastnum {
     }
 
 }
+pub mod getter_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct GetterTestStruct {
+        pub id: u64,
+        pub name: ::proto_rs::alloc::string::String,
+    }
+
+}
 pub mod goon_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
@@ -118,6 +130,22 @@ pub mod goon_types {
     }
 
 }
+pub mod lru_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct Lru<K, V, const CAP: usize> {
+        pub items: ::proto_rs::alloc::vec::Vec<LruPair < K, V >>,
+    }
+
+    #[proto_message]
+    pub struct LruPair<K, V> {
+        pub key: K,
+        pub value: V,
+    }
+
+}
 pub mod rizz_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
@@ -129,7 +157,7 @@ pub mod rizz_types {
     pub struct FooResponse;
 
 }
-pub mod sigma_rpc_simple {
+pub mod sigma_rpc {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
     use crate::custom_types::CustomEx;
@@ -192,6 +220,11 @@ pub mod sigma_rpc_simple {
             request: ::tonic::Request<MEx>,
         ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
 
+        async fn parking_log_mutex_echo(
+            &self,
+            request: ::tonic::Request<MEx>,
+        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
+
         async fn arc_echo(
             &self,
             request: ::tonic::Request<::std::sync::Arc<MEx>>,
@@ -219,8 +252,8 @@ pub mod sigma_rpc_simple {
 
         async fn hash_map_echo(
             &self,
-            request: ::tonic::Request<::proto_rs::alloc::collections::HashMap<u32, MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::HashMap<u32, MEx>>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::std::collections::HashMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::std::collections::HashMap<u32, MEx>>, ::tonic::Status>;
 
         async fn btree_map_echo(
             &self,
@@ -239,8 +272,8 @@ pub mod sigma_rpc_simple {
 
         async fn papaya_hash_map_echo(
             &self,
-            request: ::tonic::Request<::proto_rs::alloc::collections::HashMap<u32, MEx>>,
-        ) -> ::core::result::Result<::tonic::Response<::proto_rs::alloc::collections::HashMap<u32, MEx>>, ::tonic::Status>;
+            request: ::tonic::Request<::proto_rs::std::collections::HashMap<u32, MEx>>,
+        ) -> ::core::result::Result<::tonic::Response<::proto_rs::std::collections::HashMap<u32, MEx>>, ::tonic::Status>;
 
         async fn papaya_hash_set_echo(
             &self,
@@ -374,6 +407,17 @@ pub mod solana {
         UnbalancedTransaction,
         ProgramCacheHitMaxLimit,
         CommitCancelled,
+    }
+
+}
+pub mod well_known {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct Timestamp {
+        pub seconds: i64,
+        pub nanos: i32,
     }
 
 }

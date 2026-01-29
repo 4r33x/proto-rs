@@ -1045,6 +1045,9 @@ fn render_field_attributes(
             if is_tag_only_attr(attr.tokens, expected_tag) {
                 continue;
             }
+            if has_source_only_attrs(attr.tokens) {
+                continue;
+            }
             emitted = true;
             if seen.insert(attr.tokens.to_string()) {
                 indent_line(output, indent);
@@ -1108,6 +1111,24 @@ fn is_tag_only_attr(tokens: &str, expected_tag: u32) -> bool {
         return false;
     };
     tag_value.parse::<u32>().ok().is_some_and(|tag| tag == expected_tag)
+}
+
+/// Attributes that should only be present in source code and not in generated clients.
+const SOURCE_ONLY_ATTR_KEYS: &[&str] = &["getter"];
+
+fn has_source_only_attrs(tokens: &str) -> bool {
+    let normalized = tokens.replace(' ', "");
+    let Some(inner) = normalized.strip_prefix("#[proto(").and_then(|value| value.strip_suffix(")]")) else {
+        return false;
+    };
+    for part in inner.split(',') {
+        for key in SOURCE_ONLY_ATTR_KEYS {
+            if part.starts_with(&format!("{key}=")) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[derive(Default)]

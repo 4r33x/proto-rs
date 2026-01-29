@@ -776,7 +776,7 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
             }
             syn::GenericParam::Const(const_param) => {
                 let name = const_param.ident.to_string();
-                let const_ty = quote! { #const_param.ty };
+                let const_ty = &const_param.ty;
                 generic_consts.push(quote! {
                     #[cfg(feature = "build-schemas")]
                     const #generic_ident: ::proto_rs::schemas::Generic = ::proto_rs::schemas::Generic {
