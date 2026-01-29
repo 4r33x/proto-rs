@@ -89,6 +89,17 @@ pub mod fastnum {
     }
 
 }
+pub mod getter_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct GetterTestStruct {
+        pub id: u64,
+        pub name: ::proto_rs::alloc::string::String,
+    }
+
+}
 pub mod goon_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
@@ -116,6 +127,22 @@ pub mod goon_types {
         PENDING = 1,
         INACTIVE = 2,
         COMPLETED = 3,
+    }
+
+}
+pub mod lru_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct Lru<K, V, const CAP: usize> {
+        pub items: ::proto_rs::alloc::vec::Vec<LruPair < K, V >>,
+    }
+
+    #[proto_message]
+    pub struct LruPair<K, V> {
+        pub key: K,
+        pub value: V,
     }
 
 }

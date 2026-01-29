@@ -1,0 +1,9 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package getter_types;
+
+message GetterTestStruct {
+  uint64 id = 1;
+  string name = 2;
+}
+
