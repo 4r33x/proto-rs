@@ -1332,6 +1332,7 @@ dependencies = [
 name = "proto_build_test"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "fastnum",
  "inventory",
  "papaya",

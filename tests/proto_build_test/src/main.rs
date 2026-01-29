@@ -8,6 +8,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use chrono::DateTime;
+use chrono::Utc;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use proto_rs::schemas::AttrLevel;
@@ -115,6 +117,7 @@ pub struct RizzPing {
 pub struct GoonPong {
     id: Id,
     status: ServiceStatus,
+    expire_at: Option<DateTime<Utc>>,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/rizz_types.proto")]
@@ -278,6 +281,9 @@ fn main() {
             "solana_address::Address",
             "solana_keypair::Keypair",
             "solana_signature::Signature",
+            "chrono::DateTime",
+            "chrono::TimeDelta",
+            "chrono::Utc",
         ])
         //(mod name, statement) format
         .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
@@ -367,13 +373,25 @@ fn main() {
 
     // Test case #1: Verify const generics don't have malformed output
     // The bug was: "const CAP: const CAP : usize.ty" instead of "const CAP: usize"
-    assert!(!client_contents.contains("usize.ty"), "Should not have malformed const generic type (.ty suffix)");
-    assert!(!client_contents.contains(": const"), "Should not have malformed const generic (: const pattern)");
+    assert!(
+        !client_contents.contains("usize.ty"),
+        "Should not have malformed const generic type (.ty suffix)"
+    );
+    assert!(
+        !client_contents.contains(": const"),
+        "Should not have malformed const generic (: const pattern)"
+    );
 
     // Test case #2: Verify getter attributes are filtered from client output
     // The getter attribute is source-only and should never appear in generated clients
-    assert!(!client_contents.contains("getter ="), "Getter attributes should not appear in generated client");
-    assert!(!client_contents.contains("getter="), "Getter attributes should not appear in generated client (no space)");
+    assert!(
+        !client_contents.contains("getter ="),
+        "Getter attributes should not appear in generated client"
+    );
+    assert!(
+        !client_contents.contains("getter="),
+        "Getter attributes should not appear in generated client (no space)"
+    );
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);

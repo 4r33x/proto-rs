@@ -103,11 +103,13 @@ pub mod getter_types {
 pub mod goon_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
+    use chrono::DateTime;
 
     #[proto_message]
     pub struct GoonPong {
         pub id: Id,
         pub status: ServiceStatus,
+        pub expire_at: ::core::option::Option<DateTime>,
     }
 
     #[proto_message]
