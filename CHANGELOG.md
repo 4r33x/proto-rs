@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.3]
+- More fixes in build system
+
 ## [0.11.2]
 - Fixed bugs in build system
 
