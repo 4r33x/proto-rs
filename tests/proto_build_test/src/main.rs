@@ -399,14 +399,117 @@ fn main() {
     assert!(client_contents.contains("Active,"), "Enum variant should be PascalCase: Active");
     assert!(client_contents.contains("Pending,"), "Enum variant should be PascalCase: Pending");
     assert!(client_contents.contains("Inactive,"), "Enum variant should be PascalCase: Inactive");
-    assert!(client_contents.contains("Completed,"), "Enum variant should be PascalCase: Completed");
+    assert!(
+        client_contents.contains("Completed,"),
+        "Enum variant should be PascalCase: Completed"
+    );
     assert!(!client_contents.contains("ACTIVE"), "Enum variant should not be SCREAMING_CASE");
     assert!(!client_contents.contains("PENDING"), "Enum variant should not be SCREAMING_CASE");
 
-    // Test case #4: Verify generic type arguments are preserved (DateTime<Utc> not just DateTime)
-    // When using with_imports for DateTime and Utc, fields like expire_at: Option<DateTime<Utc>>
-    // should render with the full generic type, not just DateTime
-    assert!(client_contents.contains("DateTime<Utc>"), "Generic type args should be preserved: DateTime<Utc>");
-    assert!(client_contents.contains("use chrono::DateTime;"), "chrono::DateTime should be imported");
+    assert!(
+        client_contents.contains("DateTime<Utc>"),
+        "Generic type args should be preserved: DateTime<Utc>"
+    );
+    assert!(
+        client_contents.contains("use chrono::DateTime;"),
+        "chrono::DateTime should be imported"
+    );
     assert!(client_contents.contains("use chrono::Utc;"), "chrono::Utc should be imported");
+
+    assert!(
+        !client_contents.contains("MEx<MEx>"),
+        "Custom wrapper types should not produce erroneous generics like MEx<MEx>"
+    );
+    assert!(
+        !client_contents.contains("u64<u64>"),
+        "Custom wrapper types with copy types should not produce erroneous generics like u64<u64>"
+    );
+    assert!(
+        !client_contents.contains("u32<u32>"),
+        "Custom wrapper types with copy types should not produce erroneous generics like u32<u32>"
+    );
+    assert!(
+        !client_contents.contains("u8<u8>"),
+        "Custom wrapper types with copy types should not produce erroneous generics like u8<u8>"
+    );
+
+    // Verify the CustomEx struct fields are correctly generated
+    // These should be simple types without erroneous generic duplication
+    assert!(
+        client_contents.contains("pub mutex: MEx,"),
+        "mutex field should be MEx, not MEx<MEx>"
+    );
+    assert!(
+        client_contents.contains("pub mutex_copy: u64,"),
+        "mutex_copy field should be u64, not u64<u64>"
+    );
+    assert!(
+        client_contents.contains("pub mutex_custom: MEx,"),
+        "mutex_custom field should be MEx, not MEx<MEx>"
+    );
+    assert!(
+        client_contents.contains("pub mutex_copy_custom: u64,"),
+        "mutex_copy_custom field should be u64, not u64<u64>"
+    );
+    assert!(client_contents.contains("pub arc: MEx,"), "arc field should be MEx, not MEx<MEx>");
+    assert!(
+        client_contents.contains("pub arc_copy: u64,"),
+        "arc_copy field should be u64, not u64<u64>"
+    );
+    assert!(
+        client_contents.contains("pub arc_custom: MEx,"),
+        "arc_custom field should be MEx, not MEx<MEx>"
+    );
+    assert!(
+        client_contents.contains("pub arc_copy_custom: u64,"),
+        "arc_copy_custom field should be u64, not u64<u64>"
+    );
+    assert!(
+        client_contents.contains("pub boxed: MEx,"),
+        "boxed field should be MEx, not MEx<MEx>"
+    );
+    assert!(
+        client_contents.contains("pub box_copy: u64,"),
+        "box_copy field should be u64, not u64<u64>"
+    );
+    assert!(
+        client_contents.contains("pub boxed_custom: MEx,"),
+        "boxed_custom field should be MEx, not MEx<MEx>"
+    );
+    assert!(
+        client_contents.contains("pub box_copy_custom: u64,"),
+        "box_copy_custom field should be u64, not u64<u64>"
+    );
+    assert!(
+        client_contents.contains("pub custom_option: ::core::option::Option<MEx>,"),
+        "custom_option field should be Option<MEx>, not Option<MEx<MEx>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_option_copy: ::core::option::Option<u64>,"),
+        "custom_option_copy field should be Option<u64>, not Option<u64<u64>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_vec: ::proto_rs::alloc::vec::Vec<MEx>,"),
+        "custom_vec field should be Vec<MEx>, not Vec<MEx<MEx>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx>,"),
+        "custom_vec_deque field should be Vec<MEx>, not Vec<MEx<MEx>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_vec_copy: ::proto_rs::alloc::vec::Vec<u64>,"),
+        "custom_vec_copy field should be Vec<u64>, not Vec<u64<u64>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_vec_deque_copy: ::proto_rs::alloc::vec::Vec<u64>,"),
+        "custom_vec_deque_copy field should be Vec<u64>, not Vec<u64<u64>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u8>,"),
+        "custom_vec_bytes field should be Vec<u8>, not Vec<u32<u32>>"
+    );
+    assert!(
+        client_contents.contains("pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u8>,"),
+        "custom_vec_deque_bytes field should be Vec<u8>, not Vec<u32<u32>>"
+    );
 }
