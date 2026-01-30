@@ -1446,6 +1446,16 @@ fn render_wrapper_field_base_type(
         return inner;
     }
 
+    if let Some(inner) = render_custom_wrapper_inner_type(
+        field,
+        package_name,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    ) {
+        return inner;
+    }
+
     let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
     render_proto_type_with_generics(
         ident,
@@ -1471,25 +1481,27 @@ fn render_wrapper_inner_type(
         return None;
     }
 
-    // Get the base type name
-    let base_type = proto_type_to_rust_type(
-        &fallback_ident.proto_type,
+    let inner_ident = wrapper
+        .and_then(|ident| ident.generics.first().copied())
+        .or_else(|| generic_args.first().copied().copied())
+        .unwrap_or(fallback_ident);
+    let inner_generics = if wrapper.is_some()
+        && !generic_args.is_empty()
+        && generic_args.len() == 1
+        && generic_args[0].proto_type == inner_ident.proto_type
+    {
+        &[]
+    } else {
+        generic_args
+    };
+    let inner = render_proto_type_with_generics(
+        inner_ident,
+        inner_generics,
         package_name,
         package_by_ident,
         proto_type_index,
         client_imports,
     );
-
-    // If there are generic args, append them to the type
-    let inner = if generic_args.is_empty() {
-        base_type
-    } else {
-        let rendered_args: Vec<String> = generic_args
-            .iter()
-            .map(|arg| render_proto_type(**arg, package_name, package_by_ident, proto_type_index, client_imports))
-            .collect();
-        format!("{base_type}<{}>", rendered_args.join(", "))
-    };
 
     match kind {
         WrapperKind::Option
@@ -1504,6 +1516,56 @@ fn render_wrapper_inner_type(
         | WrapperKind::ArcSwapOption
         | WrapperKind::CachePadded => Some(inner),
         WrapperKind::HashMap | WrapperKind::BTreeMap => None,
+    }
+}
+
+fn render_custom_wrapper_inner_type(
+    field: &Field,
+    package_name: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> Option<String> {
+    let wrapper = field.wrapper?;
+    let proto_name = field.proto_ident.name;
+    if !proto_name.starts_with(wrapper.name) {
+        return None;
+    }
+    let suffix = proto_name.strip_prefix(wrapper.name)?;
+    if suffix.is_empty() {
+        return None;
+    }
+    if let Some(scalar) = custom_wrapper_suffix_scalar(suffix) {
+        return Some(scalar.to_string());
+    }
+    let candidates = proto_type_index.get(suffix)?;
+    let candidate = candidates
+        .iter()
+        .find(|ident| package_by_ident.get(*ident).is_some_and(|pkg| pkg == package_name))
+        .copied()
+        .or_else(|| candidates.first().copied())?;
+    Some(render_proto_type(
+        candidate,
+        package_name,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    ))
+}
+
+fn custom_wrapper_suffix_scalar(suffix: &str) -> Option<&'static str> {
+    match suffix {
+        "U8" => Some("u8"),
+        "U32" => Some("u32"),
+        "U64" => Some("u64"),
+        "I32" => Some("i32"),
+        "I64" => Some("i64"),
+        "F32" => Some("f32"),
+        "F64" => Some("f64"),
+        "Bool" => Some("bool"),
+        "String" => Some("::proto_rs::alloc::string::String"),
+        "Bytes" => Some("::proto_rs::alloc::vec::Vec<u8>"),
+        _ => None,
     }
 }
 
@@ -1539,6 +1601,9 @@ fn render_proto_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
+    if ident.name == "u8" {
+        return "u8".to_string();
+    }
     if proto_map_types(&ident.proto_type).is_some() {
         return render_map_type(
             &ident.proto_type,

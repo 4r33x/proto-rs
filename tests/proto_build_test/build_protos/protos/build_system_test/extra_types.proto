@@ -36,3 +36,7 @@ message EnvelopeGoonPong {
   string trace_id = 2;
 }
 
+message Order {
+  uint32 id = 1;
+}
+
