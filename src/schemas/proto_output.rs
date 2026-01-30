@@ -14,6 +14,7 @@ use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
 use super::utils::is_wrapper_schema;
 use super::utils::proto_ident_base_type_name;
+use super::utils::proto_scalar_type;
 use super::utils::proto_map_types;
 use super::utils::proto_type_name;
 use super::utils::resolve_transparent_ident;
@@ -26,6 +27,23 @@ use super::utils::wrapper_prefix_from_schema_name;
 pub(crate) struct GenericSpecialization {
     pub(crate) name: String,
     pub(crate) args: Vec<GenericArg>,
+}
+
+fn generic_args_are_concrete(args: &[GenericArg], ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> bool {
+    args.iter().all(|arg| match arg {
+        GenericArg::Const(_) => true,
+        GenericArg::Type(ident) => generic_arg_is_concrete(*ident, ident_index),
+    })
+}
+
+fn generic_arg_is_concrete(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> bool {
+    if proto_scalar_type(&ident.proto_type).is_some() || proto_map_types(&ident.proto_type).is_some() {
+        return true;
+    }
+    if ident_index.contains_key(&ident) {
+        return true;
+    }
+    !ident.module_path.is_empty() || !ident.proto_file_path.is_empty() || !ident.proto_package_name.is_empty()
 }
 
 fn insert_specialization(
@@ -104,6 +122,9 @@ pub(crate) fn collect_generic_specializations(
             ProtoEntry::Struct { fields } => {
                 for field in fields {
                     if !field.generic_args.is_empty() {
+                        if !generic_args_are_concrete(field.generic_args, ident_index) {
+                            continue;
+                        }
                         insert_specialization(&mut specializations, &generic_entries, field.proto_ident, field.generic_args);
                     }
                 }
@@ -112,6 +133,9 @@ pub(crate) fn collect_generic_specializations(
                 for variant in variants {
                     for field in variant.fields {
                         if !field.generic_args.is_empty() {
+                            if !generic_args_are_concrete(field.generic_args, ident_index) {
+                                continue;
+                            }
                             insert_specialization(&mut specializations, &generic_entries, field.proto_ident, field.generic_args);
                         }
                     }
@@ -120,6 +144,9 @@ pub(crate) fn collect_generic_specializations(
             ProtoEntry::Service { methods, .. } => {
                 for method in methods {
                     if !method.request_generic_args.is_empty() {
+                        if !generic_args_are_concrete(method.request_generic_args, ident_index) {
+                            continue;
+                        }
                         insert_specialization(
                             &mut specializations,
                             &generic_entries,
@@ -128,6 +155,9 @@ pub(crate) fn collect_generic_specializations(
                         );
                     }
                     if !method.response_generic_args.is_empty() {
+                        if !generic_args_are_concrete(method.response_generic_args, ident_index) {
+                            continue;
+                        }
                         insert_specialization(
                             &mut specializations,
                             &generic_entries,
@@ -168,6 +198,9 @@ pub(crate) fn collect_generic_specializations(
                         .iter()
                         .map(|arg| apply_substitution_arg(*arg, Some(&substitution)))
                         .collect();
+                    if !generic_args_are_concrete(&resolved, ident_index) {
+                        return;
+                    }
                     if insert_specialization(&mut specializations, &generic_entries, target, &resolved) {
                         changed = true;
                     }
@@ -207,6 +240,7 @@ pub(crate) fn collect_generic_specializations(
         if let Some(base_entry) = base_entry {
             let param_count = base_entry.generics.iter().filter(|generic| matches!(generic.kind, super::GenericKind::Type)).count();
             specs.retain(|spec| spec.args.iter().filter(|arg| matches!(arg, GenericArg::Type(_))).count() == param_count);
+            specs.retain(|spec| generic_args_are_concrete(&spec.args, ident_index));
         }
     }
 
