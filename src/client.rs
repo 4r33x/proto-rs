@@ -170,7 +170,7 @@ pub mod lru_types {
 
     #[proto_message]
     pub struct WithComplexOption {
-        pub inner: ::core::option::Option<Arc<WithConcreteLru>>,
+        pub inner: ::core::option::Option<::std::sync::Arc<WithConcreteLru>>,
     }
 
     #[proto_message]

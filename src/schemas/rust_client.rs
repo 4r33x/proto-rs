@@ -1666,6 +1666,16 @@ fn render_proto_type_with_generics(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
+    if let Some(wrapper_type) = render_wrapper_type_from_generic_args(
+        ident,
+        generic_args,
+        current_package,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    ) {
+        return wrapper_type;
+    }
     let base = render_proto_type(ident, current_package, package_by_ident, proto_type_index, client_imports);
     if generic_args.is_empty() {
         return base;
@@ -1678,6 +1688,38 @@ fn render_proto_type_with_generics(
         })
         .collect();
     format!("{base}<{}>", rendered_args.join(", "))
+}
+
+fn render_wrapper_type_from_generic_args(
+    ident: ProtoIdent,
+    generic_args: &[GenericArg],
+    current_package: &str,
+    package_by_ident: &BTreeMap<ProtoIdent, String>,
+    proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
+    client_imports: &BTreeMap<String, ClientImport>,
+) -> Option<String> {
+    let kind = wrapper_kind_for(Some(ident), ident)?;
+    let type_args = generic_type_args(generic_args);
+    match kind {
+        WrapperKind::HashMap | WrapperKind::BTreeMap => {
+            let key = type_args.first().copied()?;
+            let value = type_args.get(1).copied()?;
+            let key_type = render_proto_type(key, current_package, package_by_ident, proto_type_index, client_imports);
+            let value_type = render_proto_type(value, current_package, package_by_ident, proto_type_index, client_imports);
+            Some(render_map_collection_type(kind, &key_type, &value_type))
+        }
+        _ => {
+            let inner = type_args.first().copied()?;
+            render_wrapper_kind_type(
+                kind,
+                inner,
+                current_package,
+                package_by_ident,
+                proto_type_index,
+                client_imports,
+            )
+        }
+    }
 }
 
 fn generic_type_args(generic_args: &[GenericArg]) -> Vec<ProtoIdent> {
