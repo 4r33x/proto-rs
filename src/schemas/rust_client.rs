@@ -1447,9 +1447,28 @@ fn render_wrapper_field_base_type(
     }
 
     let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+
+    // Determine which generic args to use for the inner type.
+    // There are two cases:
+    // 1. Recognized wrapper types (like Option<DateTime<Utc>>): wrapper is Some(...),
+    //    generic_args contains the inner type's generic args (e.g., [Utc]).
+    //    We should append generic_args to the base type.
+    // 2. Custom wrapper types (like CustomMutex<DateTime<Utc>>): wrapper is None,
+    //    generic_args contains the wrapper's generic args (which IS the inner type, e.g., [DateTime<Utc>]).
+    //    We should use the inner type's own generics (generic_args[0].generics) instead.
+    let inner_generics: Vec<&ProtoIdent> = if field.wrapper.is_some() {
+        // Recognized wrapper: use generic_args directly
+        field.generic_args.to_vec()
+    } else if !field.generic_args.is_empty() {
+        // Custom wrapper: use the inner type's own generics
+        field.generic_args[0].generics.iter().collect()
+    } else {
+        vec![]
+    };
+
     render_proto_type_with_generics(
         ident,
-        field.generic_args,
+        &inner_generics,
         package_name,
         package_by_ident,
         proto_type_index,
@@ -1471,7 +1490,7 @@ fn render_wrapper_inner_type(
         return None;
     }
 
-    // Get the base type name
+    // Get the base type name (the inner type of the wrapper)
     let base_type = proto_type_to_rust_type(
         &fallback_ident.proto_type,
         package_name,
@@ -1480,11 +1499,28 @@ fn render_wrapper_inner_type(
         client_imports,
     );
 
-    // If there are generic args, append them to the type
-    let inner = if generic_args.is_empty() {
+    // Determine which generic args to use for the inner type.
+    // There are two cases:
+    // 1. Recognized wrapper types (like Option<DateTime<Utc>>): wrapper is Some(...),
+    //    generic_args contains the inner type's generic args (e.g., [Utc]).
+    //    We should append generic_args to the base type.
+    // 2. Custom wrapper types (like CustomMutex<DateTime<Utc>>): wrapper is None,
+    //    generic_args contains the wrapper's generic args (which IS the inner type, e.g., [DateTime<Utc>]).
+    //    We should use the inner type's own generics (generic_args[0].generics) instead.
+    let inner_generics: Vec<&ProtoIdent> = if wrapper.is_some() {
+        // Recognized wrapper: use generic_args directly
+        generic_args.to_vec()
+    } else if !generic_args.is_empty() {
+        // Custom wrapper: use the inner type's own generics
+        generic_args[0].generics.iter().collect()
+    } else {
+        vec![]
+    };
+
+    let inner = if inner_generics.is_empty() {
         base_type
     } else {
-        let rendered_args: Vec<String> = generic_args
+        let rendered_args: Vec<String> = inner_generics
             .iter()
             .map(|arg| render_proto_type(**arg, package_name, package_by_ident, proto_type_index, client_imports))
             .collect();
