@@ -1114,7 +1114,7 @@ fn is_tag_only_attr(tokens: &str, expected_tag: u32) -> bool {
 }
 
 /// Attributes that should only be present in source code and not in generated clients.
-const SOURCE_ONLY_ATTR_KEYS: &[&str] = &["getter", "validator"];
+const SOURCE_ONLY_ATTR_KEYS: &[&str] = &["getter", "validator", "treat_as"];
 
 fn has_source_only_attrs(tokens: &str) -> bool {
     let normalized = tokens.replace(' ', "");
