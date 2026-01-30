@@ -5,6 +5,10 @@ package extra_types;
 import "custom_types.proto";
 import "goon_types.proto";
 
+message VecOrder {
+  repeated Order value = 1;
+}
+
 message BuildConfig {
   int64 timeout = 1;
   goon_types.Id owner = 3;
