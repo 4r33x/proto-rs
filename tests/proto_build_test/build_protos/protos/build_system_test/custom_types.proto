@@ -22,14 +22,6 @@ message HashMapU32MEx {
   map<uint32, MEx> value = 1;
 }
 
-message MutexMEx {
-  MEx value = 1;
-}
-
-message MutexU64 {
-  uint64 value = 1;
-}
-
 message OptionMEx {
   optional MEx value = 1;
 }
@@ -63,10 +55,10 @@ message VecU64 {
 }
 
 message CustomEx {
-  MutexMEx mutex = 1;
-  MutexU64 mutex_copy = 2;
-  MutexMEx mutex_custom = 3;
-  MutexU64 mutex_copy_custom = 4;
+  MEx mutex = 1;
+  uint64 mutex_copy = 2;
+  MEx mutex_custom = 3;
+  uint64 mutex_copy_custom = 4;
   ArcMEx arc = 5;
   ArcU64 arc_copy = 6;
   ArcMEx arc_custom = 7;
