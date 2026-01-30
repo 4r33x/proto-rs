@@ -2,3 +2,16 @@
 syntax = "proto3";
 package lru_types;
 
+message Lruuint64uint64 {
+  repeated LruPair < K, V > items = 1;
+}
+
+message WithComplexOption {
+  optional WithConcreteLru inner = 1;
+}
+
+message WithConcreteLru {
+  Lruuint64uint64 lru1 = 1;
+  Lruuint64uint64 lru2 = 2;
+}
+

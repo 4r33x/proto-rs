@@ -168,6 +168,17 @@ pub mod lru_types {
         pub value: V,
     }
 
+    #[proto_message]
+    pub struct WithComplexOption {
+        pub inner: ::core::option::Option<Arc>,
+    }
+
+    #[proto_message]
+    pub struct WithConcreteLru {
+        pub lru1: Lru<u64, u64>,
+        pub lru2: Lru<u64, u64>,
+    }
+
 }
 pub mod rizz_types {
     #[allow(unused_imports)]

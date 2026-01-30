@@ -76,6 +76,19 @@ pub struct Lru<K, V, const CAP: usize> {
     pub items: VecDeque<LruPair<K, V>>, // MRU..LRU
 }
 
+#[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct WithConcreteLru {
+    lru1: Lru<u64, u64, 32>,
+    lru2: Lru<u64, u64, 128>,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct WithComplexOption {
+    pub inner: Option<Arc<WithConcreteLru>>,
+}
+
 // Test case for getter attribute filtering (Issue #2)
 // Using getter attribute on a field - this is typically used with sun_ir types
 // but here we just test that the attribute is filtered from client output
