@@ -129,11 +129,15 @@ fn generate_unary_client_method(
 
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_value: ProtoInter = ::core::convert::Into::into(ctx);
+            let ctx_payload: <ProtoInter as #trait_ident>::Payload = ::core::convert::Into::into(ctx);
+            let ctx_value: ProtoInter = ::core::convert::From::from(ctx_payload);
             ctx_value.intercept(&mut request);
         };
         let interceptor_generics = quote! { , I, ProtoInter };
-        let interceptor_bounds = quote! { I: ::core::convert::Into<ProtoInter>, ProtoInter: #trait_ident };
+        let interceptor_bounds = quote! {
+            I: ::core::convert::Into<<ProtoInter as #trait_ident>::Payload>,
+            ProtoInter: #trait_ident + ::core::convert::From<<ProtoInter as #trait_ident>::Payload>
+        };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
         (quote! {}, quote! {}, quote! {}, quote! {})
@@ -188,11 +192,15 @@ fn generate_streaming_client_method(
 
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_value: ProtoInter = ::core::convert::Into::into(ctx);
+            let ctx_payload: <ProtoInter as #trait_ident>::Payload = ::core::convert::Into::into(ctx);
+            let ctx_value: ProtoInter = ::core::convert::From::from(ctx_payload);
             ctx_value.intercept(&mut request);
         };
         let interceptor_generics = quote! { , I, ProtoInter };
-        let interceptor_bounds = quote! { I: ::core::convert::Into<ProtoInter>, ProtoInter: #trait_ident };
+        let interceptor_bounds = quote! {
+            I: ::core::convert::Into<<ProtoInter as #trait_ident>::Payload>,
+            ProtoInter: #trait_ident + ::core::convert::From<<ProtoInter as #trait_ident>::Payload>
+        };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
         (quote! {}, quote! {}, quote! {}, quote! {})
