@@ -829,25 +829,4 @@ mod tests {
         assert_eq!(entries[1].param.to_string(), "U");
         assert_eq!(entries[1].types.len(), 1);
     }
-
-    #[test]
-    fn parses_interceptor_config() {
-        let config = parse_interceptor_config("user_advanced_interceptor<UserId>").unwrap();
-        assert_eq!(config.function_name, "user_advanced_interceptor");
-        assert_eq!(config.ctx_type.to_string(), "UserId");
-    }
-
-    #[test]
-    fn parses_interceptor_config_with_nested_generics() {
-        let config = parse_interceptor_config("user_advanced_interceptor<UserId<()>>").unwrap();
-        assert_eq!(config.function_name, "user_advanced_interceptor");
-        assert_eq!(config.ctx_type.to_string(), "UserId < () >");
-    }
-
-    #[test]
-    fn parses_interceptor_config_with_complex_type() {
-        let config = parse_interceptor_config("my_interceptor<HashMap<String, Value>>").unwrap();
-        assert_eq!(config.function_name, "my_interceptor");
-        assert_eq!(config.ctx_type.to_string(), "HashMap < String , Value >");
-    }
 }

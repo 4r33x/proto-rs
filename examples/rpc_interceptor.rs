@@ -40,6 +40,10 @@ pub trait InterceptorRpc {
     async fn ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
 }
 
+pub trait UserAdvancedInterceptor<Ctx>: Send + Sync + 'static {
+    fn intercept<T>(&self, ctx: Ctx, req: &mut tonic::Request<T>);
+}
+
 impl UserAdvancedInterceptor<UserId> for UserCtx {
     fn intercept<T>(&self, ctx: UserId, request: &mut tonic::Request<T>) {
         request.metadata_mut().insert("user-id", ctx.to_string().parse().unwrap());
@@ -71,10 +75,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interceptor_rpc_client::InterceptorRpcClient;
 
-    #[test]
-    fn test_interceptor_syntax() {
+    #[tokio::test]
+    async fn test_interceptor_syntax() {
         // This test just ensures the macro expands correctly
         println!("Interceptor example compiles successfully!");
+        let mut client = InterceptorRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let res = client.ping(UserCtx(1), RizzPing {}).await.unwrap();
     }
 }

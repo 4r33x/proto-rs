@@ -81,7 +81,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
         #inventory_submit
         #proto
         #(#validator_consts)*
-        #interceptor_trait
+        //#interceptor_trait
         #vis trait #trait_name {
             #(#user_associated_types)*
             #(#user_methods)*
