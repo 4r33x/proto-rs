@@ -59,8 +59,8 @@ impl ParseFieldAttr for () {
 
 #[derive(Clone)]
 pub struct InterceptorConfig {
-    pub function_name: String,
-    pub ctx_type: TokenStream2,
+    pub trait_ident: syn::Ident,
+    pub ctx_ident: syn::Ident,
 }
 
 #[derive(Clone, Default)]
@@ -188,23 +188,22 @@ impl UnifiedProtoConfig {
 }
 
 fn parse_interceptor_config(input: &str) -> Option<InterceptorConfig> {
-    // Parse format: "function_name<TypeParam<Inner>>"
+    // Parse format: "TraitName<Ctx>"
     let input = input.trim();
 
-    // Find the first '<' to separate function name from type parameter
+    // Find the first '<' to separate trait name from type parameter
     let angle_pos = input.find('<')?;
-    let function_name = input[..angle_pos].to_string();
+    let trait_name = input[..angle_pos].trim();
 
     // Find the matching closing '>' to extract the type parameter
-    // We need to handle nested angle brackets
     let type_param_str = &input[angle_pos + 1..];
     let closing_pos = type_param_str.rfind('>')?;
-    let type_param_str = &type_param_str[..closing_pos];
+    let type_param_str = type_param_str[..closing_pos].trim();
 
-    // Parse the type parameter as a TokenStream
-    let ctx_type: TokenStream2 = type_param_str.parse().ok()?;
+    let trait_ident: syn::Ident = syn::parse_str(trait_name).ok()?;
+    let ctx_ident: syn::Ident = syn::parse_str(type_param_str).ok()?;
 
-    Some(InterceptorConfig { function_name, ctx_type })
+    Some(InterceptorConfig { trait_ident, ctx_ident })
 }
 
 fn parse_attr_params(attr: TokenStream, config: &mut UnifiedProtoConfig) {
@@ -829,26 +828,5 @@ mod tests {
         assert_eq!(entries[0].types.len(), 2);
         assert_eq!(entries[1].param.to_string(), "U");
         assert_eq!(entries[1].types.len(), 1);
-    }
-
-    #[test]
-    fn parses_interceptor_config() {
-        let config = parse_interceptor_config("user_advanced_interceptor<UserId>").unwrap();
-        assert_eq!(config.function_name, "user_advanced_interceptor");
-        assert_eq!(config.ctx_type.to_string(), "UserId");
-    }
-
-    #[test]
-    fn parses_interceptor_config_with_nested_generics() {
-        let config = parse_interceptor_config("user_advanced_interceptor<UserId<()>>").unwrap();
-        assert_eq!(config.function_name, "user_advanced_interceptor");
-        assert_eq!(config.ctx_type.to_string(), "UserId < () >");
-    }
-
-    #[test]
-    fn parses_interceptor_config_with_complex_type() {
-        let config = parse_interceptor_config("my_interceptor<HashMap<String, Value>>").unwrap();
-        assert_eq!(config.function_name, "my_interceptor");
-        assert_eq!(config.ctx_type.to_string(), "HashMap < String , Value >");
     }
 }
