@@ -7,6 +7,7 @@ use std::path::Path;
 
 use super::AttrLevel;
 use super::Field;
+use super::GenericArg;
 use super::GenericKind;
 use super::MethodReplace;
 use super::ProtoEntry;
@@ -381,8 +382,11 @@ fn collect_module_imports(
                         &mut imports,
                     );
                     for arg in method.request_generic_args {
+                        let GenericArg::Type(arg) = arg else {
+                            continue;
+                        };
                         collect_rust_proto_ident_imports(
-                            resolve_transparent_or_wrapper_inner(**arg, ident_index),
+                            resolve_transparent_or_wrapper_inner(*arg, ident_index),
                             package_name,
                             package_by_ident,
                             proto_type_index,
@@ -391,8 +395,11 @@ fn collect_module_imports(
                         );
                     }
                     for arg in method.response_generic_args {
+                        let GenericArg::Type(arg) = arg else {
+                            continue;
+                        };
                         collect_rust_proto_ident_imports(
-                            resolve_transparent_or_wrapper_inner(**arg, ident_index),
+                            resolve_transparent_or_wrapper_inner(*arg, ident_index),
                             package_name,
                             package_by_ident,
                             proto_type_index,
@@ -420,7 +427,10 @@ fn collect_rust_field_imports(
     let ident = resolve_transparent_ident(field.rust_proto_ident, ident_index);
     collect_rust_proto_ident_imports(ident, package_name, package_by_ident, proto_type_index, client_imports, imports);
     for arg in field.generic_args {
-        let arg = resolve_transparent_ident(**arg, ident_index);
+        let GenericArg::Type(arg) = arg else {
+            continue;
+        };
+        let arg = resolve_transparent_ident(*arg, ident_index);
         collect_rust_proto_ident_imports(arg, package_name, package_by_ident, proto_type_index, client_imports, imports);
     }
 }
@@ -1470,7 +1480,7 @@ fn render_wrapper_field_base_type(
 fn render_wrapper_inner_type(
     wrapper: Option<ProtoIdent>,
     fallback_ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     package_name: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
@@ -1481,18 +1491,24 @@ fn render_wrapper_inner_type(
         return None;
     }
 
+    let type_args = generic_type_args(generic_args);
     let inner_ident = wrapper
         .and_then(|ident| ident.generics.first().copied())
-        .or_else(|| generic_args.first().copied().copied())
+        .or_else(|| type_args.first().copied())
         .unwrap_or(fallback_ident);
-    let inner_generics = if wrapper.is_some()
-        && !generic_args.is_empty()
-        && generic_args.len() == 1
-        && generic_args[0].proto_type == inner_ident.proto_type
+    let inferred_generics = generic_args_from_ident(inner_ident);
+    let inner_generics: &[GenericArg] = if wrapper.is_some()
+        && !type_args.is_empty()
+        && type_args.len() == 1
+        && type_args[0].proto_type == inner_ident.proto_type
     {
         &[]
-    } else {
+    } else if !generic_args.is_empty() {
         generic_args
+    } else if !inferred_generics.is_empty() {
+        &inferred_generics
+    } else {
+        &[]
     };
     let inner = render_proto_type_with_generics(
         inner_ident,
@@ -1572,7 +1588,7 @@ fn custom_wrapper_suffix_scalar(suffix: &str) -> Option<&'static str> {
 fn render_map_wrapper_type(
     wrapper: Option<ProtoIdent>,
     fallback_ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     package_name: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
@@ -1585,8 +1601,12 @@ fn render_map_wrapper_type(
             _ => None,
         })
         .or_else(|| {
-            let key = generic_args.first().copied().copied()?;
-            let value = generic_args.get(1).copied().copied()?;
+            let mut type_args = generic_args.iter().filter_map(|arg| match arg {
+                GenericArg::Type(ident) => Some(*ident),
+                GenericArg::Const(_) => None,
+            });
+            let key = type_args.next()?;
+            let value = type_args.next()?;
             Some((key, value))
         })?;
     let key_type = render_proto_type(key, package_name, package_by_ident, proto_type_index, client_imports);
@@ -1640,7 +1660,7 @@ fn render_proto_type(
 
 fn render_proto_type_with_generics(
     ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     current_package: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
@@ -1652,14 +1672,31 @@ fn render_proto_type_with_generics(
     }
     let rendered_args: Vec<String> = generic_args
         .iter()
-        .map(|arg| render_proto_type(**arg, current_package, package_by_ident, proto_type_index, client_imports))
+        .map(|arg| match arg {
+            GenericArg::Type(ident) => render_proto_type(*ident, current_package, package_by_ident, proto_type_index, client_imports),
+            GenericArg::Const(value) => (*value).to_string(),
+        })
         .collect();
     format!("{base}<{}>", rendered_args.join(", "))
 }
 
+fn generic_type_args(generic_args: &[GenericArg]) -> Vec<ProtoIdent> {
+    generic_args
+        .iter()
+        .filter_map(|arg| match arg {
+            GenericArg::Type(ident) => Some(*ident),
+            GenericArg::Const(_) => None,
+        })
+        .collect()
+}
+
+fn generic_args_from_ident(ident: ProtoIdent) -> Vec<GenericArg> {
+    ident.generics.iter().map(|arg| GenericArg::Type(*arg)).collect()
+}
+
 fn render_method_type(
     ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     wrapper: Option<ProtoIdent>,
     current_package: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
@@ -1702,7 +1739,7 @@ fn method_wrapper_info(
 fn render_method_wrapper_type(
     wrapper: Option<ProtoIdent>,
     fallback_ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     current_package: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
@@ -1721,11 +1758,33 @@ fn render_method_wrapper_type(
         );
     }
 
+    let type_args = generic_type_args(generic_args);
     let inner_ident = wrapper
         .and_then(|ident| ident.generics.first().copied())
-        .or_else(|| generic_args.first().copied().copied())
+        .or_else(|| type_args.first().copied())
         .unwrap_or(fallback_ident);
-    let inner_type = render_proto_type(inner_ident, current_package, package_by_ident, proto_type_index, client_imports);
+    let inferred_generics = generic_args_from_ident(inner_ident);
+    let inner_generics: &[GenericArg] = if wrapper.is_some()
+        && !type_args.is_empty()
+        && type_args.len() == 1
+        && type_args[0].proto_type == inner_ident.proto_type
+    {
+        &[]
+    } else if !generic_args.is_empty() {
+        generic_args
+    } else if !inferred_generics.is_empty() {
+        &inferred_generics
+    } else {
+        &[]
+    };
+    let inner_type = render_proto_type_with_generics(
+        inner_ident,
+        inner_generics,
+        current_package,
+        package_by_ident,
+        proto_type_index,
+        client_imports,
+    );
 
     match kind {
         WrapperKind::Option | WrapperKind::ArcSwapOption => Some(format!("::core::option::Option<{inner_type}>")),
@@ -1761,7 +1820,7 @@ fn render_wrapper_schema_type(
         _ => field
             .wrapper
             .and_then(|wrapper| wrapper.generics.first().copied())
-            .or_else(|| field.generic_args.first().copied().copied())
+            .or_else(|| generic_type_args(field.generic_args).first().copied())
             .or_else(|| wrapper_inner_ident_from_schema_name(schema.id.name, current_package, package_by_ident, proto_type_index))
             .unwrap_or(field.proto_ident),
     };

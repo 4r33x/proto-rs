@@ -29,6 +29,7 @@ use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
 use crate::utils::proto_type_name;
 use crate::utils::resolved_field_type;
+use crate::utils::rust_type_path_ident;
 use crate::utils::to_pascal_case;
 use crate::utils::to_upper_snake_case;
 
@@ -1123,7 +1124,8 @@ fn proto_ident_tokens(
         // If the type references generic parameters from the parent, use a placeholder
         // This happens when generating schemas for base generic types at module level
         if type_references_generic_params(inner_type, item_generics) {
-            let type_name = quote! { #inner_type }.to_string();
+            let type_name = generic_param_name(inner_type, item_generics)
+                .unwrap_or_else(|| rust_type_path_ident(inner_type).to_string());
             return proto_ident_literal(&type_name, "", "");
         }
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
@@ -1159,7 +1161,8 @@ fn rust_proto_ident_tokens(
         // If the type references generic parameters from the parent, use a placeholder
         // This happens when generating schemas for base generic types at module level
         if type_references_generic_params(inner_type, item_generics) {
-            let type_name = quote! { #inner_type }.to_string();
+            let type_name = generic_param_name(inner_type, item_generics)
+                .unwrap_or_else(|| rust_type_path_ident(inner_type).to_string());
             return proto_ident_literal(&type_name, "", "");
         }
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
@@ -1311,32 +1314,62 @@ fn generic_args_tokens_from_type(
     let mut arg_idx = 0usize;
 
     for arg in &args.args {
-        let syn::GenericArgument::Type(arg_ty) = arg else {
-            continue;
-        };
-
-        if type_references_generic_params(arg_ty, generics) {
-            arg_idx += 1;
-            continue;
-        }
-
-        // Classify the generic argument
-        let kind = classify_generic_arg(arg, generics);
-
-        // Only generate PROTO_SCHEMA_GENERIC_ARG constants for concrete types
-        // Skip generic parameters and const generics
-        if kind == GenericArgKind::ConcreteType {
-            let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
-            let proto_ident = proto_ident_tokens_from_type(arg_ty);
-            arg_consts.push(quote! {
-                #[cfg(feature = "build-schemas")]
-                const #arg_ident: ::proto_rs::schemas::ProtoIdent = #proto_ident;
-            });
-            if assoc {
-                arg_refs.push(quote! { &Self::#arg_ident });
-            } else {
-                arg_refs.push(quote! { &#arg_ident });
+        match arg {
+            syn::GenericArgument::Type(arg_ty) => {
+                let kind = classify_generic_arg(arg, generics);
+                match kind {
+                    GenericArgKind::Generic => {
+                        if let Some(param_name) = generic_param_name(arg_ty, generics) {
+                            let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
+                            let proto_ident = proto_ident_literal(&param_name, "", "");
+                            arg_consts.push(quote! {
+                                #[cfg(feature = "build-schemas")]
+                                const #arg_ident: ::proto_rs::schemas::GenericArg = ::proto_rs::schemas::GenericArg::Type(#proto_ident);
+                            });
+                            if assoc {
+                                arg_refs.push(quote! { Self::#arg_ident });
+                            } else {
+                                arg_refs.push(quote! { #arg_ident });
+                            }
+                        }
+                    }
+                    GenericArgKind::ConcreteType => {
+                        if type_references_generic_params(arg_ty, generics) {
+                            arg_idx += 1;
+                            continue;
+                        }
+                        let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
+                        let proto_ident = proto_ident_tokens_from_type(arg_ty);
+                        arg_consts.push(quote! {
+                            #[cfg(feature = "build-schemas")]
+                            const #arg_ident: ::proto_rs::schemas::GenericArg = ::proto_rs::schemas::GenericArg::Type(#proto_ident);
+                        });
+                        if assoc {
+                            arg_refs.push(quote! { Self::#arg_ident });
+                        } else {
+                            arg_refs.push(quote! { #arg_ident });
+                        }
+                    }
+                    GenericArgKind::Const => {}
+                }
             }
+            syn::GenericArgument::Const(expr) => {
+                if const_expr_references_generic_param(expr, generics) {
+                    arg_idx += 1;
+                    continue;
+                }
+                let arg_ident = generic_arg_const_ident(type_ident, suffix, idx, context, arg_idx);
+                arg_consts.push(quote! {
+                    #[cfg(feature = "build-schemas")]
+                    const #arg_ident: ::proto_rs::schemas::GenericArg = ::proto_rs::schemas::GenericArg::Const(stringify!(#expr));
+                });
+                if assoc {
+                    arg_refs.push(quote! { Self::#arg_ident });
+                } else {
+                    arg_refs.push(quote! { #arg_ident });
+                }
+            }
+            _ => {}
         }
 
         arg_idx += 1;
@@ -1354,6 +1387,21 @@ fn generic_args_tokens_from_type(
             ]
         },
     )
+}
+
+fn const_expr_references_generic_param(expr: &syn::Expr, generics: &syn::Generics) -> bool {
+    match expr {
+        syn::Expr::Path(path) => path.path.segments.len() == 1
+            && generics.const_params().any(|param| param.ident == path.path.segments[0].ident),
+        syn::Expr::Binary(binary) => {
+            const_expr_references_generic_param(&binary.left, generics)
+                || const_expr_references_generic_param(&binary.right, generics)
+        }
+        syn::Expr::Unary(unary) => const_expr_references_generic_param(&unary.expr, generics),
+        syn::Expr::Group(group) => const_expr_references_generic_param(&group.expr, generics),
+        syn::Expr::Paren(paren) => const_expr_references_generic_param(&paren.expr, generics),
+        _ => false,
+    }
 }
 
 fn array_info_tokens(
