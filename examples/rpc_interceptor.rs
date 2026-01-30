@@ -34,6 +34,12 @@ pub type UserId = u64;
 #[derive(Clone, Debug)]
 pub struct UserCtx(pub UserId);
 
+impl From<UserId> for UserCtx {
+    fn from(value: UserId) -> Self {
+        UserCtx(value)
+    }
+}
+
 impl From<UserCtx> for UserId {
     fn from(value: UserCtx) -> Self {
         value.0
