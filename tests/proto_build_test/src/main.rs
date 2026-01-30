@@ -283,7 +283,7 @@ fn main() {
         .filter(|schema| schema.id.name == "SigmaRpc" && schema.id.proto_type != proto_rs::schemas::ProtoType::None)
         .cloned()
         .collect();
-    println!("{:?}", sigma_entries);
+    //println!("{:?}", sigma_entries);
     assert_eq!(sigma_entries.len(), 1);
     let sigma_schema = sigma_entries.into_iter().next().unwrap();
     let sigma_ident = sigma_schema.id;
@@ -370,6 +370,10 @@ fn main() {
             },
         ]);
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
+
+    for schema in inventory::iter::<ProtoSchema> {
+        println!("Collected: {}", schema.id.name);
+    }
 
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
     assert!(client_contents.contains("use fastnum::UD128;"));
