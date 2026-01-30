@@ -126,15 +126,14 @@ fn generate_unary_client_method(
     // Generate ctx parameter and interceptor call if configured
     let (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds) = if let Some(config) = interceptor_config {
         let trait_ident = &config.trait_ident;
-        let ctx_ident = &config.ctx_ident;
+
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_value: #ctx_ident = ::core::convert::Into::into(ctx.clone());
-            ctx.intercept(ctx_value, &mut request);
+            let ctx_value: ProtoInter = ::core::convert::Into::into(ctx);
+            ctx_value.intercept(&mut request);
         };
-        let interceptor_generics = quote! { , I, #ctx_ident };
-        let interceptor_bounds =
-            quote! { I: ::core::clone::Clone + ::core::convert::Into<#ctx_ident> + #trait_ident<#ctx_ident>, };
+        let interceptor_generics = quote! { , I, ProtoInter };
+        let interceptor_bounds = quote! { I: ::core::convert::Into<ProtoInter>, ProtoInter: #trait_ident };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
         (quote! {}, quote! {}, quote! {}, quote! {})
@@ -186,15 +185,14 @@ fn generate_streaming_client_method(
     // Generate ctx parameter and interceptor call if configured
     let (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds) = if let Some(config) = interceptor_config {
         let trait_ident = &config.trait_ident;
-        let ctx_ident = &config.ctx_ident;
+
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_value: #ctx_ident = ::core::convert::Into::into(ctx.clone());
-            ctx.intercept(ctx_value, &mut request);
+            let ctx_value: ProtoInter = ::core::convert::Into::into(ctx);
+            ctx_value.intercept(&mut request);
         };
-        let interceptor_generics = quote! { , I, #ctx_ident };
-        let interceptor_bounds =
-            quote! { I: ::core::clone::Clone + ::core::convert::Into<#ctx_ident> + #trait_ident<#ctx_ident>, };
+        let interceptor_generics = quote! { , I, ProtoInter };
+        let interceptor_bounds = quote! { I: ::core::convert::Into<ProtoInter>, ProtoInter: #trait_ident };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
         (quote! {}, quote! {}, quote! {}, quote! {})

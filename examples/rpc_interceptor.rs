@@ -32,7 +32,7 @@ impl From<UserCtx> for UserId {
     rpc_package = "interceptor_rpc",
     rpc_server = true,
     rpc_client = true,
-    rpc_client_ctx = "UserAdvancedInterceptor<Ctx>",
+    rpc_client_ctx = "UserAdvancedInterceptor",
     proto_path = "protos/gen_proto/interceptor_rpc.proto"
 )]
 #[proto_imports(goon_types = ["RizzPing", "GoonPong"])]
@@ -40,14 +40,14 @@ pub trait InterceptorRpc {
     async fn ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
 }
 
-pub trait UserAdvancedInterceptor<Ctx>: Send + Sync + 'static {
-    fn intercept<T>(&self, ctx: Ctx, req: &mut tonic::Request<T>);
+pub trait UserAdvancedInterceptor: Send + Sync + 'static {
+    fn intercept<T>(&self, req: &mut tonic::Request<T>);
 }
 
-impl UserAdvancedInterceptor<UserId> for UserCtx {
-    fn intercept<T>(&self, ctx: UserId, request: &mut tonic::Request<T>) {
-        request.metadata_mut().insert("user-id", ctx.to_string().parse().unwrap());
-        println!("Interceptor called with user_id: {ctx}");
+impl UserAdvancedInterceptor for UserCtx {
+    fn intercept<T>(&self, request: &mut tonic::Request<T>) {
+        request.metadata_mut().insert("user-id", self.0.to_string().parse().unwrap());
+        println!("Interceptor called with user_id: {}", self.0);
     }
 }
 
@@ -82,6 +82,6 @@ mod tests {
         // This test just ensures the macro expands correctly
         println!("Interceptor example compiles successfully!");
         let mut client = InterceptorRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
-        let res = client.ping(UserCtx(1), RizzPing {}).await.unwrap();
+        let res = client.ping(0u64, RizzPing {}).await.unwrap();
     }
 }
