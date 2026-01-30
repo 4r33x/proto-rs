@@ -14,8 +14,8 @@ use super::utils::WrapperKind;
 use super::utils::entry_sort_key;
 use super::utils::is_wrapper_schema;
 use super::utils::proto_ident_base_type_name;
-use super::utils::proto_scalar_type;
 use super::utils::proto_map_types;
+use super::utils::proto_scalar_type;
 use super::utils::proto_type_name;
 use super::utils::resolve_transparent_ident;
 use super::utils::to_snake_case;
@@ -53,13 +53,13 @@ fn insert_specialization(
     args: &[GenericArg],
 ) -> bool {
     let mut base = base;
-    if !generic_entries.contains_key(&base) && base.proto_file_path.is_empty() && base.proto_package_name.is_empty() {
-        if let Some((entry_id, _)) = generic_entries
-            .iter()
-            .find(|(entry_id, _)| proto_ident_base_type_name(**entry_id) == proto_ident_base_type_name(base))
-        {
-            base = *entry_id;
-        }
+    if !generic_entries.contains_key(&base)
+        && base.proto_file_path.is_empty()
+        && base.proto_package_name.is_empty()
+        && let Some((entry_id, _)) =
+            generic_entries.iter().find(|(entry_id, _)| proto_ident_base_type_name(**entry_id) == proto_ident_base_type_name(base))
+    {
+        base = *entry_id;
     }
     if !generic_entries.contains_key(&base) {
         return false;
@@ -105,7 +105,7 @@ pub(crate) fn collect_imports(
 
     Ok(imports)
 }
-
+#[allow(clippy::too_many_lines)]
 pub(crate) fn collect_generic_specializations(
     entries: &[&ProtoSchema],
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
@@ -147,12 +147,7 @@ pub(crate) fn collect_generic_specializations(
                         if !generic_args_are_concrete(method.request_generic_args, ident_index) {
                             continue;
                         }
-                        insert_specialization(
-                            &mut specializations,
-                            &generic_entries,
-                            method.request,
-                            method.request_generic_args,
-                        );
+                        insert_specialization(&mut specializations, &generic_entries, method.request, method.request_generic_args);
                     }
                     if !method.response_generic_args.is_empty() {
                         if !generic_args_are_concrete(method.response_generic_args, ident_index) {
@@ -194,10 +189,7 @@ pub(crate) fn collect_generic_specializations(
                     if args.is_empty() {
                         return;
                     }
-                    let resolved: Vec<GenericArg> = args
-                        .iter()
-                        .map(|arg| apply_substitution_arg(*arg, Some(&substitution)))
-                        .collect();
+                    let resolved: Vec<GenericArg> = args.iter().map(|arg| apply_substitution_arg(*arg, Some(&substitution))).collect();
                     if !generic_args_are_concrete(&resolved, ident_index) {
                         return;
                     }
@@ -982,11 +974,7 @@ fn proto_const_segment(value: &str) -> String {
             out.push('_');
         }
     }
-    if out.is_empty() {
-        "Const".to_string()
-    } else {
-        out
-    }
+    if out.is_empty() { "Const".to_string() } else { out }
 }
 
 fn proto_ident_type_name(ident: ProtoIdent, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {

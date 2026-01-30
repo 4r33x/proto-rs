@@ -10,11 +10,6 @@ message Lruuint64uint6432 {
   repeated LruPairuint64uint64 items = 1;
 }
 
-message LruPairKV {
-  K key = 1;
-  V value = 2;
-}
-
 message LruPairuint64uint64 {
   uint64 key = 1;
   uint64 value = 2;

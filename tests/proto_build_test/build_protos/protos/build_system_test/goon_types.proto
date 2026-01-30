@@ -15,6 +15,7 @@ message GoonPong {
   Id id = 1;
   ServiceStatus status = 2;
   optional chrono.DateTime expire_at = 3;
+  chrono.DateTime expire_at2 = 4;
 }
 
 message Id {

@@ -131,6 +131,7 @@ pub struct GoonPong {
     status: ServiceStatus,
     // Test case for generic type args preservation (DateTime<Utc> should not become just DateTime)
     expire_at: Option<DateTime<Utc>>,
+    expire_at2: DateTime<Utc>,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/rizz_types.proto")]

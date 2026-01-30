@@ -131,6 +131,7 @@ pub mod goon_types {
         pub id: Id,
         pub status: ServiceStatus,
         pub expire_at: ::core::option::Option<DateTime<Utc>>,
+        pub expire_at2: DateTime<Utc>,
     }
 
     #[proto_message]
