@@ -124,16 +124,24 @@ fn generate_unary_client_method(
     let response_conversion = generate_proto_to_native_response(response_type);
 
     // Generate ctx parameter and interceptor call if configured
-    let (ctx_param, interceptor_call) = if let Some(config) = interceptor_config {
-        let function_name = syn::Ident::new(&config.function_name, proc_macro2::Span::call_site());
-        let ctx_type = &config.ctx_type;
-        (quote! { ctx: #ctx_type, }, quote! { #function_name(ctx, &mut request); })
+    let (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds) = if let Some(config) = interceptor_config {
+        let trait_ident = &config.trait_ident;
+        let ctx_ident = &config.ctx_ident;
+        let ctx_param = quote! { ctx: I, };
+        let interceptor_call = quote! {
+            let ctx_value: #ctx_ident = ::core::convert::Into::into(ctx.clone());
+            ctx.intercept(ctx_value, &mut request);
+        };
+        let interceptor_generics = quote! { , I, #ctx_ident };
+        let interceptor_bounds =
+            quote! { I: ::core::clone::Clone + ::core::convert::Into<#ctx_ident> + #trait_ident<#ctx_ident>, };
+        (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
-        (quote! {}, quote! {})
+        (quote! {}, quote! {}, quote! {}, quote! {})
     };
 
     quote! {
-        pub async fn #method_name<R>(
+        pub async fn #method_name<R #interceptor_generics>(
             &mut self,
             #ctx_param
             request: R,
@@ -141,6 +149,7 @@ fn generate_unary_client_method(
         where
             R: ::proto_rs::ProtoRequest<#request_type>,
             ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
+            #interceptor_bounds
         {
             #request_conversion
             #ready_check
@@ -175,16 +184,24 @@ fn generate_streaming_client_method(
     let stream_conversion = generate_stream_conversion(inner_response_type);
 
     // Generate ctx parameter and interceptor call if configured
-    let (ctx_param, interceptor_call) = if let Some(config) = interceptor_config {
-        let function_name = syn::Ident::new(&config.function_name, proc_macro2::Span::call_site());
-        let ctx_type = &config.ctx_type;
-        (quote! { ctx: #ctx_type, }, quote! { #function_name(ctx, &mut request); })
+    let (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds) = if let Some(config) = interceptor_config {
+        let trait_ident = &config.trait_ident;
+        let ctx_ident = &config.ctx_ident;
+        let ctx_param = quote! { ctx: I, };
+        let interceptor_call = quote! {
+            let ctx_value: #ctx_ident = ::core::convert::Into::into(ctx.clone());
+            ctx.intercept(ctx_value, &mut request);
+        };
+        let interceptor_generics = quote! { , I, #ctx_ident };
+        let interceptor_bounds =
+            quote! { I: ::core::clone::Clone + ::core::convert::Into<#ctx_ident> + #trait_ident<#ctx_ident>, };
+        (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
-        (quote! {}, quote! {})
+        (quote! {}, quote! {}, quote! {}, quote! {})
     };
 
     quote! {
-        pub async fn #method_name<R>(
+        pub async fn #method_name<R #interceptor_generics>(
             &mut self,
             #ctx_param
             request: R,
@@ -192,6 +209,7 @@ fn generate_streaming_client_method(
         where
             R: ::proto_rs::ProtoRequest<#request_type>,
             ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
+            #interceptor_bounds
         {
             #request_conversion
             #ready_check

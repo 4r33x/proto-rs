@@ -50,6 +50,18 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     // Generate user-facing trait
     let user_methods: Vec<_> = methods.iter().map(|m| &m.user_method_signature).collect();
 
+    let interceptor_trait = if let Some(interceptor_config) = config.rpc_client_ctx.as_ref() {
+        let trait_ident = &interceptor_config.trait_ident;
+        let ctx_ident = &interceptor_config.ctx_ident;
+        quote! {
+            #vis trait #trait_ident<#ctx_ident>: Send + Sync + 'static {
+                fn intercept<T>(&self, ctx: #ctx_ident, req: &mut tonic::Request<T>);
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // Generate client module if requested
     let client_module = if config.rpc_client {
         generate_client_module(trait_name, vis, &package_name, &methods, config.rpc_client_ctx.as_ref())
@@ -69,6 +81,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
         #inventory_submit
         #proto
         #(#validator_consts)*
+        #interceptor_trait
         #vis trait #trait_name {
             #(#user_associated_types)*
             #(#user_methods)*
