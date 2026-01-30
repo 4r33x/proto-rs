@@ -776,7 +776,7 @@ fn build_generics_tokens(type_ident: &syn::Ident, suffix: &str, config: &Unified
             }
             syn::GenericParam::Const(const_param) => {
                 let name = const_param.ident.to_string();
-                let const_ty = quote! { #const_param.ty };
+                let const_ty = &const_param.ty;
                 generic_consts.push(quote! {
                     #[cfg(feature = "build-schemas")]
                     const #generic_ident: ::proto_rs::schemas::Generic = ::proto_rs::schemas::Generic {
@@ -1077,7 +1077,9 @@ fn field_info_tokens(
     } else {
         wrapper_ident_tokens(&ty)
     };
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &ty, item_generics, assoc);
+    // Use inner_type for generic args extraction so we get the generic args of the actual type,
+    // not the wrapper (e.g., for Option<DateTime<Utc>>, we want [Utc], not [DateTime<Utc>])
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, assoc);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty, assoc);
     let extra_consts = quote! { #generic_consts #array_consts };
 

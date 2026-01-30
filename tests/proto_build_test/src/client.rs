@@ -7,25 +7,25 @@ pub mod custom_types {
     pub struct CustomEx {
         pub mutex: MEx,
         pub mutex_copy: u64,
-        pub mutex_custom: MEx,
-        pub mutex_copy_custom: u64,
+        pub mutex_custom: MEx<MEx>,
+        pub mutex_copy_custom: u64<u64>,
         pub arc: MEx,
         pub arc_copy: u64,
-        pub arc_custom: MEx,
-        pub arc_copy_custom: u64,
+        pub arc_custom: MEx<MEx>,
+        pub arc_copy_custom: u64<u64>,
         pub boxed: MEx,
         pub box_copy: u64,
-        pub boxed_custom: MEx,
-        pub box_copy_custom: u64,
+        pub boxed_custom: MEx<MEx>,
+        pub box_copy_custom: u64<u64>,
         pub custom_map: ::proto_rs::std::collections::HashMap<u32, MEx>,
-        pub custom_option: ::core::option::Option<MEx>,
-        pub custom_option_copy: ::core::option::Option<u64>,
-        pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u32>,
-        pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u32>,
-        pub custom_vec_copy: ::proto_rs::alloc::vec::Vec<u64>,
-        pub custom_vec_deque_copy: ::proto_rs::alloc::vec::Vec<u64>,
-        pub custom_vec: ::proto_rs::alloc::vec::Vec<MEx>,
-        pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx>,
+        pub custom_option: ::core::option::Option<MEx<MEx>>,
+        pub custom_option_copy: ::core::option::Option<u64<u64>>,
+        pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u32<u32>>,
+        pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u32<u32>>,
+        pub custom_vec_copy: ::proto_rs::alloc::vec::Vec<u64<u64>>,
+        pub custom_vec_deque_copy: ::proto_rs::alloc::vec::Vec<u64<u64>>,
+        pub custom_vec: ::proto_rs::alloc::vec::Vec<MEx<MEx>>,
+        pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx<MEx>>,
     }
 
     #[proto_message]
@@ -89,14 +89,28 @@ pub mod fastnum {
     }
 
 }
+pub mod getter_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct GetterTestStruct {
+        pub id: u64,
+        pub name: ::proto_rs::alloc::string::String,
+    }
+
+}
 pub mod goon_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
+    use chrono::DateTime;
+    use chrono::Utc;
 
     #[proto_message]
     pub struct GoonPong {
         pub id: Id,
         pub status: ServiceStatus,
+        pub expire_at: ::core::option::Option<DateTime<Utc>>,
     }
 
     #[proto_message]
@@ -112,10 +126,26 @@ pub mod goon_types {
 
     #[proto_message]
     pub enum ServiceStatus {
-        ACTIVE = 0,
-        PENDING = 1,
-        INACTIVE = 2,
-        COMPLETED = 3,
+        Active,
+        Pending,
+        Inactive,
+        Completed,
+    }
+
+}
+pub mod lru_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct Lru<K, V, const CAP: usize> {
+        pub items: ::proto_rs::alloc::vec::Vec<LruPair < K, V >>,
+    }
+
+    #[proto_message]
+    pub struct LruPair<K, V> {
+        pub key: K,
+        pub value: V,
     }
 
 }

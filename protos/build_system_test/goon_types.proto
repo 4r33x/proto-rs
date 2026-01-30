@@ -12,6 +12,7 @@ enum ServiceStatus {
 message GoonPong {
   Id id = 1;
   ServiceStatus status = 2;
+  optional DateTimeUtc expire_at = 3;
 }
 
 message Id {

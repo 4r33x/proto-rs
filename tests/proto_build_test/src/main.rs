@@ -8,6 +8,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use chrono::DateTime;
+use chrono::Utc;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use proto_rs::schemas::AttrLevel;
@@ -60,6 +62,33 @@ pub struct CustomEx {
     pub custom_vec_deque: CustomVecDeq<MEx>,
 }
 
+// Test case for const generics (Issue #1)
+#[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LruPair<K, V> {
+    pub key: K,
+    pub value: V,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lru<K, V, const CAP: usize> {
+    pub items: VecDeque<LruPair<K, V>>, // MRU..LRU
+}
+
+// Test case for getter attribute filtering (Issue #2)
+// Using getter attribute on a field - this is typically used with sun_ir types
+// but here we just test that the attribute is filtered from client output
+#[proto_message(proto_path = "protos/build_system_test/getter_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct GetterTestStruct {
+    // The getter here just returns the same field - a simple case to test attribute filtering
+    #[proto(tag = 1, getter = "$.id")]
+    pub id: u64,
+    #[proto(tag = 2)]
+    pub name: String,
+}
+
 #[proto_message(proto_path = "protos/build_system_test/goon_types.proto")]
 #[derive(Debug, Default, Clone, PartialEq, Copy)]
 pub enum ServiceStatus {
@@ -88,6 +117,8 @@ pub struct RizzPing {
 pub struct GoonPong {
     id: Id,
     status: ServiceStatus,
+    // Test case for generic type args preservation (DateTime<Utc> should not become just DateTime)
+    expire_at: Option<DateTime<Utc>>,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/rizz_types.proto")]
@@ -251,6 +282,9 @@ fn main() {
             "solana_address::Address",
             "solana_keypair::Keypair",
             "solana_signature::Signature",
+            "chrono::DateTime",
+            "chrono::TimeDelta",
+            "chrono::Utc",
         ])
         //(mod name, statement) format
         .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
@@ -338,7 +372,41 @@ fn main() {
     assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
     assert!(client_contents.contains("::tonic::Response<::core::primitive::u32>"));
 
-    for schema in inventory::iter::<ProtoSchema> {
-        println!("Collected: {}", schema.id.name);
-    }
+    // Test case #1: Verify const generics don't have malformed output
+    // The bug was: "const CAP: const CAP : usize.ty" instead of "const CAP: usize"
+    assert!(
+        !client_contents.contains("usize.ty"),
+        "Should not have malformed const generic type (.ty suffix)"
+    );
+    assert!(
+        !client_contents.contains(": const"),
+        "Should not have malformed const generic (: const pattern)"
+    );
+
+    // Test case #2: Verify getter attributes are filtered from client output
+    // The getter attribute is source-only and should never appear in generated clients
+    assert!(
+        !client_contents.contains("getter ="),
+        "Getter attributes should not appear in generated client"
+    );
+    assert!(
+        !client_contents.contains("getter="),
+        "Getter attributes should not appear in generated client (no space)"
+    );
+
+    // Test case #3: Verify simple enum variants are in PascalCase (not SCREAMING_CASE)
+    // The enum should have variants like "Active", "Pending" not "ACTIVE", "PENDING"
+    assert!(client_contents.contains("Active,"), "Enum variant should be PascalCase: Active");
+    assert!(client_contents.contains("Pending,"), "Enum variant should be PascalCase: Pending");
+    assert!(client_contents.contains("Inactive,"), "Enum variant should be PascalCase: Inactive");
+    assert!(client_contents.contains("Completed,"), "Enum variant should be PascalCase: Completed");
+    assert!(!client_contents.contains("ACTIVE"), "Enum variant should not be SCREAMING_CASE");
+    assert!(!client_contents.contains("PENDING"), "Enum variant should not be SCREAMING_CASE");
+
+    // Test case #4: Verify generic type arguments are preserved (DateTime<Utc> not just DateTime)
+    // When using with_imports for DateTime and Utc, fields like expire_at: Option<DateTime<Utc>>
+    // should render with the full generic type, not just DateTime
+    assert!(client_contents.contains("DateTime<Utc>"), "Generic type args should be preserved: DateTime<Utc>");
+    assert!(client_contents.contains("use chrono::DateTime;"), "chrono::DateTime should be imported");
+    assert!(client_contents.contains("use chrono::Utc;"), "chrono::Utc should be imported");
 }

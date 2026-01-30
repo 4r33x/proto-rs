@@ -9,7 +9,8 @@ tonic-prost = "0.14.2"
 prost = "0.14.1"
 tokio = { version = "1.47.1", features = ["full"] }
 tokio-stream = "0.1.17"
-proto_rs = { workspace = true, features = ["build-schemas", "fastnum", "solana", "papaya", "parking_lot"] }
+proto_rs = { workspace = true, features = ["build-schemas", "fastnum", "solana", "papaya", "parking_lot", "chrono"] }
+chrono = { workspace = true }
 inventory = "0.3.21"
 fastnum  = { version = "0.7.4" }
 papaya = "0.2.3"

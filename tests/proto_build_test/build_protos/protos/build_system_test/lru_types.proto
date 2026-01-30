@@ -1,0 +1,4 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package lru_types;
+

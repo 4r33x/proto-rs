@@ -29,6 +29,7 @@ use super::utils::proto_type_name;
 use super::utils::resolve_transparent_ident;
 use super::utils::resolve_transparent_or_wrapper_inner;
 use super::utils::rust_type_name;
+use super::utils::screaming_to_pascal_case;
 use super::utils::to_snake_case;
 use super::utils::wrapper_is_map;
 use super::utils::wrapper_kind_for;
@@ -749,10 +750,9 @@ fn render_rust_simple_enum(entry: &ProtoSchema, variants: &[&Variant], user_attr
 
     for variant in variants {
         indent_line(&mut output, indent + 4);
-        output.push_str(variant.name);
-        if let Some(discriminant) = variant.discriminant {
-            output.write_fmt(format_args!(" = {discriminant}")).unwrap();
-        }
+        // Convert SCREAMING_CASE to PascalCase for canonical Rust style
+        let pascal_name = screaming_to_pascal_case(variant.name);
+        output.push_str(&pascal_name);
         output.push_str(",\n");
     }
     indent_line(&mut output, indent);
@@ -1045,6 +1045,9 @@ fn render_field_attributes(
             if is_tag_only_attr(attr.tokens, expected_tag) {
                 continue;
             }
+            if has_source_only_attrs(attr.tokens) {
+                continue;
+            }
             emitted = true;
             if seen.insert(attr.tokens.to_string()) {
                 indent_line(output, indent);
@@ -1108,6 +1111,24 @@ fn is_tag_only_attr(tokens: &str, expected_tag: u32) -> bool {
         return false;
     };
     tag_value.parse::<u32>().ok().is_some_and(|tag| tag == expected_tag)
+}
+
+/// Attributes that should only be present in source code and not in generated clients.
+const SOURCE_ONLY_ATTR_KEYS: &[&str] = &["getter", "validator", "treat_as"];
+
+fn has_source_only_attrs(tokens: &str) -> bool {
+    let normalized = tokens.replace(' ', "");
+    let Some(inner) = normalized.strip_prefix("#[proto(").and_then(|value| value.strip_suffix(")]")) else {
+        return false;
+    };
+    for part in inner.split(',') {
+        for key in SOURCE_ONLY_ATTR_KEYS {
+            if part.starts_with(&format!("{key}=")) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[derive(Default)]
@@ -1439,7 +1460,7 @@ fn render_wrapper_field_base_type(
 fn render_wrapper_inner_type(
     wrapper: Option<ProtoIdent>,
     fallback_ident: ProtoIdent,
-    _generic_args: &[&ProtoIdent],
+    generic_args: &[&ProtoIdent],
     package_name: &str,
     package_by_ident: &BTreeMap<ProtoIdent, String>,
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
@@ -1450,13 +1471,25 @@ fn render_wrapper_inner_type(
         return None;
     }
 
-    let inner = Some(proto_type_to_rust_type(
+    // Get the base type name
+    let base_type = proto_type_to_rust_type(
         &fallback_ident.proto_type,
         package_name,
         package_by_ident,
         proto_type_index,
         client_imports,
-    ));
+    );
+
+    // If there are generic args, append them to the type
+    let inner = if generic_args.is_empty() {
+        base_type
+    } else {
+        let rendered_args: Vec<String> = generic_args
+            .iter()
+            .map(|arg| render_proto_type(**arg, package_name, package_by_ident, proto_type_index, client_imports))
+            .collect();
+        format!("{base_type}<{}>", rendered_args.join(", "))
+    };
 
     match kind {
         WrapperKind::Option
@@ -1469,7 +1502,7 @@ fn render_wrapper_inner_type(
         | WrapperKind::Mutex
         | WrapperKind::ArcSwap
         | WrapperKind::ArcSwapOption
-        | WrapperKind::CachePadded => inner,
+        | WrapperKind::CachePadded => Some(inner),
         WrapperKind::HashMap | WrapperKind::BTreeMap => None,
     }
 }
