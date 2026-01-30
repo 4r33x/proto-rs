@@ -15,18 +15,6 @@ pub struct RizzPing;
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct GoonPong;
 
-// Define the user ID type
-pub type UserId = u64;
-
-#[derive(Clone, Debug)]
-pub struct UserCtx(pub UserId);
-
-impl From<UserCtx> for UserId {
-    fn from(value: UserCtx) -> Self {
-        value.0
-    }
-}
-
 // Define trait with the proto_rpc macro using the rpc_client_ctx parameter
 #[proto_rpc(
     rpc_package = "interceptor_rpc",
@@ -40,11 +28,25 @@ pub trait InterceptorRpc {
     async fn ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
 }
 
-pub trait UserAdvancedInterceptor: Send + Sync + 'static {
+// Define the user ID type
+pub type UserId = u64;
+
+#[derive(Clone, Debug)]
+pub struct UserCtx(pub UserId);
+
+impl From<UserCtx> for UserId {
+    fn from(value: UserCtx) -> Self {
+        value.0
+    }
+}
+
+pub trait UserAdvancedInterceptor: Send + Sync + 'static + Sized {
+    type Payload: From<Self>;
     fn intercept<T>(&self, req: &mut tonic::Request<T>);
 }
 
 impl UserAdvancedInterceptor for UserCtx {
+    type Payload = u64;
     fn intercept<T>(&self, request: &mut tonic::Request<T>) {
         request.metadata_mut().insert("user-id", self.0.to_string().parse().unwrap());
         println!("Interceptor called with user_id: {}", self.0);
