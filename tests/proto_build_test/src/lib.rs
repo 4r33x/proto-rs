@@ -159,7 +159,7 @@ pub mod lru_types {
 
     #[proto_message]
     pub struct Lru<K, V, const CAP: usize> {
-        pub items: ::proto_rs::alloc::vec::Vec<LruPair < K, V >>,
+        pub items: ::proto_rs::alloc::vec::Vec<LruPair<K, V>>,
     }
 
     #[proto_message]
@@ -170,13 +170,13 @@ pub mod lru_types {
 
     #[proto_message]
     pub struct WithComplexOption {
-        pub inner: ::core::option::Option<Arc>,
+        pub inner: ::core::option::Option<Arc<WithConcreteLru>>,
     }
 
     #[proto_message]
     pub struct WithConcreteLru {
-        pub lru1: Lru<u64, u64>,
-        pub lru2: Lru<u64, u64>,
+        pub lru1: Lru<u64, u64, 32>,
+        pub lru2: Lru<u64, u64, 128>,
     }
 
 }
