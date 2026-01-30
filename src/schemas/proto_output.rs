@@ -287,7 +287,7 @@ fn collect_wrapper_definition_for_field(
     let Some(kind) = wrapper_kind_for(field.wrapper, field.proto_ident) else {
         return;
     };
-    if matches!(kind, WrapperKind::Mutex) {
+    if wrapper_kind_inline_for_field(field, kind) {
         return;
     }
     let inner = wrapper_inner_for_field(field, kind, substitution);
@@ -690,7 +690,7 @@ fn wrapper_message_type_name_for_field(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
     let kind = wrapper_kind_for(field.wrapper, field.proto_ident)?;
-    if matches!(kind, WrapperKind::Mutex) {
+    if wrapper_kind_inline_for_field(field, kind) {
         return None;
     }
     let inner = wrapper_inner_for_field(field, kind, substitution)?;
@@ -773,6 +773,17 @@ fn wrapper_schema_message_name(schema: &ProtoSchema) -> Option<String> {
             let segment = proto_type_segment(&field.proto_ident.proto_type);
             Some(format!("{prefix}{segment}"))
         }
+    }
+}
+
+fn wrapper_kind_inline_for_field(field: &Field, kind: WrapperKind) -> bool {
+    match kind {
+        WrapperKind::Option | WrapperKind::ArcSwapOption => matches!(field.proto_label, ProtoLabel::Optional),
+        WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet => {
+            matches!(field.proto_label, ProtoLabel::Repeated)
+        }
+        WrapperKind::HashMap | WrapperKind::BTreeMap => proto_map_types(&field.proto_ident.proto_type).is_some(),
+        WrapperKind::Box | WrapperKind::Arc | WrapperKind::Mutex | WrapperKind::ArcSwap | WrapperKind::CachePadded => true,
     }
 }
 

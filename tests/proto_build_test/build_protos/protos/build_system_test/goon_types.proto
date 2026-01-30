@@ -4,10 +4,6 @@ package goon_types;
 
 import "chrono.proto";
 
-message OptionDateTime {
-  optional chrono.DateTime value = 1;
-}
-
 enum ServiceStatus {
   ACTIVE = 0;
   PENDING = 1;
@@ -18,7 +14,7 @@ enum ServiceStatus {
 message GoonPong {
   Id id = 1;
   ServiceStatus status = 2;
-  optional OptionDateTime expire_at = 3;
+  optional chrono.DateTime expire_at = 3;
 }
 
 message Id {

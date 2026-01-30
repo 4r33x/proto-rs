@@ -49,7 +49,7 @@ message Order {
 }
 
 message Orders {
-  repeated VecOrder orders = 1;
+  repeated Order orders = 1;
 }
 
 message StdMutexHolder {
