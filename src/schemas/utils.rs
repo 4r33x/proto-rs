@@ -308,3 +308,22 @@ pub(crate) fn to_snake_case(s: &str) -> String {
 
     result
 }
+
+/// Converts SCREAMING_SNAKE_CASE to PascalCase.
+/// Example: "ACTIVE" -> "Active", "SOME_STATUS" -> "SomeStatus"
+pub(crate) fn screaming_to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut result = first.to_ascii_uppercase().to_string();
+                    result.extend(chars.map(|c| c.to_ascii_lowercase()));
+                    result
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
+}

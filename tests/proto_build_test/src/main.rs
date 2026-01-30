@@ -117,6 +117,7 @@ pub struct RizzPing {
 pub struct GoonPong {
     id: Id,
     status: ServiceStatus,
+    // Test case for generic type args preservation (DateTime<Utc> should not become just DateTime)
     expire_at: Option<DateTime<Utc>>,
 }
 
@@ -393,7 +394,19 @@ fn main() {
         "Getter attributes should not appear in generated client (no space)"
     );
 
-    for schema in inventory::iter::<ProtoSchema> {
-        println!("Collected: {}", schema.id.name);
-    }
+    // Test case #3: Verify simple enum variants are in PascalCase (not SCREAMING_CASE)
+    // The enum should have variants like "Active", "Pending" not "ACTIVE", "PENDING"
+    assert!(client_contents.contains("Active,"), "Enum variant should be PascalCase: Active");
+    assert!(client_contents.contains("Pending,"), "Enum variant should be PascalCase: Pending");
+    assert!(client_contents.contains("Inactive,"), "Enum variant should be PascalCase: Inactive");
+    assert!(client_contents.contains("Completed,"), "Enum variant should be PascalCase: Completed");
+    assert!(!client_contents.contains("ACTIVE"), "Enum variant should not be SCREAMING_CASE");
+    assert!(!client_contents.contains("PENDING"), "Enum variant should not be SCREAMING_CASE");
+
+    // Test case #4: Verify generic type arguments are preserved (DateTime<Utc> not just DateTime)
+    // When using with_imports for DateTime and Utc, fields like expire_at: Option<DateTime<Utc>>
+    // should render with the full generic type, not just DateTime
+    assert!(client_contents.contains("DateTime<Utc>"), "Generic type args should be preserved: DateTime<Utc>");
+    assert!(client_contents.contains("use chrono::DateTime;"), "chrono::DateTime should be imported");
+    assert!(client_contents.contains("use chrono::Utc;"), "chrono::Utc should be imported");
 }

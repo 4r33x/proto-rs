@@ -1077,7 +1077,9 @@ fn field_info_tokens(
     } else {
         wrapper_ident_tokens(&ty)
     };
-    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &ty, item_generics, assoc);
+    // Use inner_type for generic args extraction so we get the generic args of the actual type,
+    // not the wrapper (e.g., for Option<DateTime<Utc>>, we want [Utc], not [DateTime<Utc>])
+    let (generic_consts, generic_args) = generic_args_tokens_from_type(type_ident, suffix, idx, "FIELD", &inner_type, item_generics, assoc);
     let (array_consts, array_len, array_is_bytes, array_elem) = array_info_tokens(type_ident, suffix, idx, &ty, assoc);
     let extra_consts = quote! { #generic_consts #array_consts };
 
