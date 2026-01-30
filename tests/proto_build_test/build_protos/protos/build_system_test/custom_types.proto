@@ -2,34 +2,6 @@
 syntax = "proto3";
 package custom_types;
 
-message ArcMEx {
-  MEx value = 1;
-}
-
-message ArcU64 {
-  uint64 value = 1;
-}
-
-message BoxMEx {
-  MEx value = 1;
-}
-
-message BoxU64 {
-  uint64 value = 1;
-}
-
-message HashMapU32MEx {
-  map<uint32, MEx> value = 1;
-}
-
-message MutexMEx {
-  MEx value = 1;
-}
-
-message MutexU64 {
-  uint64 value = 1;
-}
-
 message OptionMEx {
   optional MEx value = 1;
 }
@@ -63,19 +35,19 @@ message VecU64 {
 }
 
 message CustomEx {
-  MutexMEx mutex = 1;
-  MutexU64 mutex_copy = 2;
-  MutexMEx mutex_custom = 3;
-  MutexU64 mutex_copy_custom = 4;
-  ArcMEx arc = 5;
-  ArcU64 arc_copy = 6;
-  ArcMEx arc_custom = 7;
-  ArcU64 arc_copy_custom = 8;
-  BoxMEx boxed = 9;
-  BoxU64 box_copy = 10;
-  BoxMEx boxed_custom = 11;
-  BoxU64 box_copy_custom = 12;
-  HashMapU32MEx custom_map = 13;
+  MEx mutex = 1;
+  uint64 mutex_copy = 2;
+  MEx mutex_custom = 3;
+  uint64 mutex_copy_custom = 4;
+  MEx arc = 5;
+  uint64 arc_copy = 6;
+  MEx arc_custom = 7;
+  uint64 arc_copy_custom = 8;
+  MEx boxed = 9;
+  uint64 box_copy = 10;
+  MEx boxed_custom = 11;
+  uint64 box_copy_custom = 12;
+  map<uint32, MEx> custom_map = 13;
   OptionMEx custom_option = 14;
   OptionU64 custom_option_copy = 15;
   VecU32 custom_vec_bytes = 16;

@@ -36,7 +36,19 @@ message EnvelopeGoonPong {
   string trace_id = 2;
 }
 
+message LotMutexHolder {
+  custom_types.MEx stdd = 1;
+}
+
 message Order {
   uint32 id = 1;
+}
+
+message Orders {
+  repeated Order orders = 1;
+}
+
+message StdMutexHolder {
+  custom_types.MEx stdd = 1;
 }
 
