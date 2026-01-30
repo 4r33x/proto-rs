@@ -201,6 +201,17 @@ struct StdMutexHolder {
 struct LotMutexHolder {
     pub stdd: parking_lot::Mutex<MEx>,
 }
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
+#[derive(Debug)]
+struct Order {
+    id: u32,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
+#[derive(Debug)]
+struct Orders {
+    orders: Vec<Order>,
+}
 
 // Define trait with the proto_rpc macro
 #[proto_rpc(
