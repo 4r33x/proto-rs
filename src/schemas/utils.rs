@@ -214,9 +214,7 @@ pub(crate) fn wrapper_schema_info(
 }
 
 pub(crate) fn wrapper_schema_info_from_entry(schema: &ProtoSchema) -> Option<WrapperSchemaInfo> {
-    if wrapper_kind_from_schema_name(schema.id.name).is_none() {
-        return None;
-    }
+    wrapper_kind_from_schema_name(schema.id.name)?;
 
     let fields = match schema.content {
         ProtoEntry::Struct { fields } if fields.len() == 1 => fields,

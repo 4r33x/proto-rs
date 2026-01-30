@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.2]
+- Fixed bugs in build system
+
 ## [0.11.1]
 - Improved encoding codegen path by binding temporaries 
 
