@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use super::Field;
+use super::GenericArg;
 use super::ProtoEntry;
 use super::ProtoIdent;
 use super::ProtoLabel;
@@ -24,7 +25,34 @@ use super::utils::wrapper_prefix_from_schema_name;
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct GenericSpecialization {
     pub(crate) name: String,
-    pub(crate) args: Vec<ProtoIdent>,
+    pub(crate) args: Vec<GenericArg>,
+}
+
+fn insert_specialization(
+    specializations: &mut BTreeMap<ProtoIdent, Vec<GenericSpecialization>>,
+    generic_entries: &BTreeMap<ProtoIdent, &ProtoSchema>,
+    base: ProtoIdent,
+    args: &[GenericArg],
+) -> bool {
+    let mut base = base;
+    if !generic_entries.contains_key(&base) && base.proto_file_path.is_empty() && base.proto_package_name.is_empty() {
+        if let Some((entry_id, _)) = generic_entries
+            .iter()
+            .find(|(entry_id, _)| proto_ident_base_type_name(**entry_id) == proto_ident_base_type_name(base))
+        {
+            base = *entry_id;
+        }
+    }
+    if !generic_entries.contains_key(&base) {
+        return false;
+    }
+    let name = specialized_proto_name(base, args);
+    let entry = specializations.entry(base).or_default();
+    if entry.iter().all(|existing| existing.name != name) {
+        entry.push(GenericSpecialization { name, args: args.to_vec() });
+        return true;
+    }
+    false
 }
 
 pub(crate) fn collect_imports(
@@ -71,24 +99,12 @@ pub(crate) fn collect_generic_specializations(
         .map(|entry| (entry.id, *entry))
         .collect();
 
-    let mut register_specialization = |base: ProtoIdent, args: &[&ProtoIdent]| {
-        if !generic_entries.contains_key(&base) {
-            return;
-        }
-        let concrete_args: Vec<ProtoIdent> = args.iter().map(|arg| **arg).collect();
-        let name = specialized_proto_name(base, &concrete_args);
-        let entry = specializations.entry(base).or_default();
-        if entry.iter().all(|existing| existing.name != name) {
-            entry.push(GenericSpecialization { name, args: concrete_args });
-        }
-    };
-
     for entry in entries {
         match entry.content {
             ProtoEntry::Struct { fields } => {
                 for field in fields {
                     if !field.generic_args.is_empty() {
-                        register_specialization(field.proto_ident, field.generic_args);
+                        insert_specialization(&mut specializations, &generic_entries, field.proto_ident, field.generic_args);
                     }
                 }
             }
@@ -96,7 +112,7 @@ pub(crate) fn collect_generic_specializations(
                 for variant in variants {
                     for field in variant.fields {
                         if !field.generic_args.is_empty() {
-                            register_specialization(field.proto_ident, field.generic_args);
+                            insert_specialization(&mut specializations, &generic_entries, field.proto_ident, field.generic_args);
                         }
                     }
                 }
@@ -104,14 +120,80 @@ pub(crate) fn collect_generic_specializations(
             ProtoEntry::Service { methods, .. } => {
                 for method in methods {
                     if !method.request_generic_args.is_empty() {
-                        register_specialization(method.request, method.request_generic_args);
+                        insert_specialization(
+                            &mut specializations,
+                            &generic_entries,
+                            method.request,
+                            method.request_generic_args,
+                        );
                     }
                     if !method.response_generic_args.is_empty() {
-                        register_specialization(method.response, method.response_generic_args);
+                        insert_specialization(
+                            &mut specializations,
+                            &generic_entries,
+                            method.response,
+                            method.response_generic_args,
+                        );
                     }
                 }
             }
             ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } => {}
+        }
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let snapshot = specializations.clone();
+        for entry in entries {
+            let type_generics: Vec<&str> = entry
+                .generics
+                .iter()
+                .filter(|generic| matches!(generic.kind, super::GenericKind::Type))
+                .map(|generic| generic.name)
+                .collect();
+            if type_generics.is_empty() {
+                continue;
+            }
+            let Some(specs) = snapshot.get(&entry.id) else {
+                continue;
+            };
+            for spec in specs {
+                let substitution = build_substitution(&type_generics, &spec.args);
+                let mut register_args = |target: ProtoIdent, args: &[GenericArg]| {
+                    if args.is_empty() {
+                        return;
+                    }
+                    let resolved: Vec<GenericArg> = args
+                        .iter()
+                        .map(|arg| apply_substitution_arg(*arg, Some(&substitution)))
+                        .collect();
+                    if insert_specialization(&mut specializations, &generic_entries, target, &resolved) {
+                        changed = true;
+                    }
+                };
+                match entry.content {
+                    ProtoEntry::Struct { fields } => {
+                        for field in fields {
+                            register_args(field.proto_ident, field.generic_args);
+                        }
+                    }
+                    ProtoEntry::ComplexEnum { variants } => {
+                        for variant in variants {
+                            for field in variant.fields {
+                                register_args(field.proto_ident, field.generic_args);
+                            }
+                        }
+                    }
+                    ProtoEntry::Service { methods, .. } => {
+                        for method in methods {
+                            register_args(method.request, method.request_generic_args);
+                            register_args(method.response, method.response_generic_args);
+                        }
+                    }
+                    ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } => {}
+                }
+            }
         }
     }
 
@@ -124,7 +206,7 @@ pub(crate) fn collect_generic_specializations(
         let base_entry = ident_index.get(base);
         if let Some(base_entry) = base_entry {
             let param_count = base_entry.generics.iter().filter(|generic| matches!(generic.kind, super::GenericKind::Type)).count();
-            specs.retain(|spec| spec.args.len() == param_count);
+            specs.retain(|spec| spec.args.iter().filter(|arg| matches!(arg, GenericArg::Type(_))).count() == param_count);
         }
     }
 
@@ -346,7 +428,7 @@ fn wrapper_inner_for_field(field: &Field, kind: WrapperKind, substitution: Optio
 
 fn wrapper_inner_for_method(
     ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     wrapper: Option<ProtoIdent>,
     kind: WrapperKind,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
@@ -495,10 +577,17 @@ fn render_entry(
     vec![definition]
 }
 
-fn build_substitution<'a>(type_generics: &'a [&'a str], args: &'a [ProtoIdent]) -> BTreeMap<&'a str, ProtoIdent> {
+fn build_substitution<'a>(type_generics: &'a [&'a str], args: &'a [GenericArg]) -> BTreeMap<&'a str, ProtoIdent> {
     let mut substitution = BTreeMap::new();
+    let type_args: Vec<ProtoIdent> = args
+        .iter()
+        .filter_map(|arg| match arg {
+            GenericArg::Type(ident) => Some(*ident),
+            GenericArg::Const(_) => None,
+        })
+        .collect();
     for (idx, name) in type_generics.iter().enumerate() {
-        if let Some(arg) = args.get(idx) {
+        if let Some(arg) = type_args.get(idx) {
             substitution.insert(*name, *arg);
         }
     }
@@ -668,7 +757,7 @@ fn field_type_name(
 
 fn method_type_name(
     ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     wrapper: Option<ProtoIdent>,
     package_name: &str,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
@@ -699,7 +788,7 @@ fn wrapper_message_type_name_for_field(
 
 fn wrapper_message_type_name_for_method(
     ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     wrapper: Option<ProtoIdent>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
@@ -723,19 +812,23 @@ fn method_wrapper_schema_type_name(
     }
 }
 
-fn wrapper_first_generic(wrapper: Option<ProtoIdent>, generic_args: &[&ProtoIdent]) -> Option<ProtoIdent> {
-    wrapper.and_then(|ident| ident.generics.first().copied()).or_else(|| generic_args.first().copied().copied())
+fn wrapper_first_generic(wrapper: Option<ProtoIdent>, generic_args: &[GenericArg]) -> Option<ProtoIdent> {
+    wrapper.and_then(|ident| ident.generics.first().copied()).or_else(|| first_type_arg(generic_args))
 }
 
-fn wrapper_map_args(wrapper: Option<ProtoIdent>, generic_args: &[&ProtoIdent]) -> Option<(ProtoIdent, ProtoIdent)> {
+fn wrapper_map_args(wrapper: Option<ProtoIdent>, generic_args: &[GenericArg]) -> Option<(ProtoIdent, ProtoIdent)> {
     wrapper
         .and_then(|ident| match ident.generics {
             [key, value, ..] => Some((*key, *value)),
             _ => None,
         })
         .or_else(|| {
-            let key = generic_args.first().copied().copied()?;
-            let value = generic_args.get(1).copied().copied()?;
+            let mut type_args = generic_args.iter().filter_map(|arg| match arg {
+                GenericArg::Type(ident) => Some(*ident),
+                GenericArg::Const(_) => None,
+            });
+            let key = type_args.next()?;
+            let value = type_args.next()?;
             Some((key, value))
         })
 }
@@ -808,7 +901,7 @@ fn proto_type_segment(proto_type: &ProtoType) -> String {
 
 fn proto_ident_type_name_with_generics(
     ident: ProtoIdent,
-    generic_args: &[&ProtoIdent],
+    generic_args: &[GenericArg],
     package_name: &str,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
@@ -825,12 +918,7 @@ fn proto_ident_type_name_with_generics(
         return proto_ident_type_name(ident, package_name, ident_index);
     }
 
-    let mut resolved_args = Vec::new();
-    for arg in generic_args {
-        let resolved = apply_substitution(**arg, substitution);
-        resolved_args.push(resolved);
-    }
-
+    let resolved_args: Vec<GenericArg> = generic_args.iter().map(|arg| apply_substitution_arg(*arg, substitution)).collect();
     let specialized_name = specialized_proto_name(ident, &resolved_args);
     let ident = resolve_transparent_ident(ident, ident_index);
     if ident.proto_package_name.is_empty() || ident.proto_package_name == package_name {
@@ -840,12 +928,31 @@ fn proto_ident_type_name_with_generics(
     }
 }
 
-fn specialized_proto_name(base: ProtoIdent, args: &[ProtoIdent]) -> String {
+fn specialized_proto_name(base: ProtoIdent, args: &[GenericArg]) -> String {
     let mut name = proto_ident_base_type_name(base);
     for arg in args {
-        name.push_str(&proto_ident_base_type_name(*arg));
+        match arg {
+            GenericArg::Type(ident) => name.push_str(&proto_ident_base_type_name(*ident)),
+            GenericArg::Const(value) => name.push_str(&proto_const_segment(value)),
+        }
     }
     name
+}
+
+fn proto_const_segment(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() {
+        "Const".to_string()
+    } else {
+        out
+    }
 }
 
 fn proto_ident_type_name(ident: ProtoIdent, package_name: &str, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
@@ -864,6 +971,20 @@ fn apply_substitution(ident: ProtoIdent, substitution: Option<&BTreeMap<&str, Pr
     substitution.get(proto_ident_base_type_name(ident).as_str()).copied().unwrap_or(ident)
 }
 
+fn apply_substitution_arg(arg: GenericArg, substitution: Option<&BTreeMap<&str, ProtoIdent>>) -> GenericArg {
+    match arg {
+        GenericArg::Type(ident) => GenericArg::Type(apply_substitution(ident, substitution)),
+        GenericArg::Const(value) => GenericArg::Const(value),
+    }
+}
+
+fn first_type_arg(args: &[GenericArg]) -> Option<ProtoIdent> {
+    args.iter().find_map(|arg| match arg {
+        GenericArg::Type(ident) => Some(*ident),
+        GenericArg::Const(_) => None,
+    })
+}
+
 fn collect_field_imports(
     imports: &mut BTreeSet<String>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
@@ -875,7 +996,10 @@ fn collect_field_imports(
         let ident = resolve_transparent_ident(field.proto_ident, ident_index);
         collect_proto_ident_imports(imports, ident_index, &ident, file_name, package_name)?;
         for arg in field.generic_args {
-            let arg_ident = resolve_transparent_ident(**arg, ident_index);
+            let GenericArg::Type(arg_ident) = arg else {
+                continue;
+            };
+            let arg_ident = resolve_transparent_ident(*arg_ident, ident_index);
             collect_proto_ident_imports(imports, ident_index, &arg_ident, file_name, package_name)?;
         }
     }
@@ -895,11 +1019,17 @@ fn collect_service_imports(
         collect_proto_ident_imports(imports, ident_index, &request, file_name, package_name)?;
         collect_proto_ident_imports(imports, ident_index, &response, file_name, package_name)?;
         for arg in method.request_generic_args {
-            let arg_ident = resolve_transparent_ident(**arg, ident_index);
+            let GenericArg::Type(arg_ident) = arg else {
+                continue;
+            };
+            let arg_ident = resolve_transparent_ident(*arg_ident, ident_index);
             collect_proto_ident_imports(imports, ident_index, &arg_ident, file_name, package_name)?;
         }
         for arg in method.response_generic_args {
-            let arg_ident = resolve_transparent_ident(**arg, ident_index);
+            let GenericArg::Type(arg_ident) = arg else {
+                continue;
+            };
+            let arg_ident = resolve_transparent_ident(*arg_ident, ident_index);
             collect_proto_ident_imports(imports, ident_index, &arg_ident, file_name, package_name)?;
         }
     }

@@ -115,6 +115,12 @@ pub struct ProtoIdent {
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum GenericArg {
+    Type(ProtoIdent),
+    Const(&'static str),
+}
+
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ProtoType {
     Message(&'static str),
     Optional(&'static ProtoType),
@@ -657,7 +663,7 @@ pub struct Field {
     pub proto_ident: ProtoIdent,
     pub rust_proto_ident: ProtoIdent,
     pub wrapper: Option<ProtoIdent>,
-    pub generic_args: &'static [&'static ProtoIdent],
+    pub generic_args: &'static [GenericArg],
     pub proto_label: ProtoLabel,
     pub tag: u32,
     pub attributes: &'static [Attribute],
@@ -670,10 +676,10 @@ pub struct Field {
 pub struct ServiceMethod {
     pub name: &'static str,
     pub request: ProtoIdent,
-    pub request_generic_args: &'static [&'static ProtoIdent],
+    pub request_generic_args: &'static [GenericArg],
     pub request_wrapper: Option<ProtoIdent>,
     pub response: ProtoIdent,
-    pub response_generic_args: &'static [&'static ProtoIdent],
+    pub response_generic_args: &'static [GenericArg],
     pub response_wrapper: Option<ProtoIdent>,
     pub client_streaming: bool,
     pub server_streaming: bool,

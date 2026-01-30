@@ -7,25 +7,25 @@ pub mod custom_types {
     pub struct CustomEx {
         pub mutex: MEx,
         pub mutex_copy: u64,
-        pub mutex_custom: MEx<MEx>,
-        pub mutex_copy_custom: u64<u64>,
+        pub mutex_custom: MEx,
+        pub mutex_copy_custom: u64,
         pub arc: MEx,
         pub arc_copy: u64,
-        pub arc_custom: MEx<MEx>,
-        pub arc_copy_custom: u64<u64>,
+        pub arc_custom: MEx,
+        pub arc_copy_custom: u64,
         pub boxed: MEx,
         pub box_copy: u64,
-        pub boxed_custom: MEx<MEx>,
-        pub box_copy_custom: u64<u64>,
+        pub boxed_custom: MEx,
+        pub box_copy_custom: u64,
         pub custom_map: ::proto_rs::std::collections::HashMap<u32, MEx>,
-        pub custom_option: ::core::option::Option<MEx<MEx>>,
-        pub custom_option_copy: ::core::option::Option<u64<u64>>,
-        pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u32<u32>>,
-        pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u32<u32>>,
-        pub custom_vec_copy: ::proto_rs::alloc::vec::Vec<u64<u64>>,
-        pub custom_vec_deque_copy: ::proto_rs::alloc::vec::Vec<u64<u64>>,
-        pub custom_vec: ::proto_rs::alloc::vec::Vec<MEx<MEx>>,
-        pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx<MEx>>,
+        pub custom_option: ::core::option::Option<MEx>,
+        pub custom_option_copy: ::core::option::Option<u64>,
+        pub custom_vec_bytes: ::proto_rs::alloc::vec::Vec<u8>,
+        pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u8>,
+        pub custom_vec_copy: ::proto_rs::alloc::vec::Vec<u64>,
+        pub custom_vec_deque_copy: ::proto_rs::alloc::vec::Vec<u64>,
+        pub custom_vec: ::proto_rs::alloc::vec::Vec<MEx>,
+        pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
     #[proto_message]
@@ -73,6 +73,26 @@ pub mod extra_types {
     pub struct Envelope<T> {
         pub payload: T,
         pub trace_id: ::proto_rs::alloc::string::String,
+    }
+
+    #[proto_message]
+    pub struct LotMutexHolder {
+        pub stdd: MEx,
+    }
+
+    #[proto_message]
+    pub struct Order {
+        pub id: u32,
+    }
+
+    #[proto_message]
+    pub struct Orders {
+        pub orders: ::proto_rs::alloc::vec::Vec<Order>,
+    }
+
+    #[proto_message]
+    pub struct StdMutexHolder {
+        pub stdd: MEx,
     }
 
 }
@@ -139,13 +159,24 @@ pub mod lru_types {
 
     #[proto_message]
     pub struct Lru<K, V, const CAP: usize> {
-        pub items: ::proto_rs::alloc::vec::Vec<LruPair < K, V >>,
+        pub items: ::proto_rs::alloc::vec::Vec<LruPair<K, V>>,
     }
 
     #[proto_message]
     pub struct LruPair<K, V> {
         pub key: K,
         pub value: V,
+    }
+
+    #[proto_message]
+    pub struct WithComplexOption {
+        pub inner: ::core::option::Option<Arc<WithConcreteLru>>,
+    }
+
+    #[proto_message]
+    pub struct WithConcreteLru {
+        pub lru1: Lru<u64, u64, 32>,
+        pub lru2: Lru<u64, u64, 128>,
     }
 
 }
@@ -168,6 +199,8 @@ pub mod sigma_rpc {
     use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
+    use crate::extra_types::LotMutexHolder;
+    use crate::extra_types::StdMutexHolder;
     use crate::fastnum::D128;
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
@@ -220,13 +253,13 @@ pub mod sigma_rpc {
 
         async fn mutex_echo(
             &self,
-            request: ::tonic::Request<MEx>,
-        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
+            request: ::tonic::Request<StdMutexHolder>,
+        ) -> ::core::result::Result<::tonic::Response<StdMutexHolder>, ::tonic::Status>;
 
         async fn parking_log_mutex_echo(
             &self,
-            request: ::tonic::Request<MEx>,
-        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
+            request: ::tonic::Request<LotMutexHolder>,
+        ) -> ::core::result::Result<::tonic::Response<LotMutexHolder>, ::tonic::Status>;
 
         async fn arc_echo(
             &self,
