@@ -62,7 +62,6 @@ pub struct CustomEx {
     pub custom_vec_deque: CustomVecDeq<MEx>,
 }
 
-// Test case for const generics (Issue #1)
 #[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct LruPair<K, V> {
