@@ -76,8 +76,23 @@ pub mod extra_types {
     }
 
     #[proto_message]
+    pub struct LotMutexHolder {
+        pub stdd: MEx,
+    }
+
+    #[proto_message]
     pub struct Order {
         pub id: u32,
+    }
+
+    #[proto_message]
+    pub struct Orders {
+        pub orders: ::proto_rs::alloc::vec::Vec<Order>,
+    }
+
+    #[proto_message]
+    pub struct StdMutexHolder {
+        pub stdd: MEx,
     }
 
 }
@@ -173,6 +188,8 @@ pub mod sigma_rpc {
     use crate::extra_types::BuildRequest;
     use crate::extra_types::BuildResponse;
     use crate::extra_types::Envelope;
+    use crate::extra_types::LotMutexHolder;
+    use crate::extra_types::StdMutexHolder;
     use crate::fastnum::D128;
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
@@ -225,13 +242,13 @@ pub mod sigma_rpc {
 
         async fn mutex_echo(
             &self,
-            request: ::tonic::Request<MEx>,
-        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
+            request: ::tonic::Request<StdMutexHolder>,
+        ) -> ::core::result::Result<::tonic::Response<StdMutexHolder>, ::tonic::Status>;
 
         async fn parking_log_mutex_echo(
             &self,
-            request: ::tonic::Request<MEx>,
-        ) -> ::core::result::Result<::tonic::Response<MEx>, ::tonic::Status>;
+            request: ::tonic::Request<LotMutexHolder>,
+        ) -> ::core::result::Result<::tonic::Response<LotMutexHolder>, ::tonic::Status>;
 
         async fn arc_echo(
             &self,
