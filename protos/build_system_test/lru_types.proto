@@ -1,0 +1,13 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package lru_types;
+
+message WithComplexOption {
+  optional WithConcreteLru inner = 1;
+}
+
+message WithConcreteLru {
+  LruU64U64 lru1 = 1;
+  LruU64U64 lru2 = 2;
+}
+

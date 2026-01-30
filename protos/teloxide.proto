@@ -1,0 +1,8 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package teloxide;
+
+message UserId {
+  uint64 field_0 = 1;
+}
+

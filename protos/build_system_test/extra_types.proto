@@ -22,6 +22,14 @@ message LotMutexHolder {
   MEx stdd = 1;
 }
 
+message Order {
+  uint32 id = 1;
+}
+
+message Orders {
+  repeated Order orders = 1;
+}
+
 message StdMutexHolder {
   MEx stdd = 1;
 }

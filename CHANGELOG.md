@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.4]
+- Add teloxide UserId
+
 ## [0.11.3]
 - More fixes in build system
 

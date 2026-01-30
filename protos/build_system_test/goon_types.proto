@@ -13,6 +13,7 @@ message GoonPong {
   Id id = 1;
   ServiceStatus status = 2;
   optional DateTimeUtc expire_at = 3;
+  DateTimeUtc expire_at2 = 4;
 }
 
 message Id {
