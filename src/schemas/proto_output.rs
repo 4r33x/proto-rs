@@ -287,6 +287,9 @@ fn collect_wrapper_definition_for_field(
     let Some(kind) = wrapper_kind_for(field.wrapper, field.proto_ident) else {
         return;
     };
+    if matches!(kind, WrapperKind::Mutex) {
+        return;
+    }
     let inner = wrapper_inner_for_field(field, kind, substitution);
     register_wrapper_definition(kind, inner, package_name, ident_index, existing_names, definitions);
 }
@@ -687,6 +690,9 @@ fn wrapper_message_type_name_for_field(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> Option<String> {
     let kind = wrapper_kind_for(field.wrapper, field.proto_ident)?;
+    if matches!(kind, WrapperKind::Mutex) {
+        return None;
+    }
     let inner = wrapper_inner_for_field(field, kind, substitution)?;
     Some(wrapper_message_name(kind, inner, ident_index))
 }

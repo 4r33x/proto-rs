@@ -5,10 +5,6 @@ package extra_types;
 import "custom_types.proto";
 import "goon_types.proto";
 
-message MutexMEx {
-  custom_types.MEx value = 1;
-}
-
 message VecOrder {
   repeated Order value = 1;
 }
@@ -45,7 +41,7 @@ message EnvelopeGoonPong {
 }
 
 message LotMutexHolder {
-  MutexMEx stdd = 1;
+  custom_types.MEx stdd = 1;
 }
 
 message Order {
@@ -57,6 +53,6 @@ message Orders {
 }
 
 message StdMutexHolder {
-  MutexMEx stdd = 1;
+  custom_types.MEx stdd = 1;
 }
 
