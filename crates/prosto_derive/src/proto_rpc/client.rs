@@ -42,26 +42,25 @@ pub fn generate_client_module(
         client_impl_generics,
         client_connect_impl_generics,
         client_connect_type_args,
-    ) =
-        if interceptor_config.is_some() {
-            (
-                quote! { <T, Ctx> },
-                quote! { inner: tonic::client::Grpc<T>, _ctx: ::core::marker::PhantomData<Ctx> },
-                quote! { Self { inner, _ctx: ::core::marker::PhantomData } },
-                quote! { <T, Ctx> },
-                quote! { <Ctx> },
-                quote! { <tonic::transport::Channel, Ctx> },
-            )
-        } else {
-            (
-                quote! { <T> },
-                quote! { inner: tonic::client::Grpc<T> },
-                quote! { Self { inner } },
-                quote! { <T> },
-                quote! {},
-                quote! { <tonic::transport::Channel> },
-            )
-        };
+    ) = if interceptor_config.is_some() {
+        (
+            quote! { <T, Ctx> },
+            quote! { inner: tonic::client::Grpc<T>, _ctx: ::core::marker::PhantomData<Ctx> },
+            quote! { Self { inner, _ctx: ::core::marker::PhantomData } },
+            quote! { <T, Ctx> },
+            quote! { <Ctx> },
+            quote! { <tonic::transport::Channel, Ctx> },
+        )
+    } else {
+        (
+            quote! { <T> },
+            quote! { inner: tonic::client::Grpc<T> },
+            quote! { Self { inner } },
+            quote! { <T> },
+            quote! {},
+            quote! { <tonic::transport::Channel> },
+        )
+    };
 
     quote! {
         #vis mod #client_module {
@@ -156,14 +155,13 @@ fn generate_unary_client_method(
 
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_payload: <Ctx as #trait_ident>::Payload = ::core::convert::Into::into(ctx);
-            let ctx_value: Ctx = ::core::convert::From::from(ctx_payload);
-            ctx_value.intercept(&mut request);
+            let ctx_payload: Ctx = ::core::convert::Into::into(ctx);
+            ctx_payload.intercept(&mut request);
         };
         let interceptor_generics = quote! { , I };
         let interceptor_bounds = quote! {
-            I: ::core::convert::Into<<Ctx as #trait_ident>::Payload>,
-            Ctx: #trait_ident + ::core::convert::From<<Ctx as #trait_ident>::Payload>
+            I: ::core::convert::Into<Ctx>,
+            Ctx: #trait_ident
         };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
@@ -219,14 +217,13 @@ fn generate_streaming_client_method(
 
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_payload: <Ctx as #trait_ident>::Payload = ::core::convert::Into::into(ctx);
-            let ctx_value: Ctx = ::core::convert::From::from(ctx_payload);
-            ctx_value.intercept(&mut request);
+            let ctx_payload: Ctx = ::core::convert::Into::into(ctx);
+            ctx_payload.intercept(&mut request);
         };
         let interceptor_generics = quote! { , I };
         let interceptor_bounds = quote! {
-            I: ::core::convert::Into<<Ctx as #trait_ident>::Payload>,
-            Ctx: #trait_ident + ::core::convert::From<<Ctx as #trait_ident>::Payload>
+            I: ::core::convert::Into<Ctx>,
+            Ctx: #trait_ident
         };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
