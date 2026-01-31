@@ -1120,6 +1120,10 @@ fn proto_ident_tokens(
         return proto_ident_literal(&param_name, "", "");
     }
 
+    if parsed.is_numeric_scalar {
+        return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
+    }
+
     if config.is_rust_enum || config.is_proto_enum || config.is_message || parsed.is_message_like {
         // If the type references generic parameters from the parent, use a placeholder
         // This happens when generating schemas for base generic types at module level

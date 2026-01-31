@@ -1679,6 +1679,9 @@ fn render_proto_type(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
 ) -> String {
+    if let Some(atomic) = atomic_primitive_type(ident) {
+        return atomic.to_string();
+    }
     if ident.name == "u8" {
         return "u8".to_string();
     }
@@ -1713,6 +1716,24 @@ fn render_proto_type(
         Some(package) if package == current_package => type_name,
         Some(package) if !package.is_empty() => type_name,
         _ => type_name,
+    }
+}
+
+fn atomic_primitive_type(ident: ProtoIdent) -> Option<&'static str> {
+    let type_name = ident.name.rsplit("::").next().unwrap_or(ident.name);
+    match type_name {
+        "AtomicBool" => Some("bool"),
+        "AtomicU8" => Some("u32"),
+        "AtomicU16" => Some("u32"),
+        "AtomicU32" => Some("u32"),
+        "AtomicU64" => Some("u64"),
+        "AtomicUsize" => Some("u64"),
+        "AtomicI8" => Some("i32"),
+        "AtomicI16" => Some("i32"),
+        "AtomicI32" => Some("i32"),
+        "AtomicI64" => Some("i64"),
+        "AtomicIsize" => Some("i64"),
+        _ => None,
     }
 }
 

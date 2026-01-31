@@ -1,4 +1,19 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
+pub mod atomic_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct AtomicPrimitives {
+        pub flag: bool,
+        pub count: u64,
+        pub small: u32,
+        pub signed: i32,
+        pub sized: u64,
+        pub signed_sized: i64,
+    }
+
+}
 pub mod custom_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
