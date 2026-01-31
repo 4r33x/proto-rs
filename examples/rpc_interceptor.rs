@@ -47,15 +47,15 @@ impl From<UserCtx> for UserId {
 }
 
 pub trait UserAdvancedInterceptor: Send + Sync + 'static + Sized {
-    type Payload: From<Self>;
-    fn intercept<T>(&self, req: &mut tonic::Request<T>);
+    type Payload;
+    fn intercept<T>(payload: Self::Payload, req: &mut tonic::Request<T>);
 }
 
 impl UserAdvancedInterceptor for UserCtx {
     type Payload = u64;
-    fn intercept<T>(&self, request: &mut tonic::Request<T>) {
-        request.metadata_mut().insert("user-id", self.0.to_string().parse().unwrap());
-        println!("Interceptor called with user_id: {}", self.0);
+    fn intercept<T>(payload: Self::Payload, request: &mut tonic::Request<T>) {
+        request.metadata_mut().insert("user-id", payload.to_string().parse().unwrap());
+        println!("Interceptor called with user_id: {payload}");
     }
 }
 
@@ -89,7 +89,7 @@ mod tests {
     async fn test_interceptor_syntax() {
         // This test just ensures the macro expands correctly
         println!("Interceptor example compiles successfully!");
-        let mut client = InterceptorRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let mut client: InterceptorRpcClient<_, UserCtx> = InterceptorRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
         let res = client.ping(0u64, RizzPing {}).await.unwrap();
     }
 }

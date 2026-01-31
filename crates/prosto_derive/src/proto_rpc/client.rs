@@ -34,7 +34,33 @@ pub fn generate_client_module(
         methods.iter().map(|m| generate_client_method(m, package_name, trait_name, interceptor_config)).collect::<Vec<_>>();
 
     let compression_methods = generate_client_compression_methods();
-    let with_interceptor = generate_client_with_interceptor(&client_struct);
+    let with_interceptor = generate_client_with_interceptor(&client_struct, interceptor_config.is_some());
+    let (
+        client_struct_generics,
+        client_struct_fields,
+        client_struct_init,
+        client_impl_generics,
+        client_connect_impl_generics,
+        client_connect_type_args,
+    ) = if interceptor_config.is_some() {
+        (
+            quote! { <T, Ctx> },
+            quote! { inner: tonic::client::Grpc<T>, _ctx: ::core::marker::PhantomData<Ctx> },
+            quote! { Self { inner, _ctx: ::core::marker::PhantomData } },
+            quote! { <T, Ctx> },
+            quote! { <Ctx> },
+            quote! { <tonic::transport::Channel, Ctx> },
+        )
+    } else {
+        (
+            quote! { <T> },
+            quote! { inner: tonic::client::Grpc<T> },
+            quote! { Self { inner } },
+            quote! { <T> },
+            quote! {},
+            quote! { <tonic::transport::Channel> },
+        )
+    };
 
     quote! {
         #vis mod #client_module {
@@ -49,11 +75,11 @@ pub fn generate_client_module(
             use super::*;
 
             #[derive(Debug, Clone)]
-            pub struct #client_struct<T> {
-                inner: tonic::client::Grpc<T>,
+            pub struct #client_struct #client_struct_generics {
+                #client_struct_fields,
             }
 
-            impl #client_struct<tonic::transport::Channel> {
+            impl #client_connect_impl_generics #client_struct #client_connect_type_args {
                 pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
                 where
                     D: TryInto<tonic::transport::Endpoint>,
@@ -64,7 +90,7 @@ pub fn generate_client_module(
                 }
             }
 
-            impl<T> #client_struct<T>
+            impl #client_impl_generics #client_struct #client_struct_generics
             where
                 T: tonic::client::GrpcService<tonic::body::Body>,
                 T::Error: Into<StdError>,
@@ -73,12 +99,12 @@ pub fn generate_client_module(
             {
                 pub fn new(inner: T) -> Self {
                     let inner = tonic::client::Grpc::new(inner);
-                    Self { inner }
+                    #client_struct_init
                 }
 
                 pub fn with_origin(inner: T, origin: http::Uri) -> Self {
                     let inner = tonic::client::Grpc::with_origin(inner, origin);
-                    Self { inner }
+                    #client_struct_init
                 }
 
                 #with_interceptor
@@ -129,11 +155,14 @@ fn generate_unary_client_method(
 
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_value: ProtoInter = ::core::convert::Into::into(ctx);
-            ctx_value.intercept(&mut request);
+            let ctx_payload: Ctx::Payload = ::core::convert::Into::into(ctx);
+            Ctx::intercept(ctx_payload, &mut request);
         };
-        let interceptor_generics = quote! { , I, ProtoInter };
-        let interceptor_bounds = quote! { I: ::core::convert::Into<ProtoInter>, ProtoInter: #trait_ident };
+        let interceptor_generics = quote! { , I };
+        let interceptor_bounds = quote! {
+            I: ::core::convert::Into<Ctx::Payload>,
+            Ctx: #trait_ident
+        };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
         (quote! {}, quote! {}, quote! {}, quote! {})
@@ -188,11 +217,14 @@ fn generate_streaming_client_method(
 
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
-            let ctx_value: ProtoInter = ::core::convert::Into::into(ctx);
-            ctx_value.intercept(&mut request);
+            let ctx_payload: Ctx::Payload = ::core::convert::Into::into(ctx);
+            Ctx::intercept(ctx_payload, &mut request);
         };
-        let interceptor_generics = quote! { , I, ProtoInter };
-        let interceptor_bounds = quote! { I: ::core::convert::Into<ProtoInter>, ProtoInter: #trait_ident };
+        let interceptor_generics = quote! { , I };
+        let interceptor_bounds = quote! {
+            I: ::core::convert::Into<Ctx::Payload>,
+            Ctx: #trait_ident
+        };
         (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
     } else {
         (quote! {}, quote! {}, quote! {}, quote! {})

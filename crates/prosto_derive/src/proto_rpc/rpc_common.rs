@@ -145,12 +145,18 @@ pub fn generate_service_constructors() -> TokenStream {
 }
 
 /// Generate client interceptor method (complex generic bounds)
-pub fn generate_client_with_interceptor(client_struct: &syn::Ident) -> TokenStream {
+pub fn generate_client_with_interceptor(client_struct: &syn::Ident, has_ctx: bool) -> TokenStream {
+    let return_ty = if has_ctx {
+        quote! { #client_struct<InterceptedService<T, F>, Ctx> }
+    } else {
+        quote! { #client_struct<InterceptedService<T, F>> }
+    };
+
     quote! {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> #client_struct<InterceptedService<T, F>>
+        ) -> #return_ty
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
