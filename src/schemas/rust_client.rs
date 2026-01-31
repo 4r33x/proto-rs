@@ -63,6 +63,7 @@ pub(crate) fn write_rust_client_module(
     output_path: &str,
     imports: &[&str],
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    client_attr_removals: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     module_attrs: &BTreeMap<String, Vec<String>>,
     module_type_attrs: &BTreeMap<String, Vec<String>>,
     statements: &BTreeMap<String, Vec<String>>,
@@ -117,6 +118,7 @@ pub(crate) fn write_rust_client_module(
             &proto_type_index,
             &client_imports_by_type,
             client_attrs,
+            client_attr_removals,
             None,
             type_replacements,
             0,
@@ -135,6 +137,7 @@ pub(crate) fn write_rust_client_module(
             &proto_type_index,
             &client_imports_by_type,
             client_attrs,
+            client_attr_removals,
             type_replacements,
             module_attrs,
             module_type_attrs,
@@ -234,6 +237,7 @@ fn render_named_module(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    client_attr_removals: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     module_attrs: &BTreeMap<String, Vec<String>>,
     module_type_attrs: &BTreeMap<String, Vec<String>>,
@@ -274,6 +278,7 @@ fn render_named_module(
         proto_type_index,
         client_imports,
         client_attrs,
+        client_attr_removals,
         module_type_attrs.get(name),
         type_replacements,
         inner_indent,
@@ -290,6 +295,7 @@ fn render_named_module(
             proto_type_index,
             client_imports,
             client_attrs,
+            client_attr_removals,
             type_replacements,
             module_attrs,
             module_type_attrs,
@@ -558,6 +564,7 @@ fn render_entries(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    client_attr_removals: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     module_type_attrs: Option<&Vec<String>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     indent: usize,
@@ -601,7 +608,13 @@ fn render_entries(
             group[0]
         };
 
-        let user_attrs = build_entry_user_attrs(entry, client_attrs, module_type_attrs, ident_index);
+        let user_attrs = build_entry_user_attrs(
+            entry,
+            client_attrs,
+            client_attr_removals,
+            module_type_attrs,
+            ident_index,
+        );
         let entry_type_replacements = build_entry_type_replacements(entry, type_replacements);
         if let Some(definition) = render_rust_entry(
             entry,
@@ -1018,7 +1031,8 @@ fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, user_at
         attrs.push("#[proto_message]".to_string());
     }
 
-    for attr in normalize_top_level_attrs(attrs) {
+    let normalized = normalize_top_level_attrs(attrs);
+    for attr in apply_top_level_attr_removals(normalized, &user_attrs.top_level_removals) {
         indent_line(output, indent);
         output.push_str(&attr);
         output.push('\n');
@@ -1141,6 +1155,7 @@ fn has_source_only_attrs(tokens: &str) -> bool {
 #[derive(Default)]
 struct EntryUserAttrs {
     top_level: Vec<String>,
+    top_level_removals: Vec<String>,
     top_level_override_paths: BTreeSet<String>,
     field_attrs: BTreeMap<FieldTargetKey, Vec<String>>,
     field_override_paths: BTreeMap<FieldTargetKey, BTreeSet<String>>,
@@ -1178,6 +1193,7 @@ enum MethodTypeKind {
 fn build_entry_user_attrs(
     entry: &ProtoSchema,
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    client_attr_removals: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     module_type_attrs: Option<&Vec<String>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> EntryUserAttrs {
@@ -1240,6 +1256,19 @@ fn build_entry_user_attrs(
         }
     }
 
+    if let Some(removals) = client_attr_removals.get(&entry.id) {
+        for attr in removals {
+            match &attr.level {
+                AttrLevel::Top => {
+                    entry_attrs.top_level_removals.push(attr.attr.clone());
+                }
+                AttrLevel::Field { .. } | AttrLevel::Method { .. } => {
+                    panic!("type-level attribute removals must use AttrLevel::Top");
+                }
+            }
+        }
+    }
+
     entry_attrs
 }
 
@@ -1291,6 +1320,45 @@ fn normalize_top_level_attrs(attrs: Vec<String>) -> Vec<String> {
             Some(index) => output.insert(index, combined),
             None => output.push(combined),
         }
+    }
+
+    output
+}
+
+fn apply_top_level_attr_removals(attrs: Vec<String>, removals: &[String]) -> Vec<String> {
+    if removals.is_empty() {
+        return attrs;
+    }
+    let mut remove_attr_tokens = BTreeSet::new();
+    let mut remove_derive_traits = BTreeSet::new();
+    for attr in removals {
+        if parse_attr_path(attr) == Some("derive") {
+            if let Some(traits) = parse_derive_traits(attr) {
+                for trait_name in traits {
+                    remove_derive_traits.insert(trait_name);
+                }
+            }
+        } else {
+            remove_attr_tokens.insert(attr.trim().to_string());
+        }
+    }
+
+    let mut output = Vec::new();
+    for attr in attrs {
+        if remove_attr_tokens.contains(attr.trim()) {
+            continue;
+        }
+        if parse_attr_path(&attr) == Some("derive") && !remove_derive_traits.is_empty() {
+            if let Some(mut traits) = parse_derive_traits(&attr) {
+                traits.retain(|trait_name| !remove_derive_traits.contains(trait_name));
+                if traits.is_empty() {
+                    continue;
+                }
+                output.push(format!("#[derive({})]", traits.join(", ")));
+                continue;
+            }
+        }
+        output.push(attr);
     }
 
     output
