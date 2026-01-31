@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.7]
+- support module scoped type_attribute in build system 
+
 ## [0.11.6]
 - Even better rpc_client_ctx
 
