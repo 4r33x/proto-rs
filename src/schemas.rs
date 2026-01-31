@@ -24,6 +24,7 @@ pub struct RustClientCtx<'a> {
     pub output_path: Option<&'a str>,
     pub imports: &'a [&'a str],
     pub client_attrs: BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    pub client_attr_removals: BTreeMap<ProtoIdent, Vec<UserAttr>>,
     pub module_attrs: BTreeMap<String, Vec<String>>,
     pub module_type_attrs: BTreeMap<String, Vec<String>>,
     pub statements: BTreeMap<String, Vec<String>>,
@@ -36,6 +37,7 @@ impl<'a> RustClientCtx<'a> {
             output_path: None,
             imports: &[],
             client_attrs: BTreeMap::new(),
+            client_attr_removals: BTreeMap::new(),
             module_attrs: BTreeMap::new(),
             module_type_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
@@ -48,6 +50,7 @@ impl<'a> RustClientCtx<'a> {
             output_path: Some(output_path),
             imports: &[],
             client_attrs: BTreeMap::new(),
+            client_attr_removals: BTreeMap::new(),
             module_attrs: BTreeMap::new(),
             module_type_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
@@ -84,6 +87,27 @@ impl<'a> RustClientCtx<'a> {
                     "module-level client attributes must use AttrLevel::Top"
                 );
                 self.module_attrs.entry(module_name.to_string()).or_default().push(attr.attr);
+            }
+        }
+        self
+    }
+
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn remove_type_attribute(mut self, target: ClientAttrTarget<'a>, attr: UserAttr) -> Self {
+        if attr.attr.trim().is_empty() {
+            return self;
+        }
+        match target {
+            ClientAttrTarget::Ident(ident) => {
+                assert!(
+                    matches!(attr.level, AttrLevel::Top),
+                    "type-level attribute removals must use AttrLevel::Top"
+                );
+                self.client_attr_removals.entry(ident).or_default().push(attr);
+            }
+            ClientAttrTarget::Module(_) => {
+                panic!("remove_type_attribute only supports ClientAttrTarget::Ident");
             }
         }
         self
@@ -806,6 +830,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             output_path,
             rust_client_output.imports,
             &rust_client_output.client_attrs,
+            &rust_client_output.client_attr_removals,
             &rust_client_output.module_attrs,
             &rust_client_output.module_type_attrs,
             &rust_client_output.statements,

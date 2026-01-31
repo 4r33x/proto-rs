@@ -72,7 +72,7 @@ pub mod extra_types {
         pub owner: Id,
     }
 
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Debug, PartialEq)]
     #[allow(dead_code)]
     #[proto_message]
     pub struct BuildRequest {
