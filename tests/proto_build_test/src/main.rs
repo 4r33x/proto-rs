@@ -313,7 +313,11 @@ fn main() {
         //(mod name, statement) format
         .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
         .type_attribute("extra_types".to_string(), "#[derive(Clone, Debug)]".to_string())
-        .type_attribute("extra_types".to_string(), "#[derive(Clone, Copy)]".to_string())
+        .type_attribute("extra_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
+        .type_attribute("goon_types".to_string(), "#[derive(Clone, Debug)]".to_string())
+        .type_attribute("goon_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
+        .type_attribute("custom_types".to_string(), "#[derive(Clone, Debug)]".to_string())
+        .type_attribute("custom_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
         .add_client_attrs(
             ClientAttrTarget::Module("extra_types"),
             UserAttr {
