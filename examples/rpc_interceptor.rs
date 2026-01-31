@@ -89,7 +89,7 @@ mod tests {
     async fn test_interceptor_syntax() {
         // This test just ensures the macro expands correctly
         println!("Interceptor example compiles successfully!");
-        let mut client = InterceptorRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let mut client: InterceptorRpcClient<_, UserCtx> = InterceptorRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
         let res = client.ping(0u64, RizzPing {}).await.unwrap();
     }
 }
