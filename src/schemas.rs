@@ -25,6 +25,7 @@ pub struct RustClientCtx<'a> {
     pub imports: &'a [&'a str],
     pub client_attrs: BTreeMap<ProtoIdent, Vec<UserAttr>>,
     pub module_attrs: BTreeMap<String, Vec<String>>,
+    pub module_type_attrs: BTreeMap<String, Vec<String>>,
     pub statements: BTreeMap<String, Vec<String>>,
     pub type_replacements: BTreeMap<ProtoIdent, Vec<TypeReplace>>,
 }
@@ -36,6 +37,7 @@ impl<'a> RustClientCtx<'a> {
             imports: &[],
             client_attrs: BTreeMap::new(),
             module_attrs: BTreeMap::new(),
+            module_type_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
             type_replacements: BTreeMap::new(),
         }
@@ -47,6 +49,7 @@ impl<'a> RustClientCtx<'a> {
             imports: &[],
             client_attrs: BTreeMap::new(),
             module_attrs: BTreeMap::new(),
+            module_type_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
             type_replacements: BTreeMap::new(),
         }
@@ -95,6 +98,15 @@ impl<'a> RustClientCtx<'a> {
                 entry_replacements.push(replacement.clone());
             }
         }
+        self
+    }
+
+    #[must_use]
+    pub fn type_attribute(mut self, module_name: String, attr: String) -> Self {
+        if attr.trim().is_empty() {
+            return self;
+        }
+        self.module_type_attrs.entry(module_name).or_default().push(attr);
         self
     }
 }
@@ -795,6 +807,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             rust_client_output.imports,
             &rust_client_output.client_attrs,
             &rust_client_output.module_attrs,
+            &rust_client_output.module_type_attrs,
             &rust_client_output.statements,
             &rust_client_output.type_replacements,
             &registry,
