@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.6]
+- Even better rpc_client_ctx
+
 ## [0.11.5]
 - Switch rpc_client_ctx to using trait, instead of function
 
