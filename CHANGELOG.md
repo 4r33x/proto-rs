@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.8]
+- fixed: AtomicPrimitives written as Primitives in rust client output
+
 ## [0.11.7]
 - support module scoped type_attribute in build system 
 

@@ -6,6 +6,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicI32;
+use std::sync::atomic::AtomicIsize;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Mutex;
 
 use chrono::DateTime;
@@ -60,6 +66,17 @@ pub struct CustomEx {
     pub custom_vec_deque_copy: CustomVecDeq<u64>,
     pub custom_vec: CustomVec<MEx>,
     pub custom_vec_deque: CustomVecDeq<MEx>,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/atomic_types.proto")]
+#[derive(Debug)]
+pub struct AtomicPrimitives {
+    pub flag: AtomicBool,
+    pub count: AtomicU64,
+    pub small: AtomicU8,
+    pub signed: AtomicI32,
+    pub sized: AtomicUsize,
+    pub signed_sized: AtomicIsize,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
@@ -403,7 +420,7 @@ fn main() {
     assert!(client_contents.contains("const MY_CONST: usize = 1337;"));
     assert!(client_contents.contains("#[allow(clippy::upper_case_acronyms)]"));
     assert!(
-        client_contents.contains("#[derive(Clone, Debug, Copy)]"),
+        client_contents.contains("#[derive(Clone, Debug, PartialEq)]"),
         "Module type attributes should merge derive entries"
     );
     assert!(client_contents.contains("status: ::core::primitive::u32"));
@@ -549,5 +566,17 @@ fn main() {
     assert!(
         client_contents.contains("pub custom_vec_deque_bytes: ::proto_rs::alloc::vec::Vec<u8>,"),
         "custom_vec_deque_bytes field should be Vec<u8>, not Vec<u32<u32>>"
+    );
+
+    assert!(client_contents.contains("pub struct AtomicPrimitives"), "AtomicPrimitives should be in rust client");
+    assert!(client_contents.contains("pub flag: bool,"), "AtomicBool should render as bool");
+    assert!(client_contents.contains("pub count: u64,"), "AtomicU64 should render as u64");
+    assert!(client_contents.contains("pub small: u32,"), "AtomicU8 should render as u32");
+    assert!(client_contents.contains("pub signed: i32,"), "AtomicI32 should render as i32");
+    assert!(client_contents.contains("pub sized: u64,"), "AtomicUsize should render as u64");
+    assert!(client_contents.contains("pub signed_sized: i64,"), "AtomicIsize should render as i64");
+    assert!(
+        !client_contents.contains("AtomicU"),
+        "Atomic primitives should not appear in rust client output"
     );
 }
