@@ -46,6 +46,7 @@ pub mod extra_types {
 
     const MY_CONST: usize = 1337;
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct BuildConfig {
         #[proto(tag = 1, into = "i64")]
@@ -54,6 +55,7 @@ pub mod extra_types {
         pub owner: Id,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[allow(dead_code)]
     #[proto_message]
     pub struct BuildRequest {
@@ -62,6 +64,7 @@ pub mod extra_types {
         pub owner: Id,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct BuildResponse {
         #[allow(dead_code)]
@@ -69,27 +72,32 @@ pub mod extra_types {
         pub envelope: Envelope<GoonPong>,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct Envelope<T> {
         pub payload: T,
         pub trace_id: ::proto_rs::alloc::string::String,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct LotMutexHolder {
         pub stdd: MEx,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct Order {
         pub id: u32,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct Orders {
         pub orders: ::proto_rs::alloc::vec::Vec<Order>,
     }
 
+    #[derive(Clone, Debug, Copy)]
     #[proto_message]
     pub struct StdMutexHolder {
         pub stdd: MEx,
@@ -131,6 +139,7 @@ pub mod goon_types {
         pub id: Id,
         pub status: ServiceStatus,
         pub expire_at: ::core::option::Option<DateTime<Utc>>,
+        pub expire_at2: DateTime<Utc>,
     }
 
     #[proto_message]

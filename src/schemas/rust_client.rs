@@ -64,6 +64,7 @@ pub(crate) fn write_rust_client_module(
     imports: &[&str],
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     module_attrs: &BTreeMap<String, Vec<String>>,
+    module_type_attrs: &BTreeMap<String, Vec<String>>,
     statements: &BTreeMap<String, Vec<String>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     registry: &BTreeMap<String, Vec<&'static ProtoSchema>>,
@@ -116,6 +117,7 @@ pub(crate) fn write_rust_client_module(
             &proto_type_index,
             &client_imports_by_type,
             client_attrs,
+            None,
             type_replacements,
             0,
         );
@@ -135,6 +137,7 @@ pub(crate) fn write_rust_client_module(
             client_attrs,
             type_replacements,
             module_attrs,
+            module_type_attrs,
             statements,
         );
     }
@@ -233,6 +236,7 @@ fn render_named_module(
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     module_attrs: &BTreeMap<String, Vec<String>>,
+    module_type_attrs: &BTreeMap<String, Vec<String>>,
     statements: &BTreeMap<String, Vec<String>>,
 ) {
     render_module_attributes(output, name, module_attrs, indent);
@@ -270,6 +274,7 @@ fn render_named_module(
         proto_type_index,
         client_imports,
         client_attrs,
+        module_type_attrs.get(name),
         type_replacements,
         inner_indent,
     );
@@ -287,6 +292,7 @@ fn render_named_module(
             client_attrs,
             type_replacements,
             module_attrs,
+            module_type_attrs,
             statements,
         );
     }
@@ -552,6 +558,7 @@ fn render_entries(
     proto_type_index: &BTreeMap<String, Vec<ProtoIdent>>,
     client_imports: &BTreeMap<String, ClientImport>,
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    module_type_attrs: Option<&Vec<String>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     indent: usize,
 ) {
@@ -594,7 +601,7 @@ fn render_entries(
             group[0]
         };
 
-        let user_attrs = build_entry_user_attrs(entry, client_attrs, ident_index);
+        let user_attrs = build_entry_user_attrs(entry, client_attrs, module_type_attrs, ident_index);
         let entry_type_replacements = build_entry_type_replacements(entry, type_replacements);
         if let Some(definition) = render_rust_entry(
             entry,
@@ -995,15 +1002,8 @@ fn render_rust_service(
 }
 
 fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, user_attrs: &EntryUserAttrs, indent: usize) {
-    let mut seen = BTreeSet::new();
-    for attr in &user_attrs.top_level {
-        if seen.insert(attr.clone()) {
-            indent_line(output, indent);
-            output.push_str(attr);
-            output.push('\n');
-        }
-    }
-
+    let mut attrs = Vec::new();
+    attrs.extend(user_attrs.top_level.iter().cloned());
     let mut has_proto_message = false;
     for attr in entry.top_level_attributes {
         if attr.path == "proto_message" {
@@ -1011,20 +1011,17 @@ fn render_top_level_attributes(output: &mut String, entry: &ProtoSchema, user_at
                 continue;
             }
             has_proto_message = true;
-            if seen.insert(attr.tokens.to_string()) {
-                indent_line(output, indent);
-                output.push_str(attr.tokens);
-                output.push('\n');
-            }
+            attrs.push(attr.tokens.to_string());
         }
     }
     if !has_proto_message && !user_attrs.top_level_override_paths.contains("proto_message") {
-        let default = "#[proto_message]";
-        if seen.insert(default.to_string()) {
-            indent_line(output, indent);
-            output.push_str(default);
-            output.push('\n');
-        }
+        attrs.push("#[proto_message]".to_string());
+    }
+
+    for attr in normalize_top_level_attrs(attrs) {
+        indent_line(output, indent);
+        output.push_str(&attr);
+        output.push('\n');
     }
 }
 
@@ -1181,9 +1178,16 @@ enum MethodTypeKind {
 fn build_entry_user_attrs(
     entry: &ProtoSchema,
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
+    module_type_attrs: Option<&Vec<String>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> EntryUserAttrs {
     let mut entry_attrs = EntryUserAttrs::default();
+    if let Some(module_type_attrs) = module_type_attrs {
+        for attr in module_type_attrs {
+            push_top_level_attr(&mut entry_attrs, attr);
+        }
+    }
+
     let Some(attrs) = client_attrs.get(&entry.id) else {
         return entry_attrs;
     };
@@ -1191,10 +1195,7 @@ fn build_entry_user_attrs(
     for attr in attrs {
         match &attr.level {
             AttrLevel::Top => {
-                if let Some(path) = parse_attr_path(&attr.attr) {
-                    entry_attrs.top_level_override_paths.insert(path.to_string());
-                }
-                entry_attrs.top_level.push(attr.attr.clone());
+                push_top_level_attr(&mut entry_attrs, &attr.attr);
             }
             AttrLevel::Field { field_name, id, variant } => {
                 let matches = find_entry_field_matches(entry, field_name, variant.as_deref());
@@ -1242,12 +1243,69 @@ fn build_entry_user_attrs(
     entry_attrs
 }
 
+fn push_top_level_attr(entry_attrs: &mut EntryUserAttrs, attr: &str) {
+    if let Some(path) = parse_attr_path(attr) {
+        entry_attrs.top_level_override_paths.insert(path.to_string());
+    }
+    entry_attrs.top_level.push(attr.to_string());
+}
+
 fn parse_attr_path(attr: &str) -> Option<&str> {
     let trimmed = attr.trim();
     let stripped = trimmed.strip_prefix("#[")?.trim();
     let end = stripped.find(['(', ']']).unwrap_or(stripped.len());
     let path = stripped[..end].trim();
     if path.is_empty() { None } else { Some(path) }
+}
+
+fn normalize_top_level_attrs(attrs: Vec<String>) -> Vec<String> {
+    let mut output = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut derive_traits = Vec::new();
+    let mut seen_traits = BTreeSet::new();
+    let mut derive_insert_index = None;
+
+    for attr in attrs {
+        if parse_attr_path(&attr) == Some("derive") {
+            if derive_insert_index.is_none() {
+                derive_insert_index = Some(output.len());
+            }
+            if let Some(traits) = parse_derive_traits(&attr) {
+                for trait_name in traits {
+                    if seen_traits.insert(trait_name.clone()) {
+                        derive_traits.push(trait_name);
+                    }
+                }
+            }
+            continue;
+        }
+
+        if seen.insert(attr.clone()) {
+            output.push(attr);
+        }
+    }
+
+    if !derive_traits.is_empty() {
+        let combined = format!("#[derive({})]", derive_traits.join(", "));
+        match derive_insert_index {
+            Some(index) => output.insert(index, combined),
+            None => output.push(combined),
+        }
+    }
+
+    output
+}
+
+fn parse_derive_traits(attr: &str) -> Option<Vec<String>> {
+    let trimmed = attr.trim();
+    let inner = trimmed.strip_prefix("#[derive(")?.strip_suffix(")]")?;
+    let traits = inner
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if traits.is_empty() { None } else { Some(traits) }
 }
 
 fn render_variant_suffix(variant: Option<&str>) -> String {

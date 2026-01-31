@@ -312,6 +312,12 @@ fn main() {
         ])
         //(mod name, statement) format
         .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
+        .type_attribute("extra_types".to_string(), "#[derive(Clone, Debug)]".to_string())
+        .type_attribute("extra_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
+        .type_attribute("goon_types".to_string(), "#[derive(Clone, Debug)]".to_string())
+        .type_attribute("goon_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
+        .type_attribute("custom_types".to_string(), "#[derive(Clone, Debug)]".to_string())
+        .type_attribute("custom_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
         .add_client_attrs(
             ClientAttrTarget::Module("extra_types"),
             UserAttr {
@@ -396,6 +402,10 @@ fn main() {
     assert!(client_contents.contains("#[allow(dead_code)]"));
     assert!(client_contents.contains("const MY_CONST: usize = 1337;"));
     assert!(client_contents.contains("#[allow(clippy::upper_case_acronyms)]"));
+    assert!(
+        client_contents.contains("#[derive(Clone, Debug, Copy)]"),
+        "Module type attributes should merge derive entries"
+    );
     assert!(client_contents.contains("status: ::core::primitive::u32"));
     assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
     assert!(client_contents.contains("::tonic::Response<::core::primitive::u32>"));
