@@ -895,7 +895,7 @@ fn wrapper_schema_message_name(schema: &ProtoSchema) -> Option<String> {
     }
 }
 
-fn wrapper_kind_inline_for_field(field: &Field, kind: WrapperKind) -> bool {
+const fn wrapper_kind_inline_for_field(field: &Field, kind: WrapperKind) -> bool {
     match kind {
         WrapperKind::Option | WrapperKind::ArcSwapOption => matches!(field.proto_label, ProtoLabel::Optional),
         WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet => {
