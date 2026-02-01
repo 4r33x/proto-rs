@@ -608,13 +608,7 @@ fn render_entries(
             group[0]
         };
 
-        let user_attrs = build_entry_user_attrs(
-            entry,
-            client_attrs,
-            client_attr_removals,
-            module_type_attrs,
-            ident_index,
-        );
+        let user_attrs = build_entry_user_attrs(entry, client_attrs, client_attr_removals, module_type_attrs, ident_index);
         let entry_type_replacements = build_entry_type_replacements(entry, type_replacements);
         if let Some(definition) = render_rust_entry(
             entry,
@@ -1348,15 +1342,16 @@ fn apply_top_level_attr_removals(attrs: Vec<String>, removals: &[String]) -> Vec
         if remove_attr_tokens.contains(attr.trim()) {
             continue;
         }
-        if parse_attr_path(&attr) == Some("derive") && !remove_derive_traits.is_empty() {
-            if let Some(mut traits) = parse_derive_traits(&attr) {
-                traits.retain(|trait_name| !remove_derive_traits.contains(trait_name));
-                if traits.is_empty() {
-                    continue;
-                }
-                output.push(format!("#[derive({})]", traits.join(", ")));
+        if parse_attr_path(&attr) == Some("derive")
+            && !remove_derive_traits.is_empty()
+            && let Some(mut traits) = parse_derive_traits(&attr)
+        {
+            traits.retain(|trait_name| !remove_derive_traits.contains(trait_name));
+            if traits.is_empty() {
                 continue;
             }
+            output.push(format!("#[derive({})]", traits.join(", ")));
+            continue;
         }
         output.push(attr);
     }
@@ -1367,12 +1362,7 @@ fn apply_top_level_attr_removals(attrs: Vec<String>, removals: &[String]) -> Vec
 fn parse_derive_traits(attr: &str) -> Option<Vec<String>> {
     let trimmed = attr.trim();
     let inner = trimmed.strip_prefix("#[derive(")?.strip_suffix(")]")?;
-    let traits = inner
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let traits = inner.split(',').map(str::trim).filter(|entry| !entry.is_empty()).map(str::to_string).collect::<Vec<_>>();
     if traits.is_empty() { None } else { Some(traits) }
 }
 
@@ -1582,13 +1572,7 @@ fn render_wrapper_field_base_type(
         return inner;
     }
 
-    if let Some(inner) = render_custom_wrapper_inner_type(
-        field,
-        package_name,
-        package_by_ident,
-        proto_type_index,
-        client_imports,
-    ) {
+    if let Some(inner) = render_custom_wrapper_inner_type(field, package_name, package_by_ident, proto_type_index, client_imports) {
         return inner;
     }
 
@@ -1618,24 +1602,19 @@ fn render_wrapper_inner_type(
     }
 
     let type_args = generic_type_args(generic_args);
-    let inner_ident = wrapper
-        .and_then(|ident| ident.generics.first().copied())
-        .or_else(|| type_args.first().copied())
-        .unwrap_or(fallback_ident);
+    let inner_ident =
+        wrapper.and_then(|ident| ident.generics.first().copied()).or_else(|| type_args.first().copied()).unwrap_or(fallback_ident);
     let inferred_generics = generic_args_from_ident(inner_ident);
-    let inner_generics: &[GenericArg] = if wrapper.is_some()
-        && !type_args.is_empty()
-        && type_args.len() == 1
-        && type_args[0].proto_type == inner_ident.proto_type
-    {
-        &[]
-    } else if !generic_args.is_empty() {
-        generic_args
-    } else if !inferred_generics.is_empty() {
-        &inferred_generics
-    } else {
-        &[]
-    };
+    let inner_generics: &[GenericArg] =
+        if wrapper.is_some() && !type_args.is_empty() && type_args.len() == 1 && type_args[0].proto_type == inner_ident.proto_type {
+            &[]
+        } else if !generic_args.is_empty() {
+            generic_args
+        } else if !inferred_generics.is_empty() {
+            &inferred_generics
+        } else {
+            &[]
+        };
     let inner = render_proto_type_with_generics(
         inner_ident,
         inner_generics,
@@ -1857,14 +1836,7 @@ fn render_wrapper_type_from_generic_args(
         }
         _ => {
             let inner = type_args.first().copied()?;
-            render_wrapper_kind_type(
-                kind,
-                inner,
-                current_package,
-                package_by_ident,
-                proto_type_index,
-                client_imports,
-            )
+            render_wrapper_kind_type(kind, inner, current_package, package_by_ident, proto_type_index, client_imports)
         }
     }
 }
@@ -1948,24 +1920,19 @@ fn render_method_wrapper_type(
     }
 
     let type_args = generic_type_args(generic_args);
-    let inner_ident = wrapper
-        .and_then(|ident| ident.generics.first().copied())
-        .or_else(|| type_args.first().copied())
-        .unwrap_or(fallback_ident);
+    let inner_ident =
+        wrapper.and_then(|ident| ident.generics.first().copied()).or_else(|| type_args.first().copied()).unwrap_or(fallback_ident);
     let inferred_generics = generic_args_from_ident(inner_ident);
-    let inner_generics: &[GenericArg] = if wrapper.is_some()
-        && !type_args.is_empty()
-        && type_args.len() == 1
-        && type_args[0].proto_type == inner_ident.proto_type
-    {
-        &[]
-    } else if !generic_args.is_empty() {
-        generic_args
-    } else if !inferred_generics.is_empty() {
-        &inferred_generics
-    } else {
-        &[]
-    };
+    let inner_generics: &[GenericArg] =
+        if wrapper.is_some() && !type_args.is_empty() && type_args.len() == 1 && type_args[0].proto_type == inner_ident.proto_type {
+            &[]
+        } else if !generic_args.is_empty() {
+            generic_args
+        } else if !inferred_generics.is_empty() {
+            &inferred_generics
+        } else {
+            &[]
+        };
     let inner_type = render_proto_type_with_generics(
         inner_ident,
         inner_generics,
