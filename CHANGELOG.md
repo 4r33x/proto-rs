@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.9]
+- Added: remove_type_attribute method to rust client builder
+
 ## [0.11.8]
 - fixed: AtomicPrimitives written as Primitives in rust client output
 

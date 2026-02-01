@@ -385,6 +385,13 @@ fn main() {
                 attr: "#[allow(dead_code)]".to_string(),
             },
         )
+        .remove_type_attribute(
+            ClientAttrTarget::Ident(BuildRequest::PROTO_IDENT),
+            UserAttr {
+                level: AttrLevel::Top,
+                attr: "#[derive(Clone)]".to_string(),
+            },
+        )
         .replace_type(&[
             TypeReplace::Type {
                 id: BuildResponse::PROTO_IDENT,
@@ -422,6 +429,16 @@ fn main() {
     assert!(
         client_contents.contains("#[derive(Clone, Debug, PartialEq)]"),
         "Module type attributes should merge derive entries"
+    );
+    assert!(
+        client_contents.contains(
+            "#[derive(Debug, PartialEq)]\n    #[allow(dead_code)]\n    #[proto_message]\n    pub struct BuildRequest"
+        ),
+        "Type-level attribute removals should drop derive entries for specific types"
+    );
+    assert!(
+        !client_contents.contains("#[derive(Clone, Debug, PartialEq)]\npub struct BuildRequest"),
+        "Type-level attribute removals should not keep removed derive traits"
     );
     assert!(client_contents.contains("status: ::core::primitive::u32"));
     assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
