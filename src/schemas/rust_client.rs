@@ -1297,6 +1297,8 @@ fn normalize_top_level_attrs(attrs: Vec<String>) -> Vec<String> {
                         derive_traits.push(trait_name);
                     }
                 }
+            } else if seen.insert(attr.clone()) {
+                output.push(attr);
             }
             continue;
         }
@@ -1358,10 +1360,40 @@ fn apply_top_level_attr_removals(attrs: Vec<String>, removals: &[String]) -> Vec
 }
 
 fn parse_derive_traits(attr: &str) -> Option<Vec<String>> {
+    if parse_attr_path(attr) != Some("derive") {
+        return None;
+    }
     let trimmed = attr.trim();
-    let inner = trimmed.strip_prefix("#[derive(")?.strip_suffix(")]")?;
-    let traits = inner.split(',').map(str::trim).filter(|entry| !entry.is_empty()).map(str::to_string).collect::<Vec<_>>();
+    let open = trimmed.find('(')?;
+    let close = trimmed.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let inner = &trimmed[open + 1..close];
+    let traits = inner
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     if traits.is_empty() { None } else { Some(traits) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_top_level_attr_removals;
+    use super::normalize_top_level_attrs;
+
+    #[test]
+    fn normalize_and_remove_derive_traits_with_spacing() {
+        let attrs = vec![
+            "#[derive (Clone , Debug)]".to_string(),
+            "#[derive(Clone, PartialEq)]".to_string(),
+        ];
+        let normalized = normalize_top_level_attrs(attrs);
+        let removed = apply_top_level_attr_removals(normalized, &["#[derive(Clone)]".to_string()]);
+        assert_eq!(removed, vec!["#[derive(Debug, PartialEq)]"]);
+    }
 }
 
 fn render_variant_suffix(variant: Option<&str>) -> String {

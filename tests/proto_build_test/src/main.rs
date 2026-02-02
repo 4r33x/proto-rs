@@ -438,6 +438,10 @@ fn main() {
         !client_contents.contains("#[derive(Clone, Debug, PartialEq)]\npub struct BuildRequest"),
         "Type-level attribute removals should not keep removed derive traits"
     );
+    assert!(
+        !client_contents.contains("#[derive(Clone, Debug, Copy)]"),
+        "Unexpected Copy derives should not be emitted"
+    );
     assert!(client_contents.contains("status: ::core::primitive::u32"));
     assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
     assert!(client_contents.contains("::tonic::Response<::core::primitive::u32>"));

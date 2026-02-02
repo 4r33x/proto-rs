@@ -1,8 +1,24 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
+pub mod atomic_types {
+    #[allow(unused_imports)]
+    use proto_rs::{proto_message, proto_rpc};
+
+    #[proto_message]
+    pub struct AtomicPrimitives {
+        pub flag: bool,
+        pub count: u64,
+        pub small: u32,
+        pub signed: i32,
+        pub sized: u64,
+        pub signed_sized: i64,
+    }
+
+}
 pub mod custom_types {
     #[allow(unused_imports)]
     use proto_rs::{proto_message, proto_rpc};
 
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct CustomEx {
         pub mutex: MEx,
@@ -28,6 +44,7 @@ pub mod custom_types {
         pub custom_vec_deque: ::proto_rs::alloc::vec::Vec<MEx>,
     }
 
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct MEx {
         pub id: u64,
@@ -46,7 +63,7 @@ pub mod extra_types {
 
     const MY_CONST: usize = 1337;
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct BuildConfig {
         #[proto(tag = 1, into = "i64")]
@@ -55,7 +72,7 @@ pub mod extra_types {
         pub owner: Id,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Debug, PartialEq)]
     #[allow(dead_code)]
     #[proto_message]
     pub struct BuildRequest {
@@ -64,7 +81,7 @@ pub mod extra_types {
         pub owner: Id,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct BuildResponse {
         #[allow(dead_code)]
@@ -72,32 +89,32 @@ pub mod extra_types {
         pub envelope: Envelope<GoonPong>,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct Envelope<T> {
         pub payload: T,
         pub trace_id: ::proto_rs::alloc::string::String,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct LotMutexHolder {
         pub stdd: MEx,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct Order {
         pub id: u32,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct Orders {
         pub orders: ::proto_rs::alloc::vec::Vec<Order>,
     }
 
-    #[derive(Clone, Debug, Copy)]
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct StdMutexHolder {
         pub stdd: MEx,
@@ -134,6 +151,7 @@ pub mod goon_types {
     use chrono::DateTime;
     use chrono::Utc;
 
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct GoonPong {
         pub id: Id,
@@ -142,17 +160,20 @@ pub mod goon_types {
         pub expire_at2: DateTime<Utc>,
     }
 
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct Id {
         pub id: u64,
     }
 
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub struct RizzPing {
         pub id: Id,
         pub status: ServiceStatus,
     }
 
+    #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
     pub enum ServiceStatus {
         Active,
