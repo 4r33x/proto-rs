@@ -1370,30 +1370,8 @@ fn parse_derive_traits(attr: &str) -> Option<Vec<String>> {
         return None;
     }
     let inner = &trimmed[open + 1..close];
-    let traits = inner
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let traits = inner.split(',').map(str::trim).filter(|entry| !entry.is_empty()).map(str::to_string).collect::<Vec<_>>();
     if traits.is_empty() { None } else { Some(traits) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::apply_top_level_attr_removals;
-    use super::normalize_top_level_attrs;
-
-    #[test]
-    fn normalize_and_remove_derive_traits_with_spacing() {
-        let attrs = vec![
-            "#[derive (Clone , Debug)]".to_string(),
-            "#[derive(Clone, PartialEq)]".to_string(),
-        ];
-        let normalized = normalize_top_level_attrs(attrs);
-        let removed = apply_top_level_attr_removals(normalized, &["#[derive(Clone)]".to_string()]);
-        assert_eq!(removed, vec!["#[derive(Debug, PartialEq)]"]);
-    }
 }
 
 fn render_variant_suffix(variant: Option<&str>) -> String {
@@ -2195,4 +2173,18 @@ fn package_name_for_entries(file_name: &str, entries: &[&ProtoSchema]) -> String
         .map(|schema| schema.id.proto_package_name)
         .filter(|name| !name.is_empty())
         .map_or_else(|| super::utils::derive_package_name(file_name_last), ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_top_level_attr_removals;
+    use super::normalize_top_level_attrs;
+
+    #[test]
+    fn normalize_and_remove_derive_traits_with_spacing() {
+        let attrs = vec!["#[derive (Clone , Debug)]".to_string(), "#[derive(Clone, PartialEq)]".to_string()];
+        let normalized = normalize_top_level_attrs(attrs);
+        let removed = apply_top_level_attr_removals(normalized, &["#[derive(Clone)]".to_string()]);
+        assert_eq!(removed, vec!["#[derive(Debug, PartialEq)]"]);
+    }
 }
