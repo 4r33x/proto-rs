@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.10]
+- Fixed: attributes apply in rust client generation
+
 ## [0.11.9]
 - Added: remove_type_attribute method to rust client builder
 
