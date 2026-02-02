@@ -1198,54 +1198,52 @@ fn build_entry_user_attrs(
         }
     }
 
-    let Some(attrs) = client_attrs.get(&entry.id) else {
-        return entry_attrs;
-    };
-
-    for attr in attrs {
-        match &attr.level {
-            AttrLevel::Top => {
-                push_top_level_attr(&mut entry_attrs, &attr.attr);
-            }
-            AttrLevel::Field { field_name, id, variant } => {
-                let matches = find_entry_field_matches(entry, field_name, variant.as_deref());
-                assert!(
-                    !matches.is_empty(),
-                    "client attribute targets missing field '{}'{} on type '{}'",
-                    field_name,
-                    render_variant_suffix(variant.as_deref()),
-                    entry.id.name
-                );
-                for field in &matches {
-                    let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+    if let Some(attrs) = client_attrs.get(&entry.id) {
+        for attr in attrs {
+            match &attr.level {
+                AttrLevel::Top => {
+                    push_top_level_attr(&mut entry_attrs, &attr.attr);
+                }
+                AttrLevel::Field { field_name, id, variant } => {
+                    let matches = find_entry_field_matches(entry, field_name, variant.as_deref());
                     assert!(
-                        actual_type == *id,
-                        "client attribute targets field '{}'{} on type '{}' with mismatched type",
+                        !matches.is_empty(),
+                        "client attribute targets missing field '{}'{} on type '{}'",
                         field_name,
                         render_variant_suffix(variant.as_deref()),
                         entry.id.name
                     );
+                    for field in &matches {
+                        let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+                        assert!(
+                            actual_type == *id,
+                            "client attribute targets field '{}'{} on type '{}' with mismatched type",
+                            field_name,
+                            render_variant_suffix(variant.as_deref()),
+                            entry.id.name
+                        );
+                    }
+                    let field_key = FieldTargetKey::new(variant.as_deref(), field_name);
+                    if let Some(path) = parse_attr_path(&attr.attr) {
+                        entry_attrs.field_override_paths.entry(field_key.clone()).or_default().insert(path.to_string());
+                    }
+                    entry_attrs.field_attrs.entry(field_key).or_default().push(attr.attr.clone());
                 }
-                let field_key = FieldTargetKey::new(variant.as_deref(), field_name);
-                if let Some(path) = parse_attr_path(&attr.attr) {
-                    entry_attrs.field_override_paths.entry(field_key.clone()).or_default().insert(path.to_string());
-                }
-                entry_attrs.field_attrs.entry(field_key).or_default().push(attr.attr.clone());
-            }
-            AttrLevel::Method { method_name } => {
-                let Some(methods) = find_entry_methods(entry) else {
-                    panic!(
-                        "client attribute targets method '{}' on non-service type '{}'",
-                        method_name, entry.id.name
+                AttrLevel::Method { method_name } => {
+                    let Some(methods) = find_entry_methods(entry) else {
+                        panic!(
+                            "client attribute targets method '{}' on non-service type '{}'",
+                            method_name, entry.id.name
+                        );
+                    };
+                    assert!(
+                        methods.iter().any(|method| method.name == method_name),
+                        "client attribute targets missing method '{}' on type '{}'",
+                        method_name,
+                        entry.id.name
                     );
-                };
-                assert!(
-                    methods.iter().any(|method| method.name == method_name),
-                    "client attribute targets missing method '{}' on type '{}'",
-                    method_name,
-                    entry.id.name
-                );
-                entry_attrs.method_attrs.entry(method_name.clone()).or_default().push(attr.attr.clone());
+                    entry_attrs.method_attrs.entry(method_name.clone()).or_default().push(attr.attr.clone());
+                }
             }
         }
     }
