@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.11]
+- Made rpc_client_ctx fallible 
+
 ## [0.11.10]
 - Fixed: attributes apply in rust client generation
 

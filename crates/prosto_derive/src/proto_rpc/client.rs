@@ -156,7 +156,7 @@ fn generate_unary_client_method(
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
             let ctx_payload: Ctx::Payload = ::core::convert::Into::into(ctx);
-            Ctx::intercept(ctx_payload, &mut request);
+            Ctx::intercept(ctx_payload, &mut request)?;
         };
         let interceptor_generics = quote! { , I };
         let interceptor_bounds = quote! {
@@ -218,7 +218,7 @@ fn generate_streaming_client_method(
         let ctx_param = quote! { ctx: I, };
         let interceptor_call = quote! {
             let ctx_payload: Ctx::Payload = ::core::convert::Into::into(ctx);
-            Ctx::intercept(ctx_payload, &mut request);
+            Ctx::intercept(ctx_payload, &mut request)?;
         };
         let interceptor_generics = quote! { , I };
         let interceptor_bounds = quote! {

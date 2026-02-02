@@ -48,14 +48,15 @@ impl From<UserCtx> for UserId {
 
 pub trait UserAdvancedInterceptor: Send + Sync + 'static + Sized {
     type Payload;
-    fn intercept<T>(payload: Self::Payload, req: &mut tonic::Request<T>);
+    fn intercept<T>(payload: Self::Payload, req: &mut tonic::Request<T>) -> Result<(), tonic::Status>;
 }
 
 impl UserAdvancedInterceptor for UserCtx {
     type Payload = u64;
-    fn intercept<T>(payload: Self::Payload, request: &mut tonic::Request<T>) {
+    fn intercept<T>(payload: Self::Payload, request: &mut tonic::Request<T>) -> Result<(), tonic::Status> {
         request.metadata_mut().insert("user-id", payload.to_string().parse().unwrap());
         println!("Interceptor called with user_id: {payload}");
+        Ok(())
     }
 }
 
