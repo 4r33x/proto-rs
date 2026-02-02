@@ -235,7 +235,7 @@ fn generate_streaming_client_method(
             &mut self,
             #ctx_param
             request: R,
-        ) -> ::core::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#inner_response_type, tonic::Status>>>, tonic::Status>
+        ) -> ::core::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#inner_response_type, tonic::Status>> + Send + 'static>, tonic::Status>
         where
             R: ::proto_rs::ProtoRequest<#request_type>,
             ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,

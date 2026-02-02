@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.12]
+- Add + Send + 'static bounds to server streaming responses due to impl Trait capturing rules
+- 
 ## [0.11.11]
 - Made rpc_client_ctx fallible 
 
