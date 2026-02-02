@@ -6,13 +6,13 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::AtomicIsize;
-use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
-use std::sync::Mutex;
 
 use chrono::DateTime;
 use chrono::Utc;
@@ -222,13 +222,13 @@ pub struct BuildResponse {
 
 #[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[derive(Debug)]
-struct StdMutexHolder {
+pub struct StdMutexHolder {
     pub stdd: Mutex<MEx>,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[derive(Debug)]
-struct LotMutexHolder {
+pub struct LotMutexHolder {
     pub stdd: parking_lot::Mutex<MEx>,
 }
 #[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
@@ -327,14 +327,21 @@ fn main() {
             "chrono::TimeDelta",
             "chrono::Utc",
         ])
-        //(mod name, statement) format
-        .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
-        .type_attribute("extra_types".to_string(), "#[derive(Clone, Debug)]".to_string())
-        .type_attribute("extra_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
         .type_attribute("goon_types".to_string(), "#[derive(Clone, Debug)]".to_string())
         .type_attribute("goon_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
         .type_attribute("custom_types".to_string(), "#[derive(Clone, Debug)]".to_string())
         .type_attribute("custom_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
+        //(mod name, statement) format
+        .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")])
+        .type_attribute("extra_types".to_string(), "#[derive(Clone, Debug)]".to_string())
+        .type_attribute("extra_types".to_string(), "#[derive(Clone, PartialEq)]".to_string())
+        .remove_type_attribute(
+            ClientAttrTarget::Ident(BuildRequest::PROTO_IDENT),
+            UserAttr {
+                level: AttrLevel::Top,
+                attr: "#[derive(Clone)]".to_string(),
+            },
+        )
         .add_client_attrs(
             ClientAttrTarget::Module("extra_types"),
             UserAttr {
@@ -385,13 +392,6 @@ fn main() {
                 attr: "#[allow(dead_code)]".to_string(),
             },
         )
-        .remove_type_attribute(
-            ClientAttrTarget::Ident(BuildRequest::PROTO_IDENT),
-            UserAttr {
-                level: AttrLevel::Top,
-                attr: "#[derive(Clone)]".to_string(),
-            },
-        )
         .replace_type(&[
             TypeReplace::Type {
                 id: BuildResponse::PROTO_IDENT,
@@ -431,14 +431,16 @@ fn main() {
         "Module type attributes should merge derive entries"
     );
     assert!(
-        client_contents.contains(
-            "#[derive(Debug, PartialEq)]\n    #[allow(dead_code)]\n    #[proto_message]\n    pub struct BuildRequest"
-        ),
+        client_contents.contains("#[derive(Debug, PartialEq)]\n    #[allow(dead_code)]\n    #[proto_message]\n    pub struct BuildRequest"),
         "Type-level attribute removals should drop derive entries for specific types"
     );
     assert!(
         !client_contents.contains("#[derive(Clone, Debug, PartialEq)]\npub struct BuildRequest"),
         "Type-level attribute removals should not keep removed derive traits"
+    );
+    assert!(
+        !client_contents.contains("#[derive(Clone, Debug, Copy)]"),
+        "Unexpected Copy derives should not be emitted"
     );
     assert!(client_contents.contains("status: ::core::primitive::u32"));
     assert!(client_contents.contains("request: ::tonic::Request<::core::primitive::u64>"));
@@ -585,13 +587,19 @@ fn main() {
         "custom_vec_deque_bytes field should be Vec<u8>, not Vec<u32<u32>>"
     );
 
-    assert!(client_contents.contains("pub struct AtomicPrimitives"), "AtomicPrimitives should be in rust client");
+    assert!(
+        client_contents.contains("pub struct AtomicPrimitives"),
+        "AtomicPrimitives should be in rust client"
+    );
     assert!(client_contents.contains("pub flag: bool,"), "AtomicBool should render as bool");
     assert!(client_contents.contains("pub count: u64,"), "AtomicU64 should render as u64");
     assert!(client_contents.contains("pub small: u32,"), "AtomicU8 should render as u32");
     assert!(client_contents.contains("pub signed: i32,"), "AtomicI32 should render as i32");
     assert!(client_contents.contains("pub sized: u64,"), "AtomicUsize should render as u64");
-    assert!(client_contents.contains("pub signed_sized: i64,"), "AtomicIsize should render as i64");
+    assert!(
+        client_contents.contains("pub signed_sized: i64,"),
+        "AtomicIsize should render as i64"
+    );
     assert!(
         !client_contents.contains("AtomicU"),
         "Atomic primitives should not appear in rust client output"

@@ -1198,54 +1198,52 @@ fn build_entry_user_attrs(
         }
     }
 
-    let Some(attrs) = client_attrs.get(&entry.id) else {
-        return entry_attrs;
-    };
-
-    for attr in attrs {
-        match &attr.level {
-            AttrLevel::Top => {
-                push_top_level_attr(&mut entry_attrs, &attr.attr);
-            }
-            AttrLevel::Field { field_name, id, variant } => {
-                let matches = find_entry_field_matches(entry, field_name, variant.as_deref());
-                assert!(
-                    !matches.is_empty(),
-                    "client attribute targets missing field '{}'{} on type '{}'",
-                    field_name,
-                    render_variant_suffix(variant.as_deref()),
-                    entry.id.name
-                );
-                for field in &matches {
-                    let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+    if let Some(attrs) = client_attrs.get(&entry.id) {
+        for attr in attrs {
+            match &attr.level {
+                AttrLevel::Top => {
+                    push_top_level_attr(&mut entry_attrs, &attr.attr);
+                }
+                AttrLevel::Field { field_name, id, variant } => {
+                    let matches = find_entry_field_matches(entry, field_name, variant.as_deref());
                     assert!(
-                        actual_type == *id,
-                        "client attribute targets field '{}'{} on type '{}' with mismatched type",
+                        !matches.is_empty(),
+                        "client attribute targets missing field '{}'{} on type '{}'",
                         field_name,
                         render_variant_suffix(variant.as_deref()),
                         entry.id.name
                     );
+                    for field in &matches {
+                        let actual_type = resolve_transparent_ident(field.rust_proto_ident, ident_index);
+                        assert!(
+                            actual_type == *id,
+                            "client attribute targets field '{}'{} on type '{}' with mismatched type",
+                            field_name,
+                            render_variant_suffix(variant.as_deref()),
+                            entry.id.name
+                        );
+                    }
+                    let field_key = FieldTargetKey::new(variant.as_deref(), field_name);
+                    if let Some(path) = parse_attr_path(&attr.attr) {
+                        entry_attrs.field_override_paths.entry(field_key.clone()).or_default().insert(path.to_string());
+                    }
+                    entry_attrs.field_attrs.entry(field_key).or_default().push(attr.attr.clone());
                 }
-                let field_key = FieldTargetKey::new(variant.as_deref(), field_name);
-                if let Some(path) = parse_attr_path(&attr.attr) {
-                    entry_attrs.field_override_paths.entry(field_key.clone()).or_default().insert(path.to_string());
-                }
-                entry_attrs.field_attrs.entry(field_key).or_default().push(attr.attr.clone());
-            }
-            AttrLevel::Method { method_name } => {
-                let Some(methods) = find_entry_methods(entry) else {
-                    panic!(
-                        "client attribute targets method '{}' on non-service type '{}'",
-                        method_name, entry.id.name
+                AttrLevel::Method { method_name } => {
+                    let Some(methods) = find_entry_methods(entry) else {
+                        panic!(
+                            "client attribute targets method '{}' on non-service type '{}'",
+                            method_name, entry.id.name
+                        );
+                    };
+                    assert!(
+                        methods.iter().any(|method| method.name == method_name),
+                        "client attribute targets missing method '{}' on type '{}'",
+                        method_name,
+                        entry.id.name
                     );
-                };
-                assert!(
-                    methods.iter().any(|method| method.name == method_name),
-                    "client attribute targets missing method '{}' on type '{}'",
-                    method_name,
-                    entry.id.name
-                );
-                entry_attrs.method_attrs.entry(method_name.clone()).or_default().push(attr.attr.clone());
+                    entry_attrs.method_attrs.entry(method_name.clone()).or_default().push(attr.attr.clone());
+                }
             }
         }
     }
@@ -1299,6 +1297,8 @@ fn normalize_top_level_attrs(attrs: Vec<String>) -> Vec<String> {
                         derive_traits.push(trait_name);
                     }
                 }
+            } else if seen.insert(attr.clone()) {
+                output.push(attr);
             }
             continue;
         }
@@ -1360,8 +1360,16 @@ fn apply_top_level_attr_removals(attrs: Vec<String>, removals: &[String]) -> Vec
 }
 
 fn parse_derive_traits(attr: &str) -> Option<Vec<String>> {
+    if parse_attr_path(attr) != Some("derive") {
+        return None;
+    }
     let trimmed = attr.trim();
-    let inner = trimmed.strip_prefix("#[derive(")?.strip_suffix(")]")?;
+    let open = trimmed.find('(')?;
+    let close = trimmed.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let inner = &trimmed[open + 1..close];
     let traits = inner.split(',').map(str::trim).filter(|entry| !entry.is_empty()).map(str::to_string).collect::<Vec<_>>();
     if traits.is_empty() { None } else { Some(traits) }
 }
@@ -2165,4 +2173,18 @@ fn package_name_for_entries(file_name: &str, entries: &[&ProtoSchema]) -> String
         .map(|schema| schema.id.proto_package_name)
         .filter(|name| !name.is_empty())
         .map_or_else(|| super::utils::derive_package_name(file_name_last), ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_top_level_attr_removals;
+    use super::normalize_top_level_attrs;
+
+    #[test]
+    fn normalize_and_remove_derive_traits_with_spacing() {
+        let attrs = vec!["#[derive (Clone , Debug)]".to_string(), "#[derive(Clone, PartialEq)]".to_string()];
+        let normalized = normalize_top_level_attrs(attrs);
+        let removed = apply_top_level_attr_removals(normalized, &["#[derive(Clone)]".to_string()]);
+        assert_eq!(removed, vec!["#[derive(Debug, PartialEq)]"]);
+    }
 }
