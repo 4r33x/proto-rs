@@ -1610,8 +1610,11 @@ fn render_wrapper_inner_type(
     }
 
     let type_args = generic_type_args(generic_args);
-    let inner_ident =
+    let mut inner_ident =
         wrapper.and_then(|ident| ident.generics.first().copied()).or_else(|| type_args.first().copied()).unwrap_or(fallback_ident);
+    if matches!(kind, WrapperKind::Option | WrapperKind::ArcSwapOption) {
+        inner_ident = unwrap_optional_inner(inner_ident);
+    }
     let inferred_generics = generic_args_from_ident(inner_ident);
     let inner_generics: &[GenericArg] =
         if wrapper.is_some() && !type_args.is_empty() && type_args.len() == 1 && type_args[0].proto_type == inner_ident.proto_type {
@@ -1645,6 +1648,29 @@ fn render_wrapper_inner_type(
         | WrapperKind::ArcSwapOption
         | WrapperKind::CachePadded => Some(inner),
         WrapperKind::HashMap | WrapperKind::BTreeMap => None,
+    }
+}
+
+fn unwrap_optional_inner(mut inner_ident: ProtoIdent) -> ProtoIdent {
+    loop {
+        let kind = match wrapper_kind_for(None, inner_ident) {
+            Some(kind) => kind,
+            None => return inner_ident,
+        };
+        match kind {
+            WrapperKind::Arc
+            | WrapperKind::Box
+            | WrapperKind::Mutex
+            | WrapperKind::ArcSwap
+            | WrapperKind::CachePadded => {
+                if let Some(next) = inner_ident.generics.first().copied() {
+                    inner_ident = next;
+                } else {
+                    return inner_ident;
+                }
+            }
+            _ => return inner_ident,
+        }
     }
 }
 
