@@ -1653,16 +1653,11 @@ fn render_wrapper_inner_type(
 
 fn unwrap_optional_inner(mut inner_ident: ProtoIdent) -> ProtoIdent {
     loop {
-        let kind = match wrapper_kind_for(None, inner_ident) {
-            Some(kind) => kind,
-            None => return inner_ident,
+        let Some(kind) = wrapper_kind_for(None, inner_ident) else {
+            return inner_ident;
         };
         match kind {
-            WrapperKind::Arc
-            | WrapperKind::Box
-            | WrapperKind::Mutex
-            | WrapperKind::ArcSwap
-            | WrapperKind::CachePadded => {
+            WrapperKind::Arc | WrapperKind::Box | WrapperKind::Mutex | WrapperKind::ArcSwap | WrapperKind::CachePadded => {
                 if let Some(next) = inner_ident.generics.first().copied() {
                     inner_ident = next;
                 } else {

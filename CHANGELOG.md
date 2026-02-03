@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.13]
+- Removed Arc wrapping in generated rust client
+
 ## [0.11.12]
 - Add + Send + 'static bounds to server streaming responses due to impl Trait capturing rules
 - 
