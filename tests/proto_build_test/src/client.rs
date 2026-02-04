@@ -7,7 +7,10 @@ pub mod atomic_types {
     pub struct AtomicPrimitives {
         pub flag: bool,
         pub count: u64,
-        pub small: u32,
+        pub small: u8,
+        pub smaller: u16,
+        pub signed_small: i8,
+        pub signed_smaller: i16,
         pub signed: i32,
         pub sized: u64,
         pub signed_sized: i64,
@@ -434,7 +437,7 @@ pub mod solana {
         AlreadyProcessed,
         BlockhashNotFound,
         InstructionError {
-            index: u32,
+            index: u8,
             error: InstructionError,
         },
         CallChainTooDeep,
@@ -459,16 +462,16 @@ pub mod solana {
         WouldExceedMaxVoteCostLimit,
         WouldExceedAccountDataTotalLimit,
         DuplicateInstruction(
-            u32,
+            u8,
         ),
         InsufficientFundsForRent {
-            account_index: u32,
+            account_index: u8,
         },
         MaxLoadedAccountsDataSizeExceeded,
         InvalidLoadedAccountsDataSizeLimit,
         ResanitizationNeeded,
         ProgramExecutionTemporarilyRestricted {
-            account_index: u32,
+            account_index: u8,
         },
         UnbalancedTransaction,
         ProgramCacheHitMaxLimit,
