@@ -1758,8 +1758,8 @@ fn render_proto_type(
     if let Some(atomic) = atomic_primitive_type(ident) {
         return atomic.to_string();
     }
-    if ident.name == "u8" {
-        return "u8".to_string();
+    if let Some(narrow) = narrow_primitive_type(ident.name) {
+        return narrow.to_string();
     }
     if proto_map_types(&ident.proto_type).is_some() {
         return render_map_type(
@@ -1799,16 +1799,26 @@ fn atomic_primitive_type(ident: ProtoIdent) -> Option<&'static str> {
     let type_name = ident.name.rsplit("::").next().unwrap_or(ident.name);
     match type_name {
         "AtomicBool" => Some("bool"),
-        "AtomicU8" => Some("u32"),
-        "AtomicU16" => Some("u32"),
+        "AtomicU8" => Some("u8"),
+        "AtomicU16" => Some("u16"),
         "AtomicU32" => Some("u32"),
         "AtomicU64" => Some("u64"),
         "AtomicUsize" => Some("u64"),
-        "AtomicI8" => Some("i32"),
-        "AtomicI16" => Some("i32"),
+        "AtomicI8" => Some("i8"),
+        "AtomicI16" => Some("i16"),
         "AtomicI32" => Some("i32"),
         "AtomicI64" => Some("i64"),
         "AtomicIsize" => Some("i64"),
+        _ => None,
+    }
+}
+
+fn narrow_primitive_type(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "u8" => Some("u8"),
+        "u16" => Some("u16"),
+        "i8" => Some("i8"),
+        "i16" => Some("i16"),
         _ => None,
     }
 }

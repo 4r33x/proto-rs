@@ -8,9 +8,12 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicI16;
+use std::sync::atomic::AtomicI8;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::AtomicU8;
+use std::sync::atomic::AtomicU16;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
 
@@ -74,6 +77,9 @@ pub struct AtomicPrimitives {
     pub flag: AtomicBool,
     pub count: AtomicU64,
     pub small: AtomicU8,
+    pub smaller: AtomicU16,
+    pub signed_small: AtomicI8,
+    pub signed_smaller: AtomicI16,
     pub signed: AtomicI32,
     pub sized: AtomicUsize,
     pub signed_sized: AtomicIsize,
@@ -593,7 +599,10 @@ fn main() {
     );
     assert!(client_contents.contains("pub flag: bool,"), "AtomicBool should render as bool");
     assert!(client_contents.contains("pub count: u64,"), "AtomicU64 should render as u64");
-    assert!(client_contents.contains("pub small: u32,"), "AtomicU8 should render as u32");
+    assert!(client_contents.contains("pub small: u8,"), "AtomicU8 should render as u8");
+    assert!(client_contents.contains("pub smaller: u16,"), "AtomicU16 should render as u16");
+    assert!(client_contents.contains("pub signed_small: i8,"), "AtomicI8 should render as i8");
+    assert!(client_contents.contains("pub signed_smaller: i16,"), "AtomicI16 should render as i16");
     assert!(client_contents.contains("pub signed: i32,"), "AtomicI32 should render as i32");
     assert!(client_contents.contains("pub sized: u64,"), "AtomicUsize should render as u64");
     assert!(
