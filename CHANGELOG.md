@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.14]
+- Correct narrowed primitives in rust client output
+
 ## [0.11.13]
 - Removed Arc wrapping in generated rust client
 
