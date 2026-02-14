@@ -9,20 +9,20 @@ pub trait AsBytes {
 }
 
 impl AsBytes for Vec<u8> {
-    #[inline(always)]
+    #[inline]
     fn as_bytes(&self) -> &[u8] {
         self
     }
 }
 impl<const N: usize> AsBytes for [u8; N] {
-    #[inline(always)]
+    #[inline]
     fn as_bytes(&self) -> &[u8] {
         self
     }
 }
 
 // impl AsBytes for ZeroCopyBufferInner {
-//     #[inline(always)]
+//     #[inline]
 //     fn as_bytes(&self) -> &[u8] {
 //         self.as_slice()
 //     }

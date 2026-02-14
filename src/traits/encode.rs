@@ -30,7 +30,7 @@ pub type ArchivedProtoMessageWriter<T> = ArchivedProtoMessage<T, RevVec>;
 pub trait ProtoEncode {
     type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
 
-    #[inline(always)]
+    #[inline]
     fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
     where
         Self: ProtoExt,
@@ -45,7 +45,7 @@ pub trait ProtoEncode {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn encode_to_vec(&self) -> Vec<u8>
     where
         Self: ProtoExt,
@@ -57,7 +57,7 @@ pub trait ProtoEncode {
         value.to_vec_tight()
     }
 
-    #[inline(always)]
+    #[inline]
     fn to_zero_copy(&self) -> ZeroCopy<Self>
     where
         Self: ProtoExt,
@@ -102,7 +102,7 @@ where
         })
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn encode(self, buf: &mut impl BufMut) -> Result<(), EncodeError> {
         let v = self.inner.as_written_slice();
 
@@ -126,18 +126,18 @@ where
     ///
     /// This avoids an extra allocation compared to `finish().as_slice().to_vec()`
     /// by doing an in-place memmove within the existing buffer.
-    #[inline(always)]
+    #[inline]
     pub fn to_vec_tight(self) -> Vec<u8> {
         self.inner.finish_tight()
     }
-    #[inline(always)]
+    #[inline]
     pub fn to_vec_raw(self) -> Vec<u8> {
         self.inner.finish_raw()
     }
 }
 
 impl<T: ProtoEncode, W: RevWriter> ArchivedProtoMessage<T, W> {
-    #[inline(always)]
+    #[inline]
     pub fn as_written_slice(&self) -> &[u8] {
         self.inner.as_written_slice()
     }
@@ -150,7 +150,7 @@ where
     T: ProtoExt,
     for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     pub fn new(value: &T) -> Self {
         if let Some(message) = ArchivedProtoMessage::new(value) {
             return Self(message);
@@ -163,26 +163,26 @@ where
         Self(empty)
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         self.0.as_written_slice()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn into_inner(self) -> ArchivedProtoMessage<T, RevVec> {
         self.0
     }
 }
 
 impl<T: ProtoEncode> From<ArchivedProtoMessage<T, RevVec>> for ZeroCopy<T> {
-    #[inline(always)]
+    #[inline]
     fn from(value: ArchivedProtoMessage<T, RevVec>) -> Self {
         Self(value)
     }
 }
 
 impl<T: ProtoEncode> AsBytes for ZeroCopy<T> {
-    #[inline(always)]
+    #[inline]
     fn as_bytes(&self) -> &[u8] {
         self.0.as_written_slice()
     }
@@ -215,7 +215,7 @@ impl<const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<TAG, T> {
         input.archive::<{ TAG }>(w);
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn put_key(w: &mut impl RevWriter) {
         w.put_slice(&Self::_TAG_VARINT.bytes[..Self::TAG_LEN]);
     }

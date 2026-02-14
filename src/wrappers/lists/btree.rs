@@ -12,9 +12,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -25,7 +25,7 @@ impl<T: ProtoExt + Ord> ProtoExt for BTreeSet<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault + Ord> ProtoDecoder for BTreeSet<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -34,7 +34,7 @@ impl<T: ProtoFieldMerge + ProtoDefault + Ord> ProtoDecoder for BTreeSet<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
@@ -66,7 +66,7 @@ impl<T: ProtoFieldMerge + ProtoDefault + Ord> ProtoDecoder for BTreeSet<T> {
 }
 
 impl<T> ProtoDefault for BTreeSet<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         BTreeSet::new()
     }

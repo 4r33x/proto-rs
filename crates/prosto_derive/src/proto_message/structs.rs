@@ -337,19 +337,19 @@ fn generate_transparent_struct_impl(
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for #shadow_ident #shadow_ty_generics #shadow_where_clause {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a #name #ty_generics) -> Self {
                 Self(<#shadow_ty as ::proto_rs::ProtoShadowEncode<'a, #inner_ty>>::from_sun(&#mut_value_access))
             }
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoArchive for #shadow_ident #shadow_ty_generics #shadow_where_clause {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 <#shadow_ty as ::proto_rs::ProtoArchive>::is_default(&self.0)
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                 <#shadow_ty as ::proto_rs::ProtoArchive>::archive::<TAG>(&self.0, w);
             }
@@ -360,7 +360,7 @@ fn generate_transparent_struct_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -371,14 +371,14 @@ fn generate_transparent_struct_impl(
                 <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field(&mut #mut_value_access, tag, wire_type, buf, ctx)
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
                 <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)
             }
         }
 
         impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 #default_expr
             }
@@ -387,7 +387,7 @@ fn generate_transparent_struct_impl(
         impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
             type ShadowDecoded = Self;
 
-            #[inline(always)]
+            #[inline]
             fn decode(mut buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError> {
                 // For transparent types, we need to handle primitives vs messages differently:
                 // - Primitives are encoded as raw values (no field tags)
@@ -406,7 +406,7 @@ fn generate_transparent_struct_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
                 Ok(self)
             }
@@ -519,19 +519,19 @@ fn generate_shadow_impls(
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #proto_ident #ty_generics> for #shadow_ident #shadow_ty_generics #shadow_where_clause {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a #proto_ident #ty_generics) -> Self {
                 #shadow_init
             }
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoArchive for #shadow_ident #shadow_ty_generics #shadow_where_clause {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 #is_default_expr
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                 let mark = w.mark();
                 #( #archive_fields )*
@@ -578,7 +578,7 @@ fn generate_proto_impls(
         quote! {}
     } else {
         quote! {
-            #[inline(always)]
+            #[inline]
             fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                 let mut shadow = value;
                 #(#post_decode_hooks)*
@@ -597,13 +597,13 @@ fn generate_proto_impls(
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-                #[inline(always)]
+                #[inline]
                 fn is_default(&self) -> bool {
                     let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
                     ::proto_rs::ProtoArchive::is_default(&shadow)
                 }
 
-                #[inline(always)]
+                #[inline]
                 fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                     let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
                     <#shadow_ty_short as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w);
@@ -695,13 +695,13 @@ fn generate_proto_impls(
                     });
                     quote! {
                         impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
-                            #[inline(always)]
+                            #[inline]
                             fn is_default(&self) -> bool {
                                 #( #is_default_checks )*
                                 true
                             }
 
-                            #[inline(always)]
+                            #[inline]
                             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                                 let mark = w.mark();
                                 #( #archive_fields )*
@@ -731,7 +731,7 @@ fn generate_proto_impls(
                 quote! {}
             } else {
                 quote! {
-                    #[inline(always)]
+                    #[inline]
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                         let mut shadow = value;
                         #(#post_decode_hooks)*
@@ -744,7 +744,7 @@ fn generate_proto_impls(
                 let init = build_sun_shadow_encode_init(fields, original_fields);
                 quote! {
                     impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #target_ty> for #name #ty_generics #shadow_where_clause {
-                        #[inline(always)]
+                        #[inline]
                         fn from_sun(value: &'a #target_ty) -> Self {
                             #init
                         }
@@ -791,7 +791,7 @@ fn generate_proto_impls(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn proto_default() -> Self {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoDefault>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
@@ -800,7 +800,7 @@ fn generate_proto_impls(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
@@ -815,13 +815,13 @@ fn generate_proto_impls(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn is_default(&self) -> bool {
                         let shadow = <#sun_encode_shadow_archive as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                         <#sun_encode_shadow_archive as ::proto_rs::ProtoArchive>::is_default(&shadow)
                     }
 
-                    #[inline(always)]
+                    #[inline]
                     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                         let shadow = <#sun_encode_shadow_archive as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                         <#sun_encode_shadow_archive as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
@@ -840,7 +840,7 @@ fn generate_proto_impls(
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -856,7 +856,7 @@ fn generate_proto_impls(
         }
 
         impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 #proto_default_expr
             }
@@ -869,7 +869,7 @@ fn generate_proto_impls(
         }
 
         impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
                 Ok(self)
             }

@@ -13,9 +13,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -38,7 +38,7 @@ impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -47,7 +47,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let mut inner = <T as ProtoDefault>::proto_default();
         T::merge_value(&mut inner, wire_type, buf, ctx)?;
@@ -57,7 +57,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
 }
 
 impl<T: ProtoDefault> ProtoDefault for ArcSwap<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         ArcSwap::from_pointee(<T as ProtoDefault>::proto_default())
     }
@@ -92,12 +92,12 @@ where
 }
 
 impl<T: ProtoExt> ProtoArchive for ArcSwapShadow<T> {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_default
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         w.put_slice(self.bytes.as_slice());
         if TAG != 0 {
@@ -138,7 +138,7 @@ impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -147,7 +147,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let mut inner = <T as ProtoDefault>::proto_default();
         T::merge_value(&mut inner, wire_type, buf, ctx)?;
@@ -157,7 +157,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
 }
 
 impl<T> ProtoDefault for ArcSwapOption<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         ArcSwapOption::from_pointee(None)
     }
@@ -197,12 +197,12 @@ where
 }
 
 impl<T: ProtoExt> ProtoArchive for ArcSwapOptionShadow<T> {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_default
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         w.put_slice(self.bytes.as_slice());
         if TAG != 0 {

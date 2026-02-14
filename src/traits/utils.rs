@@ -48,7 +48,7 @@ impl ProtoKind {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub const fn for_vec(inner: &'static ProtoKind) -> ProtoKind {
         ProtoKind::Repeated(inner)
     }
@@ -59,7 +59,7 @@ impl ProtoKind {
             _ => false,
         }
     }
-    #[inline(always)]
+    #[inline]
     pub const fn is_packable(&self) -> bool {
         matches!(self, ProtoKind::Primitive(_) | ProtoKind::SimpleEnum)
     }
@@ -68,7 +68,7 @@ impl ProtoKind {
     pub const fn is_bytes_kind(&self) -> bool {
         matches!(self, ProtoKind::Primitive(PrimitiveKind::U8))
     }
-    #[inline(always)]
+    #[inline]
     pub const fn wire_type(&self) -> WireType {
         match self {
             ProtoKind::Primitive(p) => match p {

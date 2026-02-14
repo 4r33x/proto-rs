@@ -9,9 +9,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -29,7 +29,7 @@ where
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(
         value: &mut Self,
         tag: u32,
@@ -44,7 +44,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if let Some(inner) = Arc::get_mut(self) {
             T::merge_value(inner, wire_type, buf, ctx)
@@ -58,7 +58,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
 }
 
 impl<T: ProtoDefault> ProtoDefault for Arc<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         Arc::new(<T as ProtoDefault>::proto_default())
     }
@@ -87,12 +87,12 @@ impl<T> ProtoArchive for Arc<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }
@@ -119,12 +119,12 @@ impl<T> ProtoArchive for &Arc<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }

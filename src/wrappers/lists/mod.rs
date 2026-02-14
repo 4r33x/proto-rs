@@ -24,12 +24,12 @@ impl<T> ProtoArchive for &[T]
 where
     T: ProtoArchive + ProtoExt,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
             // SAFETY: only executed for &[u8].

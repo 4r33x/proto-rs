@@ -16,9 +16,9 @@ use crate::traits::PrimitiveKind;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -49,7 +49,7 @@ where
     T: ProtoFieldMerge + ProtoDefault + Eq + Hash,
     S: BuildHasher + Default,
 {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -58,7 +58,7 @@ where
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let guard = self.pin();
         match T::KIND {
@@ -94,7 +94,7 @@ impl<T, S> ProtoDefault for HashSet<T, S>
 where
     S: BuildHasher + Default,
 {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         HashSet::default()
     }
@@ -143,12 +143,12 @@ where
     T: ProtoArchive + ProtoExt + Eq + Hash,
     S: BuildHasher,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         let guard = self.pin();
         match T::KIND {

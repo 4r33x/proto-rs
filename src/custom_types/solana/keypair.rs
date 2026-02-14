@@ -16,14 +16,14 @@ pub struct KeypairProto {
 }
 
 impl ProtoShadowDecode<Keypair> for KeypairProto {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<Keypair, DecodeError> {
         Ok(Keypair::new_from_array(self.inner))
     }
 }
 
 impl<'a> ProtoShadowEncode<'a, Keypair> for KeypairProto {
-    #[inline(always)]
+    #[inline]
     fn from_sun(value: &'a Keypair) -> Self {
         Self {
             inner: *value.secret_bytes(),

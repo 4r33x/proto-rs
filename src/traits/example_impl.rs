@@ -9,12 +9,12 @@ use crate::error::DecodeError;
 use crate::traits::ArchivedProtoField; // NEW: helper for field-vs-root semantics + const tag bytes
 use crate::traits::ProtoArchive; // NEW: single-pass reverse archive(TAG, writer)
 use crate::traits::ProtoDecode;
+use crate::traits::ProtoDefault;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
-use crate::traits::ProtoDefault;
 use crate::traits::buffer::RevWriter; // NEW: reverse writer trait
 use crate::traits::decode::ProtoDecoder;
 use crate::traits::encode::ProtoShadowEncode;
@@ -29,7 +29,7 @@ pub struct ID<'b, K, V> {
 }
 
 /// ---------- Shadow (borrows Sun for encoding) ----------
-pub struct IDShadow<'a, K: ProtoEncode , V: ProtoEncode > {
+pub struct IDShadow<'a, K: ProtoEncode, V: ProtoEncode> {
     pub id: u64,
     pub k: <K as ProtoEncode>::Shadow<'a>,
     pub v: <V as ProtoEncode>::Shadow<'a>,
@@ -64,7 +64,7 @@ where
     K: ProtoEncode,
     V: ProtoEncode,
 {
-    #[inline(always)]
+    #[inline]
     fn from_sun(value: &'a ID<'b, K, V>) -> Self {
         Self {
             id: value.id,
@@ -95,7 +95,7 @@ where
     <V as ProtoEncode>::Shadow<'a>: ProtoArchive + ProtoExt,
     u64: ProtoArchive + ProtoExt,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.id == 0 && <K as ProtoEncode>::Shadow::is_default(&self.k) && <V as ProtoEncode>::Shadow::is_default(&self.v)
     }
@@ -105,7 +105,7 @@ where
     /// TAG semantics (framework-wide):
     /// - TAG == 0 => root payload (no len/key wrapper)
     /// - TAG != 0 => field encoding: payload + (len if length-delimited) + key
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         // Mark start of *this message payload* to compute length if we need to wrap (TAG != 0).
         let mark = w.mark();
@@ -138,7 +138,7 @@ where
     Kd: ProtoDecoder,
     Vd: ProtoDecoder,
 {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         match tag {
             1 => value.id.merge(wire_type, buf, ctx),
@@ -158,7 +158,7 @@ where
     Kd: ProtoDefault,
     Vd: ProtoDefault,
 {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         Self {
             id: 0,
@@ -177,7 +177,7 @@ where
     <K as ProtoDecode>::ShadowDecoded: ProtoShadowDecode<K>,
     <V as ProtoDecode>::ShadowDecoded: ProtoShadowDecode<V>,
 {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<ID<'b, K, V>, DecodeError> {
         let k = <K as ProtoDecode>::ShadowDecoded::to_sun(self.k)?;
         let v = <V as ProtoDecode>::ShadowDecoded::to_sun(self.v)?;

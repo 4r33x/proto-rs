@@ -9,9 +9,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -22,7 +22,7 @@ impl<T: ProtoExt> ProtoExt for CachePadded<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -31,14 +31,14 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         T::merge_value(self, wire_type, buf, ctx)
     }
 }
 
 impl<T: ProtoDefault> ProtoDefault for CachePadded<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         CachePadded::new(<T as ProtoDefault>::proto_default())
     }
@@ -67,12 +67,12 @@ impl<T> ProtoArchive for CachePadded<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         <T as ProtoArchive>::archive::<TAG>(self, w);
     }
@@ -99,12 +99,12 @@ impl<T> ProtoArchive for &CachePadded<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         <T as ProtoArchive>::archive::<TAG>(self, w);
     }

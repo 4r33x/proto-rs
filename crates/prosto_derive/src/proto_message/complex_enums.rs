@@ -87,7 +87,7 @@ pub(super) fn generate_complex_enum_impl(
                 impl #impl_generics ::proto_rs::ProtoDecode for #target_ty #where_clause {
                     type ShadowDecoded = #name #ty_generics;
 
-                    #[inline(always)]
+                    #[inline]
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(value)
                     }
@@ -96,7 +96,7 @@ pub(super) fn generate_complex_enum_impl(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoDefault for #target_ty #where_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn proto_default() -> Self {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoDefault>::proto_default();
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
@@ -105,7 +105,7 @@ pub(super) fn generate_complex_enum_impl(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
@@ -120,13 +120,13 @@ pub(super) fn generate_complex_enum_impl(
                 }
 
                 impl #impl_generics ::proto_rs::ProtoArchive for #target_ty #where_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn is_default(&self) -> bool {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                         <#name #ty_generics as ::proto_rs::ProtoArchive>::is_default(&shadow)
                     }
 
-                    #[inline(always)]
+                    #[inline]
                     fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                         let shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                         <#name #ty_generics as ::proto_rs::ProtoArchive>::archive::<TAG>(&shadow, w)
@@ -147,7 +147,7 @@ pub(super) fn generate_complex_enum_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -163,7 +163,7 @@ pub(super) fn generate_complex_enum_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoDefault for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 #default_expr
             }
@@ -175,28 +175,28 @@ pub(super) fn generate_complex_enum_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoShadowDecode<#name #ty_generics> for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<#name #ty_generics, ::proto_rs::DecodeError> {
                 Ok(self)
             }
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for &'a #name #ty_generics #shadow_where_clause {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a #name #ty_generics) -> Self {
                 value
             }
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoArchive for &'a #name #ty_generics #shadow_where_clause {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 match *self {
                     #(#is_default_arms,)*
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                 let mark = w.mark();
                 match *self {
@@ -211,12 +211,12 @@ pub(super) fn generate_complex_enum_impl(
         }
 
         impl #impl_generics ::proto_rs::ProtoArchive for #name #ty_generics #where_clause {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 <&Self as ::proto_rs::ProtoArchive>::is_default(&self)
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                 <&Self as ::proto_rs::ProtoArchive>::archive::<TAG>(&self, w)
             }

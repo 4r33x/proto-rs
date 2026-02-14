@@ -16,14 +16,14 @@ pub struct AddressProto {
 }
 
 impl ProtoShadowDecode<Address> for AddressProto {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<Address, DecodeError> {
         Ok(Address::from(self.inner))
     }
 }
 
 impl<'a> ProtoShadowEncode<'a, Address> for AddressProto {
-    #[inline(always)]
+    #[inline]
     fn from_sun(value: &'a Address) -> Self {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());

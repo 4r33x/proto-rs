@@ -16,7 +16,7 @@ pub enum WireType {
     ThirtyTwoBit = 5,
 }
 impl WireType {
-    #[inline(always)]
+    #[inline]
     pub const fn is_length_delimited(&self) -> bool {
         match self {
             WireType::LengthDelimited => true,

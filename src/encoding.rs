@@ -119,7 +119,7 @@ pub fn encode_key(tag: u32, wire_type: WireType, buf: &mut impl BufMut) {
 
 /// Decodes a Protobuf field key, which consists of a wire type designator and
 /// the field tag.
-#[inline(always)]
+#[inline]
 pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
     let key = decode_varint(buf)?;
     if key > u64::from(u32::MAX) {

@@ -15,9 +15,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -35,7 +35,7 @@ impl<T: ProtoExt> ProtoExt for VecDeque<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -44,7 +44,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if T::KIND.is_bytes_kind() {
             // SAFETY: only exercised for VecDeque<u8> which implements BytesAdapterDecode.
@@ -81,7 +81,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
 }
 
 impl<T> ProtoDefault for VecDeque<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         VecDeque::new()
     }
@@ -109,12 +109,12 @@ impl<T> ProtoArchive for VecDeque<T>
 where
     T: ProtoArchive + ProtoExt,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_empty()
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
             // SAFETY: only executed for VecDeque<u8>.

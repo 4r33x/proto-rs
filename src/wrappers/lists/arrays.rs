@@ -15,9 +15,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -50,7 +50,7 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -59,7 +59,7 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if T::KIND.is_bytes_kind() {
             check_wire_type(WireType::LengthDelimited, wire_type)?;
@@ -108,7 +108,7 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
 }
 
 impl<T: ProtoDefault, const N: usize> ProtoDefault for [T; N] {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         array::from_fn(|_| <T as ProtoDefault>::proto_default())
     }
@@ -149,12 +149,12 @@ impl<T, const N: usize> ProtoArchive for [T; N]
 where
     T: ProtoArchive + ProtoExt,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.iter().all(|item| <T as ProtoArchive>::is_default(item))
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
             let bytes: &[u8] = unsafe { core::slice::from_raw_parts(self.as_ptr().cast::<u8>(), N) };
@@ -202,13 +202,13 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T,
 }
 
 impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N> {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         // Arrays are default when all elements are default (unlike slices which are default when empty)
         self.slice.iter().all(|item| <T as ProtoArchive>::is_default(item))
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         self.slice.archive::<TAG>(w);
     }

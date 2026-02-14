@@ -5,8 +5,8 @@ use bytes::Buf;
 use crate::DecodeError;
 use crate::ProtoDecoder;
 use crate::ProtoDefault;
-use crate::ProtoFieldMerge;
 use crate::ProtoEncode;
+use crate::ProtoFieldMerge;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::skip_field;
@@ -23,7 +23,7 @@ impl<T: ProtoExt> ProtoExt for Box<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Box<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             T::merge_value(value.as_mut(), wire_type, buf, ctx)
@@ -32,14 +32,14 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Box<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         T::merge_value(self.as_mut(), wire_type, buf, ctx)
     }
 }
 
 impl<T: ProtoDefault> ProtoDefault for Box<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         Box::new(<T as ProtoDefault>::proto_default())
     }
@@ -56,7 +56,7 @@ impl<T, U> ProtoShadowDecode<Box<U>> for Box<T>
 where
     T: ProtoShadowDecode<U>,
 {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<Box<U>, DecodeError> {
         Ok(Box::write(Box::new_uninit(), (*self).to_sun()?))
     }
@@ -66,12 +66,12 @@ impl<T> ProtoArchive for Box<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }
@@ -102,12 +102,12 @@ impl<T> ProtoArchive for &Box<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         <T as ProtoArchive>::archive::<TAG>(self.as_ref(), w);
     }

@@ -17,12 +17,12 @@ pub trait RevWriter {
     fn put_slice(&mut self, s: &[u8]);
     fn put_varint(&mut self, v: u64);
 
-    #[inline(always)]
+    #[inline]
     fn put_fixed32(&mut self, v: u32) {
         self.put_slice(&v.to_le_bytes());
     }
 
-    #[inline(always)]
+    #[inline]
     fn put_fixed64(&mut self, v: u64) {
         self.put_slice(&v.to_le_bytes());
     }
@@ -39,12 +39,12 @@ pub struct RevVec {
 impl RevVec {
     const MIN_GROW: usize = 64;
 
-    #[inline(always)]
+    #[inline]
     const fn cap(&self) -> usize {
         self.buf.capacity()
     }
 
-    #[inline(always)]
+    #[inline]
     fn ensure_space(&mut self, need: usize) {
         if self.pos >= need {
             return;
@@ -76,7 +76,7 @@ impl RevWriter for RevVec {
     type RawBuf = Vec<u8>;
     type Mark = usize;
 
-    #[inline(always)]
+    #[inline]
     fn with_capacity(cap: usize) -> Self {
         let mut buf = Vec::with_capacity(cap);
         let cap = buf.capacity();
@@ -84,32 +84,32 @@ impl RevWriter for RevVec {
         Self { buf, pos: cap }
     }
 
-    #[inline(always)]
+    #[inline]
     fn empty() -> Self {
         Self { buf: Vec::new(), pos: 0 }
     }
 
-    #[inline(always)]
+    #[inline]
     fn mark(&self) -> Self::Mark {
         self.cap() - self.pos
     }
 
-    #[inline(always)]
+    #[inline]
     fn len(&self) -> usize {
         self.cap() - self.pos
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    #[inline(always)]
+    #[inline]
     fn written_since(&self, mark: Self::Mark) -> usize {
         (self.cap() - self.pos) - mark
     }
 
-    #[inline(always)]
+    #[inline]
     fn put_u8(&mut self, b: u8) {
         self.ensure_space(1);
         self.pos -= 1;
@@ -118,7 +118,7 @@ impl RevWriter for RevVec {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn put_slice(&mut self, s: &[u8]) {
         let n = s.len();
         if n == 0 {
@@ -131,7 +131,7 @@ impl RevWriter for RevVec {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn put_varint(&mut self, mut v: u64) {
         let mut tmp = [0u8; 10];
         let mut i = 0usize;
@@ -149,19 +149,19 @@ impl RevWriter for RevVec {
         self.put_slice(&tmp[..i]);
     }
 
-    #[inline(always)]
+    #[inline]
     fn finish_raw(self) -> Self::RawBuf {
         self.buf
     }
 
     /// Optional helper for viewing while still writing (no copy).
-    #[inline(always)]
+    #[inline]
     fn as_written_slice(&self) -> &[u8] {
         let cap = self.cap();
         unsafe { core::slice::from_raw_parts(self.buf.as_ptr().add(self.pos), cap - self.pos) }
     }
 
-    #[inline(always)]
+    #[inline]
     fn finish_tight(mut self) -> Self::TightBuf {
         let cap = self.cap();
         let pos = self.pos;

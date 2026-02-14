@@ -50,21 +50,21 @@ macro_rules! impl_proto_primitive_varint_by_value {
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<$ty, DecodeError> {
                 Ok(self)
             }
         }
 
         impl<'a> ProtoShadowEncode<'a, $ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a $ty) -> Self {
                 *value
             }
         }
 
         impl ProtoDecoder for $ty {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -79,14 +79,14 @@ macro_rules! impl_proto_primitive_varint_by_value {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 crate::encoding::$module::merge(wire_type, self, buf, ctx)
             }
         }
 
         impl ProtoDefault for $ty {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 $default
             }
@@ -97,12 +97,12 @@ macro_rules! impl_proto_primitive_varint_by_value {
         }
 
         impl ProtoArchive for $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 *self == $default
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let $v: $ty = *self;
                 let value = $to_u64;
@@ -134,21 +134,21 @@ macro_rules! impl_proto_primitive_fixed_by_value {
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<$ty, DecodeError> {
                 Ok(self)
             }
         }
 
         impl<'a> ProtoShadowEncode<'a, $ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a $ty) -> Self {
                 *value
             }
         }
 
         impl ProtoDecoder for $ty {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -163,14 +163,14 @@ macro_rules! impl_proto_primitive_fixed_by_value {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 crate::encoding::$module::merge(wire_type, self, buf, ctx)
             }
         }
 
         impl ProtoDefault for $ty {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 $default
             }
@@ -181,12 +181,12 @@ macro_rules! impl_proto_primitive_fixed_by_value {
         }
 
         impl ProtoArchive for $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 *self == $default
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let $v: $ty = *self;
                 let bits = $to_bits;
@@ -222,21 +222,21 @@ macro_rules! impl_proto_primitive_by_ref {
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<$ty, DecodeError> {
                 Ok(self)
             }
         }
 
         impl<'a> ProtoShadowEncode<'a, $ty> for &'a $ty {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a $ty) -> Self {
                 &value
             }
         }
 
         impl ProtoDecoder for $ty {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -251,14 +251,14 @@ macro_rules! impl_proto_primitive_by_ref {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 crate::encoding::$module::merge(wire_type, self, buf, ctx)
             }
         }
 
         impl ProtoDefault for $ty {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 Default::default()
             }
@@ -269,12 +269,12 @@ macro_rules! impl_proto_primitive_by_ref {
         }
 
         impl<'a> ProtoArchive for &'a $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 (*self).is_empty()
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let bytes = self.as_ref();
                 w.put_slice(bytes);
@@ -377,24 +377,24 @@ impl_proto_primitive_by_ref!(String, string, "StringValue", ProtoKind::String);
 impl_proto_primitive_by_ref!(Bytes, bytes, "BytesValue", ProtoKind::Bytes);
 
 impl ProtoArchive for String {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         <&String as ProtoArchive>::is_default(&self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         (&self).archive::<TAG>(w);
     }
 }
 
 impl ProtoArchive for Bytes {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         <&Bytes as ProtoArchive>::is_default(&self)
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         (&self).archive::<TAG>(w);
     }
@@ -411,21 +411,21 @@ macro_rules! impl_narrow_varint {
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<$ty, DecodeError> {
                 Ok(self)
             }
         }
 
         impl<'a> ProtoShadowEncode<'a, $ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a $ty) -> Self {
                 *value
             }
         }
 
         impl ProtoDecoder for $ty {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -440,7 +440,7 @@ macro_rules! impl_narrow_varint {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, _ctx: DecodeContext) -> Result<(), DecodeError> {
                 check_wire_type(WireType::Varint, wire_type)?;
                 let widened: $wide_ty = crate::encoding::decode_varint(buf)? as $wide_ty;
@@ -450,7 +450,7 @@ macro_rules! impl_narrow_varint {
         }
 
         impl ProtoDefault for $ty {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 0
             }
@@ -461,12 +461,12 @@ macro_rules! impl_narrow_varint {
         }
 
         impl ProtoArchive for $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 *self == 0
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let widened: $wide_ty = *self as $wide_ty;
                 w.put_varint(widened as u64);
@@ -501,21 +501,21 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<$ty, DecodeError> {
                 Ok(self)
             }
         }
 
         impl<'a> ProtoShadowEncode<'a, $ty> for &'a $ty {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a $ty) -> Self {
                 &value
             }
         }
 
         impl ProtoDecoder for $ty {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -530,7 +530,7 @@ macro_rules! impl_atomic_primitive {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 let mut raw: $base = ($load)(&*self);
                 crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
@@ -540,7 +540,7 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl ProtoDefault for $ty {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 Self::new($default)
             }
@@ -551,12 +551,12 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl ProtoArchive for $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 ($load)(self) == $default
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let value: $base = ($load)(self);
                 value.archive::<TAG>(w);
@@ -568,12 +568,12 @@ macro_rules! impl_atomic_primitive {
         }
 
         impl<'a> ProtoArchive for &'a $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 ($load)(*self) == $default
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let value: $base = ($load)(*self);
                 value.archive::<TAG>(w);
@@ -598,21 +598,21 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
-            #[inline(always)]
+            #[inline]
             fn to_sun(self) -> Result<$ty, DecodeError> {
                 Ok(self)
             }
         }
 
         impl<'a> ProtoShadowEncode<'a, $ty> for &'a $ty {
-            #[inline(always)]
+            #[inline]
             fn from_sun(value: &'a $ty) -> Self {
                 &value
             }
         }
 
         impl ProtoDecoder for $ty {
-            #[inline(always)]
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -627,7 +627,7 @@ macro_rules! impl_atomic_narrow_primitive {
                 }
             }
 
-            #[inline(always)]
+            #[inline]
             fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
                 let mut raw: $wide = ($load)(&*self) as $wide;
                 crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
@@ -639,7 +639,7 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl ProtoDefault for $ty {
-            #[inline(always)]
+            #[inline]
             fn proto_default() -> Self {
                 Self::new($default)
             }
@@ -650,12 +650,12 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl ProtoArchive for $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 ($load)(self) == $default
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let value: $wide = ($load)(self) as $wide;
                 w.put_varint(value as u64);
@@ -670,12 +670,12 @@ macro_rules! impl_atomic_narrow_primitive {
         }
 
         impl<'a> ProtoArchive for &'a $ty {
-            #[inline(always)]
+            #[inline]
             fn is_default(&self) -> bool {
                 ($load)(*self) == $default
             }
 
-            #[inline(always)]
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let value: $wide = ($load)(*self) as $wide;
                 w.put_varint(value as u64);
@@ -812,26 +812,26 @@ impl ProtoExt for () {
 }
 
 impl ProtoShadowDecode<()> for () {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<(), DecodeError> {
         Ok(())
     }
 }
 
 impl<'a> ProtoShadowEncode<'a, ()> for () {
-    #[inline(always)]
+    #[inline]
     fn from_sun(_value: &'a ()) -> Self {}
 }
 
 impl ProtoDecoder for () {
-    #[inline(always)]
+    #[inline]
     fn merge_field(_value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         skip_field(wire_type, tag, buf, ctx)
     }
 }
 
 impl ProtoDefault for () {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {}
 }
 
@@ -840,12 +840,12 @@ impl ProtoDecode for () {
 }
 
 impl ProtoArchive for () {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         true
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, _w: &mut impl RevWriter) {}
 }
 

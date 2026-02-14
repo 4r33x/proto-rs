@@ -25,14 +25,14 @@ categories = [
 ]
 
 [workspace.dependencies]
-prosto_derive = { version = "0.11.14", path = "crates/prosto_derive" }
-proto_rs = { version = "0.11.14", path = "./" }
-prost = { version = "0.14", default-features = false }
-bytes = { version = "1.11.0", default-features = false }
+prosto_derive = { version = "0.11.15", path = "crates/prosto_derive" }
+proto_rs = { version = "0.11.15", path = "./" }
+prost = { version = "0.14.3", default-features = false }
+bytes = { version = "1.11.1", default-features = false }
 inventory = { version = "0.3" }
 chrono = "0.4"
 criterion = { version = "0.7" }
-tonic = { version = "0.14.2" }
+tonic = { version = "0.14.4" }
 
 [workspace.lints.clippy]
 #cargo = { level = "deny", priority = -1 }
@@ -48,7 +48,7 @@ unsafe_code = { level = "forbid", priority = 0 }
 
 [package]
 name = "proto_rs"
-version = "0.11.14"
+version = "0.11.15"
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
@@ -89,7 +89,7 @@ teloxide-core = {version = "0.13", optional = true}
 
 [dev-dependencies]
 proptest = "1.9"
-rand = "0.9"
+rand = "0.10"
 criterion.workspace = true
 tonic.workspace = true
 tonic-prost = "0.14.2"

@@ -32,7 +32,7 @@ pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> Token
             quote! {
                 const VALIDATE_WITH_EXT: bool = true;
 
-                #[inline(always)]
+                #[inline]
                 fn validate_with_ext(
                     value: &mut Self,
                     ext: &::tonic::Extensions,

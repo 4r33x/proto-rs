@@ -10,14 +10,14 @@ use crate::ProtoShadowEncode;
 pub struct UserIdProto(pub u64);
 
 impl ProtoShadowDecode<UserId> for UserIdProto {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<UserId, DecodeError> {
         Ok(UserId(self.0))
     }
 }
 
 impl<'a> ProtoShadowEncode<'a, UserId> for UserIdProto {
-    #[inline(always)]
+    #[inline]
     fn from_sun(value: &'a UserId) -> Self {
         Self(value.0)
     }

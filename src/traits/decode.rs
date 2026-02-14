@@ -22,7 +22,7 @@ pub trait ProtoDecoder: ProtoExt {
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
     /// Merge an entire message payload
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         // Not work :C :C :C
         // const _: () = {
@@ -48,7 +48,7 @@ pub trait ProtoDecoder: ProtoExt {
 
     ///top level decode entrypoint
     /// Decode a whole message from a buffer (top-level, not length-delimited wrapper).
-    #[inline(always)]
+    #[inline]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError>
     where
         Self: ProtoDefault,
@@ -60,7 +60,7 @@ pub trait ProtoDecoder: ProtoExt {
         Ok(sh)
     }
     /// Decode until `buf` is exhausted. Caller must check ctx.limit_reached() before calling.
-    #[inline(always)]
+    #[inline]
     fn decode_into(value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         while buf.has_remaining() {
             Self::decode_one_field(value, buf, ctx)?;
@@ -70,7 +70,7 @@ pub trait ProtoDecoder: ProtoExt {
 
     /// Decode one field from the buffer. This is an internal function - `ctx.limit_reached()`
     /// must be checked before the first call to this function (it's checked in `merge` before recursion).
-    #[inline(always)]
+    #[inline]
     fn decode_one_field(value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let (tag, wire) = decode_key(buf)?;
         if tag == 0 {
@@ -82,14 +82,14 @@ pub trait ProtoDecoder: ProtoExt {
 
 pub trait ProtoDecode: Sized {
     type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self> + ProtoDefault;
-    #[inline(always)]
+    #[inline]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
         let mut sh = <Self::ShadowDecoded as ProtoDefault>::proto_default();
         Self::ShadowDecoded::decode_into(&mut sh, &mut buf, ctx)?;
         Self::post_decode(sh)
     }
 
-    #[inline(always)]
+    #[inline]
     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, DecodeError> {
         Self::ShadowDecoded::to_sun(value)
     }
@@ -97,7 +97,7 @@ pub trait ProtoDecode: Sized {
     const VALIDATE_WITH_EXT: bool = false;
 
     #[cfg(feature = "tonic")]
-    #[inline(always)]
+    #[inline]
     fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {
         Ok(())
     }
@@ -118,7 +118,7 @@ impl<T> ProtoFieldMerge for T
 where
     T: ProtoDecoder,
 {
-    #[inline(always)]
+    #[inline]
     fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
     }

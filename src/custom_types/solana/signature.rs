@@ -16,14 +16,14 @@ pub struct SignatureProto {
 }
 
 impl ProtoShadowDecode<Signature> for SignatureProto {
-    #[inline(always)]
+    #[inline]
     fn to_sun(self) -> Result<Signature, DecodeError> {
         Ok(Signature::from(self.inner))
     }
 }
 
 impl<'a> ProtoShadowEncode<'a, Signature> for SignatureProto {
-    #[inline(always)]
+    #[inline]
     fn from_sun(value: &'a Signature) -> Self {
         let mut inner = [0u8; BYTES];
         inner.copy_from_slice(value.as_ref());

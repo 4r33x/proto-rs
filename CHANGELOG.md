@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.15]
+- Change #[inline(always)] to #[inline] everywhere due to enormous stack usage
+
 ## [0.11.14]
 - Correct narrowed primitives in rust client output
 

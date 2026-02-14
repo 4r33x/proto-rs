@@ -8,9 +8,9 @@ use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
-use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoEncode;
 use crate::traits::ProtoExt;
+use crate::traits::ProtoFieldMerge;
 use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
@@ -21,7 +21,7 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
-    #[inline(always)]
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             let inner = value.get_or_insert_with(<T as ProtoDefault>::proto_default);
@@ -31,7 +31,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let inner = self.get_or_insert_with(<T as ProtoDefault>::proto_default);
         T::merge_value(inner, wire_type, buf, ctx)
@@ -39,7 +39,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
 }
 
 impl<T> ProtoDefault for Option<T> {
-    #[inline(always)]
+    #[inline]
     fn proto_default() -> Self {
         None
     }
@@ -69,12 +69,12 @@ impl<T> ProtoArchive for Option<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_none()
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if let Some(inner) = self.as_ref() {
             inner.archive::<TAG>(w);
@@ -103,12 +103,12 @@ impl<T> ProtoArchive for &Option<T>
 where
     T: ProtoArchive,
 {
-    #[inline(always)]
+    #[inline]
     fn is_default(&self) -> bool {
         self.is_none()
     }
 
-    #[inline(always)]
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if let Some(inner) = self.as_ref() {
             inner.archive::<TAG>(w);
