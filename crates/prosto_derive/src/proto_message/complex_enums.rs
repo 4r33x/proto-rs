@@ -67,6 +67,26 @@ pub(super) fn generate_complex_enum_impl(
     } else {
         validate_with_ext_impl.clone()
     };
+    let message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(&shadow)?;
+        }
+    } else {
+        quote! {}
+    };
+    let post_decode_impl = if config.validator.is_none() {
+        quote! {}
+    } else {
+        quote! {
+            #[inline]
+            fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
+                let shadow = value;
+                #message_validation
+                Ok(shadow)
+            }
+        }
+    };
 
     let mut shadow_generics = bounded_generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
@@ -89,7 +109,9 @@ pub(super) fn generate_complex_enum_impl(
 
                     #[inline]
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
-                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(value)
+                        let shadow = value;
+                        #message_validation
+                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                     }
 
                     #validate_with_ext_impl
@@ -171,6 +193,7 @@ pub(super) fn generate_complex_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
             type ShadowDecoded = Self;
+            #post_decode_impl
             #validate_with_ext_proto_impl
         }
 
