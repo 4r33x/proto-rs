@@ -72,6 +72,24 @@ pub struct MessageWithFieldValidator {
 }
 
 #[proto_message(proto_path = "protos/tests/validation.proto")]
+#[proto(validator = validate_swap_amount)]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum Amount {
+    One(u64),
+    Two(u32),
+    #[default]
+    Three,
+}
+
+fn validate_swap_amount(amount: &Amount) -> Result<(), DecodeError> {
+    match amount {
+        Amount::One(v) if *v == 0 => Err(DecodeError::new("Amount is zero")),
+        Amount::Two(v) if *v == 0 => Err(DecodeError::new("Amount is zero")),
+        _ => Ok(()),
+    }
+}
+
+#[proto_message(proto_path = "protos/tests/validation.proto")]
 #[proto(validator = validate_message_with_both)]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct MessageWithBothValidators {
@@ -190,6 +208,25 @@ mod tests {
         let result = <MessageWithBothValidators as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("sum of scores"));
+    }
+
+    #[test]
+    fn test_complex_enum_message_validator_good_input() {
+        let msg = Amount::One(10);
+
+        let encoded = Amount::encode_to_vec(&msg);
+        let decoded = <Amount as ProtoDecode>::decode(&encoded[..], DecodeContext::default()).unwrap();
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn test_complex_enum_message_validator_bad_input() {
+        let msg = Amount::Two(0);
+
+        let encoded = Amount::encode_to_vec(&msg);
+        let result = <Amount as ProtoDecode>::decode(&encoded[..], DecodeContext::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Amount is zero"));
     }
 
     #[test]
