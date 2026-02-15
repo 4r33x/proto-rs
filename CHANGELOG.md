@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.17]
+- Use mut ref in enum validators
+
 ## [0.11.16]
 - Fix enum validators
 

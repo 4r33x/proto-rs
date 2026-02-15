@@ -70,7 +70,7 @@ pub(super) fn generate_complex_enum_impl(
     let message_validation = if let Some(validator_fn) = &config.validator {
         let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
         quote! {
-            #validator_path(&shadow)?;
+            #validator_path(&mut shadow)?;
         }
     } else {
         quote! {}
@@ -81,7 +81,7 @@ pub(super) fn generate_complex_enum_impl(
         quote! {
             #[inline]
             fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
-                let shadow = value;
+                let mut shadow = value;
                 #message_validation
                 Ok(shadow)
             }
