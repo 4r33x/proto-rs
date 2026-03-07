@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.18]
+- Fix .proto output for bytes fields
+
 ## [0.11.17]
 - Use mut ref in enum validators
 
