@@ -1128,8 +1128,7 @@ fn proto_ident_tokens(
         // If the type references generic parameters from the parent, use a placeholder
         // This happens when generating schemas for base generic types at module level
         if type_references_generic_params(inner_type, item_generics) {
-            let type_name = generic_param_name(inner_type, item_generics)
-                .unwrap_or_else(|| rust_type_path_ident(inner_type).to_string());
+            let type_name = generic_param_name(inner_type, item_generics).unwrap_or_else(|| rust_type_path_ident(inner_type).to_string());
             return proto_ident_literal(&type_name, "", "");
         }
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
@@ -1169,8 +1168,7 @@ fn rust_proto_ident_tokens(
         // If the type references generic parameters from the parent, use a placeholder
         // This happens when generating schemas for base generic types at module level
         if type_references_generic_params(inner_type, item_generics) {
-            let type_name = generic_param_name(inner_type, item_generics)
-                .unwrap_or_else(|| rust_type_path_ident(inner_type).to_string());
+            let type_name = generic_param_name(inner_type, item_generics).unwrap_or_else(|| rust_type_path_ident(inner_type).to_string());
             return proto_ident_literal(&type_name, "", "");
         }
         return quote! { <#inner_type as ::proto_rs::schemas::ProtoIdentifiable>::PROTO_IDENT };
@@ -1399,11 +1397,11 @@ fn generic_args_tokens_from_type(
 
 fn const_expr_references_generic_param(expr: &syn::Expr, generics: &syn::Generics) -> bool {
     match expr {
-        syn::Expr::Path(path) => path.path.segments.len() == 1
-            && generics.const_params().any(|param| param.ident == path.path.segments[0].ident),
+        syn::Expr::Path(path) => {
+            path.path.segments.len() == 1 && generics.const_params().any(|param| param.ident == path.path.segments[0].ident)
+        }
         syn::Expr::Binary(binary) => {
-            const_expr_references_generic_param(&binary.left, generics)
-                || const_expr_references_generic_param(&binary.right, generics)
+            const_expr_references_generic_param(&binary.left, generics) || const_expr_references_generic_param(&binary.right, generics)
         }
         syn::Expr::Unary(unary) => const_expr_references_generic_param(&unary.expr, generics),
         syn::Expr::Group(group) => const_expr_references_generic_param(&group.expr, generics),
@@ -1500,10 +1498,8 @@ pub(crate) fn type_references_generic_params(ty: &Type, generics: &syn::Generics
                 if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
                     for arg in &args.args {
                         match arg {
-                            syn::GenericArgument::Type(ty) => {
-                                if type_references_generic_params(ty, generics) {
-                                    return true;
-                                }
+                            syn::GenericArgument::Type(ty) if type_references_generic_params(ty, generics) => {
+                                return true;
                             }
                             syn::GenericArgument::Const(expr) => {
                                 // Check if const expr references a const generic param
@@ -1526,10 +1522,8 @@ pub(crate) fn type_references_generic_params(ty: &Type, generics: &syn::Generics
                 if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
                     for arg in &args.args {
                         match arg {
-                            syn::GenericArgument::Type(ty) => {
-                                if type_references_generic_params(ty, generics) {
-                                    return true;
-                                }
+                            syn::GenericArgument::Type(ty) if type_references_generic_params(ty, generics) => {
+                                return true;
                             }
                             syn::GenericArgument::Const(expr) => {
                                 if let syn::Expr::Path(expr_path) = expr
