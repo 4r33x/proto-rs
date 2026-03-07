@@ -14,20 +14,12 @@ message VecDequeMEx {
   repeated MEx value = 1;
 }
 
-message VecDequeU32 {
-  repeated uint32 value = 1;
-}
-
 message VecDequeU64 {
   repeated uint64 value = 1;
 }
 
 message VecMEx {
   repeated MEx value = 1;
-}
-
-message VecU32 {
-  repeated uint32 value = 1;
 }
 
 message VecU64 {
@@ -50,8 +42,8 @@ message CustomEx {
   map<uint32, MEx> custom_map = 13;
   OptionMEx custom_option = 14;
   OptionU64 custom_option_copy = 15;
-  VecU32 custom_vec_bytes = 16;
-  VecDequeU32 custom_vec_deque_bytes = 17;
+  bytes custom_vec_bytes = 16;
+  bytes custom_vec_deque_bytes = 17;
   VecU64 custom_vec_copy = 18;
   VecDequeU64 custom_vec_deque_copy = 19;
   VecMEx custom_vec = 20;

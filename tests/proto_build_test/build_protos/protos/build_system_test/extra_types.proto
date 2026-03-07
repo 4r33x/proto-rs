@@ -44,6 +44,10 @@ message Order {
   uint32 id = 1;
 }
 
+message OrderBytes {
+  bytes id = 1;
+}
+
 message Orders {
   repeated Order orders = 1;
 }

@@ -8,8 +8,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicI16;
 use std::sync::atomic::AtomicI8;
+use std::sync::atomic::AtomicI16;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::AtomicU8;
@@ -245,6 +245,12 @@ struct Order {
 
 #[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
 #[derive(Debug)]
+struct OrderBytes {
+    id: Vec<u8>,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/extra_types.proto")]
+#[derive(Debug)]
 struct Orders {
     orders: Vec<Order>,
 }
@@ -424,6 +430,26 @@ fn main() {
         println!("Collected: {}", schema.id.name);
     }
 
+    // Verify proto output for bytes collection fields (Vec<u8>, CustomVec<u8>, etc.)
+    let custom_proto =
+        std::fs::read_to_string("build_protos/protos/build_system_test/custom_types.proto").expect("Failed to read custom_types.proto");
+    assert!(
+        custom_proto.contains("bytes custom_vec_bytes"),
+        "CustomVec<u8> field should be proto 'bytes', not a wrapper message. Got:\n{custom_proto}"
+    );
+    assert!(
+        custom_proto.contains("bytes custom_vec_deque_bytes"),
+        "CustomVecDeq<u8> field should be proto 'bytes', not a wrapper message. Got:\n{custom_proto}"
+    );
+    assert!(
+        !custom_proto.contains("VecU32"),
+        "There should be no VecU32 wrapper message for bytes fields. Got:\n{custom_proto}"
+    );
+    assert!(
+        !custom_proto.contains("VecDequeU32"),
+        "There should be no VecDequeU32 wrapper message for bytes fields. Got:\n{custom_proto}"
+    );
+
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
     assert!(client_contents.contains("use fastnum::UD128;"));
     assert!(!client_contents.contains("pub struct UD128"));
@@ -602,7 +628,10 @@ fn main() {
     assert!(client_contents.contains("pub small: u8,"), "AtomicU8 should render as u8");
     assert!(client_contents.contains("pub smaller: u16,"), "AtomicU16 should render as u16");
     assert!(client_contents.contains("pub signed_small: i8,"), "AtomicI8 should render as i8");
-    assert!(client_contents.contains("pub signed_smaller: i16,"), "AtomicI16 should render as i16");
+    assert!(
+        client_contents.contains("pub signed_smaller: i16,"),
+        "AtomicI16 should render as i16"
+    );
     assert!(client_contents.contains("pub signed: i32,"), "AtomicI32 should render as i32");
     assert!(client_contents.contains("pub sized: u64,"), "AtomicUsize should render as u64");
     assert!(

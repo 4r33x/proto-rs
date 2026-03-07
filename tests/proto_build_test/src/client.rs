@@ -113,6 +113,12 @@ pub mod extra_types {
 
     #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
+    pub struct OrderBytes {
+        pub id: ::proto_rs::alloc::vec::Vec<u8>,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    #[proto_message]
     pub struct Orders {
         pub orders: ::proto_rs::alloc::vec::Vec<Order>,
     }

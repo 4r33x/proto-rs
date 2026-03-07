@@ -392,6 +392,11 @@ fn collect_wrapper_definition_for_field(
     existing_names: &BTreeSet<String>,
     definitions: &mut BTreeMap<String, String>,
 ) {
+    // Bytes collection fields (Vec<u8>, HashSet<u8>, etc.) are rendered inline
+    // as the proto `bytes` scalar — no wrapper message needed.
+    if is_bytes_proto_field(field) {
+        return;
+    }
     let Some(kind) = wrapper_kind_for(field.wrapper, field.proto_ident) else {
         return;
     };
@@ -703,6 +708,37 @@ fn render_named_fields(
     lines.join("\n")
 }
 
+/// Returns `true` when a field should be rendered as the proto `bytes` scalar.
+///
+/// This covers:
+///  - Fields already detected as `Bytes` by the derive macro (direct `Vec<u8>`, `Vec<AtomicU8>`, etc.)
+///  - Fields whose wrapper is a collection (Vec, VecDeque, HashSet, BTreeSet) with a byte-like
+///    inner element (`u8` or `AtomicU8`), including type-alias wrappers like `CustomVec<u8>`.
+fn is_bytes_proto_field(field: &Field) -> bool {
+    // The derive macro already identified this as bytes.
+    if matches!(field.proto_ident.proto_type, ProtoType::Bytes) {
+        return true;
+    }
+
+    // Check if the wrapper is a collection with a byte-like inner element.
+    let Some(kind) = wrapper_kind_for(field.wrapper, field.proto_ident) else {
+        return false;
+    };
+
+    if !matches!(
+        kind,
+        WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet
+    ) {
+        return false;
+    }
+
+    let wrapper_ident = field.wrapper.unwrap_or(field.proto_ident);
+    wrapper_ident
+        .generics
+        .first()
+        .is_some_and(|inner| matches!(inner.name, "u8" | "AtomicU8"))
+}
+
 fn render_field(
     field: &Field,
     idx: usize,
@@ -711,6 +747,14 @@ fn render_field(
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
     let name = field.name.map_or_else(|| format!("field_{idx}"), ToString::to_string);
+
+    if is_bytes_proto_field(field) {
+        // Bytes fields are never "repeated" — the bytes scalar already represents a blob.
+        // Preserve "optional" when the field is wrapped in Option.
+        let label = if matches!(field.proto_label, ProtoLabel::Optional) { "optional " } else { "" };
+        return format!("  {label}bytes {name} = {};", field.tag);
+    }
+
     let label = match proto_label_for_field(field) {
         ProtoLabel::None => "",
         ProtoLabel::Optional => "optional ",
