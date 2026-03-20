@@ -1,25 +1,6 @@
 //CODEGEN BELOW - DO NOT TOUCH ME
-pub mod atomic_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
-
-    #[proto_message]
-    pub struct AtomicPrimitives {
-        pub flag: bool,
-        pub count: u64,
-        pub small: u8,
-        pub smaller: u16,
-        pub signed_small: i8,
-        pub signed_smaller: i16,
-        pub signed: i32,
-        pub sized: u64,
-        pub signed_sized: i64,
-    }
-
-}
 pub mod custom_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
 
     #[derive(Clone, Debug, PartialEq)]
     #[proto_message]
@@ -56,8 +37,7 @@ pub mod custom_types {
 }
 #[allow(clippy::upper_case_acronyms)]
 pub mod extra_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
     use crate::custom_types::MEx;
     use crate::goon_types::GoonPong;
     use crate::goon_types::Id;
@@ -131,8 +111,7 @@ pub mod extra_types {
 
 }
 pub mod fastnum {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
 
     #[proto_message]
     pub struct D128 {
@@ -144,8 +123,7 @@ pub mod fastnum {
 
 }
 pub mod getter_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
 
     #[proto_message]
     pub struct GetterTestStruct {
@@ -155,8 +133,7 @@ pub mod getter_types {
 
 }
 pub mod goon_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
     use chrono::DateTime;
     use chrono::Utc;
 
@@ -193,8 +170,7 @@ pub mod goon_types {
 
 }
 pub mod lru_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
 
     #[proto_message]
     pub struct Lru<K, V, const CAP: usize> {
@@ -220,8 +196,7 @@ pub mod lru_types {
 
 }
 pub mod rizz_types {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
 
     #[proto_message]
     pub struct BarSub;
@@ -231,8 +206,7 @@ pub mod rizz_types {
 
 }
 pub mod sigma_rpc {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_rpc;
     use crate::custom_types::CustomEx;
     use crate::custom_types::MEx;
     use crate::extra_types::BuildRequest;
@@ -369,8 +343,27 @@ pub mod sigma_rpc {
 
 }
 pub mod solana {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
+    use solana_address::Address;
+
+    #[proto_message]
+    pub struct AccountMeta {
+        pub pubkey: Address,
+        pub is_signer: bool,
+        pub is_writable: bool,
+    }
+
+    #[proto_message]
+    pub struct Hash {
+        pub inner: [u8; BYTES],
+    }
+
+    #[proto_message]
+    pub struct Instruction {
+        pub program_id: Address,
+        pub accounts: ::proto_rs::alloc::vec::Vec<AccountMeta>,
+        pub data: ::proto_rs::alloc::vec::Vec<u8>,
+    }
 
     #[proto_message]
     pub enum InstructionError {
@@ -486,8 +479,7 @@ pub mod solana {
 
 }
 pub mod well_known {
-    #[allow(unused_imports)]
-    use proto_rs::{proto_message, proto_rpc};
+    use proto_rs::proto_message;
 
     #[proto_message]
     pub struct Timestamp {

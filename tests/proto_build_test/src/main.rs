@@ -7,6 +7,16 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::num::NonZeroI8;
+use std::num::NonZeroI16;
+use std::num::NonZeroI32;
+use std::num::NonZeroI64;
+use std::num::NonZeroIsize;
+use std::num::NonZeroU8;
+use std::num::NonZeroU16;
+use std::num::NonZeroU32;
+use std::num::NonZeroU64;
+use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI8;
 use std::sync::atomic::AtomicI16;
@@ -83,6 +93,21 @@ pub struct AtomicPrimitives {
     pub signed: AtomicI32,
     pub sized: AtomicUsize,
     pub signed_sized: AtomicIsize,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/atomic_types.proto")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct NonZeroPrimitives {
+    pub nz_u8: NonZeroU8,
+    pub nz_u16: NonZeroU16,
+    pub nz_u32: NonZeroU32,
+    pub nz_u64: NonZeroU64,
+    pub nz_usize: NonZeroUsize,
+    pub nz_i8: NonZeroI8,
+    pub nz_i16: NonZeroI16,
+    pub nz_i32: NonZeroI32,
+    pub nz_i64: NonZeroI64,
+    pub nz_isize: NonZeroIsize,
 }
 
 #[proto_message(proto_path = "protos/build_system_test/lru_types.proto")]
@@ -423,7 +448,8 @@ fn main() {
                 kind: MethodReplace::Return("::core::primitive::u32".to_string()),
                 type_name: "::core::primitive::u32".to_string(),
             },
-        ]);
+        ])
+        .split_module("atomic_types", "src/client_atomic_types.rs");
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
 
     for schema in inventory::iter::<ProtoSchema> {
@@ -619,27 +645,107 @@ fn main() {
         "custom_vec_deque_bytes field should be Vec<u8>, not Vec<u32<u32>>"
     );
 
+    // Verify atomic_types module was split into its own file
     assert!(
-        client_contents.contains("pub struct AtomicPrimitives"),
-        "AtomicPrimitives should be in rust client"
+        !client_contents.contains("pub mod atomic_types"),
+        "atomic_types should not be in main client (split module)"
     );
-    assert!(client_contents.contains("pub flag: bool,"), "AtomicBool should render as bool");
-    assert!(client_contents.contains("pub count: u64,"), "AtomicU64 should render as u64");
-    assert!(client_contents.contains("pub small: u8,"), "AtomicU8 should render as u8");
-    assert!(client_contents.contains("pub smaller: u16,"), "AtomicU16 should render as u16");
-    assert!(client_contents.contains("pub signed_small: i8,"), "AtomicI8 should render as i8");
+    let split_contents =
+        std::fs::read_to_string("src/client_atomic_types.rs").expect("Failed to read split module output");
     assert!(
-        client_contents.contains("pub signed_smaller: i16,"),
+        split_contents.contains("pub mod atomic_types"),
+        "atomic_types should be in split file"
+    );
+    assert!(
+        split_contents.contains("pub struct AtomicPrimitives"),
+        "AtomicPrimitives should be in split file"
+    );
+    assert!(split_contents.contains("pub flag: bool,"), "AtomicBool should render as bool");
+    assert!(split_contents.contains("pub count: u64,"), "AtomicU64 should render as u64");
+    assert!(split_contents.contains("pub small: u8,"), "AtomicU8 should render as u8");
+    assert!(split_contents.contains("pub smaller: u16,"), "AtomicU16 should render as u16");
+    assert!(split_contents.contains("pub signed_small: i8,"), "AtomicI8 should render as i8");
+    assert!(
+        split_contents.contains("pub signed_smaller: i16,"),
         "AtomicI16 should render as i16"
     );
-    assert!(client_contents.contains("pub signed: i32,"), "AtomicI32 should render as i32");
-    assert!(client_contents.contains("pub sized: u64,"), "AtomicUsize should render as u64");
+    assert!(split_contents.contains("pub signed: i32,"), "AtomicI32 should render as i32");
+    assert!(split_contents.contains("pub sized: u64,"), "AtomicUsize should render as u64");
     assert!(
-        client_contents.contains("pub signed_sized: i64,"),
+        split_contents.contains("pub signed_sized: i64,"),
         "AtomicIsize should render as i64"
     );
     assert!(
-        !client_contents.contains("AtomicU"),
+        !split_contents.contains("AtomicU"),
         "Atomic primitives should not appear in rust client output"
+    );
+
+    // Verify NonZero types render as NonZero, not ordinary primitives
+    assert!(
+        split_contents.contains("pub struct NonZeroPrimitives"),
+        "NonZeroPrimitives should be in split file"
+    );
+    assert!(
+        split_contents.contains("pub nz_u8: ::core::num::NonZeroU8,"),
+        "NonZeroU8 should render as ::core::num::NonZeroU8"
+    );
+    assert!(
+        split_contents.contains("pub nz_u16: ::core::num::NonZeroU16,"),
+        "NonZeroU16 should render as ::core::num::NonZeroU16"
+    );
+    assert!(
+        split_contents.contains("pub nz_u32: ::core::num::NonZeroU32,"),
+        "NonZeroU32 should render as ::core::num::NonZeroU32"
+    );
+    assert!(
+        split_contents.contains("pub nz_u64: ::core::num::NonZeroU64,"),
+        "NonZeroU64 should render as ::core::num::NonZeroU64"
+    );
+    assert!(
+        split_contents.contains("pub nz_usize: ::core::num::NonZeroU64,"),
+        "NonZeroUsize should render as ::core::num::NonZeroU64"
+    );
+    assert!(
+        split_contents.contains("pub nz_i8: ::core::num::NonZeroI8,"),
+        "NonZeroI8 should render as ::core::num::NonZeroI8"
+    );
+    assert!(
+        split_contents.contains("pub nz_i16: ::core::num::NonZeroI16,"),
+        "NonZeroI16 should render as ::core::num::NonZeroI16"
+    );
+    assert!(
+        split_contents.contains("pub nz_i32: ::core::num::NonZeroI32,"),
+        "NonZeroI32 should render as ::core::num::NonZeroI32"
+    );
+    assert!(
+        split_contents.contains("pub nz_i64: ::core::num::NonZeroI64,"),
+        "NonZeroI64 should render as ::core::num::NonZeroI64"
+    );
+    assert!(
+        split_contents.contains("pub nz_isize: ::core::num::NonZeroI64,"),
+        "NonZeroIsize should render as ::core::num::NonZeroI64"
+    );
+
+    // Verify macro imports are tracked correctly (no #[allow(unused_imports)])
+    assert!(
+        !client_contents.contains("#[allow(unused_imports)]"),
+        "Should not have #[allow(unused_imports)] - macro imports should be precise"
+    );
+    assert!(
+        !split_contents.contains("#[allow(unused_imports)]"),
+        "Split file should not have #[allow(unused_imports)]"
+    );
+    assert!(
+        split_contents.contains("use proto_rs::proto_message;"),
+        "Split file with only structs should import only proto_message"
+    );
+    assert!(
+        !split_contents.contains("proto_rpc"),
+        "Split file with only structs should not import proto_rpc"
+    );
+    // sigma_rpc module has only a service trait, so it should import only proto_rpc
+    assert!(
+        client_contents.contains("use proto_rs::proto_rpc;\n"),
+        "Service-only module should import only proto_rpc"
     );
 }

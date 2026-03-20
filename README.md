@@ -818,6 +818,11 @@ Native support for Solana SDK types:
 
 ## Schema registry and emission
 
+proto\_rs includes a build system that collects all proto schemas at compile time using the `inventory` crate. Every `#[proto_message]` and `#[proto_rpc]` macro invocation automatically registers its schema.  `write_all()` gathers all registered schemas across your entire workspace (and from whole dependency tree!) and generates two outputs:
+
+1. **`.proto` files** — valid proto3 definitions with resolved imports and package structure
+2. **Rust client module** — optional generated Rust code with `#[proto_message]` / `#[proto_rpc]` attributes, ready for use by downstream consumers who depend on proto\_rs but don't have access to your original types
+
 ### Emitting `.proto` files
 
 Proto files are written only when explicitly enabled:
@@ -831,27 +836,180 @@ Proto files are written only when explicitly enabled:
 With the `build-schemas` feature, collect all proto schemas across your workspace and write them to disk:
 
 ```rust
-// build.rs or a dedicated binary
-fn main() {
-    proto_rs::schemas::write_all("./protos", proto_rs::schemas::RustClientCtx::disabled())
-        .expect("failed to write generated protos");
+use proto_rs::schemas::{write_all, RustClientCtx};
 
-    for schema in proto_rs::schemas::all() {
-        println!("Registered proto: {}", schema.name);
-    }
+fn main() {
+    let count = write_all("./protos", &RustClientCtx::disabled())
+        .expect("failed to write generated protos");
+    println!("Generated {count} proto files");
 }
 ```
 
-`RustClientCtx` can also generate a Rust client module from the collected schemas:
+### Rust client generation
+
+`RustClientCtx` controls whether and how a Rust client module is generated alongside `.proto` files. The generated module mirrors your proto package hierarchy as nested Rust `pub mod` blocks, with each type annotated by `#[proto_message]` or `#[proto_rpc]`.
 
 ```rust
-proto_rs::schemas::write_all(
-    "./protos",
-    proto_rs::schemas::RustClientCtx::enabled("src/generated")
-        .with_imports(&["use crate::types::*;"])
-        .add_client_attrs("MyService", "#[derive(Debug)]"),
-)?;
+use proto_rs::schemas::{write_all, RustClientCtx};
+
+fn main() {
+    let ctx = RustClientCtx::enabled("src/generated.rs");
+    write_all("./protos", &ctx).expect("failed");
+}
 ```
+
+### Import substitution (`with_imports`)
+
+When you provide imports, the build system **auto-substitutes** matching types in the generated client. If a generated type name matches an imported type, it is replaced with the import — the struct definition is omitted and all references use the imported path instead.
+
+This is useful when consumers already have types (like `fastnum::UD128`, `solana_address::Address`, or `chrono::DateTime`) and want the generated client to reference those directly rather than re-generating wrapper structs.
+
+```rust
+let ctx = RustClientCtx::enabled("src/client.rs")
+    .with_imports(&[
+        "fastnum::UD128",
+        "solana_address::Address",
+        "chrono::DateTime",
+        "chrono::Utc",
+    ]);
+```
+
+**Before** (without import): the build system generates a `pub struct UD128 { ... }` in the client.
+**After** (with import): the client emits `use fastnum::UD128;` and references `UD128` directly — no struct generated.
+
+Aliased imports are also supported:
+
+```rust
+.with_imports(&["my_crate::MyType as Alias"])
+```
+
+### Module type attributes (`type_attribute`)
+
+Apply `#[derive(...)]` or other attributes to all types within a module:
+
+```rust
+let ctx = RustClientCtx::enabled("src/client.rs")
+    .type_attribute("goon_types".into(), "#[derive(Clone, Debug)]".into())
+    .type_attribute("goon_types".into(), "#[derive(Clone, PartialEq)]".into());
+```
+
+Duplicate derive entries are automatically merged — the above produces a single `#[derive(Clone, Debug, PartialEq)]` on every type in `goon_types`.
+
+### Per-type and per-field attributes (`add_client_attrs`, `remove_type_attribute`)
+
+Add or remove attributes on individual types, fields, or RPC methods:
+
+```rust
+use proto_rs::schemas::{AttrLevel, ClientAttrTarget, ProtoIdentifiable, UserAttr};
+
+let ctx = RustClientCtx::enabled("src/client.rs")
+    // Add an attribute to a specific type
+    .add_client_attrs(
+        ClientAttrTarget::Ident(BuildRequest::PROTO_IDENT),
+        UserAttr { level: AttrLevel::Top, attr: "#[allow(dead_code)]".into() },
+    )
+    // Add an attribute to a specific field
+    .add_client_attrs(
+        ClientAttrTarget::Ident(BuildResponse::PROTO_IDENT),
+        UserAttr {
+            level: AttrLevel::Field {
+                field_name: "status".into(),
+                id: ServiceStatus::PROTO_IDENT,
+                variant: None,
+            },
+            attr: "#[allow(dead_code)]".into(),
+        },
+    )
+    // Add a module-level attribute
+    .add_client_attrs(
+        ClientAttrTarget::Module("extra_types"),
+        UserAttr { level: AttrLevel::Top, attr: "#[allow(clippy::upper_case_acronyms)]".into() },
+    )
+    // Remove a specific derive from a type (e.g., remove Clone from BuildRequest)
+    .remove_type_attribute(
+        ClientAttrTarget::Ident(BuildRequest::PROTO_IDENT),
+        UserAttr { level: AttrLevel::Top, attr: "#[derive(Clone)]".into() },
+    );
+```
+
+### Type replacement (`replace_type`)
+
+Replace types in the generated client — useful for substituting proto types with domain-specific types in struct fields or RPC method signatures:
+
+```rust
+use proto_rs::schemas::{MethodReplace, TypeReplace};
+
+let ctx = RustClientCtx::enabled("src/client.rs")
+    .replace_type(&[
+        // Replace a struct field's type
+        TypeReplace::Type {
+            id: BuildResponse::PROTO_IDENT,
+            variant: None,
+            field: "status".into(),
+            type_name: "::core::atomic::AtomicU32".into(),
+        },
+        // Replace an RPC method's argument type
+        TypeReplace::Trait {
+            id: sigma_ident,
+            method: "OwnerLookup".into(),
+            kind: MethodReplace::Argument("::core::primitive::u64".into()),
+            type_name: "::core::atomic::AtomicU64".into(),
+        },
+        // Replace an RPC method's return type
+        TypeReplace::Trait {
+            id: sigma_ident,
+            method: "Build".into(),
+            kind: MethodReplace::Return("::core::primitive::u32".into()),
+            type_name: "::core::atomic::AtomicU32".into(),
+        },
+    ]);
+```
+
+### Custom statements (`with_statements`)
+
+Inject arbitrary Rust statements into a specific module:
+
+```rust
+let ctx = RustClientCtx::enabled("src/client.rs")
+    .with_statements(&[("extra_types", "const MY_CONST: usize = 1337")]);
+```
+
+### Split module output (`split_module`)
+
+For large codebases, split specific modules into separate files instead of bundling everything into a single output file:
+
+```rust
+let ctx = RustClientCtx::enabled("src/client.rs")
+    .split_module("atomic_types", "src/client_atomic_types.rs");
+```
+
+The `atomic_types` module is written to `src/client_atomic_types.rs` and excluded from the main `src/client.rs`. All other modules remain in the main output.
+
+### Type handling in generated output
+
+The build system automatically handles special Rust types when generating client code:
+
+| Rust source type | Proto output | Rust client output |
+|---|---|---|
+| `AtomicBool` | `bool` | `bool` |
+| `AtomicU8`, `AtomicU16`, `AtomicU32` | `uint32` | `u8`, `u16`, `u32` |
+| `AtomicU64`, `AtomicUsize` | `uint64` | `u64` |
+| `AtomicI8`, `AtomicI16`, `AtomicI32` | `int32` | `i8`, `i16`, `i32` |
+| `AtomicI64`, `AtomicIsize` | `int64` | `i64` |
+| `NonZeroU8`, `NonZeroU16`, `NonZeroU32` | `uint32` | `::core::num::NonZeroU8`, etc. |
+| `NonZeroU64`, `NonZeroUsize` | `uint64` | `::core::num::NonZeroU64` |
+| `NonZeroI8`, `NonZeroI16`, `NonZeroI32` | `int32` | `::core::num::NonZeroI8`, etc. |
+| `NonZeroI64`, `NonZeroIsize` | `int64` | `::core::num::NonZeroI64` |
+| `Mutex<T>`, `Arc<T>`, `Box<T>` | inner type | inner type (unwrapped) |
+| `Vec<T>`, `VecDeque<T>` | `repeated T` | `Vec<T>` |
+| `HashMap<K,V>`, `BTreeMap<K,V>` | `map<K,V>` | `HashMap<K,V>` |
+| `Option<T>` | `optional T` | `Option<T>` |
+
+Atomic types are unwrapped to their inner primitives (they are a runtime concern). NonZero types preserve their NonZero semantics in the Rust client since the non-zero constraint is meaningful for downstream consumers.
+
+### Macro import tracking
+
+The build system tracks which macros each module actually uses and emits only the necessary imports. Modules containing only structs/enums import `proto_message`; modules with only services import `proto_rpc`; modules with both import both. No `#[allow(unused_imports)]` suppression is needed.
 
 ### Custom proto definitions
 

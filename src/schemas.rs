@@ -29,6 +29,7 @@ pub struct RustClientCtx<'a> {
     pub module_type_attrs: BTreeMap<String, Vec<String>>,
     pub statements: BTreeMap<String, Vec<String>>,
     pub type_replacements: BTreeMap<ProtoIdent, Vec<TypeReplace>>,
+    pub split_modules: BTreeMap<String, String>,
 }
 
 impl<'a> RustClientCtx<'a> {
@@ -42,6 +43,7 @@ impl<'a> RustClientCtx<'a> {
             module_type_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
             type_replacements: BTreeMap::new(),
+            split_modules: BTreeMap::new(),
         }
     }
 
@@ -55,6 +57,7 @@ impl<'a> RustClientCtx<'a> {
             module_type_attrs: BTreeMap::new(),
             statements: BTreeMap::new(),
             type_replacements: BTreeMap::new(),
+            split_modules: BTreeMap::new(),
         }
     }
     #[must_use]
@@ -131,6 +134,12 @@ impl<'a> RustClientCtx<'a> {
             return self;
         }
         self.module_type_attrs.entry(module_name).or_default().push(attr);
+        self
+    }
+
+    #[must_use]
+    pub fn split_module(mut self, module_name: &str, file_name: &str) -> Self {
+        self.split_modules.insert(module_name.to_string(), file_name.to_string());
         self
     }
 }
@@ -845,6 +854,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             &rust_client_output.module_type_attrs,
             &rust_client_output.statements,
             &rust_client_output.type_replacements,
+            &rust_client_output.split_modules,
             &registry,
             &ident_index,
         )?;

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.11.20]
+- Fixed NonZero primitives output in rust client and .proto codgen
+- Added per module splitting in rust client output 
+- Improve README
+
 ## [0.11.19]
 - Added NonZero primitives
 - Added solana_instruction::Instruction, solana_instruction::AccountMeta, solana_hash::Hash

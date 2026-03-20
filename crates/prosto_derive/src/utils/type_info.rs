@@ -282,6 +282,10 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "AtomicU64" | "AtomicUsize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
                     "AtomicI8" | "AtomicI16" | "AtomicI32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
                     "AtomicI64" | "AtomicIsize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
+                    "NonZeroU8" | "NonZeroU16" | "NonZeroU32" => numeric_scalar(ty.clone(), parse_quote! { u32 }, "uint32"),
+                    "NonZeroU64" | "NonZeroUsize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
+                    "NonZeroI8" | "NonZeroI16" | "NonZeroI32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
+                    "NonZeroI64" | "NonZeroIsize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
                     "f32" => ParsedFieldType::new(
                         ty.clone(),
                         "float",

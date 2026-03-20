@@ -58,6 +58,7 @@ impl ClientImport {
         self.alias.as_deref().unwrap_or(&self.type_name).to_string()
     }
 }
+#[allow(clippy::too_many_lines)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn write_rust_client_module(
     output_path: &str,
@@ -68,6 +69,7 @@ pub(crate) fn write_rust_client_module(
     module_type_attrs: &BTreeMap<String, Vec<String>>,
     statements: &BTreeMap<String, Vec<String>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
+    split_modules: &BTreeMap<String, String>,
     registry: &BTreeMap<String, Vec<&'static ProtoSchema>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> io::Result<()> {
@@ -96,8 +98,7 @@ pub(crate) fn write_rust_client_module(
     output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
 
     if !root.entries.is_empty() {
-        output.push_str("#[allow(unused_imports)]\n");
-        output.push_str("use proto_rs::{proto_message, proto_rpc};\n");
+        render_macro_imports(&mut output, &root.entries, 0);
         render_module_imports(
             &mut output,
             &root.entries,
@@ -127,6 +128,9 @@ pub(crate) fn write_rust_client_module(
     }
 
     for (name, child) in &root.children {
+        if split_modules.contains_key(name.as_str()) {
+            continue;
+        }
         render_named_module(
             &mut output,
             name,
@@ -149,6 +153,35 @@ pub(crate) fn write_rust_client_module(
         fs::create_dir_all(parent)?;
     }
     fs::write(output_path, output)?;
+
+    for (module_name, file_name) in split_modules {
+        let Some(child) = root.children.get(module_name.as_str()) else {
+            continue;
+        };
+        let mut split_output = String::new();
+        split_output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
+        render_named_module(
+            &mut split_output,
+            module_name,
+            child,
+            0,
+            ident_index,
+            &package_by_ident,
+            &proto_type_index,
+            &client_imports_by_type,
+            client_attrs,
+            client_attr_removals,
+            type_replacements,
+            module_attrs,
+            module_type_attrs,
+            statements,
+        );
+        if let Some(parent) = Path::new(file_name.as_str()).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(file_name, split_output)?;
+    }
+
     Ok(())
 }
 
@@ -182,6 +215,37 @@ struct ModuleNode {
     package_name: Option<String>,
     entries: Vec<&'static ProtoSchema>,
     children: BTreeMap<String, ModuleNode>,
+}
+
+fn module_macro_needs(entries: &[&'static ProtoSchema]) -> (bool, bool) {
+    let mut needs_message = false;
+    let mut needs_rpc = false;
+    for entry in entries {
+        match entry.content {
+            ProtoEntry::Struct { .. } | ProtoEntry::SimpleEnum { .. } | ProtoEntry::ComplexEnum { .. } => {
+                needs_message = true;
+            }
+            ProtoEntry::Service { .. } => {
+                needs_rpc = true;
+            }
+            ProtoEntry::Import { .. } => {}
+        }
+    }
+    (needs_message, needs_rpc)
+}
+
+fn render_macro_imports(output: &mut String, entries: &[&'static ProtoSchema], indent: usize) {
+    let (needs_message, needs_rpc) = module_macro_needs(entries);
+    if !needs_message && !needs_rpc {
+        return;
+    }
+    indent_line(output, indent);
+    match (needs_message, needs_rpc) {
+        (true, true) => output.push_str("use proto_rs::{proto_message, proto_rpc};\n"),
+        (true, false) => output.push_str("use proto_rs::proto_message;\n"),
+        (false, true) => output.push_str("use proto_rs::proto_rpc;\n"),
+        (false, false) => {}
+    }
 }
 
 fn insert_module_entry(node: &mut ModuleNode, segments: &[String], package_name: &str, entry: &'static ProtoSchema) {
@@ -251,10 +315,7 @@ fn render_named_module(
 
     let inner_indent = indent + 4;
     if !node.entries.is_empty() {
-        indent_line(output, inner_indent);
-        output.push_str("#[allow(unused_imports)]\n");
-        indent_line(output, inner_indent);
-        output.push_str("use proto_rs::{proto_message, proto_rpc};\n");
+        render_macro_imports(output, &node.entries, inner_indent);
         render_module_imports(
             output,
             &node.entries,
@@ -1758,6 +1819,9 @@ fn render_proto_type(
     if let Some(atomic) = atomic_primitive_type(ident) {
         return atomic.to_string();
     }
+    if let Some(nonzero) = nonzero_primitive_type(ident) {
+        return nonzero.to_string();
+    }
     if let Some(narrow) = narrow_primitive_type(ident.name) {
         return narrow.to_string();
     }
@@ -1809,6 +1873,23 @@ fn atomic_primitive_type(ident: ProtoIdent) -> Option<&'static str> {
         "AtomicI32" => Some("i32"),
         "AtomicI64" => Some("i64"),
         "AtomicIsize" => Some("i64"),
+        _ => None,
+    }
+}
+
+fn nonzero_primitive_type(ident: ProtoIdent) -> Option<&'static str> {
+    let type_name = ident.name.rsplit("::").next().unwrap_or(ident.name);
+    match type_name {
+        "NonZeroU8" => Some("::core::num::NonZeroU8"),
+        "NonZeroU16" => Some("::core::num::NonZeroU16"),
+        "NonZeroU32" => Some("::core::num::NonZeroU32"),
+        "NonZeroU64" => Some("::core::num::NonZeroU64"),
+        "NonZeroUsize" => Some("::core::num::NonZeroU64"),
+        "NonZeroI8" => Some("::core::num::NonZeroI8"),
+        "NonZeroI16" => Some("::core::num::NonZeroI16"),
+        "NonZeroI32" => Some("::core::num::NonZeroI32"),
+        "NonZeroI64" => Some("::core::num::NonZeroI64"),
+        "NonZeroIsize" => Some("::core::num::NonZeroI64"),
         _ => None,
     }
 }
