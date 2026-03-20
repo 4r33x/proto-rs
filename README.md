@@ -13,7 +13,7 @@ proto_rs = "0.11"
 - Zero conversion boilerplate between your domain types and the wire format
 - No `protoc` binary required — everything is pure Rust
 - Single-pass reverse encoder that avoids length precomputation
-- Wire-compatible with Prost and any standard Protobuf implementation
+- Wire-compatible* (with regular, protobuf specification compatable rust types) with Prost and any standard Protobuf implementation
 
 ## proto_rs vs Prost
 
@@ -22,10 +22,10 @@ proto_rs = "0.11"
 | | proto_rs | Prost |
 |---|---|---|
 | Source of truth | Rust structs and enums | `.proto` files |
-| Code generation | None — derive macros at compile time | `protoc` + `prost-build` in build.rs |
+| Rust codegen source | Derive macros at compile time | `protoc?` + `prost-build` in build.rs |
 | `.proto` files | Auto-generated from Rust (opt-in) | Written by hand, required |
 | Type conversions | Zero boilerplate — native types encode directly | Manual `From`/`Into` between generated and domain types |
-| External tooling | None | Requires `protoc` binary |
+| External tooling | None | Requires? `protoc` binary |
 | Tonic integration | Built-in codec, zero-copy responses | Separate `tonic-build` step |
 | Custom types | `sun` / `sun_ir` shadow system | Not supported — hand-written wrappers |
 
@@ -33,26 +33,18 @@ proto_rs = "0.11"
 
 proto_rs uses a **single-pass reverse encoder** (upb-style). Fields are written payload-first, then prefixed with tags and lengths — no two-pass measure-then-write like Prost's `encoded_len()` + `encode()`.
 
-Encoding and decoding throughput is **on par with Prost** across all message shapes. The latest Criterion benchmarks (2026-01-27) on a complex root message with nested structures, collections, enums, and maps:
-
-| Operation | Prost | proto_rs | Ratio |
-|---|---:|---:|---|
-| `encode_to_vec` | 233K ops/s | 241K ops/s | 1.03x |
-| `decode` | 73K ops/s | 68K ops/s | 0.94x |
+Encoding and decoding throughput is **on par with Prost** as far I managed to test it with totally unscientific benches. 
 
 Per-field micro-benchmarks show both libraries trading wins depending on field type — proto_rs is faster on enums, nested messages, and collections; Prost edges ahead on raw bytes and strings. Overall throughput is comparable.
 
 ### Zero-copy
 
-`ZeroCopy<T>` pre-encodes a message once and reuses the bytes across multiple sends. This eliminates re-encoding entirely — particularly effective in gRPC servers returning the same response shape:
+`ZeroCopy<T>` pre-encodes a message once from ref. This eliminates cloning, so you can use references in RPC services
 
 | | Prost (clone + encode) | proto_rs (zero_copy) | Speedup |
 |---|---:|---:|---|
 | Complex message | 122K ops/s | 246K ops/s | **2.01x** |
 
-### Wire compatibility
-
-proto_rs produces standard Protobuf wire format. Bytes encoded by proto_rs decode correctly with Prost, and vice versa. The integration test suite verifies cross-library roundtrips for every supported type.
 
 ## Quick start
 

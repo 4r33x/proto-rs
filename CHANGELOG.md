@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.11.19]
+- Added NonZero primitives
+- Added solana_instruction::Instruction, solana_instruction::AccountMeta, solana_hash::Hash
+- Updated README
+
 ## [0.11.18]
 - Fix .proto output for bytes fields
 
