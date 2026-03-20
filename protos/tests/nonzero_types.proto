@@ -1,0 +1,24 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package nonzero_types;
+
+message NonZeroPrimitives {
+  NonZeroU8 nzu8 = 1;
+  NonZeroU16 nzu16 = 2;
+  NonZeroU32 nzu32 = 3;
+  NonZeroU64 nzu64 = 4;
+  NonZeroI8 nzi8 = 5;
+  NonZeroI16 nzi16 = 6;
+  NonZeroI32 nzi32 = 7;
+  NonZeroI64 nzi64 = 8;
+  NonZeroUsize nzusize = 9;
+  NonZeroIsize nzisize = 10;
+}
+
+message ServerConfig {
+  NonZeroU16 port = 1;
+  NonZeroU32 max_connections = 2;
+  NonZeroU8 worker_threads = 3;
+  NonZeroU64 request_timeout_ms = 4;
+}
+

@@ -367,6 +367,16 @@ impl_proto_ident_primitive!(::core::sync::atomic::AtomicI16, ProtoType::Int32);
 impl_proto_ident_primitive!(::core::sync::atomic::AtomicI32, ProtoType::Int32);
 impl_proto_ident_primitive!(::core::sync::atomic::AtomicI64, ProtoType::Int64);
 impl_proto_ident_primitive!(::core::sync::atomic::AtomicIsize, ProtoType::Int64);
+impl_proto_ident_primitive!(::core::num::NonZeroU8, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::num::NonZeroU16, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::num::NonZeroU32, ProtoType::Uint32);
+impl_proto_ident_primitive!(::core::num::NonZeroU64, ProtoType::Uint64);
+impl_proto_ident_primitive!(::core::num::NonZeroUsize, ProtoType::Uint64);
+impl_proto_ident_primitive!(::core::num::NonZeroI8, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::num::NonZeroI16, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::num::NonZeroI32, ProtoType::Int32);
+impl_proto_ident_primitive!(::core::num::NonZeroI64, ProtoType::Int64);
+impl_proto_ident_primitive!(::core::num::NonZeroIsize, ProtoType::Int64);
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable, const N: usize> ProtoIdentifiable for [T; N] {

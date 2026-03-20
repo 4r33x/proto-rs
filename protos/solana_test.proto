@@ -2,8 +2,20 @@
 syntax = "proto3";
 package solana_test;
 
+message AccountMetaWrapper {
+  AccountMeta meta = 1;
+}
+
 message AddressWrapper {
   Address inner = 1;
+}
+
+message HashWrapper {
+  Hash inner = 1;
+}
+
+message InstructionWrapper {
+  Instruction instruction = 1;
 }
 
 message IxErrorWrapper {

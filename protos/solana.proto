@@ -2,8 +2,24 @@
 syntax = "proto3";
 package solana;
 
+message AccountMeta {
+  Address pubkey = 1;
+  bool is_signer = 2;
+  bool is_writable = 3;
+}
+
 message Address {
   bytes inner = 1;
+}
+
+message Hash {
+  bytes inner = 1;
+}
+
+message Instruction {
+  Address program_id = 1;
+  repeated AccountMeta accounts = 2;
+  bytes data = 3;
 }
 
 message InstructionErrorGenericError {}

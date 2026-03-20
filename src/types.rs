@@ -5,6 +5,16 @@
 
 use alloc::format;
 use alloc::string::String;
+use core::num::NonZeroI8;
+use core::num::NonZeroI16;
+use core::num::NonZeroI32;
+use core::num::NonZeroI64;
+use core::num::NonZeroIsize;
+use core::num::NonZeroU8;
+use core::num::NonZeroU16;
+use core::num::NonZeroU32;
+use core::num::NonZeroU64;
+use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicI8;
 use core::sync::atomic::AtomicI16;
@@ -804,6 +814,178 @@ impl_atomic_narrow_primitive!(
 );
 
 // ============================================================================
+// NonZero primitives (Default value = MAX)
+// ============================================================================
+
+macro_rules! impl_nonzero_wide_varint {
+    ($ty:ty, $base:ty, $prim_kind:ident, $module:ident) => {
+        impl ProtoExt for $ty {
+            const KIND: ProtoKind = ProtoKind::Primitive(PrimitiveKind::$prim_kind);
+        }
+
+        impl ProtoShadowDecode<$ty> for $ty {
+            #[inline]
+            fn to_sun(self) -> Result<$ty, DecodeError> {
+                Ok(self)
+            }
+        }
+
+        impl<'a> ProtoShadowEncode<'a, $ty> for $ty {
+            #[inline]
+            fn from_sun(value: &'a $ty) -> Self {
+                *value
+            }
+        }
+
+        impl ProtoDecoder for $ty {
+            #[inline]
+            fn merge_field(
+                value: &mut Self,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    Self::merge(value, wire_type, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            #[inline]
+            fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                let mut raw: $base = self.get();
+                crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
+                *self = <$ty>::new(raw).ok_or_else(|| DecodeError::new(concat!("zero value for ", stringify!($ty))))?;
+                Ok(())
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline]
+            fn proto_default() -> Self {
+                <$ty>::MAX
+            }
+        }
+
+        impl ProtoDecode for $ty {
+            type ShadowDecoded = Self;
+        }
+
+        impl ProtoArchive for $ty {
+            #[inline]
+            fn is_default(&self) -> bool {
+                *self == <$ty>::MAX
+            }
+
+            #[inline]
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                w.put_varint(self.get() as u64);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
+            }
+        }
+
+        impl ProtoEncode for $ty {
+            type Shadow<'a> = $ty;
+        }
+    };
+}
+
+macro_rules! impl_nonzero_narrow_varint {
+    ($ty:ty, $narrow:ty, $wide:ty, $prim_kind:ident, $module:ident) => {
+        impl ProtoExt for $ty {
+            const KIND: ProtoKind = ProtoKind::Primitive(PrimitiveKind::$prim_kind);
+        }
+
+        impl ProtoShadowDecode<$ty> for $ty {
+            #[inline]
+            fn to_sun(self) -> Result<$ty, DecodeError> {
+                Ok(self)
+            }
+        }
+
+        impl<'a> ProtoShadowEncode<'a, $ty> for $ty {
+            #[inline]
+            fn from_sun(value: &'a $ty) -> Self {
+                *value
+            }
+        }
+
+        impl ProtoDecoder for $ty {
+            #[inline]
+            fn merge_field(
+                value: &mut Self,
+                tag: u32,
+                wire_type: WireType,
+                buf: &mut impl Buf,
+                ctx: DecodeContext,
+            ) -> Result<(), DecodeError> {
+                if tag == 1 {
+                    Self::merge(value, wire_type, buf, ctx)
+                } else {
+                    skip_field(wire_type, tag, buf, ctx)
+                }
+            }
+
+            #[inline]
+            fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+                let mut raw: $wide = self.get() as $wide;
+                crate::encoding::$module::merge(wire_type, &mut raw, buf, ctx)?;
+                let narrow: $narrow = raw.try_into().map_err(|_| DecodeError::new(concat!(stringify!($narrow), " overflow")))?;
+                *self = <$ty>::new(narrow).ok_or_else(|| DecodeError::new(concat!("zero value for ", stringify!($ty))))?;
+                Ok(())
+            }
+        }
+
+        impl ProtoDefault for $ty {
+            #[inline]
+            fn proto_default() -> Self {
+                <$ty>::MAX
+            }
+        }
+
+        impl ProtoDecode for $ty {
+            type ShadowDecoded = Self;
+        }
+
+        impl ProtoArchive for $ty {
+            #[inline]
+            fn is_default(&self) -> bool {
+                *self == <$ty>::MAX
+            }
+
+            #[inline]
+            fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+                let widened: $wide = self.get() as $wide;
+                w.put_varint(widened as u64);
+                if TAG != 0 {
+                    ArchivedProtoField::<TAG, Self>::put_key(w);
+                }
+            }
+        }
+
+        impl ProtoEncode for $ty {
+            type Shadow<'a> = $ty;
+        }
+    };
+}
+
+impl_nonzero_wide_varint!(NonZeroU32, u32, U32, uint32);
+impl_nonzero_wide_varint!(NonZeroU64, u64, U64, uint64);
+impl_nonzero_wide_varint!(NonZeroI32, i32, I32, int32);
+impl_nonzero_wide_varint!(NonZeroI64, i64, I64, int64);
+
+impl_nonzero_narrow_varint!(NonZeroU8, u8, u32, U8, uint32);
+impl_nonzero_narrow_varint!(NonZeroU16, u16, u32, U16, uint32);
+impl_nonzero_narrow_varint!(NonZeroI8, i8, i32, I8, int32);
+impl_nonzero_narrow_varint!(NonZeroI16, i16, i32, I16, int32);
+impl_nonzero_narrow_varint!(NonZeroUsize, usize, u64, U64, uint64);
+impl_nonzero_narrow_varint!(NonZeroIsize, isize, i64, I64, int64);
+
+// ============================================================================
 // Unit type ()
 // ============================================================================
 
@@ -931,5 +1113,187 @@ mod tests {
         assert_eq!("google.protobuf", <()>::PACKAGE);
         assert_eq!("google.protobuf.Empty", <()>::full_name());
         assert_eq!("type.googleapis.com/google.protobuf.Empty", <()>::type_url());
+    }
+
+    // ========================================================================
+    // NonZero primitive unit tests
+    // ========================================================================
+
+    use crate::ProtoArchive;
+    use crate::ProtoDecoder;
+    use crate::encoding::DecodeContext;
+    use crate::encoding::WireType;
+    use crate::traits::buffer::RevVec;
+    use crate::traits::buffer::RevWriter;
+
+    fn encode_varint_to_bytes(value: u64) -> ::bytes::Bytes {
+        use crate::encoding::encode_varint;
+        let mut buf = ::bytes::BytesMut::new();
+        encode_varint(value, &mut buf);
+        buf.freeze()
+    }
+
+    #[test]
+    fn nonzero_proto_default_is_max() {
+        assert_eq!(<NonZeroU8 as ProtoDefault>::proto_default(), NonZeroU8::MAX);
+        assert_eq!(<NonZeroU16 as ProtoDefault>::proto_default(), NonZeroU16::MAX);
+        assert_eq!(<NonZeroU32 as ProtoDefault>::proto_default(), NonZeroU32::MAX);
+        assert_eq!(<NonZeroU64 as ProtoDefault>::proto_default(), NonZeroU64::MAX);
+        assert_eq!(<NonZeroI8 as ProtoDefault>::proto_default(), NonZeroI8::MAX);
+        assert_eq!(<NonZeroI16 as ProtoDefault>::proto_default(), NonZeroI16::MAX);
+        assert_eq!(<NonZeroI32 as ProtoDefault>::proto_default(), NonZeroI32::MAX);
+        assert_eq!(<NonZeroI64 as ProtoDefault>::proto_default(), NonZeroI64::MAX);
+        assert_eq!(<NonZeroUsize as ProtoDefault>::proto_default(), NonZeroUsize::new(usize::MAX).unwrap());
+        assert_eq!(<NonZeroIsize as ProtoDefault>::proto_default(), NonZeroIsize::new(isize::MAX).unwrap());
+    }
+
+    #[test]
+    fn nonzero_is_default_only_for_max() {
+        assert!(NonZeroU32::MAX.is_default());
+        assert!(!NonZeroU32::new(1).unwrap().is_default());
+        assert!(!NonZeroU32::new(42).unwrap().is_default());
+
+        assert!(NonZeroI32::MAX.is_default());
+        assert!(!NonZeroI32::new(1).unwrap().is_default());
+        assert!(!NonZeroI32::new(-1).unwrap().is_default());
+
+        assert!(NonZeroU8::MAX.is_default());
+        assert!(!NonZeroU8::new(1).unwrap().is_default());
+
+        assert!(NonZeroI8::MAX.is_default());
+        assert!(!NonZeroI8::new(-1).unwrap().is_default());
+    }
+
+    #[test]
+    fn nonzero_wide_merge_roundtrip() {
+        let ctx = DecodeContext::default();
+
+        // NonZeroU32
+        let mut val = NonZeroU32::MAX;
+        let mut bytes = encode_varint_to_bytes(42u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroU32::new(42).unwrap());
+
+        // NonZeroU64
+        let mut val = NonZeroU64::MAX;
+        let mut bytes = encode_varint_to_bytes(u64::MAX - 1);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroU64::new(u64::MAX - 1).unwrap());
+
+        // NonZeroI32 (negative: -1 encodes as 0xFFFFFFFFFFFFFFFF)
+        let mut val = NonZeroI32::MAX;
+        let mut bytes = encode_varint_to_bytes((-1i32) as u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroI32::new(-1).unwrap());
+
+        // NonZeroI64
+        let mut val = NonZeroI64::MAX;
+        let mut bytes = encode_varint_to_bytes((-1i64) as u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroI64::new(-1).unwrap());
+    }
+
+    #[test]
+    fn nonzero_narrow_merge_roundtrip() {
+        let ctx = DecodeContext::default();
+
+        // NonZeroU8
+        let mut val = NonZeroU8::MAX;
+        let mut bytes = encode_varint_to_bytes(200u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroU8::new(200).unwrap());
+
+        // NonZeroU16
+        let mut val = NonZeroU16::MAX;
+        let mut bytes = encode_varint_to_bytes(1000u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroU16::new(1000).unwrap());
+
+        // NonZeroI8 (negative)
+        let mut val = NonZeroI8::MAX;
+        let mut bytes = encode_varint_to_bytes((-50i32) as u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroI8::new(-50).unwrap());
+
+        // NonZeroI16 (negative)
+        let mut val = NonZeroI16::MAX;
+        let mut bytes = encode_varint_to_bytes((-1000i32) as u64);
+        val.merge(WireType::Varint, &mut bytes, ctx).unwrap();
+        assert_eq!(val, NonZeroI16::new(-1000).unwrap());
+    }
+
+    #[test]
+    fn nonzero_merge_zero_returns_error() {
+        let ctx = DecodeContext::default();
+
+        let mut val = NonZeroU32::MAX;
+        let mut bytes = encode_varint_to_bytes(0);
+        let result = val.merge(WireType::Varint, &mut bytes, ctx);
+        assert!(result.is_err(), "decoding zero into NonZeroU32 must fail");
+
+        let mut val = NonZeroU8::MAX;
+        let mut bytes = encode_varint_to_bytes(0);
+        let result = val.merge(WireType::Varint, &mut bytes, ctx);
+        assert!(result.is_err(), "decoding zero into NonZeroU8 must fail");
+
+        let mut val = NonZeroI32::MAX;
+        let mut bytes = encode_varint_to_bytes(0);
+        let result = val.merge(WireType::Varint, &mut bytes, ctx);
+        assert!(result.is_err(), "decoding zero into NonZeroI32 must fail");
+
+        let mut val = NonZeroI64::MAX;
+        let mut bytes = encode_varint_to_bytes(0);
+        let result = val.merge(WireType::Varint, &mut bytes, ctx);
+        assert!(result.is_err(), "decoding zero into NonZeroI64 must fail");
+    }
+
+    #[test]
+    fn nonzero_narrow_merge_overflow_returns_error() {
+        let ctx = DecodeContext::default();
+
+        // Value 256 overflows u8
+        let mut val = NonZeroU8::MAX;
+        let mut bytes = encode_varint_to_bytes(256);
+        let result = val.merge(WireType::Varint, &mut bytes, ctx);
+        assert!(result.is_err(), "value 256 must not fit in NonZeroU8");
+
+        // Value 65536 overflows u16
+        let mut val = NonZeroU16::MAX;
+        let mut bytes = encode_varint_to_bytes(65536);
+        let result = val.merge(WireType::Varint, &mut bytes, ctx);
+        assert!(result.is_err(), "value 65536 must not fit in NonZeroU16");
+    }
+
+    #[test]
+    fn nonzero_archive_produces_varint_bytes() {
+        // NonZeroU32(42) archives to the same varint as u32(42).
+        let nz = NonZeroU32::new(42).unwrap();
+        let mut nz_writer = RevVec::with_capacity(16);
+        nz.archive::<0>(&mut nz_writer);
+        let nz_bytes = nz_writer.finish_tight();
+
+        let plain: u32 = 42;
+        let mut plain_writer = RevVec::with_capacity(16);
+        plain.archive::<0>(&mut plain_writer);
+        let plain_bytes = plain_writer.finish_tight();
+
+        assert_eq!(nz_bytes, plain_bytes);
+    }
+
+    #[test]
+    fn nonzero_max_archives_to_empty_when_default() {
+        // ProtoArchive::is_default() is true for MAX, so archive::<0> still writes
+        // the value (TAG=0 mode is unconditional); is_default is used by the field
+        // encoding layer to skip the field. Verify is_default for all types.
+        assert!(NonZeroU8::MAX.is_default());
+        assert!(NonZeroU16::MAX.is_default());
+        assert!(NonZeroU32::MAX.is_default());
+        assert!(NonZeroU64::MAX.is_default());
+        assert!(NonZeroI8::MAX.is_default());
+        assert!(NonZeroI16::MAX.is_default());
+        assert!(NonZeroI32::MAX.is_default());
+        assert!(NonZeroI64::MAX.is_default());
+        assert!(NonZeroUsize::new(usize::MAX).unwrap().is_default());
+        assert!(NonZeroIsize::new(isize::MAX).unwrap().is_default());
     }
 }

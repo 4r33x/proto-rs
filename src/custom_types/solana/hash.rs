@@ -1,5 +1,5 @@
-pub use solana_address::ADDRESS_BYTES as BYTES;
-use solana_address::Address;
+pub use solana_hash::HASH_BYTES as BYTES;
+use solana_hash::Hash;
 
 use crate::DecodeError;
 use crate::ProtoShadowDecode;
@@ -9,23 +9,23 @@ use crate::proto_message;
 extern crate self as proto_rs;
 
 #[allow(dead_code)]
-#[proto_message(proto_path = "protos/solana.proto", sun = solana_address::Address)]
-pub struct AddressProto {
+#[proto_message(proto_path = "protos/solana.proto", sun = solana_hash::Hash)]
+pub struct HashProto {
     #[proto(tag = 1)]
     inner: [u8; BYTES],
 }
 
-impl ProtoShadowDecode<Address> for AddressProto {
+impl ProtoShadowDecode<Hash> for HashProto {
     #[inline]
-    fn to_sun(self) -> Result<Address, DecodeError> {
-        Ok(Address::from(self.inner))
+    fn to_sun(self) -> Result<Hash, DecodeError> {
+        Ok(Hash::from(self.inner))
     }
 }
 
-impl<'a> ProtoShadowEncode<'a, Address> for AddressProto {
+impl<'a> ProtoShadowEncode<'a, Hash> for HashProto {
     #[inline]
-    fn from_sun(value: &'a Address) -> Self {
-        Self { inner: *value.as_array() }
+    fn from_sun(value: &'a Hash) -> Self {
+        Self { inner: *value.as_bytes() }
     }
 }
 
@@ -38,25 +38,26 @@ mod tests {
     use crate::encoding::WireType;
     use crate::encoding::encode_key;
     use crate::encoding::encode_varint;
+
     #[allow(dead_code)]
     #[proto_message(proto_path = "protos/solana_test.proto")]
-    struct AddressWrapper {
-        inner: Address,
+    struct HashWrapper {
+        inner: Hash,
     }
 
-    fn sample_address_bytes() -> [u8; BYTES] {
+    fn sample_hash_bytes() -> [u8; BYTES] {
         let mut data = [0u8; BYTES];
         for (idx, byte) in data.iter_mut().enumerate() {
-            *byte = (idx as u8).wrapping_mul(3).wrapping_add(7);
+            *byte = (idx as u8).wrapping_mul(7).wrapping_add(13);
         }
         data
     }
 
     #[test]
     fn roundtrip_proto_ext() {
-        let original = Address::from(sample_address_bytes());
-        let encoded = <Address as ProtoEncode>::encode_to_vec(&original);
-        let decoded = <Address as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
+        let original = Hash::from(sample_hash_bytes());
+        let encoded = <Hash as ProtoEncode>::encode_to_vec(&original);
+        let decoded = <Hash as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded.as_ref(), original.as_ref());
     }
 
@@ -67,7 +68,7 @@ mod tests {
         encode_varint((BYTES - 1) as u64, &mut buf);
         buf.extend(core::iter::repeat_n(0u8, BYTES - 1));
 
-        match <Address as ProtoDecode>::decode(buf.as_slice(), DecodeContext::default()) {
+        match <Hash as ProtoDecode>::decode(buf.as_slice(), DecodeContext::default()) {
             Ok(_) => panic!("invalid length should fail"),
             Err(err) => {
                 let message = err.to_string();
