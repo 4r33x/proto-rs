@@ -1,364 +1,772 @@
-# Rust as first-class citizen for gRPC ecosystem
+# proto_rs
 
-`proto_rs` makes Rust the source of truth for your Protobuf and gRPC definitions, providing 4 macros that will handle all proto-related work, so you don't need to touch .proto files at all. The crate ships batteries-included attribute support, a reverse encoder, and a rich catalog of built-in wrappers so your Rust types map cleanly onto auto-generated Protobuf schemas.
+Rust-first Protobuf and gRPC. Define messages, enums, and services as native Rust types — `.proto` files are generated for you. No `protoc`, no code generation step, no conversion boilerplate.
 
-## Motivation
+```toml
+[dependencies]
+proto_rs = "0.11"
+```
 
-0. I hate to do conversion after conversion for conversion
-1. I love to see Rust only as first-class citizen for all my stuff
-2. I hate bloat, so no protoc (shoutout to PewDiePie debloat trend)
-3. I don't want to touch .proto files at all
+## Why
 
-## What can you build with `proto_rs`?
+- Rust structs and enums are the source of truth, not `.proto` files
+- Zero conversion boilerplate between your domain types and the wire format
+- No `protoc` binary required — everything is pure Rust
+- Single-pass reverse encoder that avoids length precomputation
+- Wire-compatible with Prost and any standard Protobuf implementation
 
-* **Pure-Rust schema definitions.** Use `#[proto_message]`, `#[proto_rpc]`, and `#[proto_dump]` to declare every message and service in idiomatic Rust while the derive machinery keeps `.proto` files in sync for external consumers.
-* **Tailored encoding pipelines.** `ProtoShadow` lets you bolt custom serialization logic onto any message, opt into multiple domain "suns", and keep performance-sensitive conversions entirely under your control.
-* **Reverse encoder.** The single-pass reverse writer avoids precomputing lengths and keeps payload emission deterministic with reverse field order.
-* **Workspace-wide schema registries.** The build-time inventory collects every emitted `.proto`, making it easy to materialize or lint schemas from a single crate.
+## proto_rs vs Prost
 
-For fellow proto <-> native typeconversions enjoyers <=0.5.0 versions of this crate implement different approach
+### Workflow
 
-## Key capabilities
+| | proto_rs | Prost |
+|---|---|---|
+| Source of truth | Rust structs and enums | `.proto` files |
+| Code generation | None — derive macros at compile time | `protoc` + `prost-build` in build.rs |
+| `.proto` files | Auto-generated from Rust (opt-in) | Written by hand, required |
+| Type conversions | Zero boilerplate — native types encode directly | Manual `From`/`Into` between generated and domain types |
+| External tooling | None | Requires `protoc` binary |
+| Tonic integration | Built-in codec, zero-copy responses | Separate `tonic-build` step |
+| Custom types | `sun` / `sun_ir` shadow system | Not supported — hand-written wrappers |
 
-- **Message derivation** – `#[proto_message]` turns a Rust struct or enum into a fully featured Protobuf message, emitting the corresponding `.proto` definition and implementing [`ProtoExt`](src/message.rs) so the type can be encoded/decoded without extra glue code. The generated codec now reuses internal helpers to avoid redundant buffering and unnecessary copies.
-- **RPC generation** – `#[proto_rpc]` projects a Rust trait into a complete Tonic service and/or client. Service traits stay idiomatic while still interoperating with non-Rust consumers through the generated `.proto` artifacts, and the macro avoids needless boxing/casting in the conversion layer.
-- **Attribute-level control** – Fine-tune your schema surface with `treat_as` for ad-hoc type substitutions, `transparent` for single-field wrappers, concrete `sun` targets (including generic forms like `Sun<T>`), and optional tags/import paths. Built-in wrappers cover `ArcSwap`, `CachePadded`, atomics, and other common containers so everyday Rust types round-trip without extra glue.
-- **On-demand schema dumps** – `#[proto_dump]` and `inject_proto_import!` let you register standalone definitions or imports when you need to compose more complex schemas.
-- **Workspace-wide schema registry** – With the `build-schemas` feature enabled you can aggregate every proto that was emitted by your dependency tree and write it to disk via [`proto_rs::schemas::write_all`](src/lib.rs). The helper deduplicates inputs and writes canonical packages derived from the file path.
-- **Opt-in `.proto` emission** – Proto files are written only when you ask for them via the `emit-proto-files` cargo feature or the `PROTO_EMIT_FILE=1` environment variable, making it easy to toggle between codegen and incremental development.
+### Performance
 
+proto_rs uses a **single-pass reverse encoder** (upb-style). Fields are written payload-first, then prefixed with tags and lengths — no two-pass measure-then-write like Prost's `encoded_len()` + `encode()`.
 
-Define your messages and services using the derive macros with native rust types:
+Encoding and decoding throughput is **on par with Prost** across all message shapes. The latest Criterion benchmarks (2026-01-27) on a complex root message with nested structures, collections, enums, and maps:
+
+| Operation | Prost | proto_rs | Ratio |
+|---|---:|---:|---|
+| `encode_to_vec` | 233K ops/s | 241K ops/s | 1.03x |
+| `decode` | 73K ops/s | 68K ops/s | 0.94x |
+
+Per-field micro-benchmarks show both libraries trading wins depending on field type — proto_rs is faster on enums, nested messages, and collections; Prost edges ahead on raw bytes and strings. Overall throughput is comparable.
+
+### Zero-copy
+
+`ZeroCopy<T>` pre-encodes a message once and reuses the bytes across multiple sends. This eliminates re-encoding entirely — particularly effective in gRPC servers returning the same response shape:
+
+| | Prost (clone + encode) | proto_rs (zero_copy) | Speedup |
+|---|---:|---:|---|
+| Complex message | 122K ops/s | 246K ops/s | **2.01x** |
+
+### Wire compatibility
+
+proto_rs produces standard Protobuf wire format. Bytes encoded by proto_rs decode correctly with Prost, and vice versa. The integration test suite verifies cross-library roundtrips for every supported type.
+
+## Quick start
 
 ```rust
-#[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct FooResponse;
+use proto_rs::{proto_message, ProtoEncode, ProtoDecode};
+use proto_rs::encoding::DecodeContext;
 
-#[proto_message(proto_path = "protos/gen_proto/rizz_types.proto")]
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct BarSub;
+#[proto_message]
+#[derive(Debug, PartialEq)]
+struct User {
+    id: u64,
+    name: String,
+    tags: Vec<String>,
+}
 
-#[proto_rpc(rpc_package = "sigma_rpc", rpc_server = true, rpc_client = true, proto_path = "protos/gen_complex_proto/sigma_rpc.proto")]
-#[proto_imports(rizz_types = ["BarSub", "FooResponse"], goon_types = ["RizzPing", "GoonPong"] )]
-pub trait SigmaRpc {
-    async fn zero_copy_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-    async fn just_ping(&self, request: Request<RizzPing>) -> Result<GoonPong, Status>;
-    async fn infallible_just_ping(&self, request: Request<RizzPing>) -> GoonPong;
-    async fn infallible_zero_copy_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
-    async fn infallible_ping(&self, request: Request<RizzPing>) -> Response<GoonPong>;
-    async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-    type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
-    async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
+let user = User { id: 42, name: "Alice".into(), tags: vec!["admin".into()] };
+let bytes = User::encode_to_vec(&user);
+let decoded = User::decode(bytes.as_slice(), DecodeContext::default()).unwrap();
+assert_eq!(user, decoded);
+```
+
+The `#[proto_message]` macro derives encoding, decoding, and `.proto` schema generation. Tags are assigned automatically but can be overridden with `#[proto(tag = N)]`.
+
+## Table of contents
+
+- [proto_rs vs Prost](#proto_rs-vs-prost)
+- [Messages](#messages)
+- [Enums](#enums)
+- [Field attributes](#field-attributes)
+- [Transparent wrappers](#transparent-wrappers)
+- [Generics](#generics)
+- [Custom type conversions (sun)](#custom-type-conversions-sun)
+- [Zero-copy IR encoding (sun_ir)](#zero-copy-ir-encoding-sun_ir)
+- [Getters](#getters)
+- [Validation](#validation)
+- [RPC services](#rpc-services)
+- [Zero-copy encoding](#zero-copy-encoding)
+- [Built-in type support](#built-in-type-support)
+- [Wrapper types](#wrapper-types)
+- [Third-party integrations](#third-party-integrations)
+- [Schema registry and emission](#schema-registry-and-emission)
+- [Feature flags](#feature-flags)
+- [Stable toolchain](#stable-toolchain)
+- [Benchmarks](#benchmarks)
+
+## Messages
+
+Structs become Protobuf messages. Fields map to proto fields with auto-assigned tags.
+
+```rust
+#[proto_message(proto_path = "protos/orders.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Order {
+    pub id: u64,
+    pub item: String,
+    pub quantity: u32,
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
+    pub metadata: HashMap<String, String>,
 }
 ```
 
-Yep, all types here are Rust types. We can then implement the server just like a normal Tonic service, and the `.proto` schema is generated for you whenever emission is enabled.
+Generated `.proto`:
 
-
-## Advanced Features
-
-Macros support all prost types, imports, skipping with default and custom functions, custom conversions, support for native Rust enums (like `Status` below) and prost enumerations (TestEnum in this example, see more in prosto_proto).
-
-### Attribute quick hits (there are more attributes, view examples and tests)
-
-- Use `treat_as` to replace the encoded representation without changing your Rust field type (for example, for properly treating a type alias).
-- Add `transparent` to skip tag and use this type as zerocost newtype wrapper.
-- Target multiple `sun` domains, including concrete generics like `Sun<MyType<u64>>`, so a single shadow can serve several variants.
-- Mix and match built-in wrappers such as `ArcSwap`, `CachePadded`, and atomic integers; the derive machinery already knows how to serialize them.
-
-### Feature examples
-
-```rust
-// Swap a newtype's encoding without changing the Rust field type.
-#[derive(Clone)]
-pub struct Cents(pub i64);
-
-#[proto_message(proto_path = "protos/payments.proto")]
-pub struct Payment {
-    #[proto(tag = 1, treat_as = "i64")]
-    pub total: Cents,
-}
-
-// Forward the inner field directly into the schema for wrapper ergonomics.
-#[proto_message(transparent, proto_path = "protos/payments.proto")]
-pub struct UserId(pub uuid::Uuid);
-
-// Target concrete generic domains from a single shadow definition.
-#[proto_message(proto_path = "protos/order.proto", sun = [SunOrder<u64>, SunOrder<i64>])]
-pub struct SunOrderShadow {
-    #[proto(tag = 1)]
-    pub quantity: u64,
-}
-
-// Infallible RPC handler returning zero-copy or boxed responses.
-#[proto_rpc(rpc_package = "orders", rpc_server = true, rpc_client = true, proto_path = "protos/orders.proto")]
-pub trait OrdersRpc {
-    async fn confirm(&self, Request<Order>) -> Response<Box<OrderAck>>;
-    async fn infallible_ack(&self, Request<Order>) -> Response<Arc<OrderAck>>;
-}
-
-// Custom wrappers are understood out of the box.
-#[proto_message(proto_path = "protos/runtime.proto")]
-pub struct RuntimeState {
-    #[proto(tag = 1)]
-    pub config: arc_swap::ArcSwap<Arc<Config>>,
-    #[proto(tag = 2)]
-    pub cached_hits: crossbeam_utils::CachePadded<u64>,
-    #[proto(tag = 3)]
-    pub concurrent: std::sync::atomic::AtomicUsize,
+```proto
+message Order {
+  uint64 id = 1;
+  string item = 2;
+  uint32 quantity = 3;
+  optional string notes = 4;
+  repeated string tags = 5;
+  map<string, string> metadata = 6;
 }
 ```
 
-### Struct with Advanced Attributes
+Nested messages work naturally:
 
 ```rust
-#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
-pub struct Attr {
+#[proto_message]
+#[derive(Clone, Debug, PartialEq)]
+pub struct LineItem {
+    pub product_id: u64,
+    pub amount: u32,
+}
+
+#[proto_message]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Invoice {
+    pub id: u64,
+    pub items: Vec<LineItem>,
+    pub total: Option<LineItem>,
+}
+```
+
+## Enums
+
+Rust enums map to Protobuf `oneof`. Unit variants, tuple variants, and struct variants are all supported.
+
+```rust
+#[proto_message(proto_path = "protos/events.proto")]
+pub enum Event {
+    Ping,
+    Message(String),
+    Transfer {
+        from: u64,
+        to: u64,
+        amount: u64,
+    },
+    Batch {
+        ids: Vec<u64>,
+        labels: Vec<String>,
+    },
+    Optional {
+        id: Option<u64>,
+        note: Option<String>,
+    },
+}
+```
+
+Generated `.proto`:
+
+```proto
+message Event {
+  oneof value {
+    EventPing ping = 1;
+    string message = 2;
+    EventTransfer transfer = 3;
+    EventBatch batch = 4;
+    EventOptional optional = 5;
+  }
+}
+
+message EventPing {}
+
+message EventTransfer {
+  uint64 from = 1;
+  uint64 to = 2;
+  uint64 amount = 3;
+}
+
+message EventBatch {
+  repeated uint64 ids = 1;
+  repeated string labels = 2;
+}
+
+message EventOptional {
+  optional uint64 id = 1;
+  optional string note = 2;
+}
+```
+
+## Field attributes
+
+### `#[proto(tag = N)]`
+
+Override auto-assigned field tag:
+
+```rust
+#[proto_message]
+pub struct Config {
+    #[proto(tag = 5)]
+    pub name: String,
+    #[proto(tag = 10)]
+    pub value: u64,
+}
+```
+
+### `#[proto(skip)]` and `#[proto(skip = "fn_path")]`
+
+Skip a field during encoding. With a function, the field is recomputed on decode:
+
+```rust
+#[proto_message]
+pub struct Document {
+    pub content: String,
     #[proto(skip)]
-    id_skip: Vec<i64>,
-    id_vec: Vec<String>,
-    id_opt: Option<String>,
-    status: Status,
-    status_opt: Option<Status>,
-    status_vec: Vec<Status>,
-    #[proto(skip = "compute_hash_for_struct")]
-    hash: String,
-    #[proto(import_path = "google.protobuf")]
-    timestamp: Timestamp,
-    #[proto(import_path = "google.protobuf")]
-    timestamp_vec: Vec<Timestamp>,
-    #[proto(import_path = "google.protobuf")]
-    timestamp_opt: Option<Timestamp>,
-    #[proto(import_path = "google.protobuf")]
-    test_enum: TestEnum,
-    #[proto(import_path = "google.protobuf")]
-    test_enum_opt: Option<TestEnum>,
-    #[proto(import_path = "google.protobuf")]
-    test_enum_vec: Vec<TestEnum>,
-    #[proto(into = "i64", into_fn = "datetime_to_i64", try_from_fn = "try_i64_to_datetime")]
+    pub cached: Vec<u8>,
+    #[proto(skip = "recompute_checksum")]
+    pub checksum: u32,
+}
+
+fn recompute_checksum(doc: &Document) -> u32 {
+    doc.content.len() as u32
+}
+```
+
+### `#[proto(treat_as = "Type")]`
+
+Encode a field using a different type's wire format. Useful for type aliases:
+
+```rust
+pub type ComplexMap = std::collections::BTreeMap<u64, u64>;
+
+#[proto_message]
+pub struct State {
+    #[proto(treat_as = "std::collections::BTreeMap<u64, u64>")]
+    pub index: ComplexMap,
+}
+```
+
+### `#[proto(into)]`, `#[proto(into_fn)]`, `#[proto(from_fn)]`, `#[proto(try_from_fn)]`
+
+Custom field-level type conversions:
+
+```rust
+use chrono::{DateTime, Utc};
+
+fn datetime_to_i64(dt: &DateTime<Utc>) -> i64 { dt.timestamp() }
+fn i64_to_datetime(ts: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp(ts, 0).unwrap()
+}
+
+#[proto_message]
+pub struct Record {
+    #[proto(into = "i64", into_fn = "datetime_to_i64", from_fn = "i64_to_datetime")]
     pub updated_at: DateTime<Utc>,
 }
 ```
 
-Generated proto:
+Use `try_from_fn` when the conversion can fail (the error type must implement `Into<DecodeError>`).
 
-```proto
-message Attr {
-  repeated string id_vec = 1;
-  optional string id_opt = 2;
-  Status status = 3;
-  optional Status status_opt = 4;
-  repeated Status status_vec = 5;
-  google.protobuf.Timestamp timestamp = 6;
-  repeated google.protobuf.Timestamp timestamp_vec = 7;
-  optional google.protobuf.Timestamp timestamp_opt = 8;
-  google.protobuf.TestEnum test_enum = 9;
-  optional google.protobuf.TestEnum test_enum_opt = 10;
-  repeated google.protobuf.TestEnum test_enum_vec = 11;
-  int64 updated_at = 12;
-}
-```
+### `#[proto(import_path = "package")]`
 
-Use `from_fn` when your conversion is infallible and `try_from_fn` when it needs to return a `Result<T, E>` where `E: Into<DecodeError>`.
-
-### Complex Enums
+Declare the proto import package for external types:
 
 ```rust
-#[proto_message(proto_path ="protos/showcase_proto/show.proto")]
-pub enum VeryComplex {
-    First,
-    Second(Address),
-    Third {
-        id: u64,
-        address: Address,
-    },
-    Repeated {
-        id: Vec<u64>,
-        address: Vec<Address>,
-    },
-    Option {
-        id: Option<u64>,
-        address: Option<Address>,
-    },
-    Attr {
-        #[proto(skip)]
-        id_skip: Vec<i64>,
-        id_vec: Vec<String>,
-        id_opt: Option<String>,
-        status: Status,
-        status_opt: Option<Status>,
-        status_vec: Vec<Status>,
-        #[proto(skip = "compute_hash_for_enum")]
-        hash: String,
-        #[proto(import_path = "google.protobuf")]
-        timestamp: Timestamp,
-        #[proto(import_path = "google.protobuf")]
-        timestamp_vec: Vec<Timestamp>,
-        #[proto(import_path = "google.protobuf")]
-        timestamp_opt: Option<Timestamp>,
-        #[proto(import_path = "google.protobuf")]
-        test_enum: TestEnum,
-        #[proto(import_path = "google.protobuf")]
-        test_enum_opt: Option<TestEnum>,
-        #[proto(import_path = "google.protobuf")]
-        test_enum_vec: Vec<TestEnum>,
-    },
+#[proto_message]
+pub struct WithTimestamp {
+    #[proto(import_path = "google.protobuf")]
+    pub timestamp: Timestamp,
 }
 ```
 
-Generated proto:
+## Transparent wrappers
 
-```proto
-message VeryComplexProto {
-  oneof value {
-    VeryComplexProtoFirst first = 1;
-    Address second = 2;
-    VeryComplexProtoThird third = 3;
-    VeryComplexProtoRepeated repeated = 4;
-    VeryComplexProtoOption option = 5;
-    VeryComplexProtoAttr attr = 6;
-  }
-}
-
-message VeryComplexProtoFirst {}
-
-message VeryComplexProtoThird {
-  uint64 id = 1;
-  Address address = 2;
-}
-
-message VeryComplexProtoRepeated {
-  repeated uint64 id = 1;
-  repeated Address address = 2;
-}
-
-message VeryComplexProtoOption {
-  optional uint64 id = 1;
-  optional Option address = 2;
-}
-
-message VeryComplexProtoAttr {
-  repeated string id_vec = 1;
-  optional string id_opt = 2;
-  Status status = 3;
-  optional Status status_opt = 4;
-  repeated Status status_vec = 5;
-  google.protobuf.Timestamp timestamp = 6;
-  repeated google.protobuf.Timestamp timestamp_vec = 7;
-  optional google.protobuf.Timestamp timestamp_opt = 8;
-  google.protobuf.TestEnum test_enum = 9;
-  optional google.protobuf.TestEnum test_enum_opt = 10;
-  repeated google.protobuf.TestEnum test_enum_vec = 11;
-}
-```
-
-## Inject Proto Imports
-
-It's not mandatory to use this macro at all, macros above derive and inject imports from attributes automaticly
-
-But in case you need it, to add custom imports to your generated .proto files use the `inject_proto_import!` macro:
+Single-field newtypes can be encoded without additional message framing:
 
 ```rust
-inject_proto_import!("protos/test.proto", "google.protobuf.timestamp", "common");
+#[proto_message(transparent)]
+#[derive(Debug, PartialEq)]
+pub struct UserId(u64);
+
+#[proto_message(transparent)]
+#[derive(Debug, PartialEq)]
+pub struct Token {
+    pub inner: String,
+}
 ```
 
-This will inject the specified import statements into the target .proto file
+The wrapper encodes/decodes as the inner type directly — no extra tag overhead on the wire.
 
+## Generics
 
-## Custom encode/decode pipelines with `ProtoShadow`
-
-`ProtoExt` types pair with a companion `Shadow` type that implements [`ProtoShadow`](src/traits.rs). This trait defines how a value is lowered into the bytes that will be sent over the wire and how it is rebuilt during decoding. The default derive covers most standard Rust types, but you can substitute a custom representation when you need to interoperate with an existing protocol or avoid lossy conversions. Default Shadow of type is &Self for complex types and Self for primitive
-
-The [`fastnum` decimal adapter](src/custom_types/fastnum/signed.rs) shows how to map `fastnum::D128` into a compact integer layout while still exposing ergonomic Rust APIs:
+Generic structs work out of the box:
 
 ```rust
-#[proto_message(proto_path = "protos/fastnum.proto", sun = D128)]
-pub struct D128Proto {
+#[proto_message]
+#[derive(Debug, PartialEq)]
+struct Pair<K, V> {
+    key: K,
+    value: V,
+}
+
+#[proto_message]
+#[derive(Debug, PartialEq)]
+struct Cache<K, V, const CAP: usize> {
+    items: VecDeque<Pair<K, V>>,
+}
+
+// Encodes/decodes like any other message
+let pair = Pair { key: 1u64, value: "hello".to_string() };
+let bytes = <Pair<u64, String>>::encode_to_vec(&pair);
+```
+
+For `.proto` generation with concrete type substitution:
+
+```rust
+#[proto_message(
+    proto_path = "protos/order.proto",
+    generic_types = [T = [u64, i64]]
+)]
+pub struct OrderLine<T> {
+    pub quantity: T,
+    pub label: String,
+}
+```
+
+## Custom type conversions (sun)
+
+The `sun` attribute maps native Rust types to a proto shadow struct. The shadow handles encoding/decoding while your domain type stays clean.
+
+```rust
+use proto_rs::{proto_message, ProtoShadowEncode, ProtoShadowDecode, DecodeError};
+
+// Your domain type — not proto-aware
+struct Account {
+    balance: std::sync::Mutex<u64>,
+    name: String,
+}
+
+// The proto shadow — handles wire format
+#[proto_message(sun = Account)]
+struct AccountProto {
     #[proto(tag = 1)]
-    pub lo: u64,
+    balance: u64,
     #[proto(tag = 2)]
-    pub hi: u64,
+    name: String,
+}
+
+impl ProtoShadowDecode<Account> for AccountProto {
+    fn to_sun(self) -> Result<Account, DecodeError> {
+        Ok(Account {
+            balance: std::sync::Mutex::new(self.balance),
+            name: self.name,
+        })
+    }
+}
+
+impl<'a> ProtoShadowEncode<'a, Account> for AccountProto {
+    fn from_sun(value: &'a Account) -> Self {
+        AccountProto {
+            balance: *value.balance.lock().unwrap(),
+            name: value.name.clone(),
+        }
+    }
+}
+```
+
+A single shadow can serve multiple domain types:
+
+```rust
+#[proto_message(sun = [InvoiceLine, AccountingLine])]
+struct LineShadow {
+    #[proto(tag = 1)]
+    cents: i64,
+    #[proto(tag = 2)]
+    description: String,
+}
+
+// Implement ProtoShadowEncode + ProtoShadowDecode for each sun target
+```
+
+## Zero-copy IR encoding (sun_ir)
+
+For types with expensive-to-clone fields, `sun_ir` provides a reference-based intermediate representation that avoids cloning during encoding:
+
+```rust
+use proto_rs::{proto_message, ProtoShadowEncode, ProtoShadowDecode, DecodeIrBuilder, DecodeError};
+use solana_address::Address;
+use solana_instruction::{AccountMeta, Instruction};
+
+// IR struct holds references — no cloning on encode
+pub struct InstructionIr<'a> {
+    program_id: &'a Address,
+    accounts: &'a Vec<AccountMeta>,
+    data: &'a Vec<u8>,
+}
+
+#[proto_message(
+    proto_path = "protos/solana.proto",
+    sun = [Instruction],
+    sun_ir = InstructionIr<'a>
+)]
+pub struct InstructionProto {
+    #[proto(tag = 1)]
+    pub program_id: Address,
+    #[proto(tag = 2)]
+    pub accounts: Vec<AccountMeta>,
     #[proto(tag = 3)]
-    pub fractional_digits_count: i32,
-    #[proto(tag = 4)]
-    pub is_negative: bool,
+    pub data: Vec<u8>,
 }
 
-impl ProtoShadow for D128Proto {
-    type Sun<'a> = &'a D128;
-    type OwnedSun = D128;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> { /* deserialize */ }
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> { /* serialize */ }
-}
-```
-
-By hand-tuning `from_sun` and `to_sun` you can remove redundant allocations, hook into validation logic, or bridge Rust-only types into your RPC surface without ever touching `.proto` definitions directly.
-
-When you need the same wire format to serve multiple domain models, supply several `sun` targets in one go:
-
-```rust
-#[proto_message(proto_path = "protos/invoice.proto", sun = [InvoiceLine, AccountingLine])]
-pub struct LineShadow {
-    #[proto(tag = 1)]
-    pub cents: i64,
-    #[proto(tag = 2)]
-    pub description: String,
-}
-
-impl ProtoShadow<InvoiceLine> for LineShadow {
-    type Sun<'a> = &'a InvoiceLine;
-    type OwnedSun = InvoiceLine;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(InvoiceLine::new(self.cents, self.description))
-    }
-
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        LineShadow { cents: value.total_cents(), description: value.title().to_owned() }
+// Encode path: borrows everything, zero allocations
+impl<'a> ProtoShadowEncode<'a, Instruction> for InstructionIr<'a> {
+    fn from_sun(value: &'a Instruction) -> Self {
+        Self {
+            program_id: &value.program_id,
+            accounts: &value.accounts,
+            data: &value.data,
+        }
     }
 }
 
-impl ProtoShadow<AccountingLine> for LineShadow {
-    type Sun<'a> = &'a AccountingLine;
-    type OwnedSun = AccountingLine;
-    type View<'a> = Self;
-
-    fn to_sun(self) -> Result<Self::OwnedSun, DecodeError> {
-        Ok(AccountingLine::from_parts(self.cents, self.description))
+// Decode path: moves owned data
+impl ProtoShadowDecode<Instruction> for InstructionProto {
+    fn to_sun(self) -> Result<Instruction, DecodeError> {
+        Ok(Instruction {
+            program_id: self.program_id,
+            accounts: self.accounts,
+            data: self.data,
+        })
     }
+}
 
-    fn from_sun(value: Self::Sun<'_>) -> Self::View<'_> {
-        LineShadow { cents: value.cents(), description: value.label().to_owned() }
+
+impl DecodeIrBuilder<InstructionProto> for Instruction {
+    fn build_ir(&self) -> Result<InstructionProto, DecodeError> {
+        Ok(InstructionProto {
+            program_id: self.program_id,
+            accounts: self.accounts.clone(),
+            data: self.data.clone(),
+        })
     }
 }
 ```
 
-Each `sun` entry generates a full `ProtoExt` implementation so the same shadow type can round-trip either domain struct without code duplication.
+## Getters
 
-## Reverse encoding
-
-The encoder now writes in a single reverse pass, upb-style. Implementations write payload bytes first, then prefix
-lengths and tags as needed. This has a few implications:
-
-- `TAG == 0` encodes a root payload with **no** field key or length prefix.
-- `TAG != 0` encodes a field payload and then prefixes the field key (and length for length-delimited payloads).
-- Deterministic output requires message fields (and repeated elements) to be emitted **in reverse order**.
-- `RevWriter::finish()` returns the backing buffer without copying; the resulting buffer may include prefix slack.
-  Use the provided slice views (`start` + `len`) to target the written range when needed.
-
-
-
-## Collecting schemas across a workspace
-
-Enable the `build-schemas` feature for the crate that should aggregate `.proto` files and call the helper at build or runtime:
+When the IR struct's fields don't map 1:1 to the proto struct, use `getter` to specify how to access values from the IR:
 
 ```rust
+struct TaskCtx { flags: u32, name: String }
+struct TaskRef<'a> { user_id: u64, ctx: &'a TaskCtx }
+
+#[proto_message(sun = [Task], sun_ir = TaskRef<'a>)]
+struct TaskProto {
+    user_id: u64,
+    #[proto(getter = "*$.ctx.flags")]
+    flags: u32,
+    #[proto(getter = "&*$.ctx.name")]
+    name: String,
+}
+```
+
+The `$` refers to the IR struct instance. Same-name, same-type fields are resolved automatically without a getter.
+
+## Validation
+
+Validate fields or entire messages on decode:
+
+```rust
+fn validate_port(port: &u16) -> Result<(), DecodeError> {
+    if *port == 0 { return Err(DecodeError::new("port cannot be zero")); }
+    Ok(())
+}
+
+fn validate_config(cfg: &ServerConfig) -> Result<(), DecodeError> {
+    if cfg.max_connections > 100_000 {
+        return Err(DecodeError::new("too many connections"));
+    }
+    Ok(())
+}
+
+#[proto_message]
+#[proto(validator = validate_config)]
+pub struct ServerConfig {
+    #[proto(validator = validate_port)]
+    pub port: u16,
+    pub max_connections: u32,
+}
+```
+
+Field validators run after each field is decoded. Message validators run after all fields are decoded. Both return `Result<(), DecodeError>`.
+
+With the `tonic` feature, `validator_with_ext` gives access to `tonic::Extensions` for request-scoped validation:
+
+```rust
+#[proto_message]
+#[proto(validator_with_ext = validate_with_auth)]
+pub struct SecureRequest {
+    pub payload: String,
+}
+
+fn validate_with_auth(req: &SecureRequest, ext: &tonic::Extensions) -> Result<(), DecodeError> {
+    // Access request metadata for auth checks
+    Ok(())
+}
+```
+
+## RPC services
+
+Define gRPC services as Rust traits. The macro generates Tonic server and client implementations:
+
+```rust
+use proto_rs::{proto_rpc, proto_message, ZeroCopy};
+use tonic::{Request, Response, Status};
+
+#[proto_message]
+pub struct Ping { pub id: u64 }
+
+#[proto_message]
+pub struct Pong { pub id: u64, pub message: String }
+
+#[proto_rpc(
+    rpc_package = "echo",
+    rpc_server = true,
+    rpc_client = true,
+    proto_path = "protos/echo.proto"
+)]
+pub trait EchoService {
+    // Standard unary RPC
+    async fn echo(&self, request: Request<Ping>) -> Result<Response<Pong>, Status>;
+
+    // Zero-copy response — avoids re-encoding
+    async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<ZeroCopy<Pong>>, Status>;
+
+    // Infallible — no Result wrapper
+    async fn echo_infallible(&self, request: Request<Ping>) -> Response<Pong>;
+
+    // Server streaming
+    type PingStream: Stream<Item = Result<Pong, Status>> + Send;
+    async fn ping_stream(&self, request: Request<Ping>) -> Result<Response<Self::PingStream>, Status>;
+}
+```
+
+Server implementation:
+
+```rust
+struct MyService;
+
+impl EchoService for MyService {
+    async fn echo(&self, request: Request<Ping>) -> Result<Response<Pong>, Status> {
+        let ping = request.into_inner();
+        Ok(Response::new(Pong { id: ping.id, message: "pong".into() }))
+    }
+
+    async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<ZeroCopy<Pong>>, Status> {
+        let pong = Pong { id: request.into_inner().id, message: "fast".into() };
+        Ok(Response::new(pong.to_zero_copy()))
+    }
+
+    // ...
+}
+
+// Start server
+Server::builder()
+    .add_service(echo_service_server::EchoServiceServer::new(MyService))
+    .serve(addr)
+    .await?;
+```
+
+Client usage:
+
+```rust
+let mut client = echo_service_client::EchoServiceClient::connect("http://127.0.0.1:50051").await?;
+let response = client.echo(Ping { id: 1 }).await?.into_inner();
+```
+
+### RPC imports
+
+Import types from other proto packages:
+
+```rust
+#[proto_rpc(rpc_server = true, rpc_client = true, proto_path = "protos/svc.proto")]
+#[proto_imports(common_types = ["UserId", "Status"], orders = ["Order"])]
+pub trait OrderService {
+    async fn get_order(&self, request: Request<UserId>) -> Result<Response<Order>, Status>;
+}
+```
+
+### RPC client interceptors
+
+Inject per-request metadata (auth tokens, tracing headers, etc.):
+
+```rust
+pub trait AuthInterceptor: Send + Sync + 'static + Sized {
+    type Payload;
+    fn intercept<T>(payload: Self::Payload, req: &mut Request<T>) -> Result<(), Status>;
+}
+
+#[proto_rpc(rpc_server = true, rpc_client = true, rpc_client_ctx = "AuthInterceptor")]
+pub trait SecureService {
+    async fn protected(&self, request: Request<Ping>) -> Result<Response<Pong>, Status>;
+}
+
+// Client passes interceptor payload with each call:
+let mut client: SecureServiceClient<_, MyAuth> = SecureServiceClient::connect(url).await?;
+client.protected(auth_token, Ping { id: 1 }).await?;
+```
+
+## Zero-copy encoding
+
+Pre-encode a message and reuse the bytes:
+
+```rust
+use proto_rs::{ProtoEncode, ZeroCopy};
+
+let msg = Pong { id: 1, message: "hello".into() };
+let zc: ZeroCopy<Pong> = ProtoEncode::to_zero_copy(&msg);
+
+// Access raw bytes without re-encoding
+let bytes: &[u8] = zc.as_bytes();
+
+// Use in Tonic responses — sent without re-encoding
+Ok(Response::new(zc))
+```
+
+## Built-in type support
+
+### Primitives
+
+`bool`, `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, `f32`, `f64`, `usize`, `isize`, `String`, `Vec<u8>`, `bytes::Bytes`
+
+Narrow types (`u8`, `u16`, `i8`, `i16`) are widened on the wire to `uint32`/`int32` with overflow validation on decode.
+
+### Atomics
+
+All `std::sync::atomic` types: `AtomicBool`, `AtomicU8`, `AtomicU16`, `AtomicU32`, `AtomicU64`, `AtomicUsize`, `AtomicI8`, `AtomicI16`, `AtomicI32`, `AtomicI64`, `AtomicIsize`
+
+Atomic types encode and decode using `Ordering::Relaxed`.
+
+### NonZero types
+
+All `core::num::NonZero*` types: `NonZeroU8`, `NonZeroU16`, `NonZeroU32`, `NonZeroU64`, `NonZeroUsize`, `NonZeroI8`, `NonZeroI16`, `NonZeroI32`, `NonZeroI64`, `NonZeroIsize`
+
+Default value is `MAX` (not zero). Decoding zero returns an error.
+
+### Collections
+
+`Vec<T>`, `VecDeque<T>`, `[T; N]`, `HashMap<K, V>`, `BTreeMap<K, V>`, `HashSet<T>`, `BTreeSet<T>`
+
+### Smart pointers
+
+`Box<T>`, `Arc<T>`, `Option<T>`
+
+### Unit type
+
+`()` maps to `google.protobuf.Empty`.
+
+## Wrapper types
+
+Feature-gated wrapper types are encoded transparently:
+
+| Type | Feature | Description |
+|------|---------|-------------|
+| `ArcSwap<T>` | `arc_swap` | Lock-free atomic pointer |
+| `ArcSwapOption<T>` | `arc_swap` | Optional atomic pointer |
+| `CachePadded<T>` | `cache_padded` | Cache-line aligned value |
+| `parking_lot::Mutex<T>` | `parking_lot` | Fast mutex |
+| `parking_lot::RwLock<T>` | `parking_lot` | Fast read-write lock |
+| `std::sync::Mutex<T>` | *(always)* | Standard mutex |
+| `papaya::HashMap<K,V>` | `papaya` | Lock-free concurrent map |
+| `papaya::HashSet<T>` | `papaya` | Lock-free concurrent set |
+
+```rust
+use arc_swap::ArcSwap;
+use std::sync::Arc;
+
+#[proto_message]
+pub struct RuntimeState {
+    pub config: ArcSwap<Config>,
+    pub counter: std::sync::atomic::AtomicU64,
+    pub cache: parking_lot::Mutex<Vec<u8>>,
+}
+```
+
+## Third-party integrations
+
+### Chrono (`chrono` feature)
+
+`DateTime<Utc>` and `TimeDelta` encode as `(i64 secs, u32 nanos)`:
+
+```rust
+#[proto_message]
+pub struct Event {
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub duration: chrono::TimeDelta,
+}
+```
+
+### Fastnum (`fastnum` feature)
+
+`D128`, `D64`, and `UD128` encode as split integer components:
+
+```rust
+#[proto_message]
+pub struct Price {
+    pub amount: fastnum::D128,   // signed 128-bit decimal
+    pub total: fastnum::UD128,   // unsigned 128-bit decimal
+}
+```
+
+### Solana (`solana` feature)
+
+Native support for Solana SDK types:
+
+| Type | Proto representation |
+|------|---------------------|
+| `Address` | `bytes` (32 bytes) |
+| `Signature` | `bytes` (64 bytes) |
+| `Hash` | `bytes` (32 bytes) |
+| `Keypair` | `bytes` |
+| `Instruction` | message with `Address` program_id, repeated `AccountMeta`, `bytes` data |
+| `AccountMeta` | message with `Address` pubkey, `bool` is_signer, `bool` is_writable |
+| `InstructionError` | `oneof` with all error variants |
+| `TransactionError` | `oneof` with all error variants |
+
+`Instruction` uses `sun_ir` for zero-copy encoding — account lists and data are borrowed, not cloned.
+
+### Teloxide (`teloxide` feature)
+
+`teloxide_core::types::UserId` is supported as a primitive.
+
+### Hashers (`ahash` feature)
+
+`ahash::RandomState` and `std::hash::RandomState` are supported for `HashMap`/`HashSet` construction.
+
+## Schema registry and emission
+
+### Emitting `.proto` files
+
+Proto files are written only when explicitly enabled:
+
+- **Cargo feature:** `emit-proto-files`
+- **Environment variable:** `PROTO_EMIT_FILE=1` (overrides the feature flag)
+- **Disable override:** `PROTO_EMIT_FILE=0`
+
+### Build-time schema collection
+
+With the `build-schemas` feature, collect all proto schemas across your workspace and write them to disk:
+
+```rust
+// build.rs or a dedicated binary
 fn main() {
-    // Typically gated by an env flag to avoid touching disk unnecessarily.
     proto_rs::schemas::write_all("./protos", proto_rs::schemas::RustClientCtx::disabled())
         .expect("failed to write generated protos");
 
@@ -368,51 +776,84 @@ fn main() {
 }
 ```
 
-This walks the inventory of registered schemas and writes deduplicated `.proto` files with a canonical header and package name derived from the file path.
+`RustClientCtx` can also generate a Rust client module from the collected schemas:
 
-## Controlling `.proto` emission
-
-`proto_rs` will only touch the filesystem when one of the following is set:
-
-- Enable the `emit-proto-files` cargo feature to write generated files.
-- Set `PROTO_EMIT_FILE=1` (or `true`) to turn on emission, overriding emit-proto-files behaviour
-- Set `PROTO_EMIT_FILE=0` (or `false`) to turn off emission, overriding emit-proto-files behaviour
-
-The emission logic is shared by all macros so you can switch behaviours without code changes.
-
-## Examples and tests
-
-Explore the `examples/` directory and the integration tests under `tests/` for end-to-end usage patterns, including schema-only builds and cross-compatibility checks.
-
-To validate changes locally run:
-
-```bash
-cargo test
+```rust
+proto_rs::schemas::write_all(
+    "./protos",
+    proto_rs::schemas::RustClientCtx::enabled("src/generated")
+        .with_imports(&["use crate::types::*;"])
+        .add_client_attrs("MyService", "#[derive(Debug)]"),
+)?;
 ```
 
-The test suite exercises more than 400 codec and integration scenarios to ensure the derived implementations stay compatible with Prost and Tonic.
+### Custom proto definitions
+
+`#[proto_dump]` emits standalone proto definitions. `inject_proto_import!` adds imports to generated files:
+
+```rust
+inject_proto_import!("protos/service.proto", "google.protobuf.timestamp", "common");
+```
+
+## Feature flags
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `tonic` | yes | Tonic gRPC integration: codecs, service/client generation |
+| `stable` | no | Compile on stable Rust (boxes async futures) |
+| `build-schemas` | no | Compile-time schema registry via `inventory` |
+| `emit-proto-files` | no | Write `.proto` files during compilation |
+| `chrono` | no | `DateTime<Utc>`, `TimeDelta` support |
+| `fastnum` | no | `D128`, `D64`, `UD128` decimal support |
+| `solana` | no | Solana SDK types (Address, Instruction, errors, etc.) |
+| `solana_address_hash` | no | Solana address hasher support |
+| `teloxide` | no | Telegram bot types |
+| `ahash` | no | AHash hasher for collections |
+| `arc_swap` | no | `ArcSwap<T>` wrapper |
+| `cache_padded` | no | `CachePadded<T>` wrapper |
+| `parking_lot` | no | `parking_lot::Mutex<T>`, `RwLock<T>` |
+| `papaya` | no | Lock-free concurrent `HashMap`/`HashSet` |
+| `block_razor` | no | Block Razor RPC integration |
+| `jito` | no | Jito RPC integration |
+| `bloxroute` | no | Bloxroute RPC integration |
+| `next_block` | no | NextBlock RPC integration |
+| `no-recursion-limit` | no | Disable decode recursion depth checking |
+
+## Stable toolchain
+
+The crate defaults to nightly for `impl Trait` in associated types, giving zero-cost futures in generated RPC services. Enable the `stable` feature to compile on stable Rust — this boxes async futures (one allocation per RPC call) but keeps the API identical:
+
+```toml
+[dependencies]
+proto_rs = { version = "0.11", features = ["stable"] }
+```
+
+## Reverse encoding
+
+The encoder writes in a single reverse pass (upb-style). Fields are emitted payload-first, then prefixed with lengths and tags. This avoids precomputing message sizes and produces deterministic output. The `RevWriter` trait powers this:
+
+- `TAG == 0` encodes a root payload with no field key or length prefix
+- `TAG != 0` prefixes the field key (and length for length-delimited payloads)
+- Fields and repeated elements are emitted in reverse order
+- `RevWriter::finish_tight()` returns the buffer without slack
 
 ## Benchmarks
-
-The repository bundles a standalone Criterion harness under `benches/bench_runner`. Run the benches with:
 
 ```bash
 cargo bench -p bench_runner
 ```
 
-Each run appends a markdown report to `benches/bench.md`, including the `bench_zero_copy_vs_clone` comparison and encode/decode micro-benchmarks that pit `proto_rs` against Prost. Use those numbers to confirm zero-copy changes stay ahead of the Prost baseline and to track regressions on the clone-heavy paths.
+The Criterion harness under `benches/bench_runner` includes zero-copy vs clone comparisons and encode/decode micro-benchmarks against Prost.
 
-## Optional features
+## Testing
 
-- `std` *(default)* – pulls in the Tonic dependency tree and enables the RPC helpers.
-- `tonic` *(default)* – compiles the gRPC integration layer, including the drop-in codecs, zero-copy request/response wrappers, and Tonic service/client generators.
-- `build-schemas` – register generated schemas at compile time so they can be written later.
-- `emit-proto-files` – eagerly write `.proto` files during compilation.
-- `stable` – compile everything on the stable toolchain by boxing async state. See below for trade-offs.
-- `fastnum`, `solana` – enable extra type support.
+```bash
+cargo test              # default features
+cargo test --all-features  # all 500+ tests
+```
 
-### Stable vs. nightly builds
+The test suite covers codec roundtrips, cross-library compatibility with Prost, RPC integration, validation, and every supported type.
 
-The crate defaults to the nightly toolchain so it can use `impl Trait` in associated types for zero-cost futures when deriving RPC services. If you need to stay on stable Rust, enable the `stable` feature. Doing so switches the generated service code to heap-allocate and pin boxed futures, which keeps the API identical but introduces one allocation per RPC invocation and a small amount of dynamic dispatch. Disable the feature when you can use nightly to get the leanest possible generated code.
+## License
 
-For the full API surface and macro documentation see [docs.rs/proto_rs](https://docs.rs/proto_rs).
+MIT OR Apache-2.0

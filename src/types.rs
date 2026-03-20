@@ -813,10 +813,6 @@ impl_atomic_narrow_primitive!(
     store = |value: &AtomicUsize, raw: usize| value.store(raw, Ordering::Relaxed)
 );
 
-// ============================================================================
-// NonZero primitives (Default value = MAX)
-// ============================================================================
-
 macro_rules! impl_nonzero_wide_varint {
     ($ty:ty, $base:ty, $prim_kind:ident, $module:ident) => {
         impl ProtoExt for $ty {
@@ -985,10 +981,6 @@ impl_nonzero_narrow_varint!(NonZeroI16, i16, i32, I16, int32);
 impl_nonzero_narrow_varint!(NonZeroUsize, usize, u64, U64, uint64);
 impl_nonzero_narrow_varint!(NonZeroIsize, isize, i64, I64, int64);
 
-// ============================================================================
-// Unit type ()
-// ============================================================================
-
 impl ProtoExt for () {
     const KIND: ProtoKind = ProtoKind::Message;
 }
@@ -1115,10 +1107,6 @@ mod tests {
         assert_eq!("type.googleapis.com/google.protobuf.Empty", <()>::type_url());
     }
 
-    // ========================================================================
-    // NonZero primitive unit tests
-    // ========================================================================
-
     use crate::ProtoArchive;
     use crate::ProtoDecoder;
     use crate::encoding::DecodeContext;
@@ -1143,8 +1131,14 @@ mod tests {
         assert_eq!(<NonZeroI16 as ProtoDefault>::proto_default(), NonZeroI16::MAX);
         assert_eq!(<NonZeroI32 as ProtoDefault>::proto_default(), NonZeroI32::MAX);
         assert_eq!(<NonZeroI64 as ProtoDefault>::proto_default(), NonZeroI64::MAX);
-        assert_eq!(<NonZeroUsize as ProtoDefault>::proto_default(), NonZeroUsize::new(usize::MAX).unwrap());
-        assert_eq!(<NonZeroIsize as ProtoDefault>::proto_default(), NonZeroIsize::new(isize::MAX).unwrap());
+        assert_eq!(
+            <NonZeroUsize as ProtoDefault>::proto_default(),
+            NonZeroUsize::new(usize::MAX).unwrap()
+        );
+        assert_eq!(
+            <NonZeroIsize as ProtoDefault>::proto_default(),
+            NonZeroIsize::new(isize::MAX).unwrap()
+        );
     }
 
     #[test]

@@ -52,10 +52,6 @@ pub struct ServerConfig {
     pub request_timeout_ms: NonZeroU64,
 }
 
-// ============================================================================
-// Prost counterparts for cross-library verification
-// ============================================================================
-
 #[derive(Clone, PartialEq, prost::Message)]
 pub struct NonZeroPrimitivesProst {
     #[prost(uint32, tag = "1")]
@@ -91,10 +87,6 @@ pub struct ServerConfigProst {
     #[prost(uint64, tag = "4")]
     pub request_timeout_ms: u64,
 }
-
-// ============================================================================
-// Helpers
-// ============================================================================
 
 fn encode_proto<M: ProtoEncode + ProtoExt>(value: &M) -> Bytes {
     Bytes::from(M::encode_to_vec(value))
@@ -133,10 +125,6 @@ const fn sample_server_config() -> ServerConfig {
         request_timeout_ms: NonZeroU64::new(30_000).unwrap(),
     }
 }
-
-// ============================================================================
-// Round-trip tests
-// ============================================================================
 
 #[test]
 fn nonzero_primitives_roundtrip() {

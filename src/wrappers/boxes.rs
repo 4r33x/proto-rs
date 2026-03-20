@@ -77,10 +77,6 @@ where
     }
 }
 
-// ============================================================================
-// ProtoEncode for Box<T>
-// ============================================================================
-
 impl<T: ProtoEncode> ProtoEncode for Box<T>
 where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
