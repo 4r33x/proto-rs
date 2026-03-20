@@ -268,11 +268,12 @@ Use `try_from_fn` when the conversion can fail (the error type must implement `I
 
 ### `#[proto(import_path = "package")]`
 
-Declare the proto import package for external types:
+Optional hint for live `.proto` emission — tells the emitter which package to import for an external type. The build-schema system resolves all imports automatically, so this is only needed when using `emit-proto-files` or `PROTO_EMIT_FILE=1`:
 
 ```rust
 #[proto_message]
 pub struct WithTimestamp {
+    // Optional: only needed for live .proto emission
     #[proto(import_path = "google.protobuf")]
     pub timestamp: Timestamp,
 }
@@ -518,6 +519,8 @@ fn validate_with_auth(req: &SecureRequest, ext: &tonic::Extensions) -> Result<()
 
 Define gRPC services as Rust traits. The macro generates Tonic server and client implementations:
 
+The macro parses your trait methods and generates both the server trait and client struct. Return types are flexible — you can use or omit `Result` and `Response` wrappers depending on what makes sense semantically:
+
 ```rust
 use proto_rs::{proto_rpc, proto_message, ZeroCopy};
 use tonic::{Request, Response, Status};
@@ -535,14 +538,21 @@ pub struct Pong { pub id: u64, pub message: String }
     proto_path = "protos/echo.proto"
 )]
 pub trait EchoService {
-    // Standard unary RPC
+    // Standard: Result<Response<T>, Status>
     async fn echo(&self, request: Request<Ping>) -> Result<Response<Pong>, Status>;
 
-    // Zero-copy response — avoids re-encoding
+    // Infallible: drop Result when the handler never fails
+    async fn echo_infallible(&self, request: Request<Ping>) -> Response<Pong>;
+
+    // Bare value: drop both Result and Response for maximum brevity
+    async fn echo_bare(&self, request: Request<Ping>) -> Pong;
+
+    // Zero-copy: pre-encoded bytes, avoids re-encoding on send
     async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<ZeroCopy<Pong>>, Status>;
 
-    // Infallible — no Result wrapper
-    async fn echo_infallible(&self, request: Request<Ping>) -> Response<Pong>;
+    // Smart pointer responses work too
+    async fn echo_boxed(&self, request: Request<Ping>) -> Result<Response<Box<Pong>>, Status>;
+    async fn echo_arced(&self, request: Request<Ping>) -> Response<Arc<Pong>>;
 
     // Server streaming
     type PingStream: Stream<Item = Result<Pong, Status>> + Send;
@@ -550,7 +560,9 @@ pub trait EchoService {
 }
 ```
 
-Server implementation:
+The macro unwraps `Result`, `Response`, `Box`, `Arc`, and `ZeroCopy` layers automatically to determine the proto message type for the generated `.proto` definition — you get clean trait signatures without affecting the wire format.
+
+### Server implementation
 
 ```rust
 struct MyService;
@@ -576,19 +588,40 @@ Server::builder()
     .await?;
 ```
 
-Client usage:
+### Generated client
+
+The generated client methods accept any type that implements `ProtoRequest<T>` — not just `Request<T>`. This means you can pass:
+
+- **Bare values:** `client.echo(Ping { id: 1 })` — auto-wrapped in `Request`
+- **Wrapped requests:** `client.echo(Request::new(Ping { id: 1 }))` — passed through
+- **Zero-copy:** `client.echo(ping.to_zero_copy())` — sent as pre-encoded bytes
 
 ```rust
 let mut client = echo_service_client::EchoServiceClient::connect("http://127.0.0.1:50051").await?;
-let response = client.echo(Ping { id: 1 }).await?.into_inner();
+
+// All three are equivalent — pass whatever is convenient:
+let r1 = client.echo(Ping { id: 1 }).await?;
+let r2 = client.echo(Request::new(Ping { id: 1 })).await?;
+let r3 = client.echo(Ping { id: 1 }.to_zero_copy()).await?;
 ```
+
+The generated method signature is:
+
+```rust
+pub async fn echo<R>(&mut self, request: R) -> Result<Response<Pong>, Status>
+where
+    R: ProtoRequest<Ping>,
+```
+
+This generic bound is what makes all three call styles work — `ProtoRequest<T>` is implemented for `T`, `Request<T>`, `ZeroCopy<T>`, and `Request<ZeroCopy<T>>`.
 
 ### RPC imports
 
-Import types from other proto packages:
+Optional import hints for live `.proto` emission. The build-schema system resolves all imports automatically — `#[proto_imports]` is only needed when using `emit-proto-files` or `PROTO_EMIT_FILE=1`:
 
 ```rust
 #[proto_rpc(rpc_server = true, rpc_client = true, proto_path = "protos/svc.proto")]
+// Optional: only needed for live .proto emission
 #[proto_imports(common_types = ["UserId", "Status"], orders = ["Order"])]
 pub trait OrderService {
     async fn get_order(&self, request: Request<UserId>) -> Result<Response<Order>, Status>;
@@ -597,23 +630,64 @@ pub trait OrderService {
 
 ### RPC client interceptors
 
-Inject per-request metadata (auth tokens, tracing headers, etc.):
+`rpc_client_ctx` adds a generic `Ctx` parameter to the generated client, enabling per-request middleware (auth tokens, tracing headers, rate limiting, etc.).
+
+Define an interceptor trait:
 
 ```rust
 pub trait AuthInterceptor: Send + Sync + 'static + Sized {
     type Payload;
     fn intercept<T>(payload: Self::Payload, req: &mut Request<T>) -> Result<(), Status>;
 }
+```
 
+Wire it to the service:
+
+```rust
 #[proto_rpc(rpc_server = true, rpc_client = true, rpc_client_ctx = "AuthInterceptor")]
 pub trait SecureService {
     async fn protected(&self, request: Request<Ping>) -> Result<Response<Pong>, Status>;
 }
-
-// Client passes interceptor payload with each call:
-let mut client: SecureServiceClient<_, MyAuth> = SecureServiceClient::connect(url).await?;
-client.protected(auth_token, Ping { id: 1 }).await?;
 ```
+
+The generated client becomes `SecureServiceClient<T, Ctx>` where `Ctx: AuthInterceptor`. Each method gains an extra first parameter for the interceptor payload, with the bound `I: Into<Ctx::Payload>`:
+
+```rust
+// Generated signature:
+pub async fn protected<R, I>(
+    &mut self,
+    ctx: I,          // interceptor payload — first argument
+    request: R,
+) -> Result<Response<Pong>, Status>
+where
+    R: ProtoRequest<Ping>,
+    I: Into<Ctx::Payload>,
+    Ctx: AuthInterceptor,
+```
+
+This means you can pass any type that converts into the payload — not just the payload type itself:
+
+```rust
+struct MyAuth;
+impl AuthInterceptor for MyAuth {
+    type Payload = String;  // e.g. a bearer token
+    fn intercept<T>(token: String, req: &mut Request<T>) -> Result<(), Status> {
+        req.metadata_mut().insert("authorization", token.parse().unwrap());
+        Ok(())
+    }
+}
+
+let mut client: SecureServiceClient<_, MyAuth> =
+    SecureServiceClient::connect("http://127.0.0.1:50051").await?;
+
+// Pass a String directly:
+client.protected(format!("Bearer {token}"), Ping { id: 1 }).await?;
+
+// Or anything that implements Into<String>:
+client.protected("Bearer abc123".to_string(), Ping { id: 1 }).await?;
+```
+
+Multiple services can share the same interceptor trait with different concrete implementations
 
 ## Zero-copy encoding
 
@@ -781,7 +855,7 @@ proto_rs::schemas::write_all(
 
 ### Custom proto definitions
 
-`#[proto_dump]` emits standalone proto definitions. `inject_proto_import!` adds imports to generated files:
+`#[proto_dump]` emits standalone proto definitions. `inject_proto_import!` adds import hints to generated `.proto` files. Both are optional — the build-schema system resolves all imports automatically. These are only needed when using live `.proto` emission (`emit-proto-files` or `PROTO_EMIT_FILE=1`):
 
 ```rust
 inject_proto_import!("protos/service.proto", "google.protobuf.timestamp", "common");
