@@ -1,187 +1,176 @@
-[workspace]
-members = [
-  "crates/prosto_derive",
-  "tests/tonic_prost_test",
-  "tests/proto_rs_test",
-  "tests/proto_build_test",
-  "benches/bench_runner",
-]
-resolver = "3"
-
-[workspace.package]
-edition = "2024"
-authors = ["Ivan Auwers <vonauwers@gmail.com>"]
-description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/4r33x/proto_rs"
-homepage = "https://github.com/4r33x/proto_rs"
-readme = "README.md"
-keywords = ["grpc", "protobufs", "proto", "tonic", "prost"]
-categories = [
-  "network-programming",
-  "development-tools",
-  "development-tools::build-utils",
-  "rust-patterns",
-]
-
-[workspace.dependencies]
-prosto_derive = { version = "0.11.20", path = "crates/prosto_derive" }
-proto_rs = { version = "0.11.20", path = "./" }
-prost = { version = "0.14.3", default-features = false }
-bytes = { version = "1.11.1", default-features = false }
-inventory = { version = "0.3" }
-chrono = "0.4"
-criterion = { version = "0.7" }
-tonic = { version = "0.14.4" }
-
-[workspace.lints.clippy]
-#cargo = { level = "deny", priority = -1 }
-complexity = { level = "deny", priority = -1 }
-correctness = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-perf = { level = "deny", priority = -1 }
-#restriction = { level = "warn", priority = -1 }
-style = { level = "deny", priority = -1 }
-
-[workspace.lints.rust]
-unsafe_code = { level = "forbid", priority = 0 }
-
 [package]
 name = "proto_rs"
-version = "0.11.20"
+version = "0.11.21"
+authors.workspace = true
+edition.workspace = true
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
 documentation = "https://docs.rs/proto_rs"
 readme = "README.md"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
 homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
 
-[dependencies]
-ahash = { version = "0.8.12", optional = true }
-prosto_derive.workspace = true
-bytes.workspace = true
-tonic = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
-fastnum = { version = "0.7.4", optional = true }
-crossbeam-utils = { version = "0.8", optional = true }
-inventory = { workspace = true, optional = true }
-solana-address = { version = "2", optional = true }
-solana-instruction-error = { version = "2", optional = true }
-solana-keypair = { version = "3", optional = true }
-solana-signature = { version = "3", optional = true }
-solana-transaction-error = { version = "3", optional = true }
-solana-hash = { version = "4", optional = true }
-solana-instruction = { version = "3", optional = true }
-const_panic = { version = "0.2.15", features = [
-  "rust_latest_stable",
-  "derive",
-] }
-arc-swap = { version = "1.8", optional = true }
-papaya = { version = "0.2.3", optional = true }
-parking_lot = { version = "0.12", optional = true }
-tokio-stream = { version = "0.1", optional = true }
-teloxide-core = {version = "0.13", optional = true}
-
-[dev-dependencies]
-proptest = "1.9"
-rand = "0.10"
-criterion.workspace = true
-tonic.workspace = true
-tonic-prost = "0.14.2"
-prost.workspace = true
-
-tokio = { version = "1.49", features = ["full"] }
-tokio-stream = "0.1"
-
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-chrono.workspace = true
-tonic_prost_test = { path = "tests/tonic_prost_test" }
-
-
-[features]
-ahash = ["dep:ahash"]
-std_legacy = []
-tonic = ["dep:tonic", "bytes/std", "prosto_derive/tonic"]
-fastnum = ["dep:fastnum"]
-cache_padded = ["dep:crossbeam-utils"]
-solana = [
-  "dep:solana-address",
-  "dep:solana-instruction-error",
-  "dep:solana-keypair",
-  "dep:solana-signature",
-  "dep:solana-transaction-error",
-  "dep:solana-hash",
-  "dep:solana-instruction",
+[workspace]
+resolver = "3"
+members = [
+  "benches/bench_runner",
+  "crates/prosto_derive",
+  "tests/proto_build_test",
+  "tests/proto_rs_test",
+  "tests/tonic_prost_test",
 ]
-solana_address_hash = ["solana", "solana-address/rand"]
-block_razor = ["dep:tokio-stream", "tonic"]
-next_block = ["tonic"]
-bloxroute = ["tonic"]
-jito = ["dep:tokio-stream", "tonic"]
-teloxide = ["dep:teloxide-core"]
 
-chrono = ["dep:chrono"]
-# Lock-free atomic Arc wrappers
-arc_swap = ["dep:arc-swap"]
-# Concurrent papaya collections
-papaya = ["dep:papaya"]
-# Mutex wrappers backed by parking_lot
-parking_lot = ["dep:parking_lot"]
-# Schema collection for build scripts
-build-schemas = ["inventory"]
-# Enable live proto dumping
-emit-proto-files = ["prosto_derive/emit-proto-files"]
+[workspace.package]
+authors = ["Ivan Auwers <vonauwers@gmail.com>"]
+edition = "2024"
+description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
+readme = "README.md"
+homepage = "https://github.com/4r33x/proto_rs"
+repository = "https://github.com/4r33x/proto_rs"
+license = "MIT OR Apache-2.0"
+keywords = ["grpc", "prost", "proto", "protobufs", "tonic"]
+categories = [
+  "development-tools",
+  "development-tools::build-utils",
+  "network-programming",
+  "rust-patterns",
+]
 
-# Compile on the stable toolchain
-stable = ["prosto_derive/stable"]
+[workspace.dependencies]
+bytes = { version = "1.11.1", default-features = false }
+chrono = "0.4"
+criterion = { version = "0.7" }
+inventory = { version = "0.3" }
+prost = { version = "0.14.3", default-features = false }
+prosto_derive = { path = "crates/prosto_derive", version = "0.11.21" }
+proto_rs = { path = "./", version = "0.11.21" }
+tonic = { version = "0.14.4" }
 
-no-recursion-limit = []
-#TODO!
-default = ["tonic"]
-#derive = ["dep:prost-derive"]
-
-
-
-
-
-
-# [lints.rust]
-# unsafe_code = { level = "forbid", priority = 0 }
-
-
-
-[lints.clippy]
-#cargo = { level = "deny", priority = -1 }
+[workspace.lints.clippy]
+# cargo = { level = "deny", priority = -1 }
 complexity = { level = "deny", priority = -1 }
 correctness = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 perf = { level = "deny", priority = -1 }
-#restriction = { level = "warn", priority = -1 }
+# restriction = { level = "warn", priority = -1 }
 style = { level = "deny", priority = -1 }
-too_many_arguments = "allow"
-unused_async = "deny"
-await_holding_lock = "deny"
-missing_const_for_fn = "warn"
-trivially_copy_pass_by_ref = "warn"
 
-
-
-[profile.bench]
-#use thin here to improve compile time
-lto = "fat"
-opt-level = 3
-codegen-units = 1
-incremental = false
-
+[workspace.lints.rust]
+unsafe_code = { level = "forbid", priority = 0 }
 
 [[bench]]
-name = "varint"
 harness = false
+name = "varint"
+
+[dependencies]
+ahash = { version = "0.8.12", optional = true }
+arc-swap = { version = "1.8", optional = true }
+bytes.workspace = true
+chrono = { workspace = true, optional = true }
+const_panic = { version = "0.2.15", features = [
+  "derive",
+  "rust_latest_stable",
+] }
+crossbeam-utils = { version = "0.8", optional = true }
+fastnum = { version = "0.7.4", optional = true }
+inventory = { workspace = true, optional = true }
+papaya = { version = "0.2.3", optional = true }
+parking_lot = { version = "0.12", optional = true }
+prosto_derive.workspace = true
+solana-address = { version = "2", optional = true }
+solana-hash = { version = "4", optional = true }
+solana-instruction = { version = "3", optional = true }
+solana-instruction-error = { version = "2", optional = true }
+solana-keypair = { version = "3", optional = true }
+solana-signature = { version = "3", optional = true }
+solana-transaction-error = { version = "3", optional = true }
+teloxide-core = { version = "0.13", optional = true }
+tokio-stream = { version = "0.1", optional = true }
+tonic = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion.workspace = true
+proptest = "1.9"
+prost.workspace = true
+rand = "0.10"
+tonic.workspace = true
+tonic-prost = "0.14.2"
+
+tokio = { version = "1.49", features = ["full"] }
+tokio-stream = "0.1"
+
+chrono.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tonic_prost_test = { path = "tests/tonic_prost_test" }
+
+[features]
+ahash = ["dep:ahash"]
+block_razor = ["dep:tokio-stream", "tonic"]
+bloxroute = ["tonic"]
+cache_padded = ["dep:crossbeam-utils"]
+fastnum = ["dep:fastnum"]
+jito = ["dep:tokio-stream", "tonic"]
+next_block = ["tonic"]
+solana = [
+  "dep:solana-address",
+  "dep:solana-hash",
+  "dep:solana-instruction",
+  "dep:solana-instruction-error",
+  "dep:solana-keypair",
+  "dep:solana-signature",
+  "dep:solana-transaction-error",
+]
+solana_address_hash = ["solana", "solana-address/rand"]
+std_legacy = []
+teloxide = ["dep:teloxide-core"]
+tonic = ["bytes/std", "dep:tonic", "prosto_derive/tonic"]
+
+# Lock-free atomic Arc wrappers
+arc_swap = ["dep:arc-swap"]
+# Schema collection for build scripts
+build-schemas = ["inventory"]
+chrono = ["dep:chrono"]
+# Enable live proto dumping
+emit-proto-files = ["prosto_derive/emit-proto-files"]
+# Concurrent papaya collections
+papaya = ["dep:papaya"]
+# Mutex wrappers backed by parking_lot
+parking_lot = ["dep:parking_lot"]
+
+# Compile on the stable toolchain
+stable = ["prosto_derive/stable"]
+
+# TODO!
+default = ["tonic"]
+no-recursion-limit = []
+# derive = ["dep:prost-derive"]
+
+# [lints.rust]
+# unsafe_code = { level = "forbid", priority = 0 }
+
+[lints.clippy]
+await_holding_lock = "deny"
+# cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+missing_const_for_fn = "warn"
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+# restriction = { level = "warn", priority = -1 }
+style = { level = "deny", priority = -1 }
+too_many_arguments = "allow"
+trivially_copy_pass_by_ref = "warn"
+unused_async = "deny"
+
+[profile.bench]
+opt-level = 3
+# use thin here to improve compile time
+lto = "fat"
+incremental = false
+codegen-units = 1

@@ -2,7 +2,7 @@
 
 ## [0.11.20]
 - Fixed NonZero primitives output in rust client and .proto codgen
-- Added per module splitting in rust client output 
+- Added per module splitting possibility in rust client output 
 - Improve README
 
 ## [0.11.19]

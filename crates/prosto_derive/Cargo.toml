@@ -1,14 +1,14 @@
 [package]
 name = "prosto_derive"
-version = "0.11.20"
+version = "0.11.21"
+authors.workspace = true
+edition.workspace = true
 description = "Procedural macros for proto_rs, Rust as a first-class citizen in the protobuf ecosystem"
 documentation = "https://docs.rs/prosto_derive"
 readme = "../../README.md"
-authors.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
 homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 

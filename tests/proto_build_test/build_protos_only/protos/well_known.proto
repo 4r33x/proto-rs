@@ -1,0 +1,9 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package well_known;
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+

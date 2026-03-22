@@ -30,6 +30,7 @@ pub struct RustClientCtx<'a> {
     pub statements: BTreeMap<String, Vec<String>>,
     pub type_replacements: BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     pub split_modules: BTreeMap<String, String>,
+    pub only_these_modules: Option<BTreeMap<String, String>>,
 }
 
 impl<'a> RustClientCtx<'a> {
@@ -44,6 +45,7 @@ impl<'a> RustClientCtx<'a> {
             statements: BTreeMap::new(),
             type_replacements: BTreeMap::new(),
             split_modules: BTreeMap::new(),
+            only_these_modules: None,
         }
     }
 
@@ -58,6 +60,7 @@ impl<'a> RustClientCtx<'a> {
             statements: BTreeMap::new(),
             type_replacements: BTreeMap::new(),
             split_modules: BTreeMap::new(),
+            only_these_modules: None,
         }
     }
     #[must_use]
@@ -141,6 +144,22 @@ impl<'a> RustClientCtx<'a> {
     pub fn split_module(mut self, module_name: &str, file_name: &str) -> Self {
         self.split_modules.insert(module_name.to_string(), file_name.to_string());
         self
+    }
+
+    pub fn only_these_modules(modules: &[(&str, &str)]) -> Self {
+        let map = modules.iter().map(|(name, path)| (name.to_string(), path.to_string())).collect();
+        Self {
+            output_path: None,
+            imports: &[],
+            client_attrs: BTreeMap::new(),
+            client_attr_removals: BTreeMap::new(),
+            module_attrs: BTreeMap::new(),
+            module_type_attrs: BTreeMap::new(),
+            statements: BTreeMap::new(),
+            type_replacements: BTreeMap::new(),
+            split_modules: BTreeMap::new(),
+            only_these_modules: Some(map),
+        }
     }
 }
 
@@ -844,9 +863,9 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
         count += 1;
     }
 
-    if let Some(output_path) = rust_client_output.output_path {
+    if rust_client_output.output_path.is_some() || rust_client_output.only_these_modules.is_some() {
         rust_client::write_rust_client_module(
-            output_path,
+            rust_client_output.output_path,
             rust_client_output.imports,
             &rust_client_output.client_attrs,
             &rust_client_output.client_attr_removals,
@@ -855,6 +874,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
             &rust_client_output.statements,
             &rust_client_output.type_replacements,
             &rust_client_output.split_modules,
+            rust_client_output.only_these_modules.as_ref(),
             &registry,
             &ident_index,
         )?;

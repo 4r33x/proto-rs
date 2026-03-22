@@ -748,4 +748,76 @@ fn main() {
         client_contents.contains("use proto_rs::proto_rpc;\n"),
         "Service-only module should import only proto_rpc"
     );
+
+    // ===== Test only_these_modules mode =====
+    let only_modules_ctx = proto_rs::schemas::RustClientCtx::only_these_modules(&[
+            ("goon_types", "src/only_goon_types.rs"),
+            ("atomic_types", "src/only_atomic_types.rs"),
+        ])
+        .with_imports(&[
+            "fastnum::UD128",
+            "chrono::DateTime",
+            "chrono::TimeDelta",
+            "chrono::Utc",
+        ]);
+    proto_rs::schemas::write_all("build_protos_only", &only_modules_ctx).expect("Failed to write only_these_modules proto files");
+
+    // goon_types should be in its own file
+    let only_goon = std::fs::read_to_string("src/only_goon_types.rs").expect("Failed to read only_goon_types.rs");
+    assert!(
+        only_goon.contains("pub mod goon_types"),
+        "only_these_modules: goon_types should be in its split file"
+    );
+    assert!(
+        only_goon.contains("pub struct RizzPing"),
+        "only_these_modules: RizzPing should be in goon_types file"
+    );
+    assert!(
+        only_goon.contains("pub struct GoonPong"),
+        "only_these_modules: GoonPong should be in goon_types file"
+    );
+
+    // atomic_types should be in its own file
+    let only_atomic = std::fs::read_to_string("src/only_atomic_types.rs").expect("Failed to read only_atomic_types.rs");
+    assert!(
+        only_atomic.contains("pub mod atomic_types"),
+        "only_these_modules: atomic_types should be in its split file"
+    );
+    assert!(
+        only_atomic.contains("pub struct AtomicPrimitives"),
+        "only_these_modules: AtomicPrimitives should be in atomic_types file"
+    );
+
+    // ===== Test only_these_modules with split_module =====
+    let split_combo_ctx = proto_rs::schemas::RustClientCtx::only_these_modules(&[
+            ("goon_types", "src/combo_goon.rs"),
+            ("atomic_types", "src/combo_atomic.rs"),
+        ])
+        .with_imports(&[
+            "fastnum::UD128",
+            "chrono::DateTime",
+            "chrono::TimeDelta",
+            "chrono::Utc",
+        ])
+        // split_module overrides the path for atomic_types
+        .split_module("atomic_types", "src/combo_atomic_split.rs");
+    proto_rs::schemas::write_all("build_protos_combo", &split_combo_ctx).expect("Failed to write combo proto files");
+
+    // atomic_types should use the split_module path (overrides only_these_modules path)
+    let combo_atomic = std::fs::read_to_string("src/combo_atomic_split.rs").expect("Failed to read combo_atomic_split.rs");
+    assert!(
+        combo_atomic.contains("pub mod atomic_types"),
+        "split_module should override only_these_modules path for atomic_types"
+    );
+    assert!(
+        combo_atomic.contains("pub struct AtomicPrimitives"),
+        "AtomicPrimitives should be in split_module file"
+    );
+
+    // goon_types should still be at its only_these_modules path
+    let combo_goon = std::fs::read_to_string("src/combo_goon.rs").expect("Failed to read combo_goon.rs");
+    assert!(
+        combo_goon.contains("pub mod goon_types"),
+        "goon_types should be at its only_these_modules path"
+    );
 }

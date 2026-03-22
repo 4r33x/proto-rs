@@ -61,7 +61,7 @@ impl ClientImport {
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn write_rust_client_module(
-    output_path: &str,
+    output_path: Option<&str>,
     imports: &[&str],
     client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
     client_attr_removals: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
@@ -70,6 +70,7 @@ pub(crate) fn write_rust_client_module(
     statements: &BTreeMap<String, Vec<String>>,
     type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
     split_modules: &BTreeMap<String, String>,
+    only_these_modules: Option<&BTreeMap<String, String>>,
     registry: &BTreeMap<String, Vec<&'static ProtoSchema>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> io::Result<()> {
@@ -94,10 +95,30 @@ pub(crate) fn write_rust_client_module(
         }
     }
 
+    // Build effective split modules: merge only_these_modules paths into split_modules
+    // only_these_modules entries act as split modules (each goes to its own file),
+    // but split_modules paths take precedence for modules present in both.
+    let effective_splits: BTreeMap<String, String> = match only_these_modules {
+        Some(filter) => {
+            let mut effective = BTreeMap::new();
+            for (name, path) in filter {
+                effective.insert(name.clone(), path.clone());
+            }
+            // split_modules paths override only_these_modules paths
+            for (name, path) in split_modules {
+                if filter.contains_key(name) {
+                    effective.insert(name.clone(), path.clone());
+                }
+            }
+            effective
+        }
+        None => split_modules.clone(),
+    };
+
     let mut output = String::new();
     output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
 
-    if !root.entries.is_empty() {
+    if !root.entries.is_empty() && only_these_modules.is_none() {
         render_macro_imports(&mut output, &root.entries, 0);
         render_module_imports(
             &mut output,
@@ -128,7 +149,13 @@ pub(crate) fn write_rust_client_module(
     }
 
     for (name, child) in &root.children {
-        if split_modules.contains_key(name.as_str()) {
+        if effective_splits.contains_key(name.as_str()) {
+            continue;
+        }
+        // When only_these_modules is set, skip modules not in the whitelist
+        if let Some(filter) = only_these_modules
+            && !filter.contains_key(name.as_str())
+        {
             continue;
         }
         render_named_module(
@@ -149,12 +176,20 @@ pub(crate) fn write_rust_client_module(
         );
     }
 
-    if let Some(parent) = Path::new(output_path).parent() {
-        fs::create_dir_all(parent)?;
+    if let Some(output_path) = output_path {
+        if let Some(parent) = Path::new(output_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(output_path, output)?;
     }
-    fs::write(output_path, output)?;
 
-    for (module_name, file_name) in split_modules {
+    for (module_name, file_name) in &effective_splits {
+        // When only_these_modules is set, skip split modules not in the whitelist
+        if let Some(filter) = only_these_modules
+            && !filter.contains_key(module_name.as_str())
+        {
+            continue;
+        }
         let Some(child) = root.children.get(module_name.as_str()) else {
             continue;
         };
