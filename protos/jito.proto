@@ -16,10 +16,22 @@ message Bundle {
   repeated Packet packets = 3;
 }
 
+message BundleResult {}
+
 message BundleUuid {
   Bundle bundle = 1;
   string uuid = 2;
 }
+
+message ConnectedLeadersRegionedRequest {
+  repeated string regions = 1;
+}
+
+message ConnectedLeadersRegionedResponse {
+  map<string, ConnectedLeadersResponse> connected_validators = 1;
+}
+
+message ConnectedLeadersRequest {}
 
 message ConnectedLeadersResponse {
   map<string, SlotList> connected_validators = 1;
@@ -45,6 +57,19 @@ message GenerateAuthTokensResponse {
   Token refresh_token = 2;
 }
 
+message GetRegionsRequest {}
+
+message GetRegionsResponse {
+  string current_region = 1;
+  repeated string available_regions = 2;
+}
+
+message GetTipAccountsRequest {}
+
+message GetTipAccountsResponse {
+  repeated string accounts = 1;
+}
+
 message Header {
   google.protobuf.Timestamp ts = 1;
 }
@@ -63,6 +88,13 @@ message Meta {
 
 message NextScheduledLeaderRequest {
   repeated string regions = 1;
+}
+
+message NextScheduledLeaderResponse {
+  uint64 current_slot = 1;
+  uint64 next_leader_slot = 2;
+  string next_leader_identity = 3;
+  string next_leader_region = 4;
 }
 
 message Packet {
@@ -104,8 +136,26 @@ message Socket {
   int64 port = 2;
 }
 
+message SubscribeBundleResultsRequest {}
+
 message Token {
   string value = 1;
   google.protobuf.Timestamp expires_at_utc = 2;
+}
+
+service AuthService {
+  rpc GenerateAuthChallenge(GenerateAuthChallengeRequest) returns (GenerateAuthChallengeResponse) {}
+  rpc GenerateAuthTokens(GenerateAuthTokensRequest) returns (GenerateAuthTokensResponse) {}
+  rpc RefreshAccessToken(RefreshAccessTokenRequest) returns (RefreshAccessTokenResponse) {}
+}
+
+service SearcherService {
+  rpc SubscribeBundleResults(SubscribeBundleResultsRequest) returns (stream BundleResult) {}
+  rpc SendBundle(SendBundleRequest) returns (SendBundleResponse) {}
+  rpc GetNextScheduledLeader(NextScheduledLeaderRequest) returns (NextScheduledLeaderResponse) {}
+  rpc GetConnectedLeaders(ConnectedLeadersRequest) returns (ConnectedLeadersResponse) {}
+  rpc GetConnectedLeadersRegioned(ConnectedLeadersRegionedRequest) returns (ConnectedLeadersRegionedResponse) {}
+  rpc GetTipAccounts(GetTipAccountsRequest) returns (GetTipAccountsResponse) {}
+  rpc GetRegions(GetRegionsRequest) returns (GetRegionsResponse) {}
 }
 
