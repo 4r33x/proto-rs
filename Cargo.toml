@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.11.21"
+version = "0.11.22"
 authors.workspace = true
 edition.workspace = true
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
@@ -47,8 +47,8 @@ chrono = "0.4"
 criterion = { version = "0.7" }
 inventory = { version = "0.3" }
 prost = { version = "0.14.3", default-features = false }
-prosto_derive = { path = "crates/prosto_derive", version = "0.11.21" }
-proto_rs = { path = "./", version = "0.11.21" }
+prosto_derive = { path = "crates/prosto_derive", version = "0.11.22" }
+proto_rs = { path = "./", version = "0.11.22" }
 tonic = { version = "0.14.4" }
 
 [workspace.lints.clippy]

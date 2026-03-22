@@ -883,6 +883,90 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
     Ok(count)
 }
 
+/// Write only specified proto files to their respective output paths.
+///
+/// Each entry is `("full/proto/file.proto", "output/path.proto")`.
+/// Only proto files matching the first element are written, to the path given by the second.
+///
+/// # Errors
+///
+/// Will return `Err` if fs throws error
+pub fn write_only_these(protos: &[(&str, &str)], rust_client_output: &RustClientCtx<'_>) -> io::Result<usize> {
+    let filter: BTreeMap<&str, &str> = protos.iter().copied().collect();
+    let mut count = 0;
+    let (registry, ident_index) = build_registry();
+    let all_entries: Vec<&ProtoSchema> = registry.values().flat_map(|entries| entries.iter().copied()).collect();
+    let specializations = proto_output::collect_generic_specializations(&all_entries, &ident_index);
+
+    for (file_name, entries) in &registry {
+        let Some(&output_path) = filter.get(file_name.as_str()) else {
+            continue;
+        };
+
+        if let Some(parent) = Path::new(output_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let path = Path::new(file_name.as_str());
+        let file_name_last = path.file_name().unwrap().to_str().unwrap();
+        let package_name = entries
+            .first()
+            .map(|schema| schema.id.proto_package_name)
+            .filter(|name| !name.is_empty())
+            .map_or(utils::derive_package_name(file_name_last), ToString::to_string);
+        let mut output = String::new();
+
+        output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
+        output.push_str("syntax = \"proto3\";\n");
+        writeln!(output, "package {package_name};").unwrap();
+
+        output.push('\n');
+
+        let imports = proto_output::collect_imports(entries.as_slice(), &ident_index, file_name, &package_name)?;
+        if !imports.is_empty() {
+            let mut import_stems = BTreeSet::new();
+            for import in &imports {
+                let import_path = Path::new(import);
+                let import_file = import_path.file_name().and_then(|name| name.to_str()).unwrap_or(import);
+                let import_stem = import_file.strip_suffix(".proto").unwrap_or(import_file);
+                import_stems.insert(import_stem.to_string());
+            }
+            for import_stem in import_stems {
+                writeln!(output, "import \"{import_stem}.proto\";").unwrap();
+            }
+            output.push('\n');
+        }
+
+        let definitions = proto_output::render_entries(entries, &package_name, &ident_index, &specializations);
+        for definition in definitions {
+            output.push_str(&definition);
+            output.push('\n');
+        }
+
+        fs::write(output_path, output)?;
+        count += 1;
+    }
+
+    if rust_client_output.output_path.is_some() || rust_client_output.only_these_modules.is_some() {
+        rust_client::write_rust_client_module(
+            rust_client_output.output_path,
+            rust_client_output.imports,
+            &rust_client_output.client_attrs,
+            &rust_client_output.client_attr_removals,
+            &rust_client_output.module_attrs,
+            &rust_client_output.module_type_attrs,
+            &rust_client_output.statements,
+            &rust_client_output.type_replacements,
+            &rust_client_output.split_modules,
+            rust_client_output.only_these_modules.as_ref(),
+            &registry,
+            &ident_index,
+        )?;
+    }
+
+    Ok(count)
+}
+
 /// Get the total number of registered files
 pub fn count() -> usize {
     REGISTRY.len()

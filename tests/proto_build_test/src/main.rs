@@ -820,4 +820,34 @@ fn main() {
         combo_goon.contains("pub mod goon_types"),
         "goon_types should be at its only_these_modules path"
     );
+
+    // ===== Test write_only_these =====
+    let wot_ctx = proto_rs::schemas::RustClientCtx::disabled();
+    let wot_count = proto_rs::schemas::write_only_these(
+        &[
+            ("protos/build_system_test/goon_types.proto", "build_protos_wot/goon_types.proto"),
+            ("protos/build_system_test/atomic_types.proto", "build_protos_wot/atomic_types.proto"),
+        ],
+        &wot_ctx,
+    ).expect("Failed to write_only_these");
+    assert_eq!(wot_count, 2, "write_only_these should write exactly 2 proto files");
+
+    // goon_types.proto should exist and contain expected content
+    let wot_goon = std::fs::read_to_string("build_protos_wot/goon_types.proto").expect("Failed to read wot goon_types.proto");
+    assert!(wot_goon.contains("RizzPing"), "write_only_these: goon_types.proto should contain RizzPing");
+    assert!(wot_goon.contains("GoonPong"), "write_only_these: goon_types.proto should contain GoonPong");
+
+    // atomic_types.proto should exist and contain expected content
+    let wot_atomic = std::fs::read_to_string("build_protos_wot/atomic_types.proto").expect("Failed to read wot atomic_types.proto");
+    assert!(wot_atomic.contains("AtomicPrimitives"), "write_only_these: atomic_types.proto should contain AtomicPrimitives");
+
+    // Other proto files should NOT exist
+    assert!(
+        !std::path::Path::new("build_protos_wot/custom_types.proto").exists(),
+        "write_only_these: custom_types.proto should not be written"
+    );
+    assert!(
+        !std::path::Path::new("build_protos_wot/extra_types.proto").exists(),
+        "write_only_these: extra_types.proto should not be written"
+    );
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.11.22]
+- Added proto_rs::schemas::write_only_these for building subset of .proto
+
+## [0.11.21]
+- Added RustClientCtx::only_these_modules builder
+
 ## [0.11.20]
 - Fixed NonZero primitives output in rust client and .proto codgen
 - Added per module splitting possibility in rust client output 
