@@ -183,35 +183,43 @@ pub(crate) fn write_rust_client_module(
         fs::write(output_path, output)?;
     }
 
+    // Group split modules by output file path so multiple modules targeting the same file
+    // are written together instead of overwriting each other.
+    let mut splits_by_file: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for (module_name, file_name) in &effective_splits {
-        // When only_these_modules is set, skip split modules not in the whitelist
         if let Some(filter) = only_these_modules
             && !filter.contains_key(module_name.as_str())
         {
             continue;
         }
-        let Some(child) = root.children.get(module_name.as_str()) else {
-            continue;
-        };
+        splits_by_file.entry(file_name.as_str()).or_default().push(module_name.as_str());
+    }
+
+    for (file_name, module_names) in &splits_by_file {
         let mut split_output = String::new();
         split_output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
-        render_named_module(
-            &mut split_output,
-            module_name,
-            child,
-            0,
-            ident_index,
-            &package_by_ident,
-            &proto_type_index,
-            &client_imports_by_type,
-            client_attrs,
-            client_attr_removals,
-            type_replacements,
-            module_attrs,
-            module_type_attrs,
-            statements,
-        );
-        if let Some(parent) = Path::new(file_name.as_str()).parent() {
+        for module_name in module_names {
+            let Some(child) = root.children.get(*module_name) else {
+                continue;
+            };
+            render_named_module(
+                &mut split_output,
+                module_name,
+                child,
+                0,
+                ident_index,
+                &package_by_ident,
+                &proto_type_index,
+                &client_imports_by_type,
+                client_attrs,
+                client_attr_removals,
+                type_replacements,
+                module_attrs,
+                module_type_attrs,
+                statements,
+            );
+        }
+        if let Some(parent) = Path::new(*file_name).parent() {
             fs::create_dir_all(parent)?;
         }
         fs::write(file_name, split_output)?;

@@ -850,4 +850,35 @@ fn main() {
         !std::path::Path::new("build_protos_wot/extra_types.proto").exists(),
         "write_only_these: extra_types.proto should not be written"
     );
+
+    // ===== Test only_these_modules with multiple modules to same file =====
+    let same_file_ctx = proto_rs::schemas::RustClientCtx::only_these_modules(&[
+            ("goon_types", "src/multi_mod_same_file.rs"),
+            ("atomic_types", "src/multi_mod_same_file.rs"),
+        ])
+        .with_imports(&[
+            "fastnum::UD128",
+            "chrono::DateTime",
+            "chrono::TimeDelta",
+            "chrono::Utc",
+        ]);
+    proto_rs::schemas::write_all("build_protos_same_file", &same_file_ctx).expect("Failed to write same-file proto files");
+
+    let same_file = std::fs::read_to_string("src/multi_mod_same_file.rs").expect("Failed to read multi_mod_same_file.rs");
+    assert!(
+        same_file.contains("pub mod goon_types"),
+        "same file: should contain goon_types module"
+    );
+    assert!(
+        same_file.contains("pub mod atomic_types"),
+        "same file: should contain atomic_types module"
+    );
+    assert!(
+        same_file.contains("pub struct RizzPing"),
+        "same file: should contain RizzPing from goon_types"
+    );
+    assert!(
+        same_file.contains("pub struct AtomicPrimitives"),
+        "same file: should contain AtomicPrimitives from atomic_types"
+    );
 }

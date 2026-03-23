@@ -1,0 +1,29 @@
+//CODEGEN BELOW - DO NOT TOUCH ME
+syntax = "proto3";
+package atomic_types;
+
+message AtomicPrimitives {
+  bool flag = 1;
+  uint64 count = 2;
+  uint32 small = 3;
+  uint32 smaller = 4;
+  int32 signed_small = 5;
+  int32 signed_smaller = 6;
+  int32 signed = 7;
+  uint64 sized = 8;
+  int64 signed_sized = 9;
+}
+
+message NonZeroPrimitives {
+  uint32 nz_u8 = 1;
+  uint32 nz_u16 = 2;
+  uint32 nz_u32 = 3;
+  uint64 nz_u64 = 4;
+  uint64 nz_usize = 5;
+  int32 nz_i8 = 6;
+  int32 nz_i16 = 7;
+  int32 nz_i32 = 8;
+  int64 nz_i64 = 9;
+  int64 nz_isize = 10;
+}
+

@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.23]
+- Fixed RustClientCtx::only_these_modules module overwriting
+
 ## [0.11.22]
 - Added proto_rs::schemas::write_only_these for building subset of .proto
 
