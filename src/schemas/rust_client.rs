@@ -1229,7 +1229,7 @@ fn is_tag_only_attr(tokens: &str, expected_tag: u32) -> bool {
     let Some(tag_value) = first.strip_prefix("tag=") else {
         return false;
     };
-    tag_value.parse::<u32>().ok().is_some_and(|tag| tag == expected_tag)
+    tag_value.parse::<u32>().is_ok_and(|tag| tag == expected_tag)
 }
 
 /// Attributes that should only be present in source code and not in generated clients.

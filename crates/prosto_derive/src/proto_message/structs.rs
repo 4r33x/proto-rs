@@ -16,7 +16,9 @@ use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
 use super::unified_field_handler::build_decode_match_arms;
+use super::unified_field_handler::build_field_validator_hooks_for_base;
 use super::unified_field_handler::build_post_decode_hooks;
+use super::unified_field_handler::build_post_decode_hooks_for_base;
 use super::unified_field_handler::build_proto_default_expr;
 use super::unified_field_handler::compute_decode_ty;
 use super::unified_field_handler::compute_proto_ty;
@@ -104,6 +106,7 @@ pub(super) fn generate_struct_impl(
             where_clause,
             &field,
             &data.fields,
+            config,
         );
 
         return quote! {
@@ -301,6 +304,7 @@ fn generate_transparent_struct_impl(
     where_clause: Option<&syn::WhereClause>,
     field: &FieldInfo<'_>,
     original_fields: &syn::Fields,
+    config: &UnifiedProtoConfig,
 ) -> TokenStream2 {
     let inner_ty = &field.field.ty;
     let mut_value_access = field.access.access_tokens(quote! { value });
@@ -326,6 +330,32 @@ fn generate_transparent_struct_impl(
     };
 
     let shadow_ty = quote! { <#inner_ty as ::proto_rs::ProtoEncode>::Shadow<'a> };
+    let field_validation_value = if let Some(validator_fn) = &field.config.validator {
+        let validator_path = super::unified_field_handler::parse_path_string(field.field, validator_fn);
+        let access = field.access.access_tokens(quote! { value });
+        quote! { #validator_path(&mut #access)?; }
+    } else {
+        quote! {}
+    };
+    let field_validation_self = if let Some(validator_fn) = &field.config.validator {
+        let validator_path = super::unified_field_handler::parse_path_string(field.field, validator_fn);
+        let access = field.access.access_tokens(quote! { self });
+        quote! { #validator_path(&mut #access)?; }
+    } else {
+        quote! {}
+    };
+    let message_validation_value = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! { #validator_path(&mut value)?; }
+    } else {
+        quote! {}
+    };
+    let message_validation_self = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! { #validator_path(self)?; }
+    } else {
+        quote! {}
+    };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
     let (shadow_impl_generics, shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
@@ -373,7 +403,18 @@ fn generate_transparent_struct_impl(
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)?;
+                #field_validation_self
+                #message_validation_self
+                Ok(())
+            }
+
+            #[inline]
+            fn decode(buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError>
+            where
+                Self: ::proto_rs::ProtoDefault,
+            {
+                <Self as ::proto_rs::ProtoDecode>::decode(buf, ctx)
             }
         }
 
@@ -392,16 +433,19 @@ fn generate_transparent_struct_impl(
                 // For transparent types, we need to handle primitives vs messages differently:
                 // - Primitives are encoded as raw values (no field tags)
                 // - Messages are encoded with field tags
-                if <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE.is_length_delimited() {
+                let inner = if <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE.is_length_delimited() {
                     // Message type - decode using standard message decoding
-                    let inner = <#inner_ty as ::proto_rs::ProtoDecode>::decode(buf, ctx)?;
-                    Ok(#wrap_expr)
+                    <#inner_ty as ::proto_rs::ProtoDecode>::decode(buf, ctx)?
                 } else {
                     // Primitive type - read raw value using merge
                     let mut inner = <#inner_ty as ::proto_rs::ProtoDefault>::proto_default();
                     <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut inner, <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE, &mut buf, ctx)?;
-                    Ok(#wrap_expr)
-                }
+                    inner
+                };
+                let mut value = #wrap_expr;
+                #field_validation_value
+                #message_validation_value
+                Ok(value)
             }
         }
 
@@ -560,6 +604,11 @@ fn generate_proto_impls(
     let decode_arms = build_decode_match_arms(fields, &quote! { value });
     let proto_default_expr = build_proto_default_expr(fields, original_fields);
     let post_decode_hooks = build_post_decode_hooks(fields);
+    let field_validator_hooks = build_field_validator_hooks_for_base(fields, &quote! { shadow });
+    let merge_post_decode_hooks = build_post_decode_hooks_for_base(fields, &quote! { (*self) });
+    let merge_field_validator_hooks = build_field_validator_hooks_for_base(fields, &quote! { (*self) });
+    let decode_post_decode_hooks = build_post_decode_hooks_for_base(fields, &quote! { value });
+    let decode_field_validator_hooks = build_field_validator_hooks_for_base(fields, &quote! { value });
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
     let validate_with_ext_proto_impl = if config.has_suns() {
         TokenStream2::new()
@@ -573,8 +622,20 @@ fn generate_proto_impls(
     } else {
         quote! {}
     };
+    let merge_message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! { #validator_path(self)?; }
+    } else {
+        quote! {}
+    };
+    let decode_message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! { #validator_path(&mut value)?; }
+    } else {
+        quote! {}
+    };
 
-    let post_decode_impl = if post_decode_hooks.is_empty() && config.validator.is_none() {
+    let post_decode_impl = if post_decode_hooks.is_empty() && field_validator_hooks.is_empty() && config.validator.is_none() {
         quote! {}
     } else {
         quote! {
@@ -582,6 +643,7 @@ fn generate_proto_impls(
             fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                 let mut shadow = value;
                 #(#post_decode_hooks)*
+                #(#field_validator_hooks)*
                 #message_validation
                 Ok(shadow)
             }
@@ -727,7 +789,7 @@ fn generate_proto_impls(
                     }
                 })
                 .unwrap_or_default();
-            let sun_post_decode = if post_decode_hooks.is_empty() && config.validator.is_none() {
+            let sun_post_decode = if post_decode_hooks.is_empty() && field_validator_hooks.is_empty() && config.validator.is_none() {
                 quote! {}
             } else {
                 quote! {
@@ -735,6 +797,7 @@ fn generate_proto_impls(
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                         let mut shadow = value;
                         #(#post_decode_hooks)*
+                        #(#field_validator_hooks)*
                         #message_validation
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                     }
@@ -852,6 +915,41 @@ fn generate_proto_impls(
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
+            }
+
+            #[inline]
+            fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new(format!("invalid wire type {}", <Self as ::proto_rs::ProtoExt>::KIND.dbg_name())));
+                }
+                ctx.limit_reached()?;
+                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let remaining = buf.remaining();
+                if len > remaining {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+                let limit = remaining - len;
+                while buf.remaining() > limit {
+                    Self::decode_one_field(self, buf, ctx)?;
+                }
+                #(#merge_post_decode_hooks)*
+                #(#merge_field_validator_hooks)*
+                #merge_message_validation
+                Ok(())
+            }
+
+            #[inline]
+            fn decode(mut buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError>
+            where
+                Self: ::proto_rs::ProtoDefault,
+            {
+                ctx.limit_reached()?;
+                let mut value = <Self as ::proto_rs::ProtoDefault>::proto_default();
+                Self::decode_into(&mut value, &mut buf, ctx)?;
+                #(#decode_post_decode_hooks)*
+                #(#decode_field_validator_hooks)*
+                #decode_message_validation
+                Ok(value)
             }
         }
 

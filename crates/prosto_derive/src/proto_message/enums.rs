@@ -82,6 +82,42 @@ pub(super) fn generate_simple_enum_impl(
     } else {
         validate_with_ext_impl.clone()
     };
+    let message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(&mut shadow)?;
+        }
+    } else {
+        quote! {}
+    };
+    let merge_message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(self)?;
+        }
+    } else {
+        quote! {}
+    };
+    let decode_message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(&mut value)?;
+        }
+    } else {
+        quote! {}
+    };
+    let post_decode_impl = if config.validator.is_none() {
+        quote! {}
+    } else {
+        quote! {
+            #[inline]
+            fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
+                let mut shadow = value;
+                #message_validation
+                Ok(shadow)
+            }
+        }
+    };
 
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
@@ -104,7 +140,9 @@ pub(super) fn generate_simple_enum_impl(
 
                     #[inline]
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
-                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(value)
+                        let mut shadow = value;
+                        #message_validation
+                        <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                     }
 
                     #validate_with_ext_impl
@@ -213,7 +251,10 @@ pub(super) fn generate_simple_enum_impl(
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 if tag == 1 {
-                    Self::merge(value, wire_type, buf, ctx)
+                    let mut raw = 0i32;
+                    <i32 as ::proto_rs::ProtoDecoder>::merge(&mut raw, wire_type, buf, ctx)?;
+                    *value = Self::try_from(raw)?;
+                    Ok(())
                 } else {
                     ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx)
                 }
@@ -224,7 +265,20 @@ pub(super) fn generate_simple_enum_impl(
                 let mut raw = 0i32;
                 <i32 as ::proto_rs::ProtoDecoder>::merge(&mut raw, wire_type, buf, ctx)?;
                 *self = Self::try_from(raw)?;
+                #merge_message_validation
                 Ok(())
+            }
+
+            #[inline]
+            fn decode(mut buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError>
+            where
+                Self: ::proto_rs::ProtoDefault,
+            {
+                ctx.limit_reached()?;
+                let mut value = <Self as ::proto_rs::ProtoDefault>::proto_default();
+                Self::decode_into(&mut value, &mut buf, ctx)?;
+                #decode_message_validation
+                Ok(value)
             }
         }
 
@@ -237,6 +291,7 @@ pub(super) fn generate_simple_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecode for #name #ty_generics #where_clause {
             type ShadowDecoded = Self;
+            #post_decode_impl
             #validate_with_ext_proto_impl
         }
 

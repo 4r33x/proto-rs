@@ -155,6 +155,7 @@ no-recursion-limit = []
 # unsafe_code = { level = "forbid", priority = 0 }
 
 [lints.clippy]
+unused-async-trait-impl = "allow"
 await_holding_lock = "deny"
 # cargo = { level = "deny", priority = -1 }
 complexity = { level = "deny", priority = -1 }

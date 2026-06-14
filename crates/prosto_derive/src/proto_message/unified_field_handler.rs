@@ -257,6 +257,10 @@ pub fn decode_conversion_assign(info: &FieldInfo<'_>, access: &TokenStream2, tmp
 }
 
 pub fn build_post_decode_hooks(fields: &[FieldInfo<'_>]) -> Vec<TokenStream2> {
+    build_post_decode_hooks_for_base(fields, &quote! { shadow })
+}
+
+pub fn build_post_decode_hooks_for_base(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
     fields
         .iter()
         .filter_map(|info| {
@@ -265,12 +269,26 @@ pub fn build_post_decode_hooks(fields: &[FieldInfo<'_>]) -> Vec<TokenStream2> {
                 return None;
             }
             let fun_path = parse_path_string(info.field, fun);
-            let access = info.access.access_tokens(quote! { shadow });
+            let access = info.access.access_tokens(base.clone());
             Some(quote! {
                 {
-                    let __proto_rs_tmp = #fun_path(&mut shadow);
+                    let __proto_rs_tmp = #fun_path(&mut #base);
                     #access = __proto_rs_tmp;
                 }
+            })
+        })
+        .collect()
+}
+
+pub fn build_field_validator_hooks_for_base(fields: &[FieldInfo<'_>], base: &TokenStream2) -> Vec<TokenStream2> {
+    fields
+        .iter()
+        .filter_map(|info| {
+            let validator_fn = info.config.validator.as_ref()?;
+            let validator_path = parse_path_string(info.field, validator_fn);
+            let access = info.access.access_tokens(base.clone());
+            Some(quote! {
+                #validator_path(&mut #access)?;
             })
         })
         .collect()
@@ -283,16 +301,6 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
             let tag = info.tag?;
             let access = info.access.access_tokens(base.clone());
 
-            // Generate field validation if validator is specified
-            let validation = if let Some(validator_fn) = &info.config.validator {
-                let validator_path = parse_path_string(info.field, validator_fn);
-                quote! {
-                    #validator_path(&mut #access)?;
-                }
-            } else {
-                quote! {}
-            };
-
             if needs_decode_conversion(&info.config, &info.parsed) {
                 let tmp_ident = Ident::new(&format!("__proto_rs_field_{}_tmp", info.index), info.field.span());
                 let decode_ty = &info.decode_ty;
@@ -302,7 +310,6 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                         let mut #tmp_ident: #decode_ty = <#decode_ty as ::proto_rs::ProtoDefault>::proto_default();
                         <#decode_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #tmp_ident, wire_type, buf, ctx)?;
                         #assign
-                        #validation
                         Ok(())
                     }
                 })
@@ -311,7 +318,6 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                 Some(quote! {
                     #tag => {
                         <#field_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #access, wire_type, buf, ctx)?;
-                        #validation
                         Ok(())
                     }
                 })

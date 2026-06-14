@@ -535,7 +535,7 @@ fn build_schema_tokens_impl(
             .iter()
             .filter(|attr| {
                 !attr.path().is_ident("proto")
-                    || !attr.meta.require_list().ok().is_some_and(|list| {
+                    || !attr.meta.require_list().is_ok_and(|list| {
                         let tokens_str = list.tokens.to_string();
                         tokens_str.contains("generic_types")
                     })

@@ -60,6 +60,40 @@ pub(super) fn generate_complex_enum_impl(
     let default_expr = build_variant_default_expr(&variants[default_index], name);
     let is_default_arms = variants.iter().map(|variant| build_variant_is_default_arm(variant, name)).collect::<Vec<_>>();
     let encode_arms = variants.iter().map(|variant| build_variant_encode_arm(variant, name)).collect::<Vec<_>>();
+    let field_validation_arms = build_variant_field_validation_arms(name, &variants);
+    let has_field_validation = !field_validation_arms.is_empty();
+    let field_validation = if field_validation_arms.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            match &mut shadow {
+                #(#field_validation_arms,)*
+                _ => {}
+            }
+        }
+    };
+    let merge_field_validation_arms = build_variant_field_validation_arms(name, &variants);
+    let merge_field_validation = if merge_field_validation_arms.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            match self {
+                #(#merge_field_validation_arms,)*
+                _ => {}
+            }
+        }
+    };
+    let decode_field_validation_arms = build_variant_field_validation_arms(name, &variants);
+    let decode_field_validation = if decode_field_validation_arms.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            match &mut value {
+                #(#decode_field_validation_arms,)*
+                _ => {}
+            }
+        }
+    };
 
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
     let validate_with_ext_proto_impl = if config.has_suns() {
@@ -75,13 +109,30 @@ pub(super) fn generate_complex_enum_impl(
     } else {
         quote! {}
     };
-    let post_decode_impl = if config.validator.is_none() {
+    let merge_message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(self)?;
+        }
+    } else {
+        quote! {}
+    };
+    let decode_message_validation = if let Some(validator_fn) = &config.validator {
+        let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator function path");
+        quote! {
+            #validator_path(&mut value)?;
+        }
+    } else {
+        quote! {}
+    };
+    let post_decode_impl = if config.validator.is_none() && !has_field_validation {
         quote! {}
     } else {
         quote! {
             #[inline]
             fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                 let mut shadow = value;
+                #field_validation
                 #message_validation
                 Ok(shadow)
             }
@@ -110,6 +161,8 @@ pub(super) fn generate_complex_enum_impl(
                     #[inline]
                     fn post_decode(value: Self::ShadowDecoded) -> Result<Self, ::proto_rs::DecodeError> {
                         let shadow = value;
+                        let mut shadow = shadow;
+                        #field_validation
                         #message_validation
                         <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)
                     }
@@ -181,6 +234,39 @@ pub(super) fn generate_complex_enum_impl(
                     #(#merge_field_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
                 }
+            }
+
+            #[inline]
+            fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
+                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
+                    return Err(::proto_rs::DecodeError::new(format!("invalid wire type {}", <Self as ::proto_rs::ProtoExt>::KIND.dbg_name())));
+                }
+                ctx.limit_reached()?;
+                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let remaining = buf.remaining();
+                if len > remaining {
+                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
+                }
+                let limit = remaining - len;
+                while buf.remaining() > limit {
+                    Self::decode_one_field(self, buf, ctx)?;
+                }
+                #merge_field_validation
+                #merge_message_validation
+                Ok(())
+            }
+
+            #[inline]
+            fn decode(mut buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError>
+            where
+                Self: ::proto_rs::ProtoDefault,
+            {
+                ctx.limit_reached()?;
+                let mut value = <Self as ::proto_rs::ProtoDefault>::proto_default();
+                Self::decode_into(&mut value, &mut buf, ctx)?;
+                #decode_field_validation
+                #decode_message_validation
+                Ok(value)
             }
         }
 
@@ -637,6 +723,65 @@ fn build_variant_encode_arm(variant: &VariantInfo<'_>, enum_ident: &Ident) -> To
             }
         }
     }
+}
+
+fn build_variant_field_validation_arms(enum_ident: &Ident, variants: &[VariantInfo<'_>]) -> Vec<TokenStream2> {
+    variants
+        .iter()
+        .filter_map(|variant| {
+            let ident = variant.ident;
+            match &variant.kind {
+                VariantKind::Unit => None,
+                VariantKind::Tuple { field } => {
+                    if field.field.config.skip {
+                        return None;
+                    }
+                    let validator_fn = field.field.config.validator.as_ref()?;
+                    let validator_path = parse_path_string(field.field.field, validator_fn);
+                    let binding_ident = &field.binding_ident;
+                    Some(quote! {
+                        #enum_ident::#ident(#binding_ident) => {
+                            #validator_path(#binding_ident)?;
+                        }
+                    })
+                }
+                VariantKind::Struct { fields } => {
+                    let validators = fields
+                        .iter()
+                        .filter_map(|info| {
+                            if info.config.skip {
+                                return None;
+                            }
+                            let validator_fn = info.config.validator.as_ref()?;
+                            let validator_path = parse_path_string(info.field, validator_fn);
+                            let field_ident = info.field.ident.as_ref().expect("named field");
+                            Some(quote! {
+                                #validator_path(#field_ident)?;
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    if validators.is_empty() {
+                        return None;
+                    }
+
+                    let bindings = fields.iter().map(|info| {
+                        let field_ident = info.field.ident.as_ref().expect("named field");
+                        if info.config.validator.is_some() && !info.config.skip {
+                            quote! { #field_ident }
+                        } else {
+                            quote! { #field_ident: _ }
+                        }
+                    });
+                    Some(quote! {
+                        #enum_ident::#ident { #(#bindings),* } => {
+                            #(#validators)*
+                        }
+                    })
+                }
+            }
+        })
+        .collect()
 }
 
 fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStream2 {
