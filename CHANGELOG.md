@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.24]
+- Fix validators
+
 ## [0.11.23]
 - Fixed RustClientCtx::only_these_modules module overwriting
 
