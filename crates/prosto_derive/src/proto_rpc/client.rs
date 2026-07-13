@@ -79,6 +79,7 @@ pub fn generate_client_module(
                 #client_struct_fields,
             }
 
+            #[cfg(not(target_arch = "wasm32"))]
             impl #client_connect_impl_generics #client_struct #client_connect_type_args {
                 pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
                 where
@@ -306,5 +307,6 @@ mod tests {
         let module_str = module.to_string();
         assert!(module_str.contains("test_service_client"));
         assert!(module_str.contains("TestServiceClient"));
+        assert!(module_str.contains("target_arch = \"wasm32\""));
     }
 }

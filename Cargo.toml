@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.11.24"
+version = "0.11.25"
 authors.workspace = true
 edition.workspace = true
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
@@ -46,10 +46,10 @@ bytes = { version = "1.11.1", default-features = false }
 chrono = "0.4"
 criterion = { version = "0.8" }
 inventory = { version = "0.3" }
-prost = { version = "0.14.3", default-features = false }
+prost = { version = "0.14.4", default-features = false }
 prosto_derive = { path = "crates/prosto_derive", version = "0.11.24" }
 proto_rs = { path = "./", version = "0.11.24" }
-tonic = { version = "0.14.4" }
+tonic = { version = "0.14.6", default-features = false,  }
 
 [workspace.lints.clippy]
 # cargo = { level = "deny", priority = -1 }
@@ -89,9 +89,11 @@ solana-instruction-error = { version = "2", optional = true }
 solana-keypair = { version = "3", optional = true }
 solana-signature = { version = "3", optional = true }
 solana-transaction-error = { version = "3", optional = true }
-teloxide-core = { version = "0.13", optional = true }
 tokio-stream = { version = "0.1", optional = true }
+
+teloxide-core = { version = "0.13", optional = true, default-features = false }
 tonic = { workspace = true, optional = true }
+
 
 [dev-dependencies]
 criterion.workspace = true
@@ -110,6 +112,9 @@ serde_json = "1"
 tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 [features]
+tonic = ["bytes/std", "dep:tonic", "prosto_derive/tonic"]
+tonic-transport = ["tonic/transport"]
+
 ahash = ["dep:ahash"]
 block_razor = ["dep:tokio-stream", "tonic"]
 bloxroute = ["tonic"]
@@ -129,7 +134,7 @@ solana = [
 solana_address_hash = ["solana", "solana-address/rand"]
 std_legacy = []
 teloxide = ["dep:teloxide-core"]
-tonic = ["bytes/std", "dep:tonic", "prosto_derive/tonic"]
+
 
 # Lock-free atomic Arc wrappers
 arc_swap = ["dep:arc-swap"]
@@ -147,7 +152,7 @@ parking_lot = ["dep:parking_lot"]
 stable = ["prosto_derive/stable"]
 
 # TODO!
-default = ["tonic"]
+default = ["tonic", "tonic-transport"]
 no-recursion-limit = []
 # derive = ["dep:prost-derive"]
 
