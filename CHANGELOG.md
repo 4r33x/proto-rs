@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.11.26]
+- Gate generated tonic client transport codegen behind `tonic-transport`
+
 ## [0.11.25]
 - Update deps, and gate tonic transport to support WASM 
 

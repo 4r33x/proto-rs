@@ -1,6 +1,6 @@
 [package]
 name = "proto_rs"
-version = "0.11.25"
+version = "0.11.26"
 authors.workspace = true
 edition.workspace = true
 description = "Rust-first gRPC macros collection for .proto/protobufs managment and more"
@@ -47,8 +47,8 @@ chrono = "0.4"
 criterion = { version = "0.8" }
 inventory = { version = "0.3" }
 prost = { version = "0.14.4", default-features = false }
-prosto_derive = { path = "crates/prosto_derive", version = "0.11.24" }
-proto_rs = { path = "./", version = "0.11.24" }
+prosto_derive = { path = "crates/prosto_derive", version = "0.11.26" }
+proto_rs = { path = "./", version = "0.11.26" }
 tonic = { version = "0.14.6", default-features = false,  }
 
 [workspace.lints.clippy]
@@ -113,7 +113,7 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 [features]
 tonic = ["bytes/std", "dep:tonic", "prosto_derive/tonic"]
-tonic-transport = ["tonic/transport"]
+tonic-transport = ["tonic/transport", "prosto_derive/tonic-transport"]
 
 ahash = ["dep:ahash"]
 block_razor = ["dep:tokio-stream", "tonic"]

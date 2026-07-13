@@ -62,6 +62,23 @@ pub fn generate_client_module(
         )
     };
 
+    let connect_impl = if cfg!(feature = "tonic-transport") {
+        quote! {
+            impl #client_connect_impl_generics #client_struct #client_connect_type_args {
+                pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+                where
+                    D: TryInto<tonic::transport::Endpoint>,
+                    D::Error: Into<StdError>,
+                {
+                    let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
+                    Ok(Self::new(conn))
+                }
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
     quote! {
         #vis mod #client_module {
             #![allow(
@@ -79,17 +96,7 @@ pub fn generate_client_module(
                 #client_struct_fields,
             }
 
-            #[cfg(not(target_arch = "wasm32"))]
-            impl #client_connect_impl_generics #client_struct #client_connect_type_args {
-                pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
-                where
-                    D: TryInto<tonic::transport::Endpoint>,
-                    D::Error: Into<StdError>,
-                {
-                    let conn = tonic::transport::Endpoint::new(dst)?.connect().await?;
-                    Ok(Self::new(conn))
-                }
-            }
+            #connect_impl
 
             impl #client_impl_generics #client_struct #client_struct_generics
             where
@@ -307,6 +314,6 @@ mod tests {
         let module_str = module.to_string();
         assert!(module_str.contains("test_service_client"));
         assert!(module_str.contains("TestServiceClient"));
-        assert!(module_str.contains("target_arch = \"wasm32\""));
+        assert_eq!(module_str.contains("pub async fn connect"), cfg!(feature = "tonic-transport"));
     }
 }

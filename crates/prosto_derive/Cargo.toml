@@ -1,6 +1,6 @@
 [package]
 name = "prosto_derive"
-version = "0.11.25"
+version = "0.11.26"
 authors.workspace = true
 edition.workspace = true
 description = "Procedural macros for proto_rs, Rust as a first-class citizen in the protobuf ecosystem"
@@ -25,6 +25,7 @@ syn = { version = "2", features = ["full", "visit-mut"] }
 emit-proto-files = []
 stable = []
 tonic = []
+tonic-transport = []
 
 [lints]
 workspace = true
