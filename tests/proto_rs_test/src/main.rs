@@ -92,22 +92,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use prost_rs_test::sigma_rpc::sigma_rpc_client::SigmaRpcClient;
     use tokio_stream::StreamExt;
+    use tokio_stream::wrappers::TcpListenerStream;
+    use tonic::transport::Channel;
+    use tonic::transport::Server;
 
     use super::*;
 
+    async fn start_test_server() -> (SigmaRpcClient<Channel>, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            Server::builder().add_service(SigmaRpcServer::new(S)).serve_with_incoming(TcpListenerStream::new(listener)).await.unwrap();
+        });
+        let client = SigmaRpcClient::connect(format!("http://{addr}")).await.unwrap();
+        (client, server)
+    }
+
     #[tokio::test]
     async fn test_proto_client_unary_impl() {
-        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let (mut client, server) = start_test_server().await;
         let res = client.rizz_ping(RizzPing {}).await.unwrap();
-        println!("{:?}", res)
+        assert_eq!(res.into_inner(), GoonPong {});
+        server.abort();
     }
 
     #[tokio::test]
     async fn test_proto_client_stream_impl() {
-        let mut client = SigmaRpcClient::connect("http://127.0.0.1:50051").await.unwrap();
+        let (mut client, server) = start_test_server().await;
         let mut res = client.rizz_uni(BarSub {}).await.unwrap().into_inner();
+        let mut count = 0;
         while let Some(v) = res.next().await {
-            println!("{:?}", v.unwrap())
+            v.unwrap();
+            count += 1;
         }
+        assert_eq!(count, 5);
+        server.abort();
     }
 }

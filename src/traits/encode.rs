@@ -130,10 +130,6 @@ where
     pub fn to_vec_tight(self) -> Vec<u8> {
         self.inner.finish_tight()
     }
-    #[inline]
-    pub fn to_vec_raw(self) -> Vec<u8> {
-        self.inner.finish_raw()
-    }
 }
 
 impl<T: ProtoEncode, W: RevWriter> ArchivedProtoMessage<T, W> {

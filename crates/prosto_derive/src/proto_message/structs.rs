@@ -700,7 +700,7 @@ fn generate_proto_impls(
                     let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
                     let is_default_checks = encoded_fields.iter().map(|info| {
                         let base = quote! { self };
-                        let (access_expr, getter_is_ref) = if has_getters && let Some(get) = &info.config.getter {
+                        let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
                             parse_getter_expr(get, &base, info.field)
                         } else {
                             (info.access.access_tokens(base), false)
@@ -730,7 +730,7 @@ fn generate_proto_impls(
                     let archive_fields = encoded_fields.iter().rev().map(|info| {
                         let tag = info.tag.expect("tag required");
                         let base = quote! { self };
-                        let (access_expr, getter_is_ref) = if has_getters && let Some(get) = &info.config.getter {
+                        let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
                             parse_getter_expr(get, &base, info.field)
                         } else {
                             (info.access.access_tokens(base), false)

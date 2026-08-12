@@ -54,3 +54,17 @@ message MEx {
   uint64 id = 1;
 }
 
+message MixedTags {
+  uint32 automatic = 2;
+  uint32 explicit = 1;
+  uint32 trailing = 3;
+}
+
+message TaggedChoiceFirst {}
+message TaggedChoice {
+  oneof value {
+    TaggedChoiceFirst first = 4;
+    uint32 second = 1;
+  }
+}
+

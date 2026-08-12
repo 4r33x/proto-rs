@@ -19,9 +19,6 @@ use syn::parse::Parse;
 use crate::utils::parse_field_config;
 use crate::utils::rust_type_path_ident;
 use crate::utils::type_name_with_generics_for_path;
-use crate::write_file::register_and_emit_proto_inner;
-use crate::write_file::register_imports;
-use crate::write_file::register_package;
 
 pub trait ParseFieldAttr {
     fn extract_field_imports(&self, map: &mut BTreeMap<String, BTreeSet<String>>);
@@ -72,7 +69,6 @@ pub struct UnifiedProtoConfig {
     pub rpc_client_ctx: Option<InterceptorConfig>,
     pub import_all_from: Option<String>,
     pub type_imports: BTreeMap<String, BTreeSet<String>>,
-    file_imports: BTreeMap<String, BTreeSet<String>>,
     pub imports_mat: TokenStream2,
     pub suns: Vec<SunConfig>,
     pub sun_ir_types: Vec<Type>,
@@ -88,7 +84,6 @@ pub struct UnifiedProtoConfig {
 pub struct SunConfig {
     pub ty: Type,
     pub message_ident: String,
-    pub by_ref: bool,
     pub ir_ty: Option<Type>,
 }
 
@@ -105,21 +100,6 @@ pub struct GenericTypeVariant {
 }
 
 impl UnifiedProtoConfig {
-    /// Register and emit proto content (only if `proto_path` is specified)
-    pub fn register_and_emit_proto(&mut self, content: &str) {
-        if let Some(proto_path) = self.proto_path() {
-            if let Some(rpc_package) = self.rpc_package.as_deref() {
-                register_package(proto_path, rpc_package);
-            }
-            register_and_emit_proto_inner(proto_path, content);
-            let imports = &self.imports_mat;
-            self.imports_mat = quote::quote! { #imports };
-        } else if self.transparent {
-            let imports = &self.imports_mat;
-            self.imports_mat = quote::quote! { #imports };
-        }
-    }
-
     /// Parse configuration from attributes and extract all imports
     pub fn from_attributes(
         attr: TokenStream,
@@ -154,19 +134,23 @@ impl UnifiedProtoConfig {
         fields.extract_field_imports(&mut all_imports);
 
         // Register file imports (only if proto_path is specified)
-        if let Some(proto_path_str) = config.proto_path.as_deref() {
-            let proto_path = proto_path_str.to_owned();
+        let mut file_imports = BTreeMap::<String, BTreeSet<String>>::new();
+        if let Some(proto_path) = config.proto_path.as_deref() {
             for package in all_imports.keys() {
-                config.file_imports.entry(proto_path.clone()).or_default().insert(package.to_owned());
+                file_imports.entry(proto_path.to_owned()).or_default().insert(package.to_owned());
             }
 
             if let Some(import_all_from) = &config.import_all_from {
-                config.file_imports.entry(proto_path).or_default().insert(import_all_from.to_owned());
+                file_imports.entry(proto_path.to_owned()).or_default().insert(import_all_from.to_owned());
             }
         }
 
         config.type_imports = all_imports;
-        config.imports_mat = register_imports(type_ident, &config.file_imports);
+        config.imports_mat = file_imports.iter().fold(TokenStream2::new(), |tokens, (file, imports)| {
+            let imports: Vec<_> = imports.iter().cloned().collect();
+            let schema = crate::schema::schema_tokens_for_imports(type_ident, file, &imports);
+            quote::quote! { #tokens #schema }
+        });
 
         config
     }
@@ -388,13 +372,11 @@ impl UnifiedProtoConfig {
     }
 
     fn push_sun(&mut self, ty: Type) {
-        let by_ref = is_reference_sun(&ty);
         let ty = normalize_sun_type(ty);
         let message_ident = extract_type_ident(&ty).expect("sun attribute expects a type path");
         self.suns.push(SunConfig {
             ty,
             message_ident,
-            by_ref,
             ir_ty: None,
         });
     }
@@ -433,15 +415,6 @@ fn normalize_sun_type(ty: Type) -> Type {
         Type::Group(group) => normalize_sun_type(*group.elem),
         Type::Paren(paren) => normalize_sun_type(*paren.elem),
         other => other,
-    }
-}
-
-fn is_reference_sun(ty: &Type) -> bool {
-    match ty {
-        Type::Reference(_) => true,
-        Type::Group(group) => is_reference_sun(&group.elem),
-        Type::Paren(paren) => is_reference_sun(&paren.elem),
-        _ => false,
     }
 }
 
@@ -808,6 +781,7 @@ mod tests {
         assert_eq!(
             suffixes,
             vec![
+                "",
                 "U64StringStdHashRandomState",
                 "U64U16StdHashRandomState",
                 "U32StringStdHashRandomState",

@@ -4,7 +4,6 @@
 extern crate alloc;
 use proc_macro::TokenStream;
 
-mod emit_proto;
 mod generic_substitutions;
 mod impl_proto_ident;
 mod parse;
@@ -14,7 +13,6 @@ mod proto_message;
 mod proto_rpc;
 mod schema;
 mod utils;
-mod write_file;
 
 #[proc_macro_attribute]
 pub fn proto_message(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -26,13 +24,14 @@ pub fn inject_proto_import(input: TokenStream) -> TokenStream {
     proto_import::inject_proto_import_impl(input)
 }
 
-/// Attribute macro for generating Tonic gRPC services with automatic Proto/Native conversion
+/// Attribute macro for generating gRPC services with automatic Proto/Native conversion.
 ///
 /// This macro works in conjunction with `#[proto_message]` to generate:
 /// - A trait definition for your service (using native Rust types)
 /// - An internal proto trait (using Proto types from `HasProto`)
 /// - Automatic conversion layer between native and proto types
-/// - Complete Tonic server boilerplate
+/// - A transport-independent client
+/// - Optional Tonic client and server boilerplate
 ///
 /// # Arguments
 ///
@@ -40,9 +39,9 @@ pub fn inject_proto_import(input: TokenStream) -> TokenStream {
 ///
 /// # Example
 ///
-/// ```rust
-/// use ftl_proto::{proto_message, proto_rpc, HasProto};
-/// use tonic::{Request, Response, Status};
+/// ```ignore
+/// use proto_rs::grpc::{Request, Response, Status};
+/// use proto_rs::{proto_message, proto_rpc};
 ///
 /// // Without package name (defaults to "TestRpc")
 /// #[proto_rpc]

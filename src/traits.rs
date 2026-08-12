@@ -24,7 +24,6 @@ use crate::encoding::WireType;
 pub mod buffer;
 mod decode;
 mod encode;
-mod example_impl;
 mod utils;
 
 pub trait ProtoExt: Sized {

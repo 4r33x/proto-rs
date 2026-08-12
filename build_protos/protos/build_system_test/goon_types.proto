@@ -2,13 +2,13 @@
 syntax = "proto3";
 package goon_types;
 
-import "chrono.proto";
+import "protos/chrono.proto";
 
 enum ServiceStatus {
-  ACTIVE = 0;
-  PENDING = 1;
-  INACTIVE = 2;
-  COMPLETED = 3;
+  SERVICE_STATUS_ACTIVE = 0;
+  SERVICE_STATUS_PENDING = 1;
+  SERVICE_STATUS_INACTIVE = 2;
+  SERVICE_STATUS_COMPLETED = 3;
 }
 
 message GoonPong {

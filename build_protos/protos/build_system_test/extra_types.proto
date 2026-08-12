@@ -2,8 +2,8 @@
 syntax = "proto3";
 package extra_types;
 
-import "custom_types.proto";
-import "goon_types.proto";
+import "protos/build_system_test/custom_types.proto";
+import "protos/build_system_test/goon_types.proto";
 
 message BuildConfig {
   int64 timeout = 1;

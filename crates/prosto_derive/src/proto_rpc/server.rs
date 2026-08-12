@@ -133,6 +133,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                 clippy::wildcard_imports,
                 clippy::let_unit_value
             )]
+            use ::proto_rs::tonic_crate as tonic;
             use tonic::codegen::*;
             use super::*;
 
@@ -682,7 +683,7 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
         let body = quote! {
             let response = <T as #trait_name>::#method_name(&inner, request)#await_question_suffix;
             let mapped = response.map(|stream| {
-                ::tonic::codegen::tokio_stream::StreamExt::map(
+                tonic::codegen::tokio_stream::StreamExt::map(
                     stream,
                     ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
                         as fn(
@@ -704,7 +705,7 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
         let body = quote! {
             let response = <T as #trait_name>::#method_name(&inner, request)#await_suffix;
             let mapped = response.map(|stream| {
-                ::tonic::codegen::tokio_stream::StreamExt::map(
+                tonic::codegen::tokio_stream::StreamExt::map(
                     stream,
                     ::proto_rs::map_proto_stream_result::<#item_type, #response_proto>
                         as fn(
@@ -727,7 +728,7 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
 
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
-                type ResponseStream = ::tonic::codegen::tokio_stream::adapters::Map<
+                type ResponseStream = tonic::codegen::tokio_stream::adapters::Map<
                     T::#stream_name,
                     fn(
                         ::core::result::Result<#item_type, tonic::Status>

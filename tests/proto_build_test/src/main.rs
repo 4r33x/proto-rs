@@ -1,12 +1,8 @@
-#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
-
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::num::NonZeroI8;
 use std::num::NonZeroI16;
 use std::num::NonZeroI32;
@@ -17,6 +13,8 @@ use std::num::NonZeroU16;
 use std::num::NonZeroU32;
 use std::num::NonZeroU64;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI8;
 use std::sync::atomic::AtomicI16;
@@ -53,6 +51,25 @@ type CustomVecDeq<T> = VecDeque<T>;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MEx {
     pub id: u64,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MixedTags {
+    pub automatic: u32,
+    #[proto(tag = 1)]
+    pub explicit: u32,
+    #[proto(skip)]
+    pub skipped: u32,
+    pub trailing: u32,
+}
+
+#[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
+#[derive(Clone, Debug, PartialEq)]
+pub enum TaggedChoice {
+    #[proto(tag = 4)]
+    First,
+    Second(u32),
 }
 
 #[proto_message(proto_path = "protos/build_system_test/custom_types.proto")]
@@ -450,7 +467,10 @@ fn main() {
             },
         ])
         .split_module("atomic_types", "src/client_atomic_types.rs");
+    std::fs::create_dir_all("build_protos").unwrap();
+    std::fs::write("build_protos/unrelated.txt", "keep me").unwrap();
     proto_rs::schemas::write_all("build_protos", &rust_ctx).expect("Failed to write proto files");
+    assert_eq!(std::fs::read_to_string("build_protos/unrelated.txt").unwrap(), "keep me");
 
     for schema in inventory::iter::<ProtoSchema> {
         println!("Collected: {}", schema.id.name);
@@ -475,6 +495,20 @@ fn main() {
         !custom_proto.contains("VecDequeU32"),
         "There should be no VecDequeU32 wrapper message for bytes fields. Got:\n{custom_proto}"
     );
+    assert!(custom_proto.contains("uint32 automatic = 2;"));
+    assert!(custom_proto.contains("uint32 explicit = 1;"));
+    assert!(custom_proto.contains("uint32 trailing = 3;"));
+    assert!(custom_proto.contains("TaggedChoiceFirst first = 4;"));
+    assert!(custom_proto.contains("uint32 second = 1;"));
+
+    let goon_proto =
+        std::fs::read_to_string("build_protos/protos/build_system_test/goon_types.proto").expect("Failed to read goon_types.proto");
+    assert!(goon_proto.contains("SERVICE_STATUS_ACTIVE = 0;"));
+    assert!(goon_proto.contains("import \"protos/chrono.proto\";"));
+
+    let extra_proto =
+        std::fs::read_to_string("build_protos/protos/build_system_test/extra_types.proto").expect("Failed to read extra_types.proto");
+    assert!(extra_proto.contains("import \"protos/build_system_test/custom_types.proto\";"));
 
     let client_contents = std::fs::read_to_string(rust_client_path).expect("Failed to read rust client output");
     assert!(client_contents.contains("use fastnum::UD128;"));
@@ -650,8 +684,7 @@ fn main() {
         !client_contents.contains("pub mod atomic_types"),
         "atomic_types should not be in main client (split module)"
     );
-    let split_contents =
-        std::fs::read_to_string("src/client_atomic_types.rs").expect("Failed to read split module output");
+    let split_contents = std::fs::read_to_string("src/client_atomic_types.rs").expect("Failed to read split module output");
     assert!(
         split_contents.contains("pub mod atomic_types"),
         "atomic_types should be in split file"
@@ -751,15 +784,10 @@ fn main() {
 
     // ===== Test only_these_modules mode =====
     let only_modules_ctx = proto_rs::schemas::RustClientCtx::only_these_modules(&[
-            ("goon_types", "src/only_goon_types.rs"),
-            ("atomic_types", "src/only_atomic_types.rs"),
-        ])
-        .with_imports(&[
-            "fastnum::UD128",
-            "chrono::DateTime",
-            "chrono::TimeDelta",
-            "chrono::Utc",
-        ]);
+        ("goon_types", "src/only_goon_types.rs"),
+        ("atomic_types", "src/only_atomic_types.rs"),
+    ])
+    .with_imports(&["fastnum::UD128", "chrono::DateTime", "chrono::TimeDelta", "chrono::Utc"]);
     proto_rs::schemas::write_all("build_protos_only", &only_modules_ctx).expect("Failed to write only_these_modules proto files");
 
     // goon_types should be in its own file
@@ -790,17 +818,12 @@ fn main() {
 
     // ===== Test only_these_modules with split_module =====
     let split_combo_ctx = proto_rs::schemas::RustClientCtx::only_these_modules(&[
-            ("goon_types", "src/combo_goon.rs"),
-            ("atomic_types", "src/combo_atomic.rs"),
-        ])
-        .with_imports(&[
-            "fastnum::UD128",
-            "chrono::DateTime",
-            "chrono::TimeDelta",
-            "chrono::Utc",
-        ])
-        // split_module overrides the path for atomic_types
-        .split_module("atomic_types", "src/combo_atomic_split.rs");
+        ("goon_types", "src/combo_goon.rs"),
+        ("atomic_types", "src/combo_atomic.rs"),
+    ])
+    .with_imports(&["fastnum::UD128", "chrono::DateTime", "chrono::TimeDelta", "chrono::Utc"])
+    // split_module overrides the path for atomic_types
+    .split_module("atomic_types", "src/combo_atomic_split.rs");
     proto_rs::schemas::write_all("build_protos_combo", &split_combo_ctx).expect("Failed to write combo proto files");
 
     // atomic_types should use the split_module path (overrides only_these_modules path)
@@ -829,17 +852,27 @@ fn main() {
             ("protos/build_system_test/atomic_types.proto", "build_protos_wot/atomic_types.proto"),
         ],
         &wot_ctx,
-    ).expect("Failed to write_only_these");
+    )
+    .expect("Failed to write_only_these");
     assert_eq!(wot_count, 2, "write_only_these should write exactly 2 proto files");
 
     // goon_types.proto should exist and contain expected content
     let wot_goon = std::fs::read_to_string("build_protos_wot/goon_types.proto").expect("Failed to read wot goon_types.proto");
-    assert!(wot_goon.contains("RizzPing"), "write_only_these: goon_types.proto should contain RizzPing");
-    assert!(wot_goon.contains("GoonPong"), "write_only_these: goon_types.proto should contain GoonPong");
+    assert!(
+        wot_goon.contains("RizzPing"),
+        "write_only_these: goon_types.proto should contain RizzPing"
+    );
+    assert!(
+        wot_goon.contains("GoonPong"),
+        "write_only_these: goon_types.proto should contain GoonPong"
+    );
 
     // atomic_types.proto should exist and contain expected content
     let wot_atomic = std::fs::read_to_string("build_protos_wot/atomic_types.proto").expect("Failed to read wot atomic_types.proto");
-    assert!(wot_atomic.contains("AtomicPrimitives"), "write_only_these: atomic_types.proto should contain AtomicPrimitives");
+    assert!(
+        wot_atomic.contains("AtomicPrimitives"),
+        "write_only_these: atomic_types.proto should contain AtomicPrimitives"
+    );
 
     // Other proto files should NOT exist
     assert!(
@@ -853,15 +886,10 @@ fn main() {
 
     // ===== Test only_these_modules with multiple modules to same file =====
     let same_file_ctx = proto_rs::schemas::RustClientCtx::only_these_modules(&[
-            ("goon_types", "src/multi_mod_same_file.rs"),
-            ("atomic_types", "src/multi_mod_same_file.rs"),
-        ])
-        .with_imports(&[
-            "fastnum::UD128",
-            "chrono::DateTime",
-            "chrono::TimeDelta",
-            "chrono::Utc",
-        ]);
+        ("goon_types", "src/multi_mod_same_file.rs"),
+        ("atomic_types", "src/multi_mod_same_file.rs"),
+    ])
+    .with_imports(&["fastnum::UD128", "chrono::DateTime", "chrono::TimeDelta", "chrono::Utc"]);
     proto_rs::schemas::write_all("build_protos_same_file", &same_file_ctx).expect("Failed to write same-file proto files");
 
     let same_file = std::fs::read_to_string("src/multi_mod_same_file.rs").expect("Failed to read multi_mod_same_file.rs");

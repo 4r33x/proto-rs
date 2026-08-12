@@ -645,10 +645,11 @@ fn render_struct(
 }
 
 fn render_simple_enum(name: &str, variants: &[&Variant]) -> String {
+    let prefix = to_snake_case(name).to_ascii_uppercase();
     let mut lines = Vec::new();
     for variant in variants {
         let value = variant.discriminant.unwrap_or_default();
-        lines.push(format!("  {} = {};", variant.name, value));
+        lines.push(format!("  {prefix}_{} = {};", variant.name, value));
     }
     format!("enum {name} {{\n{}\n}}\n", lines.join("\n"))
 }
@@ -663,8 +664,8 @@ fn render_complex_enum(
     let mut nested_messages = Vec::new();
     let mut oneof_fields = Vec::new();
 
-    for (idx, variant) in variants.iter().enumerate() {
-        let tag = idx + 1;
+    for variant in variants {
+        let tag = variant.tag.expect("complex enum variant schema is missing its tag");
         let variant_name = variant.name;
         let field_name = to_snake_case(variant_name);
 
@@ -733,10 +734,7 @@ fn is_bytes_proto_field(field: &Field) -> bool {
     }
 
     let wrapper_ident = field.wrapper.unwrap_or(field.proto_ident);
-    wrapper_ident
-        .generics
-        .first()
-        .is_some_and(|inner| matches!(inner.name, "u8" | "AtomicU8"))
+    wrapper_ident.generics.first().is_some_and(|inner| matches!(inner.name, "u8" | "AtomicU8"))
 }
 
 fn render_field(
@@ -751,7 +749,11 @@ fn render_field(
     if is_bytes_proto_field(field) {
         // Bytes fields are never "repeated" — the bytes scalar already represents a blob.
         // Preserve "optional" when the field is wrapped in Option.
-        let label = if matches!(field.proto_label, ProtoLabel::Optional) { "optional " } else { "" };
+        let label = if matches!(field.proto_label, ProtoLabel::Optional) {
+            "optional "
+        } else {
+            ""
+        };
         return format!("  {label}bytes {name} = {};", field.tag);
     }
 
@@ -779,7 +781,7 @@ fn render_service(
     lines.push(format!("service {name} {{"));
 
     for method in methods {
-        let request_type = method_type_name(
+        let mut request_type = method_type_name(
             method.request,
             method.request_generic_args,
             method.request_wrapper,
@@ -787,6 +789,9 @@ fn render_service(
             ident_index,
             substitution,
         );
+        if method.client_streaming {
+            request_type = format!("stream {request_type}");
+        }
         let response_type = method_type_name(
             method.response,
             method.response_generic_args,

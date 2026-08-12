@@ -139,9 +139,8 @@ where
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                let items: Vec<&T> = self.iter().collect();
                 let mark = w.mark();
-                for item in items.into_iter().rev() {
+                for item in *self {
                     item.archive::<0>(w);
                 }
                 if TAG != 0 {
@@ -151,8 +150,7 @@ where
                 }
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let items: Vec<&T> = self.iter().collect();
-                for item in items.into_iter().rev() {
+                for item in *self {
                     ArchivedProtoField::<TAG, T>::new_always(item, w);
                 }
             }

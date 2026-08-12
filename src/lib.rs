@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type, maybe_uninit_array_assume_init))]
+#![cfg_attr(not(feature = "stable"), feature(maybe_uninit_array_assume_init))]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::cast_possible_truncation)]
@@ -39,6 +39,10 @@ pub extern crate alloc;
 #[doc(hidden)]
 pub extern crate std;
 
+#[cfg(feature = "tonic")]
+#[doc(hidden)]
+pub extern crate tonic as tonic_crate;
+
 // Re-export the bytes crate for use within derived code.
 pub use bytes;
 
@@ -53,6 +57,7 @@ mod wrappers;
 #[doc(hidden)]
 pub mod encoding;
 mod error;
+pub mod grpc;
 mod name;
 mod traits;
 

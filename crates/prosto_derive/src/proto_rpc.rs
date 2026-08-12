@@ -9,10 +9,10 @@ mod server;
 pub mod utils; // Add this
 
 use client::generate_client_module;
+use client::generate_transport_client_module;
 use server::generate_server_module;
 use utils::extract_methods_and_types; // Add this import
 
-use crate::emit_proto::generate_service_content;
 use crate::parse::UnifiedProtoConfig;
 use crate::schema::SchemaTokens;
 use crate::schema::schema_tokens_for_service;
@@ -22,18 +22,15 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     let input: ItemTrait = syn::parse(item).expect("Failed to parse trait");
     let trait_name = &input.ident;
     let ty_ident = trait_name.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input, input.generics.clone());
+    let config = UnifiedProtoConfig::from_attributes(args, &ty_ident, &input.attrs, &input, input.generics.clone());
     let vis = &input.vis;
     let package_name = config.get_rpc_package().to_owned();
 
     // Extract methods, types, and imports
     let (methods, user_associated_types) = extract_methods_and_types(&input);
 
-    // Generate .proto file if requested
-    let service_content = generate_service_content(trait_name, &methods, &config.type_imports, config.import_all_from.as_deref());
     let SchemaTokens { schema, inventory_submit } =
         schema_tokens_for_service(&input.ident, &ty_ident, &methods, &package_name, &config, &ty_ident);
-    config.register_and_emit_proto(&service_content);
     let proto = config.imports_mat.clone();
 
     let mut validator_consts = Vec::new();
@@ -52,13 +49,19 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 
     // Generate client module if requested
     let client_module = if config.rpc_client {
-        generate_client_module(trait_name, vis, &package_name, &methods, config.rpc_client_ctx.as_ref())
+        let transport_client = generate_transport_client_module(trait_name, vis, &package_name, &methods);
+        let tonic_client = if cfg!(feature = "tonic") {
+            generate_client_module(trait_name, vis, &package_name, &methods, config.rpc_client_ctx.as_ref())
+        } else {
+            quote! {}
+        };
+        quote! { #transport_client #tonic_client }
     } else {
         quote! {}
     };
 
     // Generate server module if requested
-    let server_module = if config.rpc_server {
+    let server_module = if config.rpc_server && cfg!(feature = "tonic") {
         generate_server_module(trait_name, vis, &package_name, &methods)
     } else {
         quote! {}

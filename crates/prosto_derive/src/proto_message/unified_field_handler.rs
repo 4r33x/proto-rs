@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::Attribute;
@@ -13,6 +11,7 @@ use syn::spanned::Spanned;
 
 use crate::utils::FieldConfig;
 use crate::utils::ParsedFieldType;
+use crate::utils::resolve_proto_tags;
 
 #[derive(Clone)]
 pub struct FieldInfo<'a> {
@@ -139,30 +138,11 @@ pub fn sanitize_enum(mut item: ItemEnum) -> ItemEnum {
 }
 
 pub fn assign_tags(mut fields: Vec<FieldInfo<'_>>) -> Vec<FieldInfo<'_>> {
-    let mut used = BTreeSet::new();
-    let mut next = 1u32;
+    let tags = resolve_proto_tags(fields.iter().map(|info| (info.config.skip, info.config.custom_tag, info.field.span())))
+        .unwrap_or_else(|err| panic!("{err}"));
 
-    for info in &mut fields {
-        if info.config.skip {
-            continue;
-        }
-
-        let tag = if let Some(custom) = info.config.custom_tag {
-            assert!(custom != 0, "proto field tags must be >= 1");
-            let custom_u32: u32 = custom.try_into().expect("proto field tag overflowed u32");
-            assert!(used.insert(custom_u32), "duplicate proto field tag: {custom}");
-            custom_u32
-        } else {
-            while used.contains(&next) {
-                next = next.checked_add(1).expect("proto field tag overflowed u32");
-            }
-            let assigned = next;
-            used.insert(assigned);
-            next = next.checked_add(1).expect("proto field tag overflowed u32");
-            assigned
-        };
-
-        info.tag = Some(tag);
+    for (info, tag) in fields.iter_mut().zip(tags) {
+        info.tag = tag;
     }
 
     fields

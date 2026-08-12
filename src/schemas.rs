@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::fs;
 use std::io;
@@ -729,6 +728,7 @@ pub struct Variant {
     pub name: &'static str,
     pub fields: &'static [&'static Field],
     pub discriminant: Option<i32>,
+    pub tag: Option<u32>,
 }
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
@@ -805,63 +805,21 @@ pub fn all() -> impl Iterator<Item = &'static ProtoSchema> {
 ///
 /// Will return `Err` if fs throws error
 pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io::Result<usize> {
-    match fs::remove_dir_all(output_dir) {
-        Ok(()) => {}
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-        Err(err) => return Err(err),
-    }
     fs::create_dir_all(output_dir)?;
-    let mut count = 0;
     let (registry, ident_index) = build_registry();
     let all_entries: Vec<&ProtoSchema> = registry.values().flat_map(|entries| entries.iter().copied()).collect();
     let specializations = proto_output::collect_generic_specializations(&all_entries, &ident_index);
+    clean_stale_generated_files(output_dir, registry.keys().map(String::as_str))?;
 
     for (file_name, entries) in &registry {
-        let output_path = format!("{output_dir}/{file_name}");
+        let output_path = checked_output_path(output_dir, file_name)?;
 
-        if let Some(parent) = Path::new(&output_path).parent() {
+        if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
         }
-
-        let path = Path::new(file_name.as_str());
-        let file_name_last = path.file_name().unwrap().to_str().unwrap();
-        let package_name = entries
-            .first()
-            .map(|schema| schema.id.proto_package_name)
-            .filter(|name| !name.is_empty())
-            .map_or(utils::derive_package_name(file_name_last), ToString::to_string);
-        let mut output = String::new();
-
-        output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
-        output.push_str("syntax = \"proto3\";\n");
-        writeln!(output, "package {package_name};").unwrap();
-
-        output.push('\n');
-
-        let imports = proto_output::collect_imports(entries.as_slice(), &ident_index, file_name, &package_name)?;
-        if !imports.is_empty() {
-            let mut import_stems = BTreeSet::new();
-            for import in &imports {
-                let import_path = Path::new(import);
-                let import_file = import_path.file_name().and_then(|name| name.to_str()).unwrap_or(import);
-                let import_stem = import_file.strip_suffix(".proto").unwrap_or(import_file);
-                import_stems.insert(import_stem.to_string());
-            }
-            for import_stem in import_stems {
-                writeln!(output, "import \"{import_stem}.proto\";").unwrap();
-            }
-            output.push('\n');
-        }
-
-        let definitions = proto_output::render_entries(entries, &package_name, &ident_index, &specializations);
-        for definition in definitions {
-            output.push_str(&definition);
-            output.push('\n');
-        }
-
-        fs::write(&output_path, output)?;
-        count += 1;
+        fs::write(output_path, render_proto_file(file_name, entries, &ident_index, &specializations)?)?;
     }
+    write_generated_manifest(output_dir, registry.keys().map(String::as_str))?;
 
     if rust_client_output.output_path.is_some() || rust_client_output.only_these_modules.is_some() {
         rust_client::write_rust_client_module(
@@ -880,7 +838,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
         )?;
     }
 
-    Ok(count)
+    Ok(registry.len())
 }
 
 /// Write only specified proto files to their respective output paths.
@@ -893,7 +851,6 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
 /// Will return `Err` if fs throws error
 pub fn write_only_these(protos: &[(&str, &str)], rust_client_output: &RustClientCtx<'_>) -> io::Result<usize> {
     let filter: BTreeMap<&str, &str> = protos.iter().copied().collect();
-    let mut count = 0;
     let (registry, ident_index) = build_registry();
     let all_entries: Vec<&ProtoSchema> = registry.values().flat_map(|entries| entries.iter().copied()).collect();
     let specializations = proto_output::collect_generic_specializations(&all_entries, &ident_index);
@@ -907,44 +864,7 @@ pub fn write_only_these(protos: &[(&str, &str)], rust_client_output: &RustClient
             fs::create_dir_all(parent)?;
         }
 
-        let path = Path::new(file_name.as_str());
-        let file_name_last = path.file_name().unwrap().to_str().unwrap();
-        let package_name = entries
-            .first()
-            .map(|schema| schema.id.proto_package_name)
-            .filter(|name| !name.is_empty())
-            .map_or(utils::derive_package_name(file_name_last), ToString::to_string);
-        let mut output = String::new();
-
-        output.push_str("//CODEGEN BELOW - DO NOT TOUCH ME\n");
-        output.push_str("syntax = \"proto3\";\n");
-        writeln!(output, "package {package_name};").unwrap();
-
-        output.push('\n');
-
-        let imports = proto_output::collect_imports(entries.as_slice(), &ident_index, file_name, &package_name)?;
-        if !imports.is_empty() {
-            let mut import_stems = BTreeSet::new();
-            for import in &imports {
-                let import_path = Path::new(import);
-                let import_file = import_path.file_name().and_then(|name| name.to_str()).unwrap_or(import);
-                let import_stem = import_file.strip_suffix(".proto").unwrap_or(import_file);
-                import_stems.insert(import_stem.to_string());
-            }
-            for import_stem in import_stems {
-                writeln!(output, "import \"{import_stem}.proto\";").unwrap();
-            }
-            output.push('\n');
-        }
-
-        let definitions = proto_output::render_entries(entries, &package_name, &ident_index, &specializations);
-        for definition in definitions {
-            output.push_str(&definition);
-            output.push('\n');
-        }
-
-        fs::write(output_path, output)?;
-        count += 1;
+        fs::write(output_path, render_proto_file(file_name, entries, &ident_index, &specializations)?)?;
     }
 
     if rust_client_output.output_path.is_some() || rust_client_output.only_these_modules.is_some() {
@@ -964,7 +884,75 @@ pub fn write_only_these(protos: &[(&str, &str)], rust_client_output: &RustClient
         )?;
     }
 
-    Ok(count)
+    Ok(registry.keys().filter(|name| filter.contains_key(name.as_str())).count())
+}
+
+const GENERATED_HEADER: &str = "//CODEGEN BELOW - DO NOT TOUCH ME\n";
+const GENERATED_MANIFEST: &str = ".proto_rs_manifest";
+
+fn render_proto_file(
+    file_name: &str,
+    entries: &[&ProtoSchema],
+    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
+    specializations: &BTreeMap<ProtoIdent, Vec<proto_output::GenericSpecialization>>,
+) -> io::Result<String> {
+    let file_name_last = Path::new(file_name).file_name().and_then(|name| name.to_str()).unwrap_or(file_name);
+    let package_name = entries
+        .first()
+        .map(|schema| schema.id.proto_package_name)
+        .filter(|name| !name.is_empty())
+        .map_or_else(|| utils::derive_package_name(file_name_last), ToString::to_string);
+    let mut output = String::from(GENERATED_HEADER);
+    output.push_str("syntax = \"proto3\";\n");
+    writeln!(output, "package {package_name};").unwrap();
+    output.push('\n');
+
+    let imports = proto_output::collect_imports(entries, ident_index, file_name, &package_name)?;
+    for import in &imports {
+        let import = import.strip_suffix(".proto").unwrap_or(import);
+        writeln!(output, "import \"{import}.proto\";").unwrap();
+    }
+    if !imports.is_empty() {
+        output.push('\n');
+    }
+
+    for definition in proto_output::render_entries(entries, &package_name, ident_index, specializations) {
+        output.push_str(&definition);
+        output.push('\n');
+    }
+    Ok(output)
+}
+
+fn checked_output_path(output_dir: &str, relative: &str) -> io::Result<std::path::PathBuf> {
+    let path = Path::new(relative);
+    if path.is_absolute() || path.components().any(|part| !matches!(part, std::path::Component::Normal(_))) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid proto output path: {relative}"),
+        ));
+    }
+    Ok(Path::new(output_dir).join(path))
+}
+
+fn clean_stale_generated_files<'a>(output_dir: &str, current: impl Iterator<Item = &'a str>) -> io::Result<()> {
+    let current: std::collections::BTreeSet<_> = current.collect();
+    let manifest_path = Path::new(output_dir).join(GENERATED_MANIFEST);
+    let Ok(previous) = fs::read_to_string(manifest_path) else {
+        return Ok(());
+    };
+    for stale in previous.lines().filter(|path| !current.contains(path)) {
+        let path = checked_output_path(output_dir, stale)?;
+        if fs::read_to_string(&path).is_ok_and(|content| content.starts_with(GENERATED_HEADER)) {
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_generated_manifest<'a>(output_dir: &str, files: impl Iterator<Item = &'a str>) -> io::Result<()> {
+    let mut content = files.collect::<Vec<_>>().join("\n");
+    content.push('\n');
+    fs::write(Path::new(output_dir).join(GENERATED_MANIFEST), content)
 }
 
 /// Get the total number of registered files

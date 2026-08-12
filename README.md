@@ -268,12 +268,11 @@ Use `try_from_fn` when the conversion can fail (the error type must implement `I
 
 ### `#[proto(import_path = "package")]`
 
-Optional hint for live `.proto` emission — tells the emitter which package to import for an external type. The build-schema system resolves all imports automatically, so this is only needed when using `emit-proto-files` or `PROTO_EMIT_FILE=1`:
+Identifies the proto package or file for an external type when it cannot be resolved from the build-schema registry:
 
 ```rust
 #[proto_message]
 pub struct WithTimestamp {
-    // Optional: only needed for live .proto emission
     #[proto(import_path = "google.protobuf")]
     pub timestamp: Timestamp,
 }
@@ -498,9 +497,9 @@ pub struct ServerConfig {
 }
 ```
 
-Field validators run after each field is decoded. Message validators run after all fields are decoded. Both return `Result<(), DecodeError>`.
+Field and message validators run once after the complete value has been merged. A validator for an absent nested field is not run because that field remains its protobuf default.
 
-With the `tonic` feature, `validator_with_ext` gives access to `tonic::Extensions` for request-scoped validation:
+`validator_with_ext` receives `proto_rs::grpc::Extensions` for request-scoped validation. With the `tonic` feature this is an alias for `tonic::Extensions`:
 
 ```rust
 #[proto_message]
@@ -509,7 +508,7 @@ pub struct SecureRequest {
     pub payload: String,
 }
 
-fn validate_with_auth(req: &SecureRequest, ext: &tonic::Extensions) -> Result<(), DecodeError> {
+fn validate_with_auth(req: &SecureRequest, ext: &proto_rs::grpc::Extensions) -> Result<(), DecodeError> {
     // Access request metadata for auth checks
     Ok(())
 }
@@ -561,6 +560,12 @@ pub trait EchoService {
 ```
 
 The macro unwraps `Result`, `Response`, `Box`, `Arc`, and `ZeroCopy` layers automatically to determine the proto message type for the generated `.proto` definition — you get clean trait signatures without affecting the wire format.
+
+### Transport abstraction
+
+`proto_rs::grpc::GrpcTransport` is the backend-neutral client contract. It covers unary, client-streaming, server-streaming, and bidirectional calls. Services with `rpc_client = true` also generate a `<service>_transport_client` module whose client accepts any `GrpcTransport` implementation.
+
+The existing `<service>_client` and `<service>_server` modules are tonic adapters and are emitted when the `tonic` feature is enabled. `proto_rs::grpc::{Request, Response, Status, Extensions}` alias tonic's types in that configuration; with tonic disabled, standalone equivalents keep service traits and alternate transports usable.
 
 ### Server implementation
 
@@ -617,11 +622,10 @@ This generic bound is what makes all three call styles work — `ProtoRequest<T>
 
 ### RPC imports
 
-Optional import hints for live `.proto` emission. The build-schema system resolves all imports automatically — `#[proto_imports]` is only needed when using `emit-proto-files` or `PROTO_EMIT_FILE=1`:
+Optional import hints for external schemas that are not available in the build-schema registry:
 
 ```rust
 #[proto_rpc(rpc_server = true, rpc_client = true, proto_path = "protos/svc.proto")]
-// Optional: only needed for live .proto emission
 #[proto_imports(common_types = ["UserId", "Status"], orders = ["Order"])]
 pub trait OrderService {
     async fn get_order(&self, request: Request<UserId>) -> Result<Response<Order>, Status>;
@@ -823,14 +827,6 @@ proto\_rs includes a build system that collects all proto schemas at compile tim
 1. **`.proto` files** — valid proto3 definitions with resolved imports and package structure
 2. **Rust client module** — optional generated Rust code with `#[proto_message]` / `#[proto_rpc]` attributes, ready for use by downstream consumers who depend on proto\_rs but don't have access to your original types
 
-### Emitting `.proto` files
-
-Proto files are written only when explicitly enabled:
-
-- **Cargo feature:** `emit-proto-files`
-- **Environment variable:** `PROTO_EMIT_FILE=1` (overrides the feature flag)
-- **Disable override:** `PROTO_EMIT_FILE=0`
-
 ### Build-time schema collection
 
 With the `build-schemas` feature, collect all proto schemas across your workspace and write them to disk:
@@ -848,6 +844,8 @@ fn main() {
 ### Rust client generation
 
 `RustClientCtx` controls whether and how a Rust client module is generated alongside `.proto` files. The generated module mirrors your proto package hierarchy as nested Rust `pub mod` blocks, with each type annotated by `#[proto_message]` or `#[proto_rpc]`.
+
+`write_all` only removes stale files listed in its `.proto_rs_manifest`; it does not delete unrelated files from the output directory.
 
 ```rust
 use proto_rs::schemas::{write_all, RustClientCtx};
@@ -1013,7 +1011,7 @@ The build system tracks which macros each module actually uses and emits only th
 
 ### Custom proto definitions
 
-`#[proto_dump]` emits standalone proto definitions. `inject_proto_import!` adds import hints to generated `.proto` files. Both are optional — the build-schema system resolves all imports automatically. These are only needed when using live `.proto` emission (`emit-proto-files` or `PROTO_EMIT_FILE=1`):
+`#[proto_dump]` registers standalone schema definitions. `inject_proto_import!` adds import hints to build-time generated `.proto` files. Both feed the build-schema registry and do not write files during macro expansion:
 
 ```rust
 inject_proto_import!("protos/service.proto", "google.protobuf.timestamp", "common");
@@ -1024,9 +1022,9 @@ inject_proto_import!("protos/service.proto", "google.protobuf.timestamp", "commo
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `tonic` | yes | Tonic gRPC integration: codecs, service/client generation |
+| `tonic-transport` | yes | Tonic network transport and `connect` helpers; implies `tonic` |
 | `stable` | no | Compile on stable Rust (boxes async futures) |
 | `build-schemas` | no | Compile-time schema registry via `inventory` |
-| `emit-proto-files` | no | Write `.proto` files during compilation |
 | `chrono` | no | `DateTime<Utc>`, `TimeDelta` support |
 | `fastnum` | no | `D128`, `D64`, `UD128` decimal support |
 | `solana` | no | Solana SDK types (Address, Instruction, errors, etc.) |

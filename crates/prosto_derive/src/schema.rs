@@ -6,6 +6,7 @@ use syn::DataEnum;
 use syn::Field;
 use syn::Fields;
 use syn::Type;
+use syn::spanned::Spanned;
 
 /// Classifies the kind of generic argument
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +28,9 @@ use crate::utils::extract_field_wrapper_info;
 use crate::utils::find_marked_default_variant;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::parse_variant_tag;
 use crate::utils::proto_type_name;
+use crate::utils::resolve_proto_tags;
 use crate::utils::resolved_field_type;
 use crate::utils::rust_type_path_ident;
 use crate::utils::to_pascal_case;
@@ -234,6 +237,7 @@ fn schema_tokens_for_simple_enum_impl(
                 name: #name,
                 fields: &[],
                 discriminant: Some(#value),
+                tag: None,
             };
         });
 
@@ -301,10 +305,18 @@ fn schema_tokens_for_complex_enum_impl(
     // When has_type_params is true, schema is at module level, so no Self:: prefix
     let has_type_params = config.item_generics.type_params().next().is_some();
     let use_self_prefix = !has_type_params;
+    let variant_tags = data
+        .variants
+        .iter()
+        .map(|variant| parse_variant_tag(variant).map(|tag| (false, tag, variant.ident.span())))
+        .collect::<syn::Result<Vec<_>>>()
+        .and_then(resolve_proto_tags)
+        .unwrap_or_else(|err| panic!("{err}"));
 
-    for (idx, variant) in data.variants.iter().enumerate() {
+    for (idx, (variant, tag)) in data.variants.iter().zip(variant_tags).enumerate() {
         let variant_const = variant_const_ident(type_ident, const_suffix, idx);
         let variant_name = variant.ident.to_string();
+        let tag = tag.expect("complex enum variants are never skipped");
         let fields_tokens = build_variant_fields_tokens(type_ident, const_suffix, idx, &variant.fields, config, is_concrete);
         let field_consts = fields_tokens.consts;
         let field_refs = fields_tokens.refs;
@@ -321,6 +333,7 @@ fn schema_tokens_for_complex_enum_impl(
                 name: #variant_name,
                 fields: #field_refs,
                 discriminant: None,
+                tag: Some(#tag),
             };
             #field_consts
         });
@@ -901,16 +914,16 @@ fn build_named_fields_tokens(
 ) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
-    let mut field_num = 0;
+    let configs: Vec<_> = fields.iter().map(parse_field_config).collect();
+    let tags = resolve_proto_tags(fields.iter().zip(&configs).map(|(field, config)| (config.skip, config.custom_tag, field.span())))
+        .unwrap_or_else(|err| panic!("{err}"));
 
-    for (idx, field) in fields.iter().enumerate() {
-        let field_config = parse_field_config(field);
+    for (idx, ((field, field_config), tag)) in fields.iter().zip(configs).zip(tags).enumerate() {
         if field_config.skip {
             continue;
         }
-        field_num += 1;
         let name = field.ident.as_ref().unwrap().to_string();
-        let tag: u32 = field_config.custom_tag.unwrap_or(field_num).try_into().unwrap();
+        let tag = tag.expect("non-skipped field has a tag");
         let FieldConstTokens { consts, refs } = build_field_const_tokens(
             type_ident,
             suffix,
@@ -941,13 +954,15 @@ fn build_unnamed_fields_tokens(
 ) -> FieldTokens {
     let mut field_consts = Vec::new();
     let mut field_refs = Vec::new();
+    let configs: Vec<_> = fields.iter().map(parse_field_config).collect();
+    let tags = resolve_proto_tags(fields.iter().zip(&configs).map(|(field, config)| (config.skip, config.custom_tag, field.span())))
+        .unwrap_or_else(|err| panic!("{err}"));
 
-    for (idx, field) in fields.iter().enumerate() {
-        let field_config = parse_field_config(field);
+    for (idx, ((field, field_config), tag)) in fields.iter().zip(configs).zip(tags).enumerate() {
         if field_config.skip {
             continue;
         }
-        let tag: u32 = field_config.custom_tag.unwrap_or(idx + 1).try_into().unwrap();
+        let tag = tag.expect("non-skipped field has a tag");
         let FieldConstTokens { consts, refs } = build_field_const_tokens(
             type_ident,
             suffix,

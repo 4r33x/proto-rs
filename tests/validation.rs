@@ -360,6 +360,28 @@ mod tests {
     }
 
     #[test]
+    fn test_top_level_validator_runs_once_for_empty_payload() {
+        let _guard = VALIDATION_COUNTER_LOCK.lock().unwrap();
+        COUNTED_MESSAGE_VALIDATOR_CALLS.store(0, Ordering::SeqCst);
+
+        let result = <CountedMessage as ProtoDecode>::decode(&[][..], DecodeContext::default());
+
+        assert!(result.is_err());
+        assert_eq!(COUNTED_MESSAGE_VALIDATOR_CALLS.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_absent_default_nested_field_does_not_run_nested_validator() {
+        let _guard = VALIDATION_COUNTER_LOCK.lock().unwrap();
+        COUNTED_MESSAGE_VALIDATOR_CALLS.store(0, Ordering::SeqCst);
+
+        let decoded = <CountedMessageHolder as ProtoDecode>::decode(&[][..], DecodeContext::default()).unwrap();
+
+        assert_eq!(decoded, CountedMessageHolder::default());
+        assert_eq!(COUNTED_MESSAGE_VALIDATOR_CALLS.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn test_message_validator_runs_once_for_nested_field_decode() {
         let _guard = VALIDATION_COUNTER_LOCK.lock().unwrap();
         COUNTED_MESSAGE_VALIDATOR_CALLS.store(0, Ordering::SeqCst);

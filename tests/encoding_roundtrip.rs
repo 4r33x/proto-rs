@@ -437,7 +437,10 @@ fn encode_prost_length_delimited<M: ProstMessage>(value: &M) -> Bytes {
 
 #[test]
 fn enum_default_attribute_maps_to_zero_discriminant() {
-    assert_eq!(<StatusWithDefaultAttribute as ProtoDefault>::proto_default(), StatusWithDefaultAttribute::Active);
+    assert_eq!(
+        <StatusWithDefaultAttribute as ProtoDefault>::proto_default(),
+        StatusWithDefaultAttribute::Active
+    );
     assert_eq!(StatusWithDefaultAttribute::Active as i32, 0);
     assert_eq!(StatusWithDefaultAttribute::Pending as i32, 1);
     assert_eq!(StatusWithDefaultAttribute::Inactive as i32, 2);
@@ -717,9 +720,12 @@ fn encoded_len_matches_prost_for_complex_collections() {
     let defaults_proto_len = proto_len(&collections_with_defaults);
     let defaults_proto_bytes = CollectionsMessage::encode_to_vec(&collections_with_defaults);
     assert_eq!(defaults_proto_bytes.len(), defaults_proto_len);
-    let defaults_prost =
+    let mut defaults_prost =
         CollectionsMessageProst::decode(Bytes::from(defaults_proto_bytes.clone())).expect("prost decode with default map entries");
-    assert_eq!(defaults_prost, CollectionsMessageProst::from(&collections_with_defaults));
+    let mut expected_defaults_prost = CollectionsMessageProst::from(&collections_with_defaults);
+    defaults_prost.hash_tags.sort_unstable();
+    expected_defaults_prost.hash_tags.sort_unstable();
+    assert_eq!(defaults_prost, expected_defaults_prost);
 
     let base_proto_len = proto_len(&base_collections);
     let base_prost_len = CollectionsMessageProst::from(&base_collections).encoded_len();

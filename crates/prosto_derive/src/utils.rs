@@ -1,5 +1,7 @@
 //! Centralized utilities for proto macro code generation
 
+use std::collections::BTreeSet;
+
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use syn::DataEnum;
@@ -107,6 +109,89 @@ pub struct FieldConfig {
     pub custom_tag: Option<usize>,
     pub rename: Option<ProtoRename>,
     pub validator: Option<String>, // field-level validation function
+}
+
+const MAX_PROTO_TAG: u32 = (1 << 29) - 1;
+
+pub fn resolve_proto_tags(items: impl IntoIterator<Item = (bool, Option<usize>, Span)>) -> syn::Result<Vec<Option<u32>>> {
+    let items: Vec<_> = items.into_iter().collect();
+    let mut used = BTreeSet::new();
+
+    for &(skip, custom, span) in &items {
+        if skip {
+            continue;
+        }
+        if let Some(custom) = custom {
+            let tag = u32::try_from(custom).map_err(|_| syn::Error::new(span, "proto tag overflowed u32"))?;
+            validate_proto_tag(tag, span)?;
+            if !used.insert(tag) {
+                return Err(syn::Error::new(span, format!("duplicate proto tag: {tag}")));
+            }
+        }
+    }
+
+    let mut next = 1u32;
+    items
+        .into_iter()
+        .map(|(skip, custom, span)| {
+            if skip {
+                return Ok(None);
+            }
+            if let Some(custom) = custom {
+                return Ok(Some(u32::try_from(custom).expect("validated proto tag")));
+            }
+
+            while used.contains(&next) || (19_000..=19_999).contains(&next) {
+                next = next.checked_add(1).ok_or_else(|| syn::Error::new(span, "no protobuf field tags remain"))?;
+            }
+            validate_proto_tag(next, span)?;
+            let tag = next;
+            used.insert(tag);
+            next += 1;
+            Ok(Some(tag))
+        })
+        .collect()
+}
+
+fn validate_proto_tag(tag: u32, span: Span) -> syn::Result<()> {
+    if tag == 0 || tag > MAX_PROTO_TAG {
+        return Err(syn::Error::new(span, format!("proto tag must be in 1..={MAX_PROTO_TAG}")));
+    }
+    if (19_000..=19_999).contains(&tag) {
+        return Err(syn::Error::new(span, format!("proto tag {tag} is reserved")));
+    }
+    Ok(())
+}
+
+pub fn parse_variant_tag(variant: &syn::Variant) -> syn::Result<Option<usize>> {
+    let mut custom_tag = None;
+
+    for attr in &variant.attrs {
+        if !attr.path().is_ident("proto") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.get_ident().is_some_and(|ident| ident == "tag") {
+                if custom_tag.is_some() {
+                    return Err(meta.error("duplicate proto(tag) attribute for variant"));
+                }
+
+                let lit: Lit = meta.value()?.parse()?;
+                custom_tag = Some(match lit {
+                    Lit::Int(int_lit) => int_lit.base10_parse::<usize>()?,
+                    Lit::Str(str_lit) => str_lit
+                        .value()
+                        .parse::<usize>()
+                        .map_err(|_| syn::Error::new(str_lit.span(), "proto tag must be a positive integer"))?,
+                    _ => return Err(syn::Error::new(lit.span(), "proto tag must be specified as an integer")),
+                });
+            }
+            Ok(())
+        })?;
+    }
+
+    Ok(custom_tag)
 }
 
 pub fn parse_field_config(field: &Field) -> FieldConfig {
@@ -520,6 +605,34 @@ pub struct MethodInfo {
     pub inner_response_type: Option<Type>,
     pub stream_item_type: Option<Type>,
     pub user_method_signature: TokenStream,
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use proc_macro2::Span;
+
+    use super::resolve_proto_tags;
+
+    #[test]
+    fn automatic_tags_skip_explicit_and_skipped_fields() {
+        let span = Span::call_site();
+        let tags = resolve_proto_tags([
+            (false, None, span),
+            (false, Some(1), span),
+            (true, Some(9), span),
+            (false, None, span),
+        ])
+        .unwrap();
+
+        assert_eq!(tags, vec![Some(2), Some(1), None, Some(3)]);
+    }
+
+    #[test]
+    fn rejects_reserved_and_duplicate_tags() {
+        let span = Span::call_site();
+        assert!(resolve_proto_tags([(false, Some(19_000), span)]).is_err());
+        assert!(resolve_proto_tags([(false, Some(7), span), (false, Some(7), span)]).is_err());
+    }
 }
 
 fn collect_discriminants_impl(variants: &[&syn::Variant]) -> Result<Vec<i32>, syn::Error> {

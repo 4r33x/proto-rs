@@ -153,9 +153,8 @@ where
         let guard = self.pin();
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                let items: Vec<&T> = guard.iter().collect();
                 let mark = w.mark();
-                for item in items.into_iter().rev() {
+                for item in &guard {
                     item.archive::<0>(w);
                 }
                 if TAG != 0 {
@@ -165,8 +164,7 @@ where
                 }
             }
             ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let items: Vec<&T> = guard.iter().collect();
-                for item in items.into_iter().rev() {
+                for item in &guard {
                     ArchivedProtoField::<TAG, T>::new_always(item, w);
                 }
             }

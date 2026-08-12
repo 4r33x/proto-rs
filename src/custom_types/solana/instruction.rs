@@ -177,8 +177,8 @@ mod tests {
         let encoded = <Instruction as ProtoEncode>::encode_to_vec(&original);
         let decoded = <Instruction as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded.program_id.as_array(), original.program_id.as_array());
-        assert!(decoded.accounts.is_empty());
-        assert!(decoded.data.is_empty());
+        assert_eq!(decoded.accounts.len(), 0);
+        assert_eq!(decoded.data.len(), 0);
     }
 
     #[test]

@@ -78,6 +78,7 @@ const_panic = { version = "0.2.15", features = [
 ] }
 crossbeam-utils = { version = "0.8", optional = true }
 fastnum = { version = "0.7.4", optional = true }
+futures-core = "0.3"
 inventory = { workspace = true, optional = true }
 papaya = { version = "0.2.3", optional = true }
 parking_lot = { version = "0.12", optional = true }
@@ -112,8 +113,8 @@ serde_json = "1"
 tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 [features]
-tonic = ["bytes/std", "dep:tonic", "prosto_derive/tonic"]
-tonic-transport = ["tonic/transport", "prosto_derive/tonic-transport"]
+tonic = ["bytes/std", "dep:tonic", "tonic/codegen", "prosto_derive/tonic"]
+tonic-transport = ["tonic", "tonic/transport", "prosto_derive/tonic-transport"]
 
 ahash = ["dep:ahash"]
 block_razor = ["dep:tokio-stream", "tonic"]
@@ -141,8 +142,6 @@ arc_swap = ["dep:arc-swap"]
 # Schema collection for build scripts
 build-schemas = ["inventory"]
 chrono = ["dep:chrono"]
-# Enable live proto dumping
-emit-proto-files = ["prosto_derive/emit-proto-files"]
 # Concurrent papaya collections
 papaya = ["dep:papaya"]
 # Mutex wrappers backed by parking_lot
@@ -160,7 +159,7 @@ no-recursion-limit = []
 # unsafe_code = { level = "forbid", priority = 0 }
 
 [lints.clippy]
-unused-async-trait-impl = "allow"
+unused_async_trait_impl = "allow"
 await_holding_lock = "deny"
 # cargo = { level = "deny", priority = -1 }
 complexity = { level = "deny", priority = -1 }

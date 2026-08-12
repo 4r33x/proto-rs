@@ -88,6 +88,7 @@ pub fn generate_client_module(
                 clippy::wildcard_imports,
                 clippy::let_unit_value
             )]
+            use ::proto_rs::tonic_crate as tonic;
             use tonic::codegen::*;
             use super::*;
 
@@ -120,6 +121,73 @@ pub fn generate_client_module(
                 #compression_methods
 
                 #(#client_methods)*
+            }
+        }
+    }
+}
+
+pub fn generate_transport_client_module(
+    trait_name: &syn::Ident,
+    vis: &syn::Visibility,
+    package_name: &str,
+    methods: &[MethodInfo],
+) -> TokenStream {
+    let module_name = syn::Ident::new(
+        &format!("{}_transport_client", crate::utils::to_snake_case(&trait_name.to_string())),
+        trait_name.span(),
+    );
+    let client_name = syn::Ident::new(&format!("{trait_name}TransportClient"), trait_name.span());
+    let methods = methods.iter().map(|method| {
+        let method_name = &method.name;
+        let request = &method.request_type;
+        let route = generate_route_path(package_name, trait_name, method_name);
+        if method.is_streaming {
+            let response = method.inner_response_type.as_ref().expect("stream response type");
+            quote! {
+                pub async fn #method_name(
+                    &mut self,
+                    request: ::proto_rs::grpc::Request<#request>,
+                ) -> ::core::result::Result<
+                    ::proto_rs::grpc::Response<T::ResponseStream<#response>>,
+                    T::Error,
+                > {
+                    self.inner.server_streaming(#route, request).await
+                }
+            }
+        } else {
+            let response = &method.response_type;
+            quote! {
+                pub async fn #method_name(
+                    &mut self,
+                    request: ::proto_rs::grpc::Request<#request>,
+                ) -> ::core::result::Result<::proto_rs::grpc::Response<#response>, T::Error> {
+                    self.inner.unary(#route, request).await
+                }
+            }
+        }
+    });
+
+    quote! {
+        #vis mod #module_name {
+            use super::*;
+            use ::proto_rs::grpc::GrpcTransport as _;
+
+            pub struct #client_name<T> {
+                inner: T,
+            }
+
+            impl<T> #client_name<T> {
+                pub const fn new(inner: T) -> Self {
+                    Self { inner }
+                }
+
+                pub fn into_inner(self) -> T {
+                    self.inner
+                }
+            }
+
+            impl<T: ::proto_rs::grpc::GrpcTransport> #client_name<T> {
+                #(#methods)*
             }
         }
     }

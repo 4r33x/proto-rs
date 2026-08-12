@@ -437,6 +437,29 @@ async fn proto_client_roundtrip_against_proto_server() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn transport_client_roundtrip_against_proto_server() {
+    let (addr, shutdown, handle) = spawn_our_server().await;
+
+    let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}")).unwrap().connect().await.unwrap();
+    let transport = proto_rs::grpc::TonicTransport::new(channel);
+    let mut client = complex_service_transport_client::ComplexServiceTransportClient::new(transport);
+
+    let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    assert_eq!(response, response_message());
+
+    let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    let mut received = Vec::new();
+    while let Some(item) = stream.next().await {
+        received.push(item.unwrap());
+    }
+    assert_eq!(received, response_collections());
+
+    drop(stream);
+    shutdown.send(()).unwrap();
+    handle.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn proto_client_accepts_borrowed_requests() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 

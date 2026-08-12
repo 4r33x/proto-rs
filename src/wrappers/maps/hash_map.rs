@@ -47,8 +47,7 @@ where
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        let entries: Vec<(&K, &V)> = self.iter().collect();
-        for (key_value, value_value) in entries.into_iter().rev() {
+        for (key_value, value_value) in *self {
             let key = <K as ProtoEncode>::Shadow::from_sun(key_value);
             let value = <V as ProtoEncode>::Shadow::from_sun(value_value);
             let mark = w.mark();

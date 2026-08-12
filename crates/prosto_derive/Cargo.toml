@@ -22,10 +22,9 @@ syn = { version = "2", features = ["full", "visit-mut"] }
 
 [features]
 # Emission control - checked in utils.rs during macro expansion
-emit-proto-files = []
 stable = []
 tonic = []
-tonic-transport = []
+tonic-transport = ["tonic"]
 
 [lints]
 workspace = true

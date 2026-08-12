@@ -6,8 +6,6 @@ use syn::parse::Parse;
 use syn::parse::ParseStream;
 use syn::parse_macro_input;
 
-use crate::write_file::register_import;
-
 struct ProtoImportArgs {
     file_name: String,
     imports: Vec<String>,
@@ -34,11 +32,6 @@ impl Parse for ProtoImportArgs {
 pub fn inject_proto_import_impl(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as ProtoImportArgs);
 
-    // Register imports in the registry
-    // This will write to file if emission is enabled (feature/env)
-    let c = register_import(&args.file_name, &args.imports);
-
-    // Return empty token stream - this macro doesn't generate any Rust code
-    // The emission is handled by register_import which respects emission mode
+    let c = crate::schema::schema_tokens_for_imports("ImportInject", &args.file_name, &args.imports);
     quote! {#c}.into()
 }

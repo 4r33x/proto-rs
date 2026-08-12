@@ -2,11 +2,11 @@
 syntax = "proto3";
 package sigma_rpc;
 
-import "custom_types.proto";
-import "extra_types.proto";
-import "fastnum.proto";
-import "goon_types.proto";
-import "rizz_types.proto";
+import "protos/build_system_test/custom_types.proto";
+import "protos/build_system_test/extra_types.proto";
+import "protos/build_system_test/goon_types.proto";
+import "protos/build_system_test/rizz_types.proto";
+import "protos/fastnum.proto";
 
 message ArcMEx {
   custom_types.MEx value = 1;

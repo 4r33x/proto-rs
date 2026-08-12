@@ -115,14 +115,14 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
 fn generate_user_method_signature(attrs: &[syn::Attribute], method_name: &syn::Ident, signature: &ParsedMethodSignature) -> TokenStream {
     let response_return_type = &signature.response_return_type;
     let future_output = if signature.response_is_result {
-        quote! { ::core::result::Result<#response_return_type, tonic::Status> }
+        quote! { ::core::result::Result<#response_return_type, ::proto_rs::grpc::Status> }
     } else {
         quote! { #response_return_type }
     };
 
     let request_type = if signature.request_is_wrapped {
         let request_type = &signature.request_type;
-        quote! { tonic::Request<#request_type> }
+        quote! { ::proto_rs::grpc::Request<#request_type> }
     } else {
         let request_type = &signature.request_type;
         quote! { #request_type }

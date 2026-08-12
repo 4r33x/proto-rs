@@ -353,7 +353,7 @@ mod test {
 
         let r = string::merge(WireType::LengthDelimited, &mut s, &mut &buf[..], DecodeContext::default());
         r.expect_err("must be an error");
-        assert!(s.is_empty());
+        assert_eq!(s, "");
     }
 
     /// This big bowl o' macro soup generates an encoding property test for each combination of map

@@ -96,9 +96,8 @@ pub trait ProtoDecode: Sized {
 
     const VALIDATE_WITH_EXT: bool = false;
 
-    #[cfg(feature = "tonic")]
     #[inline]
-    fn validate_with_ext(_value: &mut Self, _ext: &tonic::Extensions) -> Result<(), DecodeError> {
+    fn validate_with_ext(_value: &mut Self, _ext: &crate::grpc::Extensions) -> Result<(), DecodeError> {
         Ok(())
     }
 }

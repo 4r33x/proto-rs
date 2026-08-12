@@ -1,11 +1,8 @@
-use std::collections::BTreeSet;
-
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::DeriveInput;
 use syn::Ident;
 use syn::ItemEnum;
-use syn::Lit;
 use syn::parse_quote;
 use syn::spanned::Spanned;
 
@@ -26,6 +23,8 @@ use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
 use crate::utils::parse_field_config;
 use crate::utils::parse_field_type;
+use crate::utils::parse_variant_tag;
+use crate::utils::resolve_proto_tags;
 use crate::utils::resolved_field_type;
 
 pub(super) fn generate_complex_enum_impl(
@@ -362,17 +361,16 @@ struct TupleVariantInfo<'a> {
 }
 
 fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoConfig) -> syn::Result<Vec<VariantInfo<'a>>> {
-    let mut used_tags = BTreeSet::new();
     let mut variants = Vec::new();
+    let tag_inputs = data
+        .variants
+        .iter()
+        .map(|variant| parse_variant_tag(variant).map(|tag| (false, tag, variant.ident.span())))
+        .collect::<syn::Result<Vec<_>>>()?;
+    let tags = resolve_proto_tags(tag_inputs)?;
 
-    for (idx, variant) in data.variants.iter().enumerate() {
-        let tag = resolve_variant_tag(variant, idx + 1)?;
-        if !used_tags.insert(tag) {
-            return Err(syn::Error::new(
-                variant.ident.span(),
-                format!("duplicate proto(tag) attribute for enum variant: {tag}"),
-            ));
-        }
+    for (variant, tag) in data.variants.iter().zip(tags) {
+        let tag = tag.expect("complex enum variants are never skipped");
 
         let kind = match &variant.fields {
             syn::Fields::Unit => VariantKind::Unit,
@@ -395,7 +393,7 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                     field.span(),
                 );
 
-                let mut field_info = FieldInfo {
+                let field_info = FieldInfo {
                     index: 0,
                     field,
                     access: FieldAccess::Direct(quote! { #binding_ident }),
@@ -406,13 +404,7 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                     decode_ty,
                 };
 
-                if !field_info.config.skip {
-                    let tag = field_info.config.custom_tag.unwrap_or(1);
-                    if tag == 0 {
-                        return Err(syn::Error::new(field.span(), "proto field tags must be greater than or equal to 1"));
-                    }
-                    field_info.tag = Some(u32::try_from(tag).map_err(|_| syn::Error::new(field.span(), "proto field tag overflowed u32"))?);
-                }
+                let field_info = assign_tags(vec![field_info]).pop().expect("tuple variant field");
 
                 VariantKind::Tuple {
                     field: TupleVariantInfo {
@@ -477,50 +469,6 @@ fn collect_variant_fields<'a>(variants: &'a [VariantInfo<'a>]) -> Vec<&'a FieldI
         }
     }
     fields
-}
-
-fn resolve_variant_tag(variant: &syn::Variant, default: usize) -> syn::Result<u32> {
-    let mut custom_tag = None;
-
-    for attr in &variant.attrs {
-        if !attr.path().is_ident("proto") {
-            continue;
-        }
-
-        attr.parse_nested_meta(|meta| {
-            if meta.path.get_ident().is_some_and(|ident| ident == "tag") {
-                if custom_tag.is_some() {
-                    return Err(syn::Error::new(meta.path.span(), "duplicate proto(tag) attribute for variant"));
-                }
-
-                let lit: Lit = meta.value()?.parse()?;
-                let value = match lit {
-                    Lit::Int(int_lit) => int_lit.base10_parse::<usize>()?,
-                    Lit::Str(str_lit) => str_lit
-                        .value()
-                        .parse::<usize>()
-                        .map_err(|_| syn::Error::new(str_lit.span(), "proto tag must be a positive integer"))?,
-                    _ => {
-                        return Err(syn::Error::new(lit.span(), "proto tag must be specified as an integer"));
-                    }
-                };
-
-                custom_tag = Some(value);
-            }
-            Ok(())
-        })?;
-    }
-
-    let tag = custom_tag.unwrap_or(default);
-    if tag == 0 {
-        return Err(syn::Error::new(
-            variant.ident.span(),
-            "proto enum variant tags must be greater than or equal to 1",
-        ));
-    }
-
-    let tag_u32 = u32::try_from(tag).map_err(|_| syn::Error::new(variant.ident.span(), "proto tag overflowed u32"))?;
-    Ok(tag_u32)
 }
 
 // Helper: Generate encoding body for empty variants (Unit or empty Struct)

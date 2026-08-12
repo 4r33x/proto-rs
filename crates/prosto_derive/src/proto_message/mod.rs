@@ -8,9 +8,6 @@ use syn::Fields;
 use syn::ItemEnum;
 use syn::ItemStruct;
 
-use crate::emit_proto::generate_complex_enum_proto;
-use crate::emit_proto::generate_simple_enum_proto;
-use crate::emit_proto::generate_struct_proto;
 use crate::parse::UnifiedProtoConfig;
 use crate::schema::SchemaTokens;
 use crate::schema::assoc_proto_ident_const;
@@ -18,38 +15,22 @@ use crate::schema::schema_tokens_for_complex_enum;
 use crate::schema::schema_tokens_for_simple_enum;
 
 pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> TokenStream2 {
-    let validate_with_ext_tokens: proc_macro2::TokenStream;
-    #[cfg(feature = "tonic")]
-    {
-        validate_with_ext_tokens = {
-            let Some(validator_fn) = &config.validator_with_ext else {
-                // no validator => generate nothing (or generate const false, your choice)
-                return quote! {};
-            };
+    let Some(validator_fn) = &config.validator_with_ext else {
+        return quote! {};
+    };
+    let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
 
-            let validator_path: syn::Path = syn::parse_str(validator_fn).expect("invalid validator_with_ext function path");
+    quote! {
+        const VALIDATE_WITH_EXT: bool = true;
 
-            quote! {
-                const VALIDATE_WITH_EXT: bool = true;
-
-                #[inline]
-                fn validate_with_ext(
-                    value: &mut Self,
-                    ext: &::tonic::Extensions,
-                ) -> Result<(), ::proto_rs::DecodeError> {
-                    #validator_path(value, ext)
-                }
-            }
-        };
+        #[inline]
+        fn validate_with_ext(
+            value: &mut Self,
+            ext: &::proto_rs::grpc::Extensions,
+        ) -> Result<(), ::proto_rs::DecodeError> {
+            #validator_path(value, ext)
+        }
     }
-
-    #[cfg(not(feature = "tonic"))]
-    {
-        validate_with_ext_tokens = quote! {
-            const VALIDATE_WITH_EXT: bool = false;
-        };
-    }
-    validate_with_ext_tokens
 }
 
 fn build_validator_const(type_tokens: TokenStream2) -> TokenStream2 {
@@ -94,9 +75,8 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input: DeriveInput = syn::parse2(item_ts.clone()).expect("proto_message expects a type definition");
 
     let type_ident = input.ident.to_string();
-    let mut config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data, input.generics.clone());
+    let config = UnifiedProtoConfig::from_attributes(attr, &type_ident, &input.attrs, &input.data, input.generics.clone());
     let proto_names = config.proto_message_names(&type_ident);
-    let generic_params: Vec<syn::Ident> = input.generics.type_params().map(|param| param.ident.clone()).collect();
     if config.transparent && config.proto_path().is_some() {
         return Error::new_spanned(&input.ident, "transparent proto_message types must not be written to .proto files")
             .to_compile_error()
@@ -132,7 +112,6 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                         crate::generic_substitutions::apply_generic_substitutions_fields(&data.fields, &variant.substitutions)
                     };
 
-                    let proto = generate_struct_proto(&message_name, &fields, &generic_params);
                     // Use _concrete version if we have substitutions
                     let schema_tokens = if variant.substitutions.is_empty() {
                         crate::schema::schema_tokens_for_struct(&input.ident, &message_name, &fields, &config, &message_name)
@@ -142,9 +121,6 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     // Only emit proto file entry for concrete variants (not base generic type)
                     // Base generic type (empty substitutions) is only for Rust client schema
                     let has_type_params = !input.generics.type_params().collect::<Vec<_>>().is_empty();
-                    if !has_type_params || !variant.substitutions.is_empty() {
-                        config.register_and_emit_proto(&proto);
-                    }
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};
@@ -184,11 +160,6 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                         crate::generic_substitutions::apply_generic_substitutions_enum(data, &variant.substitutions)
                     };
 
-                    let proto = if is_simple_enum {
-                        generate_simple_enum_proto(&message_name, &enum_data)
-                    } else {
-                        generate_complex_enum_proto(&message_name, &enum_data, &generic_params)
-                    };
                     // Use _concrete version if we have substitutions
                     let schema_tokens = if variant.substitutions.is_empty() {
                         if is_simple_enum {
@@ -218,9 +189,6 @@ pub fn proto_message_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                     // Only emit proto file entry for concrete variants (not base generic type)
                     // Base generic type (empty substitutions) is only for Rust client schema
                     let has_type_params = !input.generics.type_params().collect::<Vec<_>>().is_empty();
-                    if !has_type_params || !variant.substitutions.is_empty() {
-                        config.register_and_emit_proto(&proto);
-                    }
                     let SchemaTokens { schema, inventory_submit } = schema_tokens;
                     schema_tokens_col = quote! { #schema #schema_tokens_col};
                     inventory_tokens_col = quote! { #inventory_submit #inventory_tokens_col};

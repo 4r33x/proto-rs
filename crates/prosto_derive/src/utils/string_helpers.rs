@@ -71,10 +71,6 @@ pub fn derive_package_name(file_path: &str) -> String {
 }
 
 /// Format import statement
-pub fn format_import(import_path: &str) -> String {
-    format!("import \"{import_path}.proto\";\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
