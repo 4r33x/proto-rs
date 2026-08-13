@@ -18,6 +18,7 @@ use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Option<T> {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {

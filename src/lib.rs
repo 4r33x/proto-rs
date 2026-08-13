@@ -23,6 +23,7 @@ pub use traits::ArchivedProtoField;
 pub use traits::ArchivedProtoMessage;
 pub use traits::ArchivedProtoMessageWriter;
 pub use traits::DecodeIrBuilder;
+pub use traits::EncodeSizeHint;
 pub use traits::ProtoShadowDecode;
 pub use traits::ProtoShadowEncode;
 pub use traits::ZeroCopy;

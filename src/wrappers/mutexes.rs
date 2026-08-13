@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use core::ops::Deref;
 
 use bytes::Buf;
 
@@ -6,7 +6,6 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::skip_field;
-use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -19,14 +18,13 @@ use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
-pub struct MutexShadow<T> {
-    bytes: Vec<u8>,
-    is_default: bool,
-    _marker: core::marker::PhantomData<T>,
+pub struct MutexShadow<G> {
+    guard: G,
 }
 
 impl<T: ProtoExt> ProtoExt for std::sync::Mutex<T> {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for std::sync::Mutex<T> {
@@ -71,58 +69,48 @@ where
     }
 }
 
-impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for std::sync::Mutex<T>
-where
-    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
-{
-    type Shadow<'a> = MutexShadow<T>;
+impl<T: ProtoArchive + ProtoExt + 'static> ProtoEncode for std::sync::Mutex<T> {
+    type Shadow<'a> = MutexShadow<std::sync::MutexGuard<'a, T>>;
 }
 
-impl<'a, T> ProtoShadowEncode<'a, std::sync::Mutex<T>> for MutexShadow<T>
-where
-    T: ProtoEncode + ProtoArchive + ProtoExt,
-{
+impl<'a, T: ProtoArchive + ProtoExt> ProtoShadowEncode<'a, std::sync::Mutex<T>> for MutexShadow<std::sync::MutexGuard<'a, T>> {
     #[inline]
     fn from_sun(value: &'a std::sync::Mutex<T>) -> Self {
-        let guard = value.lock().expect("Mutex lock poisoned");
-        let is_default = T::is_default(&*guard);
-        let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
         Self {
-            bytes,
-            is_default,
-            _marker: core::marker::PhantomData,
+            guard: value.lock().expect("Mutex lock poisoned"),
         }
     }
 }
 
-impl<T> ProtoExt for MutexShadow<T>
+impl<G> ProtoExt for MutexShadow<G>
 where
-    T: ProtoExt,
+    G: Deref,
+    G::Target: ProtoExt,
 {
-    const KIND: ProtoKind = T::KIND;
+    const KIND: ProtoKind = G::Target::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = G::Target::ENCODED_SIZE_HINT;
 }
 
-impl<T: ProtoExt> ProtoArchive for MutexShadow<T> {
+impl<G> ProtoArchive for MutexShadow<G>
+where
+    G: Deref,
+    G::Target: ProtoArchive + ProtoExt,
+{
     #[inline]
     fn is_default(&self) -> bool {
-        self.is_default
+        self.guard.is_default()
     }
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        w.put_slice(self.bytes.as_slice());
-        if TAG != 0 {
-            if Self::WIRE_TYPE.is_length_delimited() {
-                w.put_varint(self.bytes.len() as u64);
-            }
-            ArchivedProtoField::<TAG, Self>::put_key(w);
-        }
+        self.guard.archive::<TAG>(w);
     }
 }
 
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoExt> ProtoExt for parking_lot::Mutex<T> {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 #[cfg(feature = "parking_lot")]
@@ -172,27 +160,14 @@ where
 }
 
 #[cfg(feature = "parking_lot")]
-impl<T: ProtoEncode + ProtoArchive + ProtoExt> ProtoEncode for parking_lot::Mutex<T>
-where
-    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
-{
-    type Shadow<'a> = MutexShadow<T>;
+impl<T: ProtoArchive + ProtoExt + 'static> ProtoEncode for parking_lot::Mutex<T> {
+    type Shadow<'a> = MutexShadow<parking_lot::MutexGuard<'a, T>>;
 }
 
 #[cfg(feature = "parking_lot")]
-impl<'a, T> ProtoShadowEncode<'a, parking_lot::Mutex<T>> for MutexShadow<T>
-where
-    T: ProtoEncode + ProtoArchive + ProtoExt,
-{
+impl<'a, T: ProtoArchive + ProtoExt> ProtoShadowEncode<'a, parking_lot::Mutex<T>> for MutexShadow<parking_lot::MutexGuard<'a, T>> {
     #[inline]
     fn from_sun(value: &'a parking_lot::Mutex<T>) -> Self {
-        let guard = value.lock();
-        let is_default = T::is_default(&*guard);
-        let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
-        Self {
-            bytes,
-            is_default,
-            _marker: core::marker::PhantomData,
-        }
+        Self { guard: value.lock() }
     }
 }

@@ -37,6 +37,13 @@ pub struct RevVec {
     pos: usize, // valid bytes are in [pos..cap)
 }
 
+impl AsRef<[u8]> for RevVec {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_written_slice()
+    }
+}
+
 impl RevVec {
     const MIN_GROW: usize = 64;
 
@@ -133,6 +140,10 @@ impl RevWriter for RevVec {
 
     #[inline]
     fn put_varint(&mut self, mut v: u64) {
+        if v < 0x80 {
+            self.put_u8(v as u8);
+            return;
+        }
         let mut tmp = [0u8; 10];
         let mut i = 0usize;
         loop {

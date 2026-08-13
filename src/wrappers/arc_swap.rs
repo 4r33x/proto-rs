@@ -8,7 +8,6 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::skip_field;
-use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -22,19 +21,16 @@ use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
 pub struct ArcSwapShadow<T> {
-    bytes: Vec<u8>,
-    is_default: bool,
-    _marker: core::marker::PhantomData<T>,
+    value: Arc<T>,
 }
 
 pub struct ArcSwapOptionShadow<T> {
-    bytes: Vec<u8>,
-    is_default: bool,
-    _marker: core::marker::PhantomData<T>,
+    value: Option<Arc<T>>,
 }
 
 impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
@@ -89,23 +85,18 @@ where
     T: ProtoExt,
 {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
-impl<T: ProtoExt> ProtoArchive for ArcSwapShadow<T> {
+impl<T: ProtoArchive + ProtoExt> ProtoArchive for ArcSwapShadow<T> {
     #[inline]
     fn is_default(&self) -> bool {
-        self.is_default
+        self.value.is_default()
     }
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        w.put_slice(self.bytes.as_slice());
-        if TAG != 0 {
-            if Self::WIRE_TYPE.is_length_delimited() {
-                w.put_varint(self.bytes.len() as u64);
-            }
-            ArchivedProtoField::<TAG, Self>::put_key(w);
-        }
+        self.value.archive::<TAG>(w);
     }
 }
 
@@ -122,19 +113,13 @@ where
 {
     #[inline]
     fn from_sun(value: &'a ArcSwap<T>) -> Self {
-        let guard = value.load_full();
-        let is_default = T::is_default(guard.as_ref());
-        let bytes = if is_default { Vec::new() } else { guard.encode_to_vec() };
-        Self {
-            bytes,
-            is_default,
-            _marker: core::marker::PhantomData,
-        }
+        Self { value: value.load_full() }
     }
 }
 
 impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
@@ -194,22 +179,19 @@ where
     T: ProtoExt,
 {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
-impl<T: ProtoExt> ProtoArchive for ArcSwapOptionShadow<T> {
+impl<T: ProtoArchive + ProtoExt> ProtoArchive for ArcSwapOptionShadow<T> {
     #[inline]
     fn is_default(&self) -> bool {
-        self.is_default
+        self.value.as_ref().is_none_or(ProtoArchive::is_default)
     }
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        w.put_slice(self.bytes.as_slice());
-        if TAG != 0 {
-            if Self::WIRE_TYPE.is_length_delimited() {
-                w.put_varint(self.bytes.len() as u64);
-            }
-            ArchivedProtoField::<TAG, Self>::put_key(w);
+        if let Some(value) = self.value.as_ref() {
+            value.archive::<TAG>(w);
         }
     }
 }
@@ -227,22 +209,6 @@ where
 {
     #[inline]
     fn from_sun(value: &'a ArcSwapOption<T>) -> Self {
-        let guard = value.load_full();
-        match guard.as_ref() {
-            Some(inner) => {
-                let is_default = T::is_default(inner.as_ref());
-                let bytes = if is_default { Vec::new() } else { inner.encode_to_vec() };
-                Self {
-                    bytes,
-                    is_default,
-                    _marker: core::marker::PhantomData,
-                }
-            }
-            None => Self {
-                bytes: Vec::new(),
-                is_default: true,
-                _marker: core::marker::PhantomData,
-            },
-        }
+        Self { value: value.load_full() }
     }
 }

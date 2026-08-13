@@ -33,6 +33,7 @@ pub trait ProtoDecoder: ProtoExt {
         }
         // Check recursion limit once at recursion boundary (not per-field)
         ctx.limit_reached()?;
+        let inner_ctx = ctx.enter_recursion();
         let len = decode_varint(buf)? as usize;
         let remaining = buf.remaining();
         if len > remaining {
@@ -41,7 +42,10 @@ pub trait ProtoDecoder: ProtoExt {
         // Use limit-based decoding to avoid Buf::take wrapper overhead
         let limit = remaining - len;
         while buf.remaining() > limit {
-            Self::decode_one_field(self, buf, ctx)?;
+            Self::decode_one_field(self, buf, inner_ctx)?;
+        }
+        if buf.remaining() != limit {
+            return Err(DecodeError::new("delimited length exceeded"));
         }
         Ok(())
     }
@@ -73,9 +77,6 @@ pub trait ProtoDecoder: ProtoExt {
     #[inline]
     fn decode_one_field(value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         let (tag, wire) = decode_key(buf)?;
-        if tag == 0 {
-            return Err(DecodeError::new("invalid tag 0"));
-        }
         Self::merge_field(value, tag, wire, buf, ctx)
     }
 }
@@ -84,6 +85,7 @@ pub trait ProtoDecode: Sized {
     type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self> + ProtoDefault;
     #[inline]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
+        ctx.limit_reached()?;
         let mut sh = <Self::ShadowDecoded as ProtoDefault>::proto_default();
         Self::ShadowDecoded::decode_into(&mut sh, &mut buf, ctx)?;
         Self::post_decode(sh)
@@ -125,4 +127,53 @@ where
 
 pub trait DecodeIrBuilder<T> {
     fn build_ir(&self) -> Result<T, ::proto_rs::DecodeError>;
+}
+
+#[cfg(all(test, not(feature = "no-recursion-limit")))]
+mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use super::*;
+    use crate::encoding::encode_varint;
+    use crate::encoding::skip_field;
+    use crate::traits::ProtoKind;
+
+    #[derive(Debug, Default)]
+    struct RecursiveMessage;
+
+    impl ProtoExt for RecursiveMessage {
+        const KIND: ProtoKind = ProtoKind::Message;
+    }
+
+    impl ProtoDefault for RecursiveMessage {
+        fn proto_default() -> Self {
+            Self
+        }
+    }
+
+    impl ProtoDecoder for RecursiveMessage {
+        fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+            if tag == 1 {
+                Self::merge(value, wire_type, buf, ctx)
+            } else {
+                skip_field(wire_type, tag, buf, ctx)
+            }
+        }
+    }
+
+    #[test]
+    fn nested_messages_enforce_the_recursion_limit() {
+        let mut encoded = Vec::new();
+        for _ in 0..=crate::RECURSION_LIMIT {
+            let mut outer = vec![0x0a];
+            encode_varint(encoded.len() as u64, &mut outer);
+            outer.extend_from_slice(&encoded);
+            encoded = outer;
+        }
+
+        let error = <RecursiveMessage as ProtoDecoder>::decode(encoded.as_slice(), DecodeContext::default())
+            .expect_err("deeply nested message must exceed recursion limit");
+        assert!(error.to_string().contains("recursion limit reached"));
+    }
 }

@@ -99,7 +99,7 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_grpc(self) -> Result<Bytes, Status> {
-        Ok(Bytes::from(self.encode_to_vec()))
+        Ok(self.to_zero_copy().into_bytes())
     }
 }
 
@@ -108,7 +108,7 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_grpc(self) -> Result<Bytes, Status> {
-        Ok(Bytes::copy_from_slice(self.as_bytes()))
+        Ok(self.into_bytes())
     }
 }
 

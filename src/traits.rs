@@ -10,6 +10,7 @@ pub use decode::ProtoShadowDecode;
 pub use encode::ArchivedProtoField;
 pub use encode::ArchivedProtoMessage;
 pub use encode::ArchivedProtoMessageWriter;
+pub use encode::EncodeSizeHint;
 pub use encode::ProtoArchive;
 pub use encode::ProtoEncode;
 pub use encode::ProtoShadowEncode;
@@ -29,6 +30,7 @@ mod utils;
 pub trait ProtoExt: Sized {
     const KIND: ProtoKind;
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
+    const ENCODED_SIZE_HINT: EncodeSizeHint = EncodeSizeHint::from_kind(&Self::KIND);
     const _REPEATED_SUPPORT: Option<&'static str> = None;
 
     const _TEST_REPEATED: () = {
@@ -41,4 +43,5 @@ pub trait ProtoExt: Sized {
 }
 impl<T: ProtoExt> ProtoExt for &T {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }

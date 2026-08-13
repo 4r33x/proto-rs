@@ -47,6 +47,10 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
         ProtoKind::Primitive(PrimitiveKind::U8) => None,
         _ => Some("Array"),
     };
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => crate::EncodeSizeHint::new(N, true),
+        _ => T::ENCODED_SIZE_HINT.repeated(N),
+    };
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] {
@@ -81,6 +85,9 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
                     let len = decode_varint(buf)? as usize;
+                    if len > buf.remaining() {
+                        return Err(DecodeError::new("buffer underflow"));
+                    }
                     let mut slice = buf.take(len);
                     for v in self.iter_mut() {
                         if !slice.has_remaining() {
@@ -88,7 +95,9 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
                         }
                         T::merge_value(v, T::WIRE_TYPE, &mut slice, ctx)?;
                     }
-                    debug_assert!(!slice.has_remaining());
+                    if slice.has_remaining() {
+                        return Err(DecodeError::new("packed array has too many elements"));
+                    }
                 } else {
                     for v in self.iter_mut() {
                         T::merge_value(v, wire_type, buf, ctx)?;
@@ -198,6 +207,7 @@ pub struct ArrayShadow<'a, T: ProtoArchive + ProtoExt, const N: usize> {
 
 impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T, N> {
     const KIND: ProtoKind = <[T; N] as ProtoExt>::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = <[T; N] as ProtoExt>::ENCODED_SIZE_HINT;
     const _REPEATED_SUPPORT: Option<&'static str> = <[T; N] as ProtoExt>::_REPEATED_SUPPORT;
 }
 

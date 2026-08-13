@@ -19,6 +19,7 @@ use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Arc<T> {
     const KIND: ProtoKind = T::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 impl<T: ProtoDecode> ProtoDecode for Arc<T>

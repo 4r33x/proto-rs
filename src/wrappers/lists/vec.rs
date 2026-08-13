@@ -59,12 +59,22 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Vec<T> {
                     if len > remaining {
                         return Err(DecodeError::new("buffer underflow"));
                     }
+                    let element_capacity = match T::WIRE_TYPE {
+                        WireType::ThirtyTwoBit => len / 4,
+                        WireType::SixtyFourBit => len / 8,
+                        WireType::Varint => len,
+                        WireType::LengthDelimited | WireType::StartGroup | WireType::EndGroup => 0,
+                    };
+                    self.reserve(element_capacity);
                     // Use limit-based decoding to avoid Take wrapper overhead
                     let limit = remaining - len;
                     while buf.remaining() > limit {
                         let mut v = <T as ProtoDefault>::proto_default();
                         T::merge_value(&mut v, T::WIRE_TYPE, buf, ctx)?;
                         self.push(v);
+                    }
+                    if buf.remaining() != limit {
+                        return Err(DecodeError::new("delimited length exceeded"));
                     }
                 } else {
                     let mut v = <T as ProtoDefault>::proto_default();

@@ -65,6 +65,9 @@ where
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
                     let len = decode_varint(buf)? as usize;
+                    if len > buf.remaining() {
+                        return Err(DecodeError::new("buffer underflow"));
+                    }
                     let mut slice = buf.take(len);
                     while slice.has_remaining() {
                         let mut v = <T as ProtoDefault>::proto_default();

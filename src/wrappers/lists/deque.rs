@@ -55,6 +55,16 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
                 if wire_type == WireType::LengthDelimited {
                     let len = decode_varint(buf)? as usize;
+                    if len > buf.remaining() {
+                        return Err(DecodeError::new("buffer underflow"));
+                    }
+                    let element_capacity = match T::WIRE_TYPE {
+                        WireType::ThirtyTwoBit => len / 4,
+                        WireType::SixtyFourBit => len / 8,
+                        WireType::Varint => len,
+                        WireType::LengthDelimited | WireType::StartGroup | WireType::EndGroup => 0,
+                    };
+                    self.reserve(element_capacity);
                     let mut slice = buf.take(len);
                     while slice.has_remaining() {
                         let mut v = <T as ProtoDefault>::proto_default();

@@ -4,6 +4,7 @@ use bytes::BufMut;
 
 use crate::coders::AsBytes;
 use crate::error::EncodeError;
+use crate::traits::PrimitiveKind;
 use crate::traits::ProtoExt;
 use crate::traits::ProtoKind;
 use crate::traits::buffer::RevVec;
@@ -13,6 +14,52 @@ use crate::traits::utils::encode_varint_const;
 
 pub trait ProtoShadowEncode<'a, T: ?Sized> {
     fn from_sun(value: &'a T) -> Self;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Type-level capacity estimate for reverse encoding.
+///
+/// `size` sums the minimum wire contribution of statically known fields or elements.
+/// It may overestimate values whose default fields are omitted. `exact` means a value
+/// that is emitted occupies exactly `size` bytes; default omission is handled separately.
+pub struct EncodeSizeHint {
+    pub size: usize,
+    pub exact: bool,
+}
+
+impl EncodeSizeHint {
+    pub const UNKNOWN: Self = Self { size: 0, exact: false };
+
+    pub const fn new(size: usize, exact: bool) -> Self {
+        Self { size, exact }
+    }
+
+    pub const fn from_kind(kind: &ProtoKind) -> Self {
+        match kind {
+            ProtoKind::Primitive(PrimitiveKind::Bool) => Self::new(1, true),
+            ProtoKind::Primitive(PrimitiveKind::F32 | PrimitiveKind::Fixed32 | PrimitiveKind::SFixed32) => Self::new(4, true),
+            ProtoKind::Primitive(PrimitiveKind::F64 | PrimitiveKind::Fixed64 | PrimitiveKind::SFixed64) => Self::new(8, true),
+            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => Self::new(1, false),
+            ProtoKind::Message | ProtoKind::Bytes | ProtoKind::String | ProtoKind::Repeated(_) => Self::UNKNOWN,
+        }
+    }
+
+    #[must_use]
+    pub const fn add_field<const TAG: u32>(self, field: Self, wire_type: crate::encoding::WireType) -> Self {
+        let delimiter = if wire_type.is_length_delimited() { 1 } else { 0 };
+        Self {
+            size: self.size.saturating_add(crate::encoding::key_len(TAG)).saturating_add(delimiter).saturating_add(field.size),
+            exact: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn repeated(self, count: usize) -> Self {
+        Self {
+            size: self.size.saturating_mul(count),
+            exact: count == 0 || self.exact,
+        }
+    }
 }
 
 pub trait ProtoArchive {
@@ -85,15 +132,21 @@ where
     #[inline]
     pub fn new(input: &T) -> Option<Self> {
         let s = T::Shadow::from_sun(input);
-        if <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
+        if !matches!(T::KIND, ProtoKind::Message) && <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
             return None;
         }
-        let mut w = W::with_capacity(Self::INIT_CAP);
+        let hint = <<T as ProtoEncode>::Shadow<'_> as ProtoExt>::ENCODED_SIZE_HINT;
+        let capacity = if hint.exact { hint.size } else { hint.size.max(Self::INIT_CAP) };
+        let mut w = W::with_capacity(capacity);
 
         if matches!(T::KIND, ProtoKind::SimpleEnum) {
             s.archive::<1>(&mut w);
         } else {
             s.archive::<0>(&mut w);
+        }
+
+        if w.is_empty() {
+            return None;
         }
 
         Some(Self {
@@ -129,6 +182,14 @@ where
     #[inline]
     pub fn to_vec_tight(self) -> Vec<u8> {
         self.inner.finish_tight()
+    }
+
+    #[inline]
+    pub fn into_bytes(self) -> bytes::Bytes {
+        if self.inner.is_empty() {
+            return bytes::Bytes::new();
+        }
+        bytes::Bytes::from_owner(self.inner)
     }
 }
 
@@ -167,6 +228,11 @@ where
     #[inline]
     pub fn into_inner(self) -> ArchivedProtoMessage<T, RevVec> {
         self.0
+    }
+
+    #[inline]
+    pub fn into_bytes(self) -> bytes::Bytes {
+        self.0.into_bytes()
     }
 }
 
@@ -214,5 +280,55 @@ impl<const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<TAG, T> {
     #[inline]
     pub fn put_key(w: &mut impl RevWriter) {
         w.put_slice(&Self::_TAG_VARINT.bytes[..Self::TAG_LEN]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct EmptyMessage;
+
+    impl ProtoExt for EmptyMessage {
+        const KIND: ProtoKind = ProtoKind::Message;
+        const ENCODED_SIZE_HINT: EncodeSizeHint = EncodeSizeHint::new(0, true);
+    }
+
+    impl ProtoShadowEncode<'_, EmptyMessage> for EmptyMessage {
+        fn from_sun(_value: &EmptyMessage) -> Self {
+            Self
+        }
+    }
+
+    impl ProtoArchive for EmptyMessage {
+        fn is_default(&self) -> bool {
+            panic!("top-level messages must not run a default prepass");
+        }
+
+        fn archive<const TAG: u32>(&self, _w: &mut impl RevWriter) {
+            assert_eq!(TAG, 0);
+        }
+    }
+
+    impl ProtoEncode for EmptyMessage {
+        type Shadow<'a> = Self;
+    }
+
+    #[test]
+    fn empty_top_level_message_is_detected_from_archive_output() {
+        assert_eq!(EmptyMessage.encode_to_vec(), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn exact_size_hint_avoids_spare_reverse_capacity() {
+        assert_eq!(<f64 as ProtoExt>::ENCODED_SIZE_HINT, EncodeSizeHint::new(8, true));
+        assert_eq!(<[f64; 4] as ProtoExt>::ENCODED_SIZE_HINT, EncodeSizeHint::new(32, true));
+        assert_eq!(<[u8; 4] as ProtoExt>::ENCODED_SIZE_HINT, EncodeSizeHint::new(4, true));
+        assert_eq!(<[u64; 4] as ProtoExt>::ENCODED_SIZE_HINT, EncodeSizeHint::new(4, false));
+        assert_eq!(<[String; 0] as ProtoExt>::ENCODED_SIZE_HINT, EncodeSizeHint::new(0, true));
+
+        let encoded = 1.0f64.encode_to_vec();
+        assert_eq!(encoded.len(), 8);
+        assert_eq!(encoded.capacity(), 8);
     }
 }

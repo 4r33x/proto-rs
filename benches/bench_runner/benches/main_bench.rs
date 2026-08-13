@@ -200,19 +200,23 @@ impl BenchRecorder {
     }
 }
 
-fn run_component_bench<F>(group_name: &str, group: &mut BenchmarkGroup<'_, WallTime>, bench_name: &str, throughput_bytes: usize, mut f: F)
-where
-    F: FnMut(),
+fn run_component_bench<F, R>(
+    group_name: &str,
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    bench_name: &str,
+    throughput_bytes: usize,
+    mut f: F,
+) where
+    F: FnMut() -> R,
 {
     group.throughput(Throughput::Bytes(throughput_bytes as u64));
     group.bench_function(bench_name, |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
-                let start = Instant::now();
-                f();
-                total += start.elapsed();
+                black_box(f());
             }
+            let total = start.elapsed();
             bench_recorder().record(group_name, bench_name, total, iters, Some(throughput_bytes as u64));
             total
         });
@@ -239,13 +243,12 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     group.bench_function("prost encode_to_vec", |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
-                let start = Instant::now();
                 let buf = prost::Message::encode_to_vec(black_box(prost_message));
                 black_box(&buf);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record(
                 "complex_root_encode",
                 "prost | encode_to_vec",
@@ -259,13 +262,12 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     group.bench_function("proto_rs encode_to_vec", |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
-                let start = Instant::now();
                 let buf = ComplexRoot::encode_to_vec(black_box(&message));
                 black_box(&buf);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record(
                 "complex_root_encode",
                 "proto_rs | encode_to_vec",
@@ -279,15 +281,14 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     group.bench_function("proto_rs decode proto_rs input", |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
                 let data = proto_bytes.clone();
-                let start = Instant::now();
                 let decoded =
                     ComplexRoot::decode(black_box(data), DecodeContext::default()).expect("proto_rs decode failed for proto_rs input");
                 black_box(decoded);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record(
                 "complex_root_decode",
                 "proto_rs | decode proto_rs input",
@@ -301,14 +302,13 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     group.bench_function("prost decode proto_rs input", |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
                 let data = proto_bytes.clone();
-                let start = Instant::now();
                 let decoded = ComplexRootProst::decode(black_box(data)).expect("prost decode failed for proto_rs input");
                 black_box(decoded);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record(
                 "complex_root_decode",
                 "prost | decode proto_rs input",
@@ -322,15 +322,14 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     group.bench_function("proto_rs decode prost input", |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
                 let data = prost_bytes.clone();
-                let start = Instant::now();
                 let decoded =
                     ComplexRoot::decode(black_box(data), DecodeContext::default()).expect("proto_rs decode failed for prost input");
                 black_box(decoded);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record(
                 "complex_root_decode",
                 "proto_rs | decode prost input",
@@ -344,14 +343,13 @@ fn bench_encode_decode(c: &mut Criterion) {
 
     group.bench_function("prost decode prost input", |b| {
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
                 let data = prost_bytes.clone();
-                let start = Instant::now();
                 let decoded = ComplexRootProst::decode(black_box(data)).expect("prost decode failed for prost input");
                 black_box(decoded);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record(
                 "complex_root_decode",
                 "prost | decode prost input",
@@ -378,15 +376,14 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
     group.bench_function("prost clone + encode", |b| {
         let mut buf = Vec::with_capacity(prost_len);
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
                 buf.clear();
-                let start = Instant::now();
                 let cloned = prost_message.clone();
                 cloned.encode(&mut buf).unwrap();
                 black_box(&buf);
-                total += start.elapsed();
             }
+            let total = start.elapsed();
             bench_recorder().record("zero_copy_vs_clone", "prost | clone + encode", total, iters, Some(prost_len as u64));
             total
         });
@@ -394,18 +391,13 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
 
     group.throughput(Throughput::Bytes(proto_len as u64));
     group.bench_function("proto_rs zero_copy response", |b| {
-        let mut buf = Vec::with_capacity(proto_len);
         b.iter_custom(|iters| {
-            let mut total = Duration::ZERO;
+            let start = Instant::now();
             for _ in 0..iters {
-                buf.clear();
-                let start = Instant::now();
-                let archived: proto_rs::ArchivedProtoMessageWriter<ComplexRoot> =
-                    proto_rs::ArchivedProtoMessage::new(&message).expect("message should encode");
-                archived.encode(&mut buf).expect("encode to buffer");
-                black_box(&buf);
-                total += start.elapsed();
+                let bytes = message.to_zero_copy().into_bytes();
+                black_box(bytes);
             }
+            let total = start.elapsed();
             bench_recorder().record("zero_copy_vs_clone", "proto_rs | zero_copy", total, iters, Some(proto_len as u64));
             total
         });
@@ -847,10 +839,10 @@ fn bench_micro_fields_encode(c: &mut Criterion) {
     assert_eq!(one_string_sz, one_string_prost_sz);
     let mut group = c.benchmark_group(GROUP);
     run_component_bench(GROUP, &mut group, "one_string | prost encode_to_vec", one_string_prost_sz, || {
-        let _ = one_string_prost.encode_to_vec();
+        one_string_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "one_string | proto_rs encode_to_vec", one_string_sz, || {
-        let _ = OneString::encode_to_vec(&one_string);
+        OneString::encode_to_vec(&one_string)
     });
     group.finish();
 
@@ -883,10 +875,10 @@ fn bench_micro_fields_encode(c: &mut Criterion) {
     assert_eq!(one_enum_sz, one_enum_prost_sz);
     let mut group = c.benchmark_group(GROUP);
     run_component_bench(GROUP, &mut group, "one_enum | prost encode_to_vec", one_enum_prost_sz, || {
-        let _ = one_enum_prost.encode_to_vec();
+        one_enum_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "one_enum | proto_rs encode_to_vec", one_enum_sz, || {
-        let _ = OneEnum::encode_to_vec(&one_enum);
+        OneEnum::encode_to_vec(&one_enum)
     });
     group.finish();
 
@@ -905,12 +897,10 @@ fn bench_micro_fields_encode(c: &mut Criterion) {
         &mut group,
         "one_nested_leaf | prost encode_to_vec",
         one_leaf_prost_sz,
-        || {
-            let _ = one_leaf_prost.encode_to_vec();
-        },
+        || one_leaf_prost.encode_to_vec(),
     );
     run_component_bench(GROUP, &mut group, "one_nested_leaf | proto_rs encode_to_vec", one_leaf_sz, || {
-        let _ = OneNestedLeaf::encode_to_vec(&one_leaf);
+        OneNestedLeaf::encode_to_vec(&one_leaf)
     });
     group.finish();
 
@@ -929,12 +919,10 @@ fn bench_micro_fields_encode(c: &mut Criterion) {
         &mut group,
         "one_deep_message | prost encode_to_vec",
         one_deep_prost_sz,
-        || {
-            let _ = one_deep_prost.encode_to_vec();
-        },
+        || one_deep_prost.encode_to_vec(),
     );
     run_component_bench(GROUP, &mut group, "one_deep_message | proto_rs encode_to_vec", one_deep_sz, || {
-        let _ = OneDeepMessage::encode_to_vec(&one_deep);
+        OneDeepMessage::encode_to_vec(&one_deep)
     });
     group.finish();
 
@@ -949,10 +937,10 @@ fn bench_micro_fields_encode(c: &mut Criterion) {
     assert_eq!(one_ce_sz, one_ce_prost_sz);
     let mut group = c.benchmark_group(GROUP);
     run_component_bench(GROUP, &mut group, "one_complex_enum | prost encode_to_vec", one_ce_prost_sz, || {
-        let _ = one_ce_prost.encode_to_vec();
+        one_ce_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "one_complex_enum | proto_rs encode_to_vec", one_ce_sz, || {
-        let _ = OneComplexEnum::encode_to_vec(&one_ce);
+        OneComplexEnum::encode_to_vec(&one_ce)
     });
     group.finish();
 }
@@ -981,16 +969,16 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(GROUP);
     run_component_bench(GROUP, &mut group, "tags_len1 | prost encode_to_vec", one_tag_prost_sz, || {
-        let _ = one_tag_prost.encode_to_vec();
+        one_tag_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "tags_len1 | proto_rs encode_to_vec", one_tag_sz, || {
-        let _ = BenchTags::encode_to_vec(&one_tag);
+        BenchTags::encode_to_vec(&one_tag)
     });
     run_component_bench(GROUP, &mut group, "one_string | prost encode_to_vec", single_str_prost_sz, || {
-        let _ = single_str_prost.encode_to_vec();
+        single_str_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "one_string | proto_rs encode_to_vec", single_str_sz, || {
-        let _ = OneString::encode_to_vec(&single_str);
+        OneString::encode_to_vec(&single_str)
     });
     group.finish();
 
@@ -1021,24 +1009,20 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
         &mut group,
         "attachments_len1 | prost encode_to_vec",
         one_bytes_vec_prost_sz,
-        || {
-            let _ = one_bytes_vec_prost.encode_to_vec();
-        },
+        || one_bytes_vec_prost.encode_to_vec(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "attachments_len1 | proto_rs encode_to_vec",
         one_bytes_vec_sz,
-        || {
-            let _ = BenchAttachments::encode_to_vec(&one_bytes_vec);
-        },
+        || BenchAttachments::encode_to_vec(&one_bytes_vec),
     );
     run_component_bench(GROUP, &mut group, "one_bytes | prost encode_to_vec", single_bytes_prost_sz, || {
-        let _ = single_bytes_prost.encode_to_vec();
+        single_bytes_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "one_bytes | proto_rs encode_to_vec", single_bytes_sz, || {
-        let _ = OneBytes::encode_to_vec(&single_bytes);
+        OneBytes::encode_to_vec(&single_bytes)
     });
     group.finish();
 
@@ -1063,16 +1047,16 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(GROUP);
     run_component_bench(GROUP, &mut group, "codes_len1 | prost encode_to_vec", one_enum_vec_prost_sz, || {
-        let _ = one_enum_vec_prost.encode_to_vec();
+        one_enum_vec_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "codes_len1 | proto_rs encode_to_vec", one_enum_vec_sz, || {
-        let _ = BenchCodes::encode_to_vec(&one_enum_vec);
+        BenchCodes::encode_to_vec(&one_enum_vec)
     });
     run_component_bench(GROUP, &mut group, "one_enum | prost encode_to_vec", single_enum_prost_sz, || {
-        let _ = single_enum_prost.encode_to_vec();
+        single_enum_prost.encode_to_vec()
     });
     run_component_bench(GROUP, &mut group, "one_enum | proto_rs encode_to_vec", single_enum_sz, || {
-        let _ = OneEnum::encode_to_vec(&single_enum);
+        OneEnum::encode_to_vec(&single_enum)
     });
     group.finish();
 
@@ -1101,30 +1085,24 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
         &mut group,
         "leaves_len1 | prost encode_to_vec",
         one_leaf_vec_prost_sz,
-        || {
-            let _ = one_leaf_vec_prost.encode_to_vec();
-        },
+        || one_leaf_vec_prost.encode_to_vec(),
     );
     run_component_bench(GROUP, &mut group, "leaves_len1 | proto_rs encode_to_vec", one_leaf_vec_sz, || {
-        let _ = BenchNestedLeafList::encode_to_vec(&one_leaf_vec);
+        BenchNestedLeafList::encode_to_vec(&one_leaf_vec)
     });
     run_component_bench(
         GROUP,
         &mut group,
         "one_nested_leaf | prost encode_to_vec",
         single_leaf_prost_sz,
-        || {
-            let _ = single_leaf_prost.encode_to_vec();
-        },
+        || single_leaf_prost.encode_to_vec(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "one_nested_leaf | proto_rs encode_to_vec",
         single_leaf_sz,
-        || {
-            let _ = OneNestedLeaf::encode_to_vec(&single_leaf);
-        },
+        || OneNestedLeaf::encode_to_vec(&single_leaf),
     );
     group.finish();
 
@@ -1155,36 +1133,28 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
         &mut group,
         "deep_list_len1 | prost encode_to_vec",
         one_deep_vec_prost_sz,
-        || {
-            let _ = one_deep_vec_prost.encode_to_vec();
-        },
+        || one_deep_vec_prost.encode_to_vec(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "deep_list_len1 | proto_rs encode_to_vec",
         one_deep_vec_sz,
-        || {
-            let _ = BenchDeepMessageList::encode_to_vec(&one_deep_vec);
-        },
+        || BenchDeepMessageList::encode_to_vec(&one_deep_vec),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "one_deep_message | prost encode_to_vec",
         single_deep_prost_sz,
-        || {
-            let _ = single_deep_prost.encode_to_vec();
-        },
+        || single_deep_prost.encode_to_vec(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "one_deep_message | proto_rs encode_to_vec",
         single_deep_sz,
-        || {
-            let _ = OneDeepMessage::encode_to_vec(&single_deep);
-        },
+        || OneDeepMessage::encode_to_vec(&single_deep),
     );
     group.finish();
 
@@ -1213,30 +1183,24 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
         &mut group,
         "status_history_len1 | prost encode_to_vec",
         one_ce_vec_prost_sz,
-        || {
-            let _ = one_ce_vec_prost.encode_to_vec();
-        },
+        || one_ce_vec_prost.encode_to_vec(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "status_history_len1 | proto_rs encode_to_vec",
         one_ce_vec_sz,
-        || {
-            let _ = BenchStatusHistory::encode_to_vec(&one_ce_vec);
-        },
+        || BenchStatusHistory::encode_to_vec(&one_ce_vec),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "one_complex_enum | prost encode_to_vec",
         single_ce_prost_sz,
-        || {
-            let _ = single_ce_prost.encode_to_vec();
-        },
+        || single_ce_prost.encode_to_vec(),
     );
     run_component_bench(GROUP, &mut group, "one_complex_enum | proto_rs encode_to_vec", single_ce_sz, || {
-        let _ = OneComplexEnum::encode_to_vec(&single_ce);
+        OneComplexEnum::encode_to_vec(&single_ce)
     });
     group.finish();
 
@@ -1263,18 +1227,14 @@ fn bench_collection_overhead_encode(c: &mut Criterion) {
         &mut group,
         "leaf_lookup_len1 | prost encode_to_vec",
         one_leaf_map_prost_sz,
-        || {
-            let _ = one_leaf_map_msg_prost.encode_to_vec();
-        },
+        || one_leaf_map_msg_prost.encode_to_vec(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "leaf_lookup_len1 | proto_rs encode_to_vec",
         one_leaf_map_sz,
-        || {
-            let _ = BenchLeafLookup::encode_to_vec(&one_leaf_map_msg);
-        },
+        || BenchLeafLookup::encode_to_vec(&one_leaf_map_msg),
     );
     group.finish();
 }
@@ -1324,65 +1284,61 @@ fn bench_complex_components_decode(c: &mut Criterion) {
 
     // -------------------- Single Components --------------------
     run_component_bench(GROUP, &mut group, "nested_leaf | prost decode", nested_leaf_bytes.len(), || {
-        let _ = NestedLeafProst::decode(nested_leaf_bytes.as_slice()).unwrap();
+        NestedLeafProst::decode(nested_leaf_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "nested_leaf | proto_rs decode", nested_leaf_bytes.len(), || {
-        let _ = NestedLeaf::decode(nested_leaf_bytes.as_slice(), DecodeContext::default()).unwrap();
+        NestedLeaf::decode(nested_leaf_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "deep_message | prost decode", deep_message_bytes.len(), || {
-        let _ = DeepMessageProst::decode(deep_message_bytes.as_slice()).unwrap();
+        DeepMessageProst::decode(deep_message_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "deep_message | proto_rs decode",
         deep_message_bytes.len(),
-        || {
-            let _ = DeepMessage::decode(deep_message_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || DeepMessage::decode(deep_message_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     run_component_bench(GROUP, &mut group, "complex_enum | prost decode", complex_enum_bytes.len(), || {
-        let _ = ComplexEnumProst::decode(complex_enum_bytes.as_slice()).unwrap();
+        ComplexEnumProst::decode(complex_enum_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "complex_enum | proto_rs decode",
         complex_enum_bytes.len(),
-        || {
-            let _ = ComplexEnum::decode(complex_enum_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || ComplexEnum::decode(complex_enum_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     // -------------------- Collections --------------------
     run_component_bench(GROUP, &mut group, "leaves list | prost decode", leaves_bytes.len(), || {
-        let _ = BenchNestedLeafListProst::decode(leaves_bytes.as_slice()).unwrap();
+        BenchNestedLeafListProst::decode(leaves_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "leaves list | proto_rs decode", leaves_bytes.len(), || {
-        let _ = BenchNestedLeafList::decode(leaves_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchNestedLeafList::decode(leaves_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "deep list | prost decode", deep_list_bytes.len(), || {
-        let _ = BenchDeepMessageListProst::decode(deep_list_bytes.as_slice()).unwrap();
+        BenchDeepMessageListProst::decode(deep_list_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "deep list | proto_rs decode", deep_list_bytes.len(), || {
-        let _ = BenchDeepMessageList::decode(deep_list_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchDeepMessageList::decode(deep_list_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "leaf lookup | prost decode", leaf_lookup_bytes.len(), || {
-        let _ = BenchLeafLookupProst::decode(leaf_lookup_bytes.as_slice()).unwrap();
+        BenchLeafLookupProst::decode(leaf_lookup_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "leaf lookup | proto_rs decode", leaf_lookup_bytes.len(), || {
-        let _ = BenchLeafLookup::decode(leaf_lookup_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchLeafLookup::decode(leaf_lookup_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "deep lookup | prost decode", deep_lookup_bytes.len(), || {
-        let _ = BenchDeepLookupProst::decode(deep_lookup_bytes.as_slice()).unwrap();
+        BenchDeepLookupProst::decode(deep_lookup_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "deep lookup | proto_rs decode", deep_lookup_bytes.len(), || {
-        let _ = BenchDeepLookup::decode(deep_lookup_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchDeepLookup::decode(deep_lookup_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(
@@ -1390,59 +1346,53 @@ fn bench_complex_components_decode(c: &mut Criterion) {
         &mut group,
         "status history | prost decode",
         status_history_bytes.len(),
-        || {
-            let _ = BenchStatusHistoryProst::decode(status_history_bytes.as_slice()).unwrap();
-        },
+        || BenchStatusHistoryProst::decode(status_history_bytes.as_slice()).unwrap(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "status history | proto_rs decode",
         status_history_bytes.len(),
-        || {
-            let _ = BenchStatusHistory::decode(status_history_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || BenchStatusHistory::decode(status_history_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     run_component_bench(GROUP, &mut group, "status lookup | prost decode", status_lookup_bytes.len(), || {
-        let _ = BenchStatusLookupProst::decode(status_lookup_bytes.as_slice()).unwrap();
+        BenchStatusLookupProst::decode(status_lookup_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "status lookup | proto_rs decode",
         status_lookup_bytes.len(),
-        || {
-            let _ = BenchStatusLookup::decode(status_lookup_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || BenchStatusLookup::decode(status_lookup_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     run_component_bench(GROUP, &mut group, "attachments | prost decode", attachments_bytes.len(), || {
-        let _ = BenchAttachmentsProst::decode(attachments_bytes.as_slice()).unwrap();
+        BenchAttachmentsProst::decode(attachments_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "attachments | proto_rs decode", attachments_bytes.len(), || {
-        let _ = BenchAttachments::decode(attachments_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchAttachments::decode(attachments_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "audit log | prost decode", audit_log_bytes.len(), || {
-        let _ = BenchAuditLogProst::decode(audit_log_bytes.as_slice()).unwrap();
+        BenchAuditLogProst::decode(audit_log_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "audit log | proto_rs decode", audit_log_bytes.len(), || {
-        let _ = BenchAuditLog::decode(audit_log_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchAuditLog::decode(audit_log_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "codes | prost decode", codes_bytes.len(), || {
-        let _ = BenchCodesProst::decode(codes_bytes.as_slice()).unwrap();
+        BenchCodesProst::decode(codes_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "codes | proto_rs decode", codes_bytes.len(), || {
-        let _ = BenchCodes::decode(codes_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchCodes::decode(codes_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "tags | prost decode", tags_bytes.len(), || {
-        let _ = BenchTagsProst::decode(tags_bytes.as_slice()).unwrap();
+        BenchTagsProst::decode(tags_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "tags | proto_rs decode", tags_bytes.len(), || {
-        let _ = BenchTags::decode(tags_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchTags::decode(tags_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     group.finish();
@@ -1465,51 +1415,49 @@ fn bench_micro_fields_decode(c: &mut Criterion) {
     let mut group = c.benchmark_group(GROUP);
 
     run_component_bench(GROUP, &mut group, "one_string | prost decode", one_string_bytes.len(), || {
-        let _ = OneStringProst::decode(one_string_bytes.as_slice()).unwrap();
+        OneStringProst::decode(one_string_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_string | proto_rs decode", one_string_bytes.len(), || {
-        let _ = OneString::decode(one_string_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneString::decode(one_string_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "one_bytes | prost decode", one_bytes_bytes.len(), || {
-        let _ = OneBytesProst::decode(one_bytes_bytes.as_slice()).unwrap();
+        OneBytesProst::decode(one_bytes_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_bytes | proto_rs decode", one_bytes_bytes.len(), || {
-        let _ = OneBytes::decode(one_bytes_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneBytes::decode(one_bytes_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "one_enum | prost decode", one_enum_bytes.len(), || {
-        let _ = OneEnumProst::decode(one_enum_bytes.as_slice()).unwrap();
+        OneEnumProst::decode(one_enum_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_enum | proto_rs decode", one_enum_bytes.len(), || {
-        let _ = OneEnum::decode(one_enum_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneEnum::decode(one_enum_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "one_nested_leaf | prost decode", one_leaf_bytes.len(), || {
-        let _ = OneNestedLeafProst::decode(one_leaf_bytes.as_slice()).unwrap();
+        OneNestedLeafProst::decode(one_leaf_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_nested_leaf | proto_rs decode", one_leaf_bytes.len(), || {
-        let _ = OneNestedLeaf::decode(one_leaf_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneNestedLeaf::decode(one_leaf_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     run_component_bench(GROUP, &mut group, "one_deep_message | prost decode", one_deep_bytes.len(), || {
-        let _ = OneDeepMessageProst::decode(one_deep_bytes.as_slice()).unwrap();
+        OneDeepMessageProst::decode(one_deep_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "one_deep_message | proto_rs decode",
         one_deep_bytes.len(),
-        || {
-            let _ = OneDeepMessage::decode(one_deep_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || OneDeepMessage::decode(one_deep_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     run_component_bench(GROUP, &mut group, "one_complex_enum | prost decode", one_ce_bytes.len(), || {
-        let _ = OneComplexEnumProst::decode(one_ce_bytes.as_slice()).unwrap();
+        OneComplexEnumProst::decode(one_ce_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_complex_enum | proto_rs decode", one_ce_bytes.len(), || {
-        let _ = OneComplexEnum::decode(one_ce_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneComplexEnum::decode(one_ce_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     group.finish();
@@ -1563,16 +1511,16 @@ fn bench_collection_overhead_decode(c: &mut Criterion) {
 
     // ---- Vec<String> ----
     run_component_bench(GROUP, &mut group, "tags_len1 | prost decode", one_tag_bytes.len(), || {
-        let _ = BenchTagsProst::decode(one_tag_bytes.as_slice()).unwrap();
+        BenchTagsProst::decode(one_tag_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "tags_len1 | proto_rs decode", one_tag_bytes.len(), || {
-        let _ = BenchTags::decode(one_tag_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchTags::decode(one_tag_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_string | prost decode", one_str_bytes.len(), || {
-        let _ = OneStringProst::decode(one_str_bytes.as_slice()).unwrap();
+        OneStringProst::decode(one_str_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_string | proto_rs decode", one_str_bytes.len(), || {
-        let _ = OneString::decode(one_str_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneString::decode(one_str_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     // ---- Vec<Bytes> ----
@@ -1581,90 +1529,78 @@ fn bench_collection_overhead_decode(c: &mut Criterion) {
         &mut group,
         "attachments_len1 | prost decode",
         one_bytes_vec_bytes.len(),
-        || {
-            let _ = BenchAttachmentsProst::decode(one_bytes_vec_bytes.as_slice()).unwrap();
-        },
+        || BenchAttachmentsProst::decode(one_bytes_vec_bytes.as_slice()).unwrap(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "attachments_len1 | proto_rs decode",
         one_bytes_vec_bytes.len(),
-        || {
-            let _ = BenchAttachments::decode(one_bytes_vec_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || BenchAttachments::decode(one_bytes_vec_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
     run_component_bench(GROUP, &mut group, "one_bytes | prost decode", single_bytes_bytes.len(), || {
-        let _ = OneBytesProst::decode(single_bytes_bytes.as_slice()).unwrap();
+        OneBytesProst::decode(single_bytes_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_bytes | proto_rs decode", single_bytes_bytes.len(), || {
-        let _ = OneBytes::decode(single_bytes_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneBytes::decode(single_bytes_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     // ---- Vec<Enum> ----
     run_component_bench(GROUP, &mut group, "codes_len1 | prost decode", one_enum_vec_bytes.len(), || {
-        let _ = BenchCodesProst::decode(one_enum_vec_bytes.as_slice()).unwrap();
+        BenchCodesProst::decode(one_enum_vec_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "codes_len1 | proto_rs decode", one_enum_vec_bytes.len(), || {
-        let _ = BenchCodes::decode(one_enum_vec_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchCodes::decode(one_enum_vec_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_enum | prost decode", single_enum_bytes.len(), || {
-        let _ = OneEnumProst::decode(single_enum_bytes.as_slice()).unwrap();
+        OneEnumProst::decode(single_enum_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_enum | proto_rs decode", single_enum_bytes.len(), || {
-        let _ = OneEnum::decode(single_enum_bytes.as_slice(), DecodeContext::default()).unwrap();
+        OneEnum::decode(single_enum_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
 
     // ---- Vec<NestedLeaf> ----
     run_component_bench(GROUP, &mut group, "leaves_len1 | prost decode", one_leaf_vec_bytes.len(), || {
-        let _ = BenchNestedLeafListProst::decode(one_leaf_vec_bytes.as_slice()).unwrap();
+        BenchNestedLeafListProst::decode(one_leaf_vec_bytes.as_slice()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "leaves_len1 | proto_rs decode", one_leaf_vec_bytes.len(), || {
-        let _ = BenchNestedLeafList::decode(one_leaf_vec_bytes.as_slice(), DecodeContext::default()).unwrap();
+        BenchNestedLeafList::decode(one_leaf_vec_bytes.as_slice(), DecodeContext::default()).unwrap()
     });
     run_component_bench(GROUP, &mut group, "one_nested_leaf | prost decode", single_leaf_bytes.len(), || {
-        let _ = OneNestedLeafProst::decode(single_leaf_bytes.as_slice()).unwrap();
+        OneNestedLeafProst::decode(single_leaf_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "one_nested_leaf | proto_rs decode",
         single_leaf_bytes.len(),
-        || {
-            let _ = OneNestedLeaf::decode(single_leaf_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || OneNestedLeaf::decode(single_leaf_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     // ---- Vec<DeepMessage> ----
     run_component_bench(GROUP, &mut group, "deep_list_len1 | prost decode", one_deep_vec_bytes.len(), || {
-        let _ = BenchDeepMessageListProst::decode(one_deep_vec_bytes.as_slice()).unwrap();
+        BenchDeepMessageListProst::decode(one_deep_vec_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "deep_list_len1 | proto_rs decode",
         one_deep_vec_bytes.len(),
-        || {
-            let _ = BenchDeepMessageList::decode(one_deep_vec_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || BenchDeepMessageList::decode(one_deep_vec_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "one_deep_message | prost decode",
         single_deep_bytes.len(),
-        || {
-            let _ = OneDeepMessageProst::decode(single_deep_bytes.as_slice()).unwrap();
-        },
+        || OneDeepMessageProst::decode(single_deep_bytes.as_slice()).unwrap(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "one_deep_message | proto_rs decode",
         single_deep_bytes.len(),
-        || {
-            let _ = OneDeepMessage::decode(single_deep_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || OneDeepMessage::decode(single_deep_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
     // ---- Vec<ComplexEnum> ----
     run_component_bench(
@@ -1672,30 +1608,24 @@ fn bench_collection_overhead_decode(c: &mut Criterion) {
         &mut group,
         "status_history_len1 | prost decode",
         one_ce_vec_bytes.len(),
-        || {
-            let _ = BenchStatusHistoryProst::decode(one_ce_vec_bytes.as_slice()).unwrap();
-        },
+        || BenchStatusHistoryProst::decode(one_ce_vec_bytes.as_slice()).unwrap(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "status_history_len1 | proto_rs decode",
         one_ce_vec_bytes.len(),
-        || {
-            let _ = BenchStatusHistory::decode(one_ce_vec_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || BenchStatusHistory::decode(one_ce_vec_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
     run_component_bench(GROUP, &mut group, "one_complex_enum | prost decode", single_ce_bytes.len(), || {
-        let _ = OneComplexEnumProst::decode(single_ce_bytes.as_slice()).unwrap();
+        OneComplexEnumProst::decode(single_ce_bytes.as_slice()).unwrap()
     });
     run_component_bench(
         GROUP,
         &mut group,
         "one_complex_enum | proto_rs decode",
         single_ce_bytes.len(),
-        || {
-            let _ = OneComplexEnum::decode(single_ce_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || OneComplexEnum::decode(single_ce_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     // ---- Maps (1 entry) ----
@@ -1704,18 +1634,14 @@ fn bench_collection_overhead_decode(c: &mut Criterion) {
         &mut group,
         "leaf_lookup_len1 | prost decode",
         one_leaf_map_bytes.len(),
-        || {
-            let _ = BenchLeafLookupProst::decode(one_leaf_map_bytes.as_slice()).unwrap();
-        },
+        || BenchLeafLookupProst::decode(one_leaf_map_bytes.as_slice()).unwrap(),
     );
     run_component_bench(
         GROUP,
         &mut group,
         "leaf_lookup_len1 | proto_rs decode",
         one_leaf_map_bytes.len(),
-        || {
-            let _ = BenchLeafLookup::decode(one_leaf_map_bytes.as_slice(), DecodeContext::default()).unwrap();
-        },
+        || BenchLeafLookup::decode(one_leaf_map_bytes.as_slice(), DecodeContext::default()).unwrap(),
     );
 
     group.finish();

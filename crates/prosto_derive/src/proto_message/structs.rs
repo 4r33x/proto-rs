@@ -364,6 +364,7 @@ fn generate_transparent_struct_impl(
 
         impl #shadow_impl_generics ::proto_rs::ProtoExt for #shadow_ident #shadow_ty_generics #shadow_where_clause {
             const KIND: ::proto_rs::ProtoKind = <#shadow_ty as ::proto_rs::ProtoExt>::KIND;
+            const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = <#shadow_ty as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT;
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for #shadow_ident #shadow_ty_generics #shadow_where_clause {
@@ -555,11 +556,23 @@ fn generate_shadow_impls(
         quote! { #( #is_default_checks )&&* }
     };
 
+    let size_hint_expr = encoded_fields.iter().fold(quote! { ::proto_rs::EncodeSizeHint::new(0, true) }, |hint, info| {
+        let tag = info.tag.expect("tag required");
+        let shadow_ty = shadow_field_ty(info);
+        quote! {
+            (#hint).add_field::<#tag>(
+                <#shadow_ty as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT,
+                <#shadow_ty as ::proto_rs::ProtoExt>::WIRE_TYPE,
+            )
+        }
+    });
+
     quote! {
         #shadow_struct
 
         impl #shadow_impl_generics ::proto_rs::ProtoExt for #shadow_ident #shadow_ty_generics #shadow_where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+            const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = #size_hint_expr;
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #proto_ident #ty_generics> for #shadow_ident #shadow_ty_generics #shadow_where_clause {
@@ -654,6 +667,11 @@ fn generate_proto_impls(
     let shadow_ty_short = shadow_type_tokens_with_lifetime(generics, shadow_ident, quote! { '_ });
     let has_getters = fields.iter().any(|info| info.config.getter.is_some());
     let has_sun_ir = config.suns.iter().any(|sun| sun.ir_ty.is_some());
+    let proto_size_hint = if has_sun_ir {
+        quote! { ::proto_rs::EncodeSizeHint::UNKNOWN }
+    } else {
+        quote! { <#shadow_ty_short as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT }
+    };
     let proto_archive_impl = if has_sun_ir {
         quote! {}
     } else {
@@ -900,6 +918,7 @@ fn generate_proto_impls(
     quote! {
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+            const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = #proto_size_hint;
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
@@ -923,6 +942,7 @@ fn generate_proto_impls(
                     return Err(::proto_rs::DecodeError::new(format!("invalid wire type {}", <Self as ::proto_rs::ProtoExt>::KIND.dbg_name())));
                 }
                 ctx.limit_reached()?;
+                let inner_ctx = ctx.enter_recursion();
                 let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
                 let remaining = buf.remaining();
                 if len > remaining {
@@ -930,7 +950,10 @@ fn generate_proto_impls(
                 }
                 let limit = remaining - len;
                 while buf.remaining() > limit {
-                    Self::decode_one_field(self, buf, ctx)?;
+                    Self::decode_one_field(self, buf, inner_ctx)?;
+                }
+                if buf.remaining() != limit {
+                    return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
                 }
                 #(#merge_post_decode_hooks)*
                 #(#merge_field_validator_hooks)*

@@ -10,6 +10,7 @@ use prost::Message as ProstMessage;
 use proto_rs::DecodeError;
 use proto_rs::ProtoArchive;
 use proto_rs::ProtoDecode;
+use proto_rs::ProtoDecoder;
 use proto_rs::ProtoDefault;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoExt;
@@ -375,6 +376,54 @@ fn assert_decode_roundtrip(bytes: Bytes, proto_expected: &SampleMessage, prost_e
     assert_eq!(decoded_prost, *prost_expected);
 }
 
+#[test]
+fn nested_message_rejects_payload_that_exceeds_its_delimiter() {
+    // SampleMessage.nested claims a one-byte payload, but its value field consumes two bytes.
+    let malformed = Bytes::from_static(&[0x2a, 0x01, 0x08, 0x01]);
+    let error = <SampleMessage as ProtoDecode>::decode(malformed, DecodeContext::default())
+        .expect_err("nested message must not consume bytes beyond its delimiter");
+
+    assert!(error.to_string().contains("delimited length exceeded"));
+}
+
+#[test]
+fn packed_values_reject_an_element_that_exceeds_their_delimiter() {
+    let mut values = Vec::<u32>::new();
+    let mut malformed = Bytes::from_static(&[0x01, 0x80, 0x01]);
+    let error = ProtoDecoder::merge(
+        &mut values,
+        proto_rs::encoding::WireType::LengthDelimited,
+        &mut malformed,
+        DecodeContext::default(),
+    )
+    .expect_err("packed value must not consume bytes beyond its delimiter");
+
+    assert!(error.to_string().contains("delimited length exceeded"));
+}
+
+#[test]
+fn packed_array_rejects_more_elements_than_its_fixed_length() {
+    let mut values = [0u32; 1];
+    let mut malformed = Bytes::from_static(&[0x02, 0x01, 0x02]);
+    let error = ProtoDecoder::merge(
+        &mut values,
+        proto_rs::encoding::WireType::LengthDelimited,
+        &mut malformed,
+        DecodeContext::default(),
+    )
+    .expect_err("packed array must reject extra elements");
+
+    assert!(error.to_string().contains("packed array has too many elements"));
+}
+
+#[test]
+fn generated_message_size_hint_sums_minimum_field_sizes() {
+    assert_eq!(
+        <NestedMessage as ProtoExt>::ENCODED_SIZE_HINT,
+        proto_rs::EncodeSizeHint::new(2, false)
+    );
+}
+
 fn encode_proto_message<M>(value: &M) -> Bytes
 where
     M: ProtoEncode + ProtoExt,
@@ -685,6 +734,16 @@ fn zero_copy_container_roundtrip() {
     let encoded = ZeroCopyContainer::encode_to_vec(&fixture);
     let decoded = <ZeroCopyContainer as ProtoDecode>::decode(Bytes::from(encoded), DecodeContext::default()).expect("decode fixture");
     assert_eq!(decoded, fixture);
+}
+
+#[test]
+fn zero_copy_into_bytes_transfers_the_archived_allocation() {
+    let archived = zero_copy_fixture().to_zero_copy();
+    let archived_ptr = archived.as_bytes().as_ptr();
+    let bytes = archived.into_bytes();
+
+    assert_eq!(bytes.as_ptr(), archived_ptr);
+    assert!(!bytes.is_empty());
 }
 
 #[test]

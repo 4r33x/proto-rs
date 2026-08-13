@@ -102,6 +102,9 @@ where
             while buf.remaining() > limit {
                 MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_one_field(&mut entry, buf, ctx)?;
             }
+            if buf.remaining() != limit {
+                return Err(DecodeError::new("delimited length exceeded"));
+            }
         }
         let (key, value) = entry.to_sun()?;
         self.insert(key, value);
@@ -139,7 +142,7 @@ where
 {
     #[inline]
     fn to_sun(self) -> Result<HashMap<K, V>, DecodeError> {
-        let mut out = HashMap::new();
+        let mut out = HashMap::with_capacity(self.len());
         for entry in self {
             let (key, value) = entry.to_sun()?;
             out.insert(key, value);

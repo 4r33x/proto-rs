@@ -241,6 +241,7 @@ pub(super) fn generate_complex_enum_impl(
                     return Err(::proto_rs::DecodeError::new(format!("invalid wire type {}", <Self as ::proto_rs::ProtoExt>::KIND.dbg_name())));
                 }
                 ctx.limit_reached()?;
+                let inner_ctx = ctx.enter_recursion();
                 let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
                 let remaining = buf.remaining();
                 if len > remaining {
@@ -248,7 +249,10 @@ pub(super) fn generate_complex_enum_impl(
                 }
                 let limit = remaining - len;
                 while buf.remaining() > limit {
-                    Self::decode_one_field(self, buf, ctx)?;
+                    Self::decode_one_field(self, buf, inner_ctx)?;
+                }
+                if buf.remaining() != limit {
+                    return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
                 }
                 #merge_field_validation
                 #merge_message_validation
@@ -306,6 +310,9 @@ pub(super) fn generate_complex_enum_impl(
 
             #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                if TAG == 0 && self.is_default() {
+                    return;
+                }
                 let mark = w.mark();
                 match *self {
                     #(#encode_arms,)*
@@ -935,6 +942,9 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     let limit = buf.remaining() - len as usize;
                     #(#field_inits)*
                     #decode_loop
+                    if buf.remaining() != limit {
+                        return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
+                    }
                     #assign_variant
                     Ok(())
                 }
