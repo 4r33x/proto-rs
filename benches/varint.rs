@@ -4,9 +4,19 @@ use std::mem;
 use bytes::Buf;
 use criterion::Criterion;
 use criterion::Throughput;
+use proto_rs::DecodeContext;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::proto_message;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+
+#[proto_message]
+#[derive(Debug, Default, PartialEq)]
+struct PackedVarints {
+    values: Vec<u64>,
+}
 
 fn benchmark_varint_prost(criterion: &mut Criterion, name: &str, mut values: Vec<u64>) {
     use prost::encoding::varint::decode_varint;
@@ -155,6 +165,43 @@ fn benchmark_varint_proto(criterion: &mut Criterion, name: &str, mut values: Vec
         .throughput(Throughput::Bytes(decoded_len));
 }
 
+fn benchmark_packed_varint_decode(criterion: &mut Criterion, name: &str, values: Vec<u64>) {
+    let encoded = PackedVarints::encode_to_vec(&PackedVarints { values });
+    let mut group = criterion.benchmark_group(format!("packed_varint_decode/{name}"));
+    group.throughput(Throughput::Bytes(encoded.len() as u64));
+    group.bench_function("full_message", |b| {
+        b.iter(|| {
+            let decoded = PackedVarints::decode(black_box(encoded.as_slice()), DecodeContext::default());
+            debug_assert!(decoded.is_ok());
+            black_box(decoded)
+        });
+    });
+    group.finish();
+}
+
+fn benchmark_tag_decode(criterion: &mut Criterion, name: &str, tags: &[u32]) {
+    use proto_rs::encoding::WireType;
+    use proto_rs::encoding::decode_key;
+    use proto_rs::encoding::encode_key;
+
+    let mut encoded = Vec::new();
+    for &tag in tags {
+        encode_key(tag, WireType::Varint, &mut encoded);
+    }
+
+    let mut group = criterion.benchmark_group(format!("tag_decode/{name}"));
+    group.throughput(Throughput::Elements(tags.len() as u64));
+    group.bench_function("decode_key", |b| {
+        b.iter(|| {
+            let mut remaining = encoded.as_slice();
+            while remaining.has_remaining() {
+                black_box(decode_key(&mut remaining).unwrap());
+            }
+        });
+    });
+    group.finish();
+}
+
 fn main() {
     let mut criterion = Criterion::default().configure_from_args();
 
@@ -191,6 +238,14 @@ fn main() {
             })
             .collect(),
     );
+
+    benchmark_packed_varint_decode(&mut criterion, "one_byte", (0..128).cycle().take(4096).collect());
+    benchmark_packed_varint_decode(&mut criterion, "two_byte", (128..16_384).cycle().take(4096).collect());
+    benchmark_packed_varint_decode(&mut criterion, "five_byte", (1 << 28..).take(4096).collect());
+    benchmark_packed_varint_decode(&mut criterion, "ten_byte", (1 << 63..).take(4096).collect());
+
+    benchmark_tag_decode(&mut criterion, "one_byte", &(1..=15).cycle().take(4095).collect::<Vec<_>>());
+    benchmark_tag_decode(&mut criterion, "two_byte", &(16..=31).cycle().take(4096).collect::<Vec<_>>());
 
     criterion.final_summary();
 }

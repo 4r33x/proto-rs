@@ -10,11 +10,10 @@ use crate::error::DecodeError;
 /// The buffer must have enough remaining space (maximum 10 bytes).
 #[inline]
 pub fn encode_varint(mut value: u64, buf: &mut impl BufMut) {
-    // Varints are never more than 10 bytes
-    for _ in 0..10 {
+    loop {
         if value < 0x80 {
             buf.put_u8(value as u8);
-            break;
+            return;
         }
         buf.put_u8(((value & 0x7F) | 0x80) as u8);
         value >>= 7;

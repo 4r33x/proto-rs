@@ -29,7 +29,7 @@ pub trait ProtoDecoder: ProtoExt {
         //     assert_eq!(Self::WIRE_TYPE, WireType::LengthDelimited);
         // };
         if wire_type != WireType::LengthDelimited {
-            return Err(DecodeError::new(format!("invalid wire type {}", Self::KIND.dbg_name())));
+            return Err(DecodeError::invalid_wire_type_for_kind(Self::KIND.dbg_name()));
         }
         // Check recursion limit once at recursion boundary (not per-field)
         ctx.limit_reached()?;

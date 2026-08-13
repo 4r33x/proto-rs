@@ -4,6 +4,8 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::encoding::WireType;
+
 /// A Protobuf message decoding error.
 ///
 /// `DecodeError` indicates that the input buffer does not contain a valid
@@ -30,6 +32,52 @@ impl DecodeError {
             description: description.into(),
             stack: Vec::new(),
         }
+    }
+
+    #[doc(hidden)]
+    #[cold]
+    pub fn invalid_key_value(value: u64) -> Self {
+        Self::new(alloc::format!("invalid key value: {value}"))
+    }
+
+    #[doc(hidden)]
+    #[cold]
+    pub fn invalid_wire_type_value(value: u64) -> Self {
+        let description = match value {
+            6 => "invalid wire type value: 6",
+            7 => "invalid wire type value: 7",
+            _ => "invalid wire type value",
+        };
+        Self::new(description)
+    }
+
+    #[doc(hidden)]
+    #[cold]
+    pub fn wire_type_mismatch(expected: WireType) -> Self {
+        let description = match expected {
+            WireType::Varint => "invalid wire type (expected Varint)",
+            WireType::SixtyFourBit => "invalid wire type (expected SixtyFourBit)",
+            WireType::LengthDelimited => "invalid wire type (expected LengthDelimited)",
+            WireType::StartGroup => "invalid wire type (expected StartGroup)",
+            WireType::EndGroup => "invalid wire type (expected EndGroup)",
+            WireType::ThirtyTwoBit => "invalid wire type (expected ThirtyTwoBit)",
+        };
+        Self::new(description)
+    }
+
+    #[doc(hidden)]
+    #[cold]
+    pub fn invalid_wire_type_for_kind(kind: &'static str) -> Self {
+        let description = match kind {
+            "Primitive" => "invalid wire type Primitive",
+            "SimpleEnum" => "invalid wire type SimpleEnum",
+            "Message" => "invalid wire type Message",
+            "Bytes" => "invalid wire type Bytes",
+            "String" => "invalid wire type String",
+            "Repeated" => "invalid wire type Repeated",
+            _ => "invalid wire type",
+        };
+        Self::new(description)
     }
 
     /// Pushes a (message, field) name location pair on to the location stack.
@@ -141,6 +189,24 @@ mod test {
             decode_error.to_string(),
             "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed"
         );
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn decode_error_remains_compact() {
+        assert_eq!(core::mem::size_of::<DecodeError>(), 48);
+    }
+
+    #[test]
+    fn typed_wire_errors_preserve_diagnostics_without_owned_strings() {
+        let invalid = DecodeError::invalid_wire_type_value(7);
+        assert_eq!(invalid.description, Cow::Borrowed("invalid wire type value: 7"));
+
+        let mismatch = DecodeError::wire_type_mismatch(WireType::LengthDelimited);
+        assert_eq!(mismatch.description, Cow::Borrowed("invalid wire type (expected LengthDelimited)"));
+
+        let kind = DecodeError::invalid_wire_type_for_kind("Message");
+        assert_eq!(kind.description, Cow::Borrowed("invalid wire type Message"));
     }
 
     #[test]

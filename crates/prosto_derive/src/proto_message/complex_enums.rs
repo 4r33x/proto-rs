@@ -247,7 +247,7 @@ pub(super) fn generate_complex_enum_impl(
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
                 if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
-                    return Err(::proto_rs::DecodeError::new(format!("invalid wire type {}", <Self as ::proto_rs::ProtoExt>::KIND.dbg_name())));
+                    return Err(::proto_rs::DecodeError::invalid_wire_type_for_kind(<Self as ::proto_rs::ProtoExt>::KIND.dbg_name()));
                 }
                 ctx.limit_reached()?;
                 let inner_ctx = ctx.enter_recursion();

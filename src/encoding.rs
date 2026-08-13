@@ -4,7 +4,6 @@
 //! <https://protobuf.dev/programming-guides/encoding/>.
 
 use alloc::collections::BTreeMap;
-use alloc::format;
 use alloc::vec::Vec;
 
 use ::bytes::Buf;
@@ -121,9 +120,21 @@ pub fn encode_key(tag: u32, wire_type: WireType, buf: &mut impl BufMut) {
 /// the field tag.
 #[inline]
 pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
-    let key = decode_varint(buf)?;
+    let bytes = buf.chunk();
+    let key = if !bytes.is_empty() && bytes[0] < 0x80 {
+        let key = u64::from(bytes[0]);
+        buf.advance(1);
+        key
+    } else {
+        decode_varint(buf)?
+    };
+    decode_key_value(key)
+}
+
+#[inline]
+fn decode_key_value(key: u64) -> Result<(u32, WireType), DecodeError> {
     if key > u64::from(u32::MAX) {
-        return Err(DecodeError::new(format!("invalid key value: {key}")));
+        return Err(DecodeError::invalid_key_value(key));
     }
     let wire_type = WireType::try_from(key & 0x07)?;
     let tag = key as u32 >> 3;
@@ -208,6 +219,17 @@ mod test {
     use super::*;
     use crate::bytes::Bytes;
     use crate::bytes::BytesMut;
+
+    #[test]
+    fn decode_key_handles_one_and_two_byte_keys() {
+        let mut one_byte = &[0x08][..];
+        assert_eq!(decode_key(&mut one_byte).unwrap(), (1, WireType::Varint));
+        assert!(!one_byte.has_remaining());
+
+        let mut two_bytes = &[0x80, 0x01][..];
+        assert_eq!(decode_key(&mut two_bytes).unwrap(), (16, WireType::Varint));
+        assert!(!two_bytes.has_remaining());
+    }
 
     pub fn check_type<T, B>(
         value: T,
