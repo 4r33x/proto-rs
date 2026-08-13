@@ -42,7 +42,7 @@ categories = [
 ]
 
 [workspace.dependencies]
-bytes = { version = "1.11.1", default-features = false }
+bytes = { version = "1.12", default-features = false }
 chrono = "0.4"
 criterion = { version = "0.8" }
 inventory = { version = "0.3" }
@@ -81,7 +81,7 @@ fastnum = { version = "0.7.4", optional = true }
 futures-core = "0.3"
 http = "1"
 inventory = { workspace = true, optional = true }
-papaya = { version = "0.2.3", optional = true }
+papaya = { version = "0.2.4", optional = true }
 parking_lot = { version = "0.12", optional = true }
 prosto_derive.workspace = true
 solana-address = { version = "2", optional = true }

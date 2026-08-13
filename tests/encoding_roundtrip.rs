@@ -25,6 +25,7 @@ mod encoding_messages;
 
 pub use encoding_messages::CollectionsMessage;
 pub use encoding_messages::CollectionsMessageProst;
+pub use encoding_messages::DynamicSizeMessage;
 pub use encoding_messages::NestedMessage;
 pub use encoding_messages::NestedMessageProst;
 pub use encoding_messages::SampleEnum;
@@ -32,6 +33,7 @@ pub use encoding_messages::SampleEnumList;
 pub use encoding_messages::SampleEnumProst;
 pub use encoding_messages::SampleMessage;
 pub use encoding_messages::SampleMessageProst;
+pub use encoding_messages::SizeHintEnum;
 pub use encoding_messages::StatusWithDefaultAttribute;
 pub use encoding_messages::ZeroCopyContainer;
 pub use encoding_messages::ZeroCopyContainerProst;
@@ -422,6 +424,60 @@ fn generated_message_size_hint_sums_minimum_field_sizes() {
         <NestedMessage as ProtoExt>::ENCODED_SIZE_HINT,
         proto_rs::EncodeSizeHint::new(2, false)
     );
+}
+
+fn runtime_size_hint<T>(value: &T) -> proto_rs::EncodeSizeHint
+where
+    T: ProtoEncode + ProtoExt,
+    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
+{
+    let shadow = T::Shadow::from_sun(value);
+    shadow.encoded_size_hint::<0>()
+}
+
+#[test]
+fn generated_struct_size_hint_sums_field_values() {
+    let value = DynamicSizeMessage {
+        name: "dynamic sizing".repeat(7),
+        data: vec![9; 257],
+        sequence: 16_384,
+        ratio: 1.5,
+        optional_zero: Some(7),
+        optional_empty: Some("present".to_owned()),
+    };
+    let encoded = value.encode_to_vec();
+    let hint = runtime_size_hint(&value);
+
+    assert_eq!(hint, proto_rs::EncodeSizeHint::new(encoded.len(), true));
+    assert_eq!(encoded.capacity(), encoded.len());
+}
+
+#[test]
+fn size_hint_preserves_present_default_option_fields() {
+    let value = DynamicSizeMessage {
+        optional_zero: Some(0),
+        optional_empty: Some(String::new()),
+        ..Default::default()
+    };
+    let encoded = value.encode_to_vec();
+    let hint = runtime_size_hint(&value);
+
+    assert_eq!(hint.size, encoded.len());
+    assert!(!hint.exact);
+}
+
+#[test]
+fn complex_enum_size_hint_uses_largest_variant() {
+    assert_eq!(
+        <SizeHintEnum as ProtoExt>::ENCODED_SIZE_HINT,
+        proto_rs::EncodeSizeHint::new(131, false)
+    );
+}
+
+#[test]
+fn preallocation_size_hint_is_capped() {
+    let hint = proto_rs::EncodeSizeHint::new(proto_rs::MAX_PREALLOCATED_CAPACITY * 4, true);
+    assert_eq!(hint.preallocation_capacity(64), proto_rs::MAX_PREALLOCATED_CAPACITY);
 }
 
 fn encode_proto_message<M>(value: &M) -> Bytes

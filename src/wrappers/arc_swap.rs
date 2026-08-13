@@ -95,6 +95,11 @@ impl<T: ProtoArchive + ProtoExt> ProtoArchive for ArcSwapShadow<T> {
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.value.encoded_size_hint::<TAG>()
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         self.value.archive::<TAG>(w);
     }
@@ -186,6 +191,14 @@ impl<T: ProtoArchive + ProtoExt> ProtoArchive for ArcSwapOptionShadow<T> {
     #[inline]
     fn is_default(&self) -> bool {
         self.value.as_ref().is_none_or(ProtoArchive::is_default)
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.value.as_ref().map_or(
+            crate::EncodeSizeHint::EMPTY,
+            crate::wrappers::options::present_size_hint::<Arc<T>, TAG>,
+        )
     }
 
     #[inline]

@@ -381,6 +381,11 @@ fn generate_transparent_struct_impl(
             }
 
             #[inline]
+            fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                <#shadow_ty as ::proto_rs::ProtoArchive>::encoded_size_hint::<TAG>(&self.0)
+            }
+
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                 <#shadow_ty as ::proto_rs::ProtoArchive>::archive::<TAG>(&self.0, w);
             }
@@ -556,6 +561,12 @@ fn generate_shadow_impls(
         quote! { #( #is_default_checks )&&* }
     };
 
+    let value_size_hints = encoded_fields.iter().map(|info| {
+        let tag = info.tag.expect("tag required");
+        let access = info.access.access_tokens(quote! { self });
+        quote! { ::proto_rs::ProtoArchive::encoded_size_hint::<#tag>(&#access) }
+    });
+
     let size_hint_expr = encoded_fields.iter().fold(quote! { ::proto_rs::EncodeSizeHint::new(0, true) }, |hint, info| {
         let tag = info.tag.expect("tag required");
         let shadow_ty = shadow_field_ty(info);
@@ -586,6 +597,12 @@ fn generate_shadow_impls(
             #[inline]
             fn is_default(&self) -> bool {
                 #is_default_expr
+            }
+
+            #[inline]
+            fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                let payload = ::proto_rs::EncodeSizeHint::EMPTY #( .add(#value_size_hints) )*;
+                payload.for_field::<TAG>(<Self as ::proto_rs::ProtoExt>::WIRE_TYPE)
             }
 
             #[inline]
@@ -683,6 +700,13 @@ fn generate_proto_impls(
                     ::proto_rs::ProtoArchive::is_default(&shadow)
                 }
 
+
+                #[inline]
+                fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                    let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
+                    <#shadow_ty_short as ::proto_rs::ProtoArchive>::encoded_size_hint::<TAG>(&shadow)
+                }
+
                 #[inline]
                 fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
                     let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
@@ -773,12 +797,46 @@ fn generate_proto_impls(
                             }
                         }
                     });
+                    let size_hint_fields = encoded_fields.iter().map(|info| {
+                        let tag = info.tag.expect("tag required");
+                        let base = quote! { self };
+                        let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
+                            parse_getter_expr(get, &base, info.field)
+                        } else {
+                            (info.access.access_tokens(base), false)
+                        };
+                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
+                        let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
+                            let ref_expr = quote! { #access_expr };
+                            let converted = encode_conversion_expr(info, &ref_expr);
+                            quote! { let __proto_shadow = #converted; }
+                        } else {
+                            let field_ty = &info.field.ty;
+                            quote! {
+                                let __proto_value = #access_expr;
+                                let __proto_shadow =
+                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
+                            }
+                        };
+                        quote! {
+                            {
+                                #shadow_init
+                                ::proto_rs::ProtoArchive::encoded_size_hint::<#tag>(&__proto_shadow)
+                            }
+                        }
+                    });
                     quote! {
                         impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
                             #[inline]
                             fn is_default(&self) -> bool {
                                 #( #is_default_checks )*
                                 true
+                            }
+
+                            #[inline]
+                            fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                                let payload = ::proto_rs::EncodeSizeHint::EMPTY #( .add(#size_hint_fields) )*;
+                                payload.for_field::<TAG>(<Self as ::proto_rs::ProtoExt>::WIRE_TYPE)
                             }
 
                             #[inline]
@@ -900,6 +958,13 @@ fn generate_proto_impls(
                     fn is_default(&self) -> bool {
                         let shadow = <#sun_encode_shadow_archive as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
                         <#sun_encode_shadow_archive as ::proto_rs::ProtoArchive>::is_default(&shadow)
+                    }
+
+
+                    #[inline]
+                    fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                        let shadow = <#sun_encode_shadow_archive as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#sun_encode_shadow_archive as ::proto_rs::ProtoArchive>::encoded_size_hint::<TAG>(&shadow)
                     }
 
                     #[inline]

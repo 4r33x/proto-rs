@@ -113,6 +113,15 @@ macro_rules! impl_proto_primitive_varint_by_value {
             }
 
             #[inline]
+            fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                if self.is_default() {
+                    crate::EncodeSizeHint::EMPTY
+                } else {
+                    crate::EncodeSizeHint::new(crate::encoding::$module::encoded_len(*self), true).for_field::<TAG>(Self::WIRE_TYPE)
+                }
+            }
+
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let $v: $ty = *self;
                 let value = $to_u64;
@@ -285,6 +294,15 @@ macro_rules! impl_proto_primitive_by_ref {
             }
 
             #[inline]
+            fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                if self.is_default() {
+                    crate::EncodeSizeHint::EMPTY
+                } else {
+                    crate::EncodeSizeHint::new(self.len(), true).for_field::<TAG>(Self::WIRE_TYPE)
+                }
+            }
+
+            #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let bytes = self.as_ref();
                 w.put_slice(bytes);
@@ -393,6 +411,11 @@ impl ProtoArchive for String {
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        <&String as ProtoArchive>::encoded_size_hint::<TAG>(&self)
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         (&self).archive::<TAG>(w);
     }
@@ -402,6 +425,11 @@ impl ProtoArchive for Bytes {
     #[inline]
     fn is_default(&self) -> bool {
         <&Bytes as ProtoArchive>::is_default(&self)
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        <&Bytes as ProtoArchive>::encoded_size_hint::<TAG>(&self)
     }
 
     #[inline]
@@ -474,6 +502,16 @@ macro_rules! impl_narrow_varint {
             #[inline]
             fn is_default(&self) -> bool {
                 *self == 0
+            }
+
+            #[inline]
+            fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                if self.is_default() {
+                    crate::EncodeSizeHint::EMPTY
+                } else {
+                    let widened: $wide_ty = *self as $wide_ty;
+                    crate::EncodeSizeHint::new(crate::encoding::encoded_len_varint(widened as u64), true).for_field::<TAG>(Self::WIRE_TYPE)
+                }
             }
 
             #[inline]

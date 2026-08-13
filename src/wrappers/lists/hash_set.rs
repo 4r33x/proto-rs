@@ -145,6 +145,11 @@ where
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        super::collection_size_hint::<T, TAG>(self.len())
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         match T::KIND {
             ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {

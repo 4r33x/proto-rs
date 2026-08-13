@@ -1,4 +1,3 @@
-
 # Benchmark Run — 2026-08-13 02:48:49
 
 | Group | Benchmark | Impl | Ops / s | MiB/s | Speedup vs Prost |

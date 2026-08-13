@@ -164,6 +164,15 @@ where
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        if self.is_default() {
+            crate::EncodeSizeHint::EMPTY
+        } else {
+            super::collection_size_hint::<T, TAG>(N)
+        }
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
             let bytes: &[u8] = unsafe { core::slice::from_raw_parts(self.as_ptr().cast::<u8>(), N) };
@@ -216,6 +225,11 @@ impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_
     fn is_default(&self) -> bool {
         // Arrays are default when all elements are default (unlike slices which are default when empty)
         self.slice.iter().all(|item| <T as ProtoArchive>::is_default(item))
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.slice.encoded_size_hint::<TAG>()
     }
 
     #[inline]

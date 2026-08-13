@@ -1,9 +1,23 @@
 use crate::ProtoArchive;
 use crate::ProtoExt;
 use crate::ProtoKind;
+use crate::encoding::WireType;
 use crate::traits::ArchivedProtoField;
 use crate::traits::PrimitiveKind;
 use crate::traits::buffer::RevWriter;
+
+#[inline]
+pub(crate) const fn collection_size_hint<T: ProtoExt, const TAG: u32>(len: usize) -> crate::EncodeSizeHint {
+    if len == 0 {
+        return crate::EncodeSizeHint::EMPTY;
+    }
+    match T::KIND {
+        ProtoKind::Primitive(PrimitiveKind::U8) => crate::EncodeSizeHint::new(len, true).for_field::<TAG>(WireType::LengthDelimited),
+        ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => T::ENCODED_SIZE_HINT.repeated(len).for_field::<TAG>(WireType::LengthDelimited),
+        ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => T::ENCODED_SIZE_HINT.for_field::<TAG>(T::WIRE_TYPE).repeated(len),
+        ProtoKind::Repeated(_) => crate::EncodeSizeHint::UNKNOWN,
+    }
+}
 
 mod arrays;
 mod btree;
@@ -27,6 +41,11 @@ where
     #[inline]
     fn is_default(&self) -> bool {
         self.is_empty()
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        collection_size_hint::<T, TAG>(self.len())
     }
 
     #[inline]

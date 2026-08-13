@@ -36,6 +36,26 @@ pub struct NestedMessage {
     pub value: i64,
 }
 
+#[proto_message]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct DynamicSizeMessage {
+    pub name: String,
+    pub data: Vec<u8>,
+    pub sequence: u64,
+    pub ratio: f64,
+    pub optional_zero: Option<u64>,
+    pub optional_empty: Option<String>,
+}
+
+#[proto_message]
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum SizeHintEnum {
+    #[default]
+    Empty,
+    Small(u32),
+    Large([u8; 128]),
+}
+
 #[proto_message(proto_path = "protos/tests/encoding.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct SampleMessage {

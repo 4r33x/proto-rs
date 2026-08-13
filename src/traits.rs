@@ -11,6 +11,7 @@ pub use encode::ArchivedProtoField;
 pub use encode::ArchivedProtoMessage;
 pub use encode::ArchivedProtoMessageWriter;
 pub use encode::EncodeSizeHint;
+pub use encode::MAX_PREALLOCATED_CAPACITY;
 pub use encode::ProtoArchive;
 pub use encode::ProtoEncode;
 pub use encode::ProtoShadowEncode;

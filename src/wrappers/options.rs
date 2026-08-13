@@ -16,6 +16,20 @@ use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
+#[inline]
+pub(crate) fn present_size_hint<T: ProtoArchive + ProtoExt, const TAG: u32>(value: &T) -> crate::EncodeSizeHint {
+    let hint = value.encoded_size_hint::<TAG>();
+    if hint != crate::EncodeSizeHint::EMPTY {
+        return hint;
+    }
+    match T::KIND {
+        ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => T::ENCODED_SIZE_HINT.for_field::<TAG>(T::WIRE_TYPE),
+        ProtoKind::String | ProtoKind::Bytes => crate::EncodeSizeHint::EMPTY.for_field::<TAG>(T::WIRE_TYPE),
+        ProtoKind::Message => hint,
+        ProtoKind::Repeated(_) => crate::EncodeSizeHint::UNKNOWN,
+    }
+}
+
 impl<T: ProtoExt> ProtoExt for Option<T> {
     const KIND: ProtoKind = T::KIND;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
@@ -68,11 +82,19 @@ where
 
 impl<T> ProtoArchive for Option<T>
 where
-    T: ProtoArchive,
+    T: ProtoArchive + ProtoExt,
 {
     #[inline]
     fn is_default(&self) -> bool {
         self.is_none()
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        self.as_ref().map_or(crate::EncodeSizeHint::EMPTY, present_size_hint::<T, TAG>)
     }
 
     #[inline]
@@ -102,11 +124,19 @@ where
 
 impl<T> ProtoArchive for &Option<T>
 where
-    T: ProtoArchive,
+    T: ProtoArchive + ProtoExt,
 {
     #[inline]
     fn is_default(&self) -> bool {
         self.is_none()
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        self.as_ref().map_or(crate::EncodeSizeHint::EMPTY, present_size_hint::<T, TAG>)
     }
 
     #[inline]

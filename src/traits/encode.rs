@@ -17,17 +17,19 @@ pub trait ProtoShadowEncode<'a, T: ?Sized> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-/// Type-level capacity estimate for reverse encoding.
+/// Capacity estimate for reverse encoding.
 ///
-/// `size` sums the minimum wire contribution of statically known fields or elements.
-/// It may overestimate values whose default fields are omitted. `exact` means a value
-/// that is emitted occupies exactly `size` bytes; default omission is handled separately.
+/// The type-level estimate in [`ProtoExt::ENCODED_SIZE_HINT`] sums the minimum wire
+/// contribution of statically known fields or elements. [`ProtoArchive::encoded_size_hint`]
+/// may refine it from cheap runtime information such as string and collection lengths.
+/// `exact` means the current value occupies exactly `size` bytes.
 pub struct EncodeSizeHint {
     pub size: usize,
     pub exact: bool,
 }
 
 impl EncodeSizeHint {
+    pub const EMPTY: Self = Self { size: 0, exact: true };
     pub const UNKNOWN: Self = Self { size: 0, exact: false };
 
     pub const fn new(size: usize, exact: bool) -> Self {
@@ -46,10 +48,53 @@ impl EncodeSizeHint {
 
     #[must_use]
     pub const fn add_field<const TAG: u32>(self, field: Self, wire_type: crate::encoding::WireType) -> Self {
-        let delimiter = if wire_type.is_length_delimited() { 1 } else { 0 };
+        let combined = self.add(field.for_field::<TAG>(wire_type));
+        Self { exact: false, ..combined }
+    }
+
+    #[must_use]
+    pub const fn add(self, other: Self) -> Self {
         Self {
-            size: self.size.saturating_add(crate::encoding::key_len(TAG)).saturating_add(delimiter).saturating_add(field.size),
-            exact: false,
+            size: self.size.saturating_add(other.size),
+            exact: self.exact && other.exact,
+        }
+    }
+
+    #[must_use]
+    pub const fn for_field<const TAG: u32>(self, wire_type: crate::encoding::WireType) -> Self {
+        if TAG == 0 {
+            return self;
+        }
+        let delimiter = if wire_type.is_length_delimited() {
+            if self.exact {
+                crate::encoding::encoded_len_varint(self.size as u64)
+            } else {
+                1
+            }
+        } else {
+            0
+        };
+        Self {
+            size: crate::encoding::key_len(TAG).saturating_add(delimiter).saturating_add(self.size),
+            exact: self.exact,
+        }
+    }
+
+    #[must_use]
+    pub const fn max(self, other: Self) -> Self {
+        Self {
+            size: if self.size > other.size { self.size } else { other.size },
+            exact: self.exact && other.exact && self.size == other.size,
+        }
+    }
+
+    #[must_use]
+    pub const fn preallocation_capacity(self, minimum: usize) -> usize {
+        let requested = if self.exact || self.size >= minimum { self.size } else { minimum };
+        if requested <= MAX_PREALLOCATED_CAPACITY {
+            requested
+        } else {
+            MAX_PREALLOCATED_CAPACITY
         }
     }
 
@@ -62,8 +107,26 @@ impl EncodeSizeHint {
     }
 }
 
+/// Maximum initial allocation made from an encoding size hint.
+pub const MAX_PREALLOCATED_CAPACITY: usize = 64 * 1024;
+
 pub trait ProtoArchive {
     fn is_default(&self) -> bool;
+
+    /// Returns a tagged wire-size estimate using only cheap runtime information.
+    ///
+    /// Implementations should not traverse dynamic collections solely to improve the hint.
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        if !matches!(Self::KIND, ProtoKind::Message) && self.is_default() {
+            EncodeSizeHint::EMPTY
+        } else {
+            Self::ENCODED_SIZE_HINT.for_field::<TAG>(Self::WIRE_TYPE)
+        }
+    }
     /// Reverse one-pass archive into a [`RevWriter`].
     ///
     /// TAG semantics:
@@ -135,8 +198,8 @@ where
         if !matches!(T::KIND, ProtoKind::Message) && <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
             return None;
         }
-        let hint = <<T as ProtoEncode>::Shadow<'_> as ProtoExt>::ENCODED_SIZE_HINT;
-        let capacity = if hint.exact { hint.size } else { hint.size.max(Self::INIT_CAP) };
+        let hint = <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::encoded_size_hint::<0>(&s);
+        let capacity = hint.preallocation_capacity(Self::INIT_CAP);
         let mut w = W::with_capacity(capacity);
 
         if matches!(T::KIND, ProtoKind::SimpleEnum) {

@@ -45,6 +45,24 @@ where
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        if self.is_empty() {
+            return crate::EncodeSizeHint::EMPTY;
+        }
+        let entry = crate::EncodeSizeHint::EMPTY
+            .add_field::<1>(
+                <<K as ProtoEncode>::Shadow<'_> as ProtoExt>::ENCODED_SIZE_HINT,
+                <<K as ProtoEncode>::Shadow<'_> as ProtoExt>::WIRE_TYPE,
+            )
+            .add_field::<2>(
+                <<V as ProtoEncode>::Shadow<'_> as ProtoExt>::ENCODED_SIZE_HINT,
+                <<V as ProtoEncode>::Shadow<'_> as ProtoExt>::WIRE_TYPE,
+            )
+            .for_field::<TAG>(WireType::LengthDelimited);
+        entry.repeated(self.len())
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         for (key_value, value_value) in self.iter().rev() {
             let key = <K as ProtoEncode>::Shadow::from_sun(key_value);

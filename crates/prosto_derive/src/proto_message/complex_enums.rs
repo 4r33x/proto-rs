@@ -59,6 +59,10 @@ pub(super) fn generate_complex_enum_impl(
     let default_expr = build_variant_default_expr(&variants[default_index], name);
     let is_default_arms = variants.iter().map(|variant| build_variant_is_default_arm(variant, name)).collect::<Vec<_>>();
     let encode_arms = variants.iter().map(|variant| build_variant_encode_arm(variant, name)).collect::<Vec<_>>();
+    let enum_size_hint = variants.iter().fold(quote! { ::proto_rs::EncodeSizeHint::EMPTY }, |largest, variant| {
+        let variant_hint = build_variant_size_hint(variant);
+        quote! { (#largest).max(#variant_hint) }
+    });
     let field_validation_arms = build_variant_field_validation_arms(name, &variants);
     let has_field_validation = !field_validation_arms.is_empty();
     let field_validation = if field_validation_arms.is_empty() {
@@ -148,6 +152,7 @@ pub(super) fn generate_complex_enum_impl(
             quote! {
                 impl #impl_generics ::proto_rs::ProtoExt for #target_ty #where_clause {
                     const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+                    const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = <#name #ty_generics as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT;
                 }
 
                 impl #impl_generics ::proto_rs::ProtoEncode for #target_ty #where_clause {
@@ -218,6 +223,10 @@ pub(super) fn generate_complex_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+            const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = {
+                let largest = #enum_size_hint;
+                ::proto_rs::EncodeSizeHint::new(largest.size, false)
+            };
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
@@ -592,6 +601,53 @@ fn build_variant_is_default_arm(variant: &VariantInfo<'_>, enum_ident: &Ident) -
                         true #(&& #checks)*
                     }
                 }
+            }
+        }
+    }
+}
+
+fn build_variant_size_hint(variant: &VariantInfo<'_>) -> TokenStream2 {
+    let tag = variant.tag;
+    match &variant.kind {
+        VariantKind::Unit => quote! {
+            ::proto_rs::EncodeSizeHint::EMPTY.for_field::<#tag>(::proto_rs::encoding::WireType::LengthDelimited)
+        },
+        VariantKind::Tuple { field } => {
+            if field.field.config.skip {
+                return quote! { ::proto_rs::EncodeSizeHint::EMPTY };
+            }
+            let hint_ty = if needs_encode_conversion(&field.field.config, &field.field.parsed) {
+                let proto_ty = &field.field.proto_ty;
+                quote! { #proto_ty }
+            } else {
+                let field_ty = &field.field.field.ty;
+                quote! { <#field_ty as ::proto_rs::ProtoEncode>::Shadow<'_> }
+            };
+            quote! {
+                <#hint_ty as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT
+                    .for_field::<#tag>(<#hint_ty as ::proto_rs::ProtoExt>::WIRE_TYPE)
+            }
+        }
+        VariantKind::Struct { fields } => {
+            let payload =
+                fields.iter().filter(|info| !info.config.skip).fold(quote! { ::proto_rs::EncodeSizeHint::EMPTY }, |hint, info| {
+                    let field_tag = info.tag.expect("tag required");
+                    let hint_ty = if needs_encode_conversion(&info.config, &info.parsed) {
+                        let proto_ty = &info.proto_ty;
+                        quote! { #proto_ty }
+                    } else {
+                        let field_ty = &info.field.ty;
+                        quote! { <#field_ty as ::proto_rs::ProtoEncode>::Shadow<'_> }
+                    };
+                    quote! {
+                        (#hint).add_field::<#field_tag>(
+                            <#hint_ty as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT,
+                            <#hint_ty as ::proto_rs::ProtoExt>::WIRE_TYPE,
+                        )
+                    }
+                });
+            quote! {
+                (#payload).for_field::<#tag>(::proto_rs::encoding::WireType::LengthDelimited)
             }
         }
     }

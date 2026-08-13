@@ -102,6 +102,11 @@ where
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.guard.encoded_size_hint::<TAG>()
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         self.guard.archive::<TAG>(w);
     }

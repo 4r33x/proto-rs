@@ -125,6 +125,11 @@ where
     }
 
     #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        super::collection_size_hint::<T, TAG>(self.len())
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if T::KIND.is_bytes_kind() {
             // SAFETY: only executed for VecDeque<u8>.
