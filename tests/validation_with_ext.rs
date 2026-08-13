@@ -7,14 +7,17 @@ use std::sync::Arc;
 
 use proto_rs::DecodeError;
 use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
 use proto_rs::ProtoShadowDecode;
 use proto_rs::ProtoShadowEncode;
+use proto_rs::grpc::Extensions;
+use proto_rs::grpc::GrpcService;
+use proto_rs::grpc::MessageStream;
+use proto_rs::grpc::Request;
+use proto_rs::grpc::Response;
+use proto_rs::grpc::Status;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
-use tonic::Extensions;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
 
 #[derive(Clone, Debug)]
 struct ValidationFlag(u8);
@@ -112,7 +115,6 @@ impl ValidationWithExt for ValidationWithExtService {
     }
 }
 
-#[cfg(feature = "tonic")]
 #[test]
 fn validates_with_ext_flag_is_enabled() {
     const _: () = {
@@ -120,11 +122,44 @@ fn validates_with_ext_flag_is_enabled() {
     };
 }
 
+#[tokio::test]
+async fn neutral_router_runs_extension_validation() {
+    let router = validation_with_ext_service::ValidationWithExtRouter::new(ValidationWithExtService);
+    let mut request = Request::new(MessageStream::once(Pong { id: 42 }.encode_to_vec().into()));
+    request.extensions_mut().insert(ValidationFlag(1));
+
+    let status = router
+        .call("/validation_with_ext.ValidationWithExt/Check", request)
+        .await
+        .err()
+        .expect("expected extension validator to reject request");
+
+    assert_eq!(status.code(), proto_rs::grpc::Code::InvalidArgument);
+    assert!(status.message().contains("blocked by extension flag"));
+}
+
+#[tokio::test]
+async fn neutral_router_accepts_valid_request() {
+    let router = validation_with_ext_service::ValidationWithExtRouter::new(ValidationWithExtService);
+    let request = Request::new(MessageStream::once(Pong { id: 7 }.encode_to_vec().into()));
+
+    let response = router.call("/validation_with_ext.ValidationWithExt/Check", request).await.expect("request should succeed");
+    let mut messages = response.into_inner();
+    let pong = Pong::decode(
+        messages.next().await.expect("response message").expect("successful response"),
+        proto_rs::DecodeContext::default(),
+    )
+    .expect("valid response protobuf");
+
+    assert_eq!(pong, Pong { id: 7 });
+    assert!(messages.next().await.is_none());
+}
+
 #[cfg(feature = "tonic")]
 #[tokio::test]
 async fn server_validation_with_ext_rejects_flagged_request() {
     let service = ValidationWithExtService {};
-    let mut request = Request::new(Pong { id: 42 });
+    let mut request = tonic::Request::new(Pong { id: 42 });
     request.extensions_mut().insert(ValidationFlag(1));
 
     let result = <ValidationWithExtService as validation_with_ext_server::ValidationWithExt>::check(&service, request).await;
@@ -138,7 +173,7 @@ async fn server_validation_with_ext_rejects_flagged_request() {
 #[tokio::test]
 async fn server_validation_with_ext_accepts_clean_request() {
     let service = ValidationWithExtService {};
-    let request = Request::new(Pong { id: 7 });
+    let request = tonic::Request::new(Pong { id: 7 });
 
     let response = <ValidationWithExtService as validation_with_ext_server::ValidationWithExt>::check(&service, request)
         .await

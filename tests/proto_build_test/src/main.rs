@@ -36,8 +36,6 @@ use proto_rs::schemas::ProtoIdentifiable;
 use proto_rs::schemas::TypeReplace;
 use proto_rs::schemas::UserAttr;
 use tokio_stream::Stream;
-use tonic::Response;
-use tonic::Status;
 
 type CustomMutex<T> = std::sync::Mutex<T>;
 type CustomArc<T> = std::sync::Arc<T>;

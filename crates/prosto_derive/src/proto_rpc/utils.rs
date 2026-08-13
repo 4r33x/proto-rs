@@ -10,6 +10,7 @@ use syn::TraitItem;
 use syn::TraitItemType;
 use syn::Type;
 use syn::TypePath;
+use syn::visit_mut::VisitMut;
 
 use crate::utils::MethodInfo;
 
@@ -44,6 +45,7 @@ impl ParsedMethodSignature {
     fn new(sig: &syn::Signature, trait_items: &[TraitItem]) -> Self {
         let (request_type, request_is_wrapped) = extract_request_type(sig);
         let (response_return_type, response_is_result) = extract_response_return(sig);
+        let response_return_type = neutralize_response_wrapper(response_return_type);
         let response_is_response = is_response_wrapper(&response_return_type);
         let response_type = extract_proto_type(&response_return_type);
         let (is_streaming, stream_type_name, inner_response_type, stream_item_type) = extract_stream_metadata(&response_type, trait_items);
@@ -95,6 +97,8 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
                 });
             }
             TraitItem::Type(type_item) => {
+                let mut type_item = type_item.clone();
+                NeutralStatus.visit_trait_item_type_mut(&mut type_item);
                 let type_name = &type_item.ident;
                 let type_attrs = &type_item.attrs;
                 let bounds = &type_item.bounds;
@@ -109,6 +113,39 @@ pub fn extract_methods_and_types(input: &ItemTrait) -> (Vec<MethodInfo>, Vec<Tok
     }
 
     (methods, user_associated_types)
+}
+
+fn neutralize_response_wrapper(ty: Type) -> Type {
+    let Type::Path(type_path) = &ty else {
+        return ty;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return ty;
+    };
+    if segment.ident != "Response" {
+        return ty;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return ty;
+    };
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return ty;
+    };
+    syn::parse_quote!(::proto_rs::grpc::Response<#inner>)
+}
+
+struct NeutralStatus;
+
+impl VisitMut for NeutralStatus {
+    fn visit_type_mut(&mut self, ty: &mut Type) {
+        if let Type::Path(path) = ty
+            && path.path.segments.last().is_some_and(|segment| segment.ident == "Status")
+        {
+            *ty = syn::parse_quote!(::proto_rs::grpc::Status);
+            return;
+        }
+        syn::visit_mut::visit_type_mut(self, ty);
+    }
 }
 
 /// Generate user-facing method signature for the trait
@@ -406,6 +443,6 @@ mod tests {
         assert!(sync_plain.response_is_result);
         assert!(!sync_plain.is_async);
         let sync_response = &sync_plain.response_return_type;
-        assert_eq!(quote!(#sync_response).to_string(), "tonic :: Response < MyResponse >");
+        assert_eq!(quote!(#sync_response).to_string(), ":: proto_rs :: grpc :: Response < MyResponse >");
     }
 }

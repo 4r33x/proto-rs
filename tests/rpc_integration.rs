@@ -1,16 +1,23 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
 
 use encoding_messages::ZeroCopyContainer;
+use proto_rs::ProtoDecode;
+use proto_rs::ProtoEncode;
+use proto_rs::grpc::GrpcService;
+use proto_rs::grpc::GrpcTransport;
+use proto_rs::grpc::Request;
+use proto_rs::grpc::Response;
+use proto_rs::grpc::Status;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
 
 mod encoding_messages;
 
@@ -211,6 +218,93 @@ fn container_from_tonic(msg: tonic_prost_test::encoding::ZeroCopyContainer) -> Z
 
 struct OurService;
 
+struct CustomRuntime {
+    unary_response: Vec<u8>,
+    stream_responses: Vec<Vec<u8>>,
+}
+
+struct CustomResponseStream<T> {
+    messages: VecDeque<Result<T, Status>>,
+}
+
+impl<T> Unpin for CustomResponseStream<T> {}
+
+impl<T> Stream for CustomResponseStream<T> {
+    type Item = Result<T, Status>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.messages.pop_front())
+    }
+}
+
+impl GrpcTransport for CustomRuntime {
+    type Error = Status;
+    type ResponseStream<T>
+        = CustomResponseStream<T>
+    where
+        T: Send + 'static;
+
+    async fn unary<Req, Res>(&mut self, _route: &'static str, _request: Request<Req>) -> Result<Response<Res>, Self::Error>
+    where
+        Req: proto_rs::ProtoEncode + proto_rs::ProtoExt + Send + Sync + 'static,
+        Res: ProtoDecode + Send + Sync + 'static,
+    {
+        let response = Res::decode(self.unary_response.as_slice(), proto_rs::DecodeContext::default())
+            .map_err(|error| Status::internal(error.to_string()))?;
+        Ok(Response::new(response))
+    }
+
+    async fn client_streaming<Req, Res, S>(&mut self, _route: &'static str, _request: Request<S>) -> Result<Response<Res>, Self::Error>
+    where
+        Req: proto_rs::ProtoEncode + proto_rs::ProtoExt + Send + Sync + 'static,
+        Res: ProtoDecode + Send + Sync + 'static,
+        S: Stream<Item = Req> + Send + 'static,
+    {
+        let response = Res::decode(self.unary_response.as_slice(), proto_rs::DecodeContext::default())
+            .map_err(|error| Status::internal(error.to_string()))?;
+        Ok(Response::new(response))
+    }
+
+    async fn server_streaming<Req, Res>(
+        &mut self,
+        _route: &'static str,
+        _request: Request<Req>,
+    ) -> Result<Response<Self::ResponseStream<Res>>, Self::Error>
+    where
+        Req: proto_rs::ProtoEncode + proto_rs::ProtoExt + Send + Sync + 'static,
+        Res: ProtoDecode + Send + Sync + 'static,
+    {
+        let messages = self
+            .stream_responses
+            .iter()
+            .map(|bytes| {
+                Res::decode(bytes.as_slice(), proto_rs::DecodeContext::default()).map_err(|error| Status::internal(error.to_string()))
+            })
+            .collect();
+        Ok(Response::new(CustomResponseStream { messages }))
+    }
+
+    async fn bidirectional_streaming<Req, Res, S>(
+        &mut self,
+        _route: &'static str,
+        _request: Request<S>,
+    ) -> Result<Response<Self::ResponseStream<Res>>, Self::Error>
+    where
+        Req: proto_rs::ProtoEncode + proto_rs::ProtoExt + Send + Sync + 'static,
+        Res: ProtoDecode + Send + Sync + 'static,
+        S: Stream<Item = Req> + Send + 'static,
+    {
+        let messages = self
+            .stream_responses
+            .iter()
+            .map(|bytes| {
+                Res::decode(bytes.as_slice(), proto_rs::DecodeContext::default()).map_err(|error| Status::internal(error.to_string()))
+            })
+            .collect();
+        Ok(Response::new(CustomResponseStream { messages }))
+    }
+}
+
 impl ComplexService for OurService {
     type StreamCollectionsStream = Pin<Box<dyn Stream<Item = Result<CollectionsMessage, Status>> + Send>>;
 
@@ -241,45 +335,47 @@ struct ProstService;
 
 #[tonic::async_trait]
 impl tonic_prost_test::complex_rpc::complex_service_server::ComplexService for ProstService {
-    type StreamCollectionsStream = Pin<Box<dyn Stream<Item = Result<tonic_prost_test::encoding::CollectionsMessage, Status>> + Send>>;
+    type StreamCollectionsStream =
+        Pin<Box<dyn Stream<Item = Result<tonic_prost_test::encoding::CollectionsMessage, tonic::Status>> + Send>>;
 
     async fn echo_sample(
         &self,
-        _request: Request<tonic_prost_test::encoding::SampleMessage>,
-    ) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
-        Ok(Response::new(sample_to_tonic(&response_message())))
+        _request: tonic::Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<tonic::Response<tonic_prost_test::encoding::SampleMessage>, tonic::Status> {
+        Ok(tonic::Response::new(sample_to_tonic(&response_message())))
     }
 
     async fn echo_sample_arc(
         &self,
-        _request: Request<tonic_prost_test::encoding::SampleMessage>,
-    ) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
-        Ok(Response::new(sample_to_tonic(&response_message())))
+        _request: tonic::Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<tonic::Response<tonic_prost_test::encoding::SampleMessage>, tonic::Status> {
+        Ok(tonic::Response::new(sample_to_tonic(&response_message())))
     }
 
     async fn echo_sample_box(
         &self,
-        _request: Request<tonic_prost_test::encoding::SampleMessage>,
-    ) -> Result<Response<tonic_prost_test::encoding::SampleMessage>, Status> {
-        Ok(Response::new(sample_to_tonic(&response_message())))
+        _request: tonic::Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<tonic::Response<tonic_prost_test::encoding::SampleMessage>, tonic::Status> {
+        Ok(tonic::Response::new(sample_to_tonic(&response_message())))
     }
 
     async fn stream_collections(
         &self,
-        _request: Request<tonic_prost_test::encoding::SampleMessage>,
-    ) -> Result<Response<Self::StreamCollectionsStream>, Status> {
+        _request: tonic::Request<tonic_prost_test::encoding::SampleMessage>,
+    ) -> Result<tonic::Response<Self::StreamCollectionsStream>, tonic::Status> {
         let items = response_collections().into_iter().map(|msg| Ok(collections_to_tonic(&msg)));
-        Ok(Response::new(Box::pin(tokio_stream::iter(items))))
+        Ok(tonic::Response::new(Box::pin(tokio_stream::iter(items))))
     }
 
     async fn echo_container(
         &self,
-        _request: Request<tonic_prost_test::encoding::ZeroCopyContainer>,
-    ) -> Result<Response<tonic_prost_test::encoding::ZeroCopyContainer>, Status> {
-        Ok(Response::new(container_to_tonic(&response_container())))
+        _request: tonic::Request<tonic_prost_test::encoding::ZeroCopyContainer>,
+    ) -> Result<tonic::Response<tonic_prost_test::encoding::ZeroCopyContainer>, tonic::Status> {
+        Ok(tonic::Response::new(container_to_tonic(&response_container())))
     }
 }
 
+#[cfg(feature = "tonic")]
 async fn spawn_our_server() -> (
     std::net::SocketAddr,
     tokio::sync::oneshot::Sender<()>,
@@ -306,6 +402,7 @@ async fn spawn_our_server() -> (
     (addr, shutdown_tx, handle)
 }
 
+#[cfg(feature = "tonic")]
 async fn spawn_prost_server() -> (
     std::net::SocketAddr,
     tokio::sync::oneshot::Sender<()>,
@@ -335,6 +432,7 @@ async fn spawn_prost_server() -> (
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg(feature = "tonic")]
 async fn tonic_client_roundtrip_against_proto_server() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
@@ -371,6 +469,7 @@ async fn tonic_client_roundtrip_against_proto_server() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg(feature = "tonic")]
 async fn proto_client_roundtrip_against_prost_server() {
     let (addr, shutdown, handle) = spawn_prost_server().await;
 
@@ -404,6 +503,7 @@ async fn proto_client_roundtrip_against_prost_server() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg(feature = "tonic")]
 async fn proto_client_roundtrip_against_proto_server() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
@@ -437,17 +537,18 @@ async fn proto_client_roundtrip_against_proto_server() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[cfg(feature = "tonic")]
 async fn transport_client_roundtrip_against_proto_server() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 
     let channel = tonic::transport::Endpoint::from_shared(format!("http://{addr}")).unwrap().connect().await.unwrap();
-    let transport = proto_rs::grpc::TonicTransport::new(channel);
+    let transport: proto_rs::grpc::TonicTransport<_> = channel.into();
     let mut client = complex_service_transport_client::ComplexServiceTransportClient::new(transport);
 
-    let response = client.echo_sample(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    let response = client.echo_sample(Request::new(request_message())).await.unwrap().into_inner();
     assert_eq!(response, response_message());
 
-    let mut stream = client.stream_collections(tonic::Request::new(request_message())).await.unwrap().into_inner();
+    let mut stream = client.stream_collections(Request::new(request_message())).await.unwrap().into_inner();
     let mut received = Vec::new();
     while let Some(item) = stream.next().await {
         received.push(item.unwrap());
@@ -459,7 +560,52 @@ async fn transport_client_roundtrip_against_proto_server() {
     handle.await.unwrap().unwrap();
 }
 
+#[tokio::test]
+async fn generated_router_dispatches_without_tonic() {
+    let router = complex_service_service::ComplexServiceRouter::new(OurService);
+    assert_eq!(router.methods(), complex_service_service::METHODS);
+
+    let request = Request::new(proto_rs::grpc::MessageStream::once(request_message().encode_to_vec().into()));
+    let response = router.call("/complex_rpc.ComplexService/EchoSample", request).await.unwrap();
+    let mut messages = response.into_inner();
+    let message = messages.next().await.unwrap().unwrap();
+    assert_eq!(
+        SampleMessage::decode(message, proto_rs::DecodeContext::default()).unwrap(),
+        response_message()
+    );
+    assert!(messages.next().await.is_none());
+
+    let request = Request::new(proto_rs::grpc::MessageStream::once(request_message().encode_to_vec().into()));
+    let response = router.call("/complex_rpc.ComplexService/StreamCollections", request).await.unwrap();
+    let mut messages = response.into_inner();
+    let mut received = Vec::new();
+    while let Some(message) = messages.next().await {
+        received.push(CollectionsMessage::decode(message.unwrap(), proto_rs::DecodeContext::default()).unwrap());
+    }
+    assert_eq!(received, response_collections());
+}
+
+#[tokio::test]
+async fn generated_client_accepts_custom_runtime() {
+    let runtime = CustomRuntime {
+        unary_response: response_message().encode_to_vec(),
+        stream_responses: response_collections().iter().map(ProtoEncode::encode_to_vec).collect(),
+    };
+    let mut client = complex_service_transport_client::ComplexServiceTransportClient::new(runtime);
+
+    let response = client.echo_sample(Request::new(request_message())).await.unwrap().into_inner();
+    assert_eq!(response, response_message());
+
+    let mut stream = client.stream_collections(Request::new(request_message())).await.unwrap().into_inner();
+    let mut received = Vec::new();
+    while let Some(message) = stream.next().await {
+        received.push(message.unwrap());
+    }
+    assert_eq!(received, response_collections());
+}
+
 #[tokio::test(flavor = "multi_thread")]
+#[cfg(feature = "tonic")]
 async fn proto_client_accepts_borrowed_requests() {
     let (addr, shutdown, handle) = spawn_our_server().await;
 

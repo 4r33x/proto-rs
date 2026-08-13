@@ -3,8 +3,6 @@ use std::collections::HashMap;
 pub use auth_service_client::AuthServiceClient as JitoAuthClient;
 pub use searcher_service_client::SearcherServiceClient as JitoSearcherClient;
 use tokio_stream::Stream;
-use tonic::Response;
-use tonic::Status;
 
 use crate::custom_types::well_known::Timestamp;
 use crate::proto_message;

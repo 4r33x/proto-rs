@@ -6,12 +6,14 @@ use syn::ItemTrait;
 mod client;
 pub mod rpc_common;
 mod server;
-pub mod utils; // Add this
+mod service;
+pub mod utils;
 
 use client::generate_client_module;
 use client::generate_transport_client_module;
 use server::generate_server_module;
-use utils::extract_methods_and_types; // Add this import
+use service::generate_service_module;
+use utils::extract_methods_and_types;
 
 use crate::parse::UnifiedProtoConfig;
 use crate::schema::SchemaTokens;
@@ -66,6 +68,11 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
     } else {
         quote! {}
     };
+    let service_module = if config.rpc_server {
+        generate_service_module(trait_name, vis, &package_name, &methods)
+    } else {
+        quote! {}
+    };
 
     quote! {
         #schema
@@ -80,6 +87,7 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
         }
 
         #client_module
+        #service_module
         #server_module
     }
 }

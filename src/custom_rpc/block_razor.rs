@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 pub use server_client::ServerClient as BlockRazorClient;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
+use tonic::Request as TonicRequest;
+use tonic::Status as TonicStatus;
 use tonic::metadata::MetadataValue;
 
 use crate::proto_message;
@@ -56,7 +55,7 @@ impl BlockRazorAuthInterceptor {
 }
 
 impl tonic::service::Interceptor for BlockRazorAuthInterceptor {
-    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
+    fn call(&mut self, mut request: TonicRequest<()>) -> Result<TonicRequest<()>, TonicStatus> {
         request.metadata_mut().insert("apikey", (*self.api_key).clone());
         Ok(request)
     }

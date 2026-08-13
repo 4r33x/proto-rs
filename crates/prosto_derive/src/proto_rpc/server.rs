@@ -30,8 +30,10 @@ fn response_to_proto_response(response_return_type: &Type, response_binding: &To
     };
 
     quote! {
-        <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::into_response(
-            #normalized
+        ::proto_rs::grpc::response_into_tonic(
+            <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::into_response(
+                #normalized
+            )
         )
     }
 }
@@ -40,13 +42,15 @@ fn generate_proto_to_native_request(request_type: &Type, fallible: bool, request
     if fallible {
         if request_is_wrapped {
             quote! {
+                let request = ::proto_rs::grpc::request_from_tonic(request);
                 let (metadata, extensions, mut message) = request.into_parts();
                 <#request_type as ::proto_rs::ProtoDecode>::validate_with_ext(&mut message, &extensions)
                     .map_err(|err| tonic::Status::invalid_argument(format!("failed to validate request: {err}")))?;
-                let native_request = tonic::Request::from_parts(metadata, extensions, message);
+                let native_request = ::proto_rs::grpc::Request::from_parts(metadata, extensions, message);
             }
         } else {
             quote! {
+                let request = ::proto_rs::grpc::request_from_tonic(request);
                 let (metadata, extensions, mut message) = request.into_parts();
                 <#request_type as ::proto_rs::ProtoDecode>::validate_with_ext(&mut message, &extensions)
                     .map_err(|err| tonic::Status::invalid_argument(format!("failed to validate request: {err}")))?;
@@ -61,7 +65,7 @@ fn generate_proto_to_native_request(request_type: &Type, fallible: bool, request
                     ::proto_rs::const_test_validate_with_ext::<#request_type>();
                 }
             };
-            let native_request = request;
+            let native_request = ::proto_rs::grpc::request_from_tonic(request);
         }
     } else {
         quote! {
@@ -330,8 +334,19 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
 
 fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
     let stream_name = method.stream_type_name.as_ref().unwrap();
+    let item_type = method.stream_item_type.as_ref().unwrap();
 
-    quote! { type #stream_name = <Self as super::#trait_name>::#stream_name; }
+    quote! {
+        type #stream_name = tonic::codegen::tokio_stream::adapters::Map<
+            <Self as super::#trait_name>::#stream_name,
+            fn(
+                ::core::result::Result<#item_type, ::proto_rs::grpc::Status>
+            ) -> ::core::result::Result<
+                #item_type,
+                tonic::Status
+            >,
+        >;
+    }
 }
 
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
@@ -355,7 +370,7 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
 
     if method.is_async {
         let await_suffix = if method.response_is_result {
-            quote! { .await? }
+            quote! { .await.map_err(::proto_rs::grpc::status_into_tonic)? }
         } else {
             quote! { .await }
         };
@@ -397,7 +412,7 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
             >
         };
         let question = if method.response_is_result {
-            quote! { ? }
+            quote! { .map_err(::proto_rs::grpc::status_into_tonic)? }
         } else {
             quote! {}
         };
@@ -426,146 +441,71 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let method_name = &method.name;
     let request_type = &method.request_type;
     let stream_name = method.stream_type_name.as_ref().unwrap();
+    let item_type = method.stream_item_type.as_ref().unwrap();
     let request_proto = generate_request_proto_type(request_type);
 
     let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result, method.request_is_wrapped);
+    let call_suffix = match (method.is_async, method.response_is_result) {
+        (true, true) => quote! { .await.map_err(::proto_rs::grpc::status_into_tonic)? },
+        (true, false) => quote! { .await },
+        (false, true) => quote! { .map_err(::proto_rs::grpc::status_into_tonic)? },
+        (false, false) => quote! {},
+    };
+    let normalize_response = if method.response_is_response {
+        quote! { native_response }
+    } else {
+        quote! { ::proto_rs::grpc::Response::new(native_response) }
+    };
+    let finish = if method.response_is_result {
+        quote! { Ok(tonic_response) }
+    } else {
+        quote! { tonic_response }
+    };
+    let body = quote! {
+        #request_conversion
+        let native_response = <Self as super::#trait_name>::#method_name(
+            self,
+            native_request
+        )#call_suffix;
+        let native_response = #normalize_response;
+        let mapped = native_response.map(|stream| {
+            tonic::codegen::tokio_stream::StreamExt::map(
+                stream,
+                ::proto_rs::grpc::stream_status_into_tonic::<#item_type>
+                    as fn(
+                        ::core::result::Result<#item_type, ::proto_rs::grpc::Status>,
+                    ) -> ::core::result::Result<
+                        #item_type,
+                        tonic::Status,
+                    >,
+            )
+        });
+        let tonic_response = ::proto_rs::grpc::response_into_tonic(mapped);
+        #finish
+    };
+    let output = if method.response_is_result {
+        quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
+    } else {
+        quote! { tonic::Response<Self::#stream_name> }
+    };
 
-    if method.response_is_result {
-        let result_type = quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> };
-        if method.response_is_response {
-            if method.is_async {
-                let return_type = method_future_return_type(result_type.clone());
-                quote! {
-                    fn #method_name(
-                        &self,
-                        request: tonic::Request<#request_proto>,
-                    ) -> #return_type {
-                        async move {
-                            #request_conversion
-
-                            <Self as super::#trait_name>::#method_name(
-                                self,
-                                native_request
-                            ).await
-                        }
-                    }
-                }
-            } else {
-                quote! {
-                    fn #method_name(
-                        &self,
-                        request: tonic::Request<#request_proto>,
-                    ) -> #result_type {
-                        #request_conversion
-
-                        <Self as super::#trait_name>::#method_name(
-                            self,
-                            native_request
-                        )
-                    }
-                }
-            }
-        } else if method.is_async {
-            let return_type = method_future_return_type(result_type.clone());
-            quote! {
-                fn #method_name(
-                    &self,
-                    request: tonic::Request<#request_proto>,
-                ) -> #return_type {
-                    async move {
-                        #request_conversion
-
-                        let native_response = <Self as super::#trait_name>::#method_name(
-                            self,
-                            native_request
-                        ).await?;
-                        Ok(tonic::Response::new(native_response))
-                    }
-                }
-            }
-        } else {
-            quote! {
-                fn #method_name(
-                    &self,
-                    request: tonic::Request<#request_proto>,
-                ) -> #result_type {
-                    #request_conversion
-
-                    let native_response = <Self as super::#trait_name>::#method_name(
-                        self,
-                        native_request
-                    )?;
-                    Ok(tonic::Response::new(native_response))
-                }
+    if method.is_async {
+        let return_type = method_future_return_type(output);
+        quote! {
+            fn #method_name(
+                &self,
+                request: tonic::Request<#request_proto>,
+            ) -> #return_type {
+                async move { #body }
             }
         }
     } else {
-        let ok_type = quote! { tonic::Response<Self::#stream_name> };
-        if method.response_is_response {
-            if method.is_async {
-                let return_type = method_future_return_type(ok_type.clone());
-                quote! {
-                    fn #method_name(
-                        &self,
-                        request: tonic::Request<#request_proto>,
-                    ) -> #return_type {
-                        async move {
-                            #request_conversion
-
-                            <Self as super::#trait_name>::#method_name(
-                                self,
-                                native_request
-                            ).await
-                        }
-                    }
-                }
-            } else {
-                quote! {
-                    fn #method_name(
-                        &self,
-                        request: tonic::Request<#request_proto>,
-                    ) -> #ok_type {
-                        #request_conversion
-
-                        <Self as super::#trait_name>::#method_name(
-                            self,
-                            native_request
-                        )
-                    }
-                }
-            }
-        } else if method.is_async {
-            let return_type = method_future_return_type(ok_type.clone());
-            quote! {
-                fn #method_name(
-                    &self,
-                    request: tonic::Request<#request_proto>,
-                ) -> #return_type {
-                    async move {
-                        #request_conversion
-
-                        let native_response = <Self as super::#trait_name>::#method_name(
-                            self,
-                            native_request
-                        ).await;
-                        tonic::Response::new(native_response)
-                    }
-                }
-            }
-        } else {
-            quote! {
-                fn #method_name(
-                    &self,
-                    request: tonic::Request<#request_proto>,
-                ) -> #ok_type {
-                    #request_conversion
-
-                    let native_response = <Self as super::#trait_name>::#method_name(
-                        self,
-                        native_request
-                    );
-                    tonic::Response::new(native_response)
-                }
+        quote! {
+            fn #method_name(
+                &self,
+                request: tonic::Request<#request_proto>,
+            ) -> #output {
+                #body
             }
         }
     }
@@ -842,7 +782,7 @@ mod tests {
         assert_eq!(blanket_types.len(), 1, "duplicate stream types should be skipped");
         assert_eq!(
             blanket_types[0].to_token_stream().to_string(),
-            "type RizzUniStream = < Self as super :: SigmaRpc > :: RizzUniStream ;"
+            "type RizzUniStream = tonic :: codegen :: tokio_stream :: adapters :: Map < < Self as super :: SigmaRpc > :: RizzUniStream , fn (:: core :: result :: Result < FooResponse , :: proto_rs :: grpc :: Status >) -> :: core :: result :: Result < FooResponse , tonic :: Status > , > ;"
         );
     }
 }

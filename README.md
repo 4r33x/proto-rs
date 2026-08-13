@@ -499,7 +499,7 @@ pub struct ServerConfig {
 
 Field and message validators run once after the complete value has been merged. A validator for an absent nested field is not run because that field remains its protobuf default.
 
-`validator_with_ext` receives `proto_rs::grpc::Extensions` for request-scoped validation. With the `tonic` feature this is an alias for `tonic::Extensions`:
+`validator_with_ext` receives the transport-neutral `proto_rs::grpc::Extensions` for request-scoped validation:
 
 ```rust
 #[proto_message]
@@ -516,13 +516,13 @@ fn validate_with_auth(req: &SecureRequest, ext: &proto_rs::grpc::Extensions) -> 
 
 ## RPC services
 
-Define gRPC services as Rust traits. The macro generates Tonic server and client implementations:
+Define gRPC services as Rust traits. The macro generates transport-neutral clients and service routers, plus optional Tonic adapters:
 
 The macro parses your trait methods and generates both the server trait and client struct. Return types are flexible — you can use or omit `Result` and `Response` wrappers depending on what makes sense semantically:
 
 ```rust
 use proto_rs::{proto_rpc, proto_message, ZeroCopy};
-use tonic::{Request, Response, Status};
+use proto_rs::grpc::{Request, Response, Status};
 
 #[proto_message]
 pub struct Ping { pub id: u64 }
@@ -563,9 +563,11 @@ The macro unwraps `Result`, `Response`, `Box`, `Arc`, and `ZeroCopy` layers auto
 
 ### Transport abstraction
 
-`proto_rs::grpc::GrpcTransport` is the backend-neutral client contract. It covers unary, client-streaming, server-streaming, and bidirectional calls. Services with `rpc_client = true` also generate a `<service>_transport_client` module whose client accepts any `GrpcTransport` implementation.
+`proto_rs::grpc::GrpcTransport` is the backend-neutral client contract. It covers unary, client-streaming, server-streaming, and bidirectional calls. Services with `rpc_client = true` also generate a `<service>_transport_client` module whose client accepts any user-provided `GrpcTransport` implementation.
 
-The existing `<service>_client` and `<service>_server` modules are tonic adapters and are emitted when the `tonic` feature is enabled. `proto_rs::grpc::{Request, Response, Status, Extensions}` alias tonic's types in that configuration; with tonic disabled, standalone equivalents keep service traits and alternate transports usable.
+Services with `rpc_server = true` generate a `<service>_service` module containing method descriptors and a typed router implementing `proto_rs::grpc::GrpcService`. The router owns protobuf decoding, validation, typed dispatch, and response encoding; a runtime implementation supplies protocol framing and I/O.
+
+`proto_rs::grpc::{Request, Response, Status, Extensions}` are always owned by `proto_rs` and do not change with feature selection. The existing `<service>_client` and `<service>_server` modules are Tonic adapters emitted by the `tonic` feature. `TonicTransport` implements `GrpcTransport` and converts neutral request, response, metadata, and status values only at the adapter boundary.
 
 ### Server implementation
 

@@ -1705,6 +1705,7 @@ dependencies = [
  "crossbeam-utils",
  "fastnum",
  "futures-core",
+ "http",
  "inventory",
  "papaya",
  "parking_lot",

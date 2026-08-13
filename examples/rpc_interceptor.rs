@@ -1,11 +1,11 @@
 #![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 #![allow(clippy::missing_errors_doc)]
 
+use proto_rs::grpc::Request;
+use proto_rs::grpc::Response;
+use proto_rs::grpc::Status;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
 
 #[proto_message(proto_path = "protos/gen_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]

@@ -7,14 +7,14 @@ use std::pin::Pin;
 use proto_rs::DecodeError;
 use proto_rs::ProtoEncode;
 use proto_rs::ZeroCopy;
+use proto_rs::grpc::Request;
+use proto_rs::grpc::Response;
+use proto_rs::grpc::Status;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Extensions;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
 
 #[proto_message(proto_path = "protos/gen_complex_proto/goon_types.proto")]
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -123,18 +123,24 @@ pub trait SigmaRpc {
 struct S;
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    use tonic::transport::Server;
+    #[cfg(not(feature = "tonic"))]
+    return Ok(());
 
-    use crate::sigma_rpc_server::SigmaRpcServer;
+    #[cfg(feature = "tonic")]
+    {
+        use tonic::transport::Server;
 
-    let addr = "127.0.0.1:50051".parse()?;
-    let service = S;
+        use crate::sigma_rpc_server::SigmaRpcServer;
 
-    println!("TestRpc server listening on {addr}");
+        let addr = "127.0.0.1:50051".parse()?;
+        let service = S;
 
-    Server::builder().add_service(SigmaRpcServer::new(service)).serve(addr).await?;
+        println!("TestRpc server listening on {addr}");
 
-    Ok(())
+        Server::builder().add_service(SigmaRpcServer::new(service)).serve(addr).await?;
+
+        Ok(())
+    }
 }
 
 impl SigmaRpc for S {
@@ -231,7 +237,7 @@ impl SigmaRpc for S {
         Ok(Response::new(stream))
     }
 
-    async fn goon_pong(&self, _request: tonic::Request<GoonPong>) -> Result<Response<ZeroCopy<RizzPing>>, tonic::Status> {
+    async fn goon_pong(&self, _request: Request<GoonPong>) -> Result<Response<ZeroCopy<RizzPing>>, Status> {
         Ok(Response::new(
             RizzPing {
                 id: Id { id: 1 },
@@ -241,13 +247,13 @@ impl SigmaRpc for S {
         ))
     }
 
-    async fn with_generic(&self, _request: tonic::Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, tonic::Status> {
+    async fn with_generic(&self, _request: Request<IdGeneric<u64>>) -> Result<Response<IdGeneric<u32>>, Status> {
         Ok(IdGeneric { id: 1u32 }.into())
     }
     async fn with_generic_transparent(
         &self,
-        _request: tonic::Request<IdGenericTransparent<u64>>,
-    ) -> Result<Response<IdGenericTransparent<u32>>, tonic::Status> {
+        _request: Request<IdGenericTransparent<u64>>,
+    ) -> Result<Response<IdGenericTransparent<u32>>, Status> {
         Ok(IdGenericTransparent { id: 1u32 }.into())
     }
 }

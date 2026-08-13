@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 pub use api_client::ApiClient as BloxrouteClient;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
+use tonic::Request as TonicRequest;
+use tonic::Status as TonicStatus;
 use tonic::metadata::MetadataValue;
 
 use crate::custom_types::well_known::Timestamp;
@@ -198,7 +197,7 @@ impl BloxrouteAuthInterceptor {
 }
 
 impl tonic::service::Interceptor for BloxrouteAuthInterceptor {
-    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
+    fn call(&mut self, mut request: TonicRequest<()>) -> Result<TonicRequest<()>, TonicStatus> {
         request.metadata_mut().insert("authorization", (*self.api_key).clone());
         Ok(request)
     }

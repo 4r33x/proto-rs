@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 use proto_rs::ProtoEncode;
 use proto_rs::ZeroCopy;
+use proto_rs::grpc::Request;
+use proto_rs::grpc::Response;
+use proto_rs::grpc::Status;
 use proto_rs::proto_message;
 use proto_rs::proto_rpc;
 use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::Request;
-use tonic::Response;
-use tonic::Status;
 
 #[proto_message(proto_path = "protos/gen_proto/goon_types.proto")]
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -57,18 +57,24 @@ pub trait SigmaRpc {
 struct S;
 
 pub async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    use tonic::transport::Server;
+    #[cfg(not(feature = "tonic"))]
+    return Ok(());
 
-    use crate::sigma_rpc_server::SigmaRpcServer;
+    #[cfg(feature = "tonic")]
+    {
+        use tonic::transport::Server;
 
-    let addr = "127.0.0.1:50051".parse()?;
-    let service = S;
+        use crate::sigma_rpc_server::SigmaRpcServer;
 
-    println!("TestRpc server listening on {addr}");
+        let addr = "127.0.0.1:50051".parse()?;
+        let service = S;
 
-    Server::builder().add_service(SigmaRpcServer::new(service)).serve(addr).await?;
+        println!("TestRpc server listening on {addr}");
 
-    Ok(())
+        Server::builder().add_service(SigmaRpcServer::new(service)).serve(addr).await?;
+
+        Ok(())
+    }
 }
 
 impl SigmaRpc for S {
@@ -127,7 +133,7 @@ impl SigmaRpc for S {
         Response::new(stream)
     }
 
-    fn sync_rizz_ping(&self, _request: tonic::Request<RizzPing>) -> ZeroCopy<GoonPong> {
+    fn sync_rizz_ping(&self, _request: Request<RizzPing>) -> ZeroCopy<GoonPong> {
         GoonPong {}.to_zero_copy()
     }
 }

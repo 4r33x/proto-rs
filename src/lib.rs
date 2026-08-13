@@ -78,15 +78,13 @@ pub use crate::encoding::length_delimiter::length_delimiter_len;
 pub use crate::error::DecodeError;
 pub use crate::error::EncodeError;
 pub use crate::error::UnknownEnumValue;
+pub use crate::grpc::ProtoResponse;
+pub use crate::grpc::map_proto_response;
 pub use crate::name::Name;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::EncoderExt;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::ProtoRequest;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::ProtoResponse;
-#[cfg(feature = "tonic")]
-pub use crate::tonic::map_proto_response;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_stream_result;
 pub use crate::traits::ProtoArchive;

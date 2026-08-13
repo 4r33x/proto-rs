@@ -2,15 +2,17 @@
 
 pub use futures_core::Stream;
 
-#[cfg(not(feature = "tonic"))]
-#[path = "grpc/standalone.rs"]
-mod backend;
+mod types;
+pub use types::*;
+mod service;
+pub use service::*;
+mod response;
+pub use response::*;
 
 #[cfg(feature = "tonic")]
-#[path = "grpc/tonic.rs"]
-mod backend;
-
-pub use backend::*;
+mod tonic;
+#[cfg(feature = "tonic")]
+pub use tonic::*;
 
 /// Minimal client-side contract needed by generated gRPC clients.
 #[allow(async_fn_in_trait)]
