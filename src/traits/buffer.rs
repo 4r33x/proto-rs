@@ -35,6 +35,7 @@ pub trait RevWriter {
 pub struct RevVec {
     buf: Vec<MaybeUninit<u8>>,
     pos: usize, // valid bytes are in [pos..cap)
+    headroom: usize,
 }
 
 impl AsRef<[u8]> for RevVec {
@@ -48,13 +49,28 @@ impl RevVec {
     const MIN_GROW: usize = 64;
 
     #[inline]
+    pub(crate) fn with_capacity_and_headroom(cap: usize, headroom: usize) -> Self {
+        let mut buf = Vec::<MaybeUninit<u8>>::with_capacity(cap.saturating_add(headroom));
+        let cap = buf.capacity();
+        unsafe { buf.set_len(cap) };
+        Self { buf, pos: cap, headroom }
+    }
+
+    #[inline]
+    pub(crate) fn prepend_reserved(&mut self, prefix: &[u8]) {
+        assert!(prefix.len() <= self.headroom);
+        self.headroom -= prefix.len();
+        self.put_slice(prefix);
+    }
+
+    #[inline]
     const fn cap(&self) -> usize {
         self.buf.capacity()
     }
 
     #[inline]
     fn ensure_space(&mut self, need: usize) {
-        if self.pos >= need {
+        if self.pos.saturating_sub(self.headroom) >= need {
             return;
         }
 
@@ -62,7 +78,7 @@ impl RevVec {
         let used = old_cap - self.pos;
 
         let mut new_cap = (old_cap * 2).next_power_of_two().max(Self::MIN_GROW);
-        while new_cap < used + need {
+        while new_cap < used.saturating_add(need).saturating_add(self.headroom) {
             new_cap *= 2;
         }
 
@@ -85,15 +101,16 @@ impl RevWriter for RevVec {
 
     #[inline]
     fn with_capacity(cap: usize) -> Self {
-        let mut buf = Vec::<MaybeUninit<u8>>::with_capacity(cap);
-        let cap = buf.capacity();
-        unsafe { buf.set_len(cap) }; // invariant: len == cap
-        Self { buf, pos: cap }
+        Self::with_capacity_and_headroom(cap, 0)
     }
 
     #[inline]
     fn empty() -> Self {
-        Self { buf: Vec::new(), pos: 0 }
+        Self {
+            buf: Vec::new(),
+            pos: 0,
+            headroom: 0,
+        }
     }
 
     #[inline]
@@ -208,5 +225,20 @@ mod tests {
     fn empty_reverse_writer_finishes_as_empty_vec() {
         assert_eq!(RevVec::with_capacity(64).finish_tight(), Vec::<u8>::new());
         assert_eq!(RevVec::empty().finish_tight(), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn prepends_reserved_bytes_without_moving_payload() {
+        let payload = [7; 128];
+        let prefix = [1, 2, 3, 4, 5];
+        let mut writer = RevVec::with_capacity_and_headroom(1, prefix.len());
+        writer.put_slice(&payload);
+        let payload_ptr = writer.as_written_slice().as_ptr();
+
+        writer.prepend_reserved(&prefix);
+
+        assert_eq!(&writer.as_written_slice()[..prefix.len()], &prefix);
+        assert_eq!(&writer.as_written_slice()[prefix.len()..], &payload);
+        assert_eq!(writer.as_written_slice()[prefix.len()..].as_ptr(), payload_ptr);
     }
 }
