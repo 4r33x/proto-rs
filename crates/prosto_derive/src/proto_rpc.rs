@@ -95,6 +95,6 @@ pub fn proto_rpc_impl(args: TokenStream, item: TokenStream) -> TokenStream2 {
 fn build_validator_const(ty: &syn::Type) -> TokenStream2 {
     quote! {
         #[cfg(feature = "build-schemas")]
-        const _: () = <#ty as ::proto_rs::schemas::ProtoIdentifiable>::_VALIDATOR;
+        const _: () = <#ty as ::proto_rs::schemas::ProtoIdentifiable>::VALIDATOR;
     }
 }

@@ -64,7 +64,7 @@ pub fn impl_proto_ident(input: TokenStream) -> TokenStream {
                 const PROTO_TYPE: ::proto_rs::schemas::ProtoType = ::proto_rs::schemas::ProtoType::Message(stringify!(#ty));
             }
             #[cfg(feature = "build-schemas")]
-            const _: () = <#ty as ::proto_rs::schemas::ProtoIdentifiable>::_VALIDATOR;
+            const _: () = <#ty as ::proto_rs::schemas::ProtoIdentifiable>::VALIDATOR;
         }
     } else {
         quote! {

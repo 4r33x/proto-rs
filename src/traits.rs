@@ -32,10 +32,10 @@ pub trait ProtoExt: Sized {
     const KIND: ProtoKind;
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
     const ENCODED_SIZE_HINT: EncodeSizeHint = EncodeSizeHint::from_kind(&Self::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = None;
+    const REPEATED_SUPPORT: Option<&'static str> = None;
 
-    const _TEST_REPEATED: () = {
-        if let Some(name) = Self::_REPEATED_SUPPORT
+    const TEST_REPEATED: () = {
+        if let Some(name) = Self::REPEATED_SUPPORT
             && let ProtoKind::Repeated(_) = Self::KIND
         {
             const_unreachable::<Self>(name);

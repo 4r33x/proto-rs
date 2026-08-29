@@ -82,7 +82,7 @@ where
 
 impl<K, V, S> ProtoExt for HashMap<K, V, S> {
     const KIND: ProtoKind = ProtoKind::Repeated(&crate::wrappers::maps::MAP_ENTRY_KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("HashMap");
+    const REPEATED_SUPPORT: Option<&'static str> = Some("HashMap");
 }
 
 impl<K, V, S: Default + std::hash::BuildHasher> ProtoDecoder for HashMap<K, V, S>

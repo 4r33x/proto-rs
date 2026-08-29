@@ -192,6 +192,27 @@ where
     for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
 {
     const INIT_CAP: usize = 64;
+    pub fn new_with_buffer(input: &T, mut w: W) -> Option<Self> {
+        let s = T::Shadow::from_sun(input);
+        if !matches!(T::KIND, ProtoKind::Message) && <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
+            return None;
+        }
+
+        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+            s.archive::<1>(&mut w);
+        } else {
+            s.archive::<0>(&mut w);
+        }
+
+        if w.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            inner: w,
+            _pd: PhantomData,
+        })
+    }
     #[inline]
     pub fn new(input: &T) -> Option<Self> {
         let s = T::Shadow::from_sun(input);
@@ -324,8 +345,8 @@ impl<const TAG: u32, T: ProtoArchive + ProtoExt> ProtoExt for ArchivedProtoField
 }
 
 impl<const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<TAG, T> {
-    const _TAG_VARINT: VarintConst<10> = encode_varint_const(((TAG << 3) | Self::WIRE_TYPE as u32) as u64);
-    const TAG_LEN: usize = Self::_TAG_VARINT.len;
+    const TAG_VARINT: VarintConst<10> = encode_varint_const(((TAG << 3) | Self::WIRE_TYPE as u32) as u64);
+    const TAG_LEN: usize = Self::TAG_VARINT.len;
 
     pub fn archive(input: &T, w: &mut impl RevWriter) {
         if <T as ProtoArchive>::is_default(input) {
@@ -342,7 +363,7 @@ impl<const TAG: u32, T: ProtoArchive + ProtoExt> ArchivedProtoField<TAG, T> {
 
     #[inline]
     pub fn put_key(w: &mut impl RevWriter) {
-        w.put_slice(&Self::_TAG_VARINT.bytes[..Self::TAG_LEN]);
+        w.put_slice(&Self::TAG_VARINT.bytes[..Self::TAG_LEN]);
     }
 }
 

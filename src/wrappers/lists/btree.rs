@@ -21,7 +21,7 @@ use crate::traits::ProtoShadowEncode;
 
 impl<T: ProtoExt + Ord> ProtoExt for BTreeSet<T> {
     const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeSet");
+    const REPEATED_SUPPORT: Option<&'static str> = Some("BTreeSet");
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault + Ord> ProtoDecoder for BTreeSet<T> {

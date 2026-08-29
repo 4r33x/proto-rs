@@ -36,7 +36,7 @@ pub(crate) fn build_validate_with_ext_impl(config: &UnifiedProtoConfig) -> Token
 fn build_validator_const(type_tokens: TokenStream2) -> TokenStream2 {
     quote! {
         #[cfg(feature = "build-schemas")]
-        const _: () = <#type_tokens as ::proto_rs::schemas::ProtoIdentifiable>::_VALIDATOR;
+        const _: () = <#type_tokens as ::proto_rs::schemas::ProtoIdentifiable>::VALIDATOR;
     }
 }
 

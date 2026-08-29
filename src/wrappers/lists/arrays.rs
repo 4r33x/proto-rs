@@ -43,7 +43,7 @@ impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
         ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
         _ => ProtoKind::Repeated(&T::KIND),
     };
-    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+    const REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
         ProtoKind::Primitive(PrimitiveKind::U8) => None,
         _ => Some("Array"),
     };
@@ -217,7 +217,7 @@ pub struct ArrayShadow<'a, T: ProtoArchive + ProtoExt, const N: usize> {
 impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoExt for ArrayShadow<'_, T, N> {
     const KIND: ProtoKind = <[T; N] as ProtoExt>::KIND;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = <[T; N] as ProtoExt>::ENCODED_SIZE_HINT;
-    const _REPEATED_SUPPORT: Option<&'static str> = <[T; N] as ProtoExt>::_REPEATED_SUPPORT;
+    const REPEATED_SUPPORT: Option<&'static str> = <[T; N] as ProtoExt>::REPEATED_SUPPORT;
 }
 
 impl<T: ProtoArchive + ProtoExt, const N: usize> ProtoArchive for ArrayShadow<'_, T, N> {

@@ -28,7 +28,7 @@ impl<T: ProtoExt> ProtoExt for Vec<T> {
         ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
         _ => ProtoKind::Repeated(&T::KIND),
     };
-    const _REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
+    const REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
         ProtoKind::Primitive(PrimitiveKind::U8) => None,
         _ => Some("Vec"),
     };

@@ -81,7 +81,7 @@ where
 
 impl<K, V> ProtoExt for BTreeMap<K, V> {
     const KIND: ProtoKind = ProtoKind::Repeated(&crate::wrappers::maps::MAP_ENTRY_KIND);
-    const _REPEATED_SUPPORT: Option<&'static str> = Some("BTreeMap");
+    const REPEATED_SUPPORT: Option<&'static str> = Some("BTreeMap");
 }
 
 impl<K, V> ProtoDecoder for BTreeMap<K, V>

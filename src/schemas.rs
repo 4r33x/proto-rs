@@ -314,7 +314,7 @@ impl ProtoType {
 pub trait ProtoIdentifiable: Sized {
     const PROTO_IDENT: ProtoIdent;
     const PROTO_TYPE: ProtoType;
-    const _VALIDATOR: () = {
+    const VALIDATOR: () = {
         if let Err(e) = Self::PROTO_TYPE.proto_type_validation(TypeValidatorCtx::new()) {
             proto_type_validation_fail::<Self>(e);
         }
@@ -364,7 +364,7 @@ macro_rules! impl_proto_ident_primitive {
             const PROTO_TYPE: ProtoType = $proto_type;
         }
         #[cfg(feature = "build-schemas")]
-        const _: () = <$ty as ProtoIdentifiable>::_VALIDATOR;
+        const _: () = <$ty as ProtoIdentifiable>::VALIDATOR;
     };
 }
 
