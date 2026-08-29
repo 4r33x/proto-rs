@@ -192,6 +192,11 @@ where
     for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
 {
     const INIT_CAP: usize = 64;
+
+    pub fn into_buffer(self) -> W {
+        self.inner
+    }
+
     pub fn new_with_buffer(input: &T, mut w: W) -> Option<Self> {
         let s = T::Shadow::from_sun(input);
         if !matches!(T::KIND, ProtoKind::Message) && <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
