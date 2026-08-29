@@ -175,17 +175,6 @@ pub trait ProtoEncode {
     {
         ZeroCopy::new(self)
     }
-
-    /// Encodes this value and prepends a fixed-size prefix in the same allocation.
-    /// The callback receives the encoded protobuf payload length.
-    #[inline]
-    fn encode_to_bytes_with_prefix<const N: usize>(&self, make_prefix: impl FnOnce(usize) -> [u8; N]) -> bytes::Bytes
-    where
-        Self: ProtoExt,
-        for<'s> <Self as ProtoEncode>::Shadow<'s>: ProtoArchive,
-    {
-        ArchivedProtoMessage::encode_with_prefix(self, make_prefix)
-    }
 }
 
 pub struct ArchivedProtoMessage<T: ProtoEncode, W: RevWriter> {
@@ -205,17 +194,13 @@ where
     const INIT_CAP: usize = 64;
     #[inline]
     pub fn new(input: &T) -> Option<Self> {
-        Self::new_with_writer(input, W::with_capacity)
-    }
-
-    fn new_with_writer(input: &T, writer: impl FnOnce(usize) -> W) -> Option<Self> {
         let s = T::Shadow::from_sun(input);
         if !matches!(T::KIND, ProtoKind::Message) && <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
             return None;
         }
         let hint = <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::encoded_size_hint::<0>(&s);
         let capacity = hint.preallocation_capacity(Self::INIT_CAP);
-        let mut w = writer(capacity);
+        let mut w = W::with_capacity(capacity);
 
         if matches!(T::KIND, ProtoKind::SimpleEnum) {
             s.archive::<1>(&mut w);
@@ -253,17 +238,6 @@ impl<T: ProtoEncode + ProtoExt> ArchivedProtoMessage<T, RevVec>
 where
     for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
 {
-    fn encode_with_prefix<const N: usize>(input: &T, make_prefix: impl FnOnce(usize) -> [u8; N]) -> bytes::Bytes {
-        let mut message =
-            Self::new_with_writer(input, |capacity| RevVec::with_capacity_and_headroom(capacity, N)).unwrap_or_else(|| Self {
-                inner: RevVec::with_capacity_and_headroom(0, N),
-                _pd: PhantomData,
-            });
-        let prefix = make_prefix(message.inner.len());
-        message.inner.prepend_reserved(&prefix);
-        message.into_bytes()
-    }
-
     /// Convert to a tight Vec<u8> with data at offset 0.
     ///
     /// This avoids an extra allocation compared to `finish().as_slice().to_vec()`
@@ -419,21 +393,5 @@ mod tests {
         let encoded = 1.0f64.encode_to_vec();
         assert_eq!(encoded.len(), 8);
         assert_eq!(encoded.capacity(), 8);
-    }
-
-    #[test]
-    fn encodes_prefix_from_payload_length() {
-        let payload = 1.0f64.encode_to_vec();
-        let framed = 1.0f64.encode_to_bytes_with_prefix(|len| [0xa5, len as u8]);
-
-        assert_eq!(&framed[..2], &[0xa5, payload.len() as u8]);
-        assert_eq!(&framed[2..], payload);
-    }
-
-    #[test]
-    fn prefixes_empty_message() {
-        let framed = EmptyMessage.encode_to_bytes_with_prefix(|len| [len as u8]);
-
-        assert_eq!(framed.as_ref(), &[0]);
     }
 }
