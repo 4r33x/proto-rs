@@ -19,6 +19,16 @@ pub trait RevWriter {
     fn put_slice(&mut self, s: &[u8]);
     fn put_varint(&mut self, v: u64);
 
+    /// Write a bytes/string payload with its field header (or raw bytes for TAG=0).
+    #[inline]
+    fn put_bytes<const TAG: u32>(&mut self, bytes: &[u8]) {
+        self.put_slice(bytes);
+        if TAG != 0 {
+            self.put_varint(bytes.len() as u64);
+            self.put_varint(((TAG << 3) | 2) as u64);
+        }
+    }
+
     #[inline]
     fn put_fixed32(&mut self, v: u32) {
         self.put_slice(&v.to_le_bytes());
@@ -58,6 +68,12 @@ impl RevVec {
             return;
         }
 
+        self.grow(need);
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn grow(&mut self, need: usize) {
         let old_cap = self.cap();
         let used = old_cap - self.pos;
 
@@ -158,6 +174,32 @@ impl RevWriter for RevVec {
             i += 1;
         }
         self.put_slice(&tmp[..i]);
+    }
+
+    #[inline]
+    fn put_bytes<const TAG: u32>(&mut self, bytes: &[u8]) {
+        // Most strings and small blobs have one-byte keys and lengths. Reserve
+        // once and place the complete field instead of checking capacity three times.
+        if TAG != 0 && TAG < 16 && bytes.len() < 128 {
+            let len = bytes.len();
+            self.ensure_space(len + 2);
+            self.pos -= len + 2;
+            // SAFETY: ensure_space reserved len+2 bytes before the initialized
+            // suffix, and the subtraction keeps every write within the allocation.
+            // The source cannot alias this private allocation through safe borrows.
+            unsafe {
+                let dst = self.buf.as_mut_ptr().add(self.pos).cast::<u8>();
+                dst.write(((TAG << 3) | 2) as u8);
+                dst.add(1).write(len as u8);
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), dst.add(2), len);
+            }
+        } else {
+            self.put_slice(bytes);
+            if TAG != 0 {
+                self.put_varint(bytes.len() as u64);
+                self.put_varint(((TAG << 3) | 2) as u64);
+            }
+        }
     }
 
     /// Optional helper for viewing while still writing (no copy).

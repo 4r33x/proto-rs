@@ -113,11 +113,12 @@ where
         }
         // Each merge call handles exactly one map entry
         let mut entry = <MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded> as ProtoDefault>::proto_default();
+        let state = crate::DecodeState::default();
         if len > 0 {
             // Use limit-based decoding to avoid Take wrapper overhead
             let limit = remaining - len;
             while buf.remaining() > limit {
-                MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_one_field(&mut entry, buf, ctx)?;
+                MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_one_field_with_state(&mut entry, buf, ctx, &state)?;
             }
             if buf.remaining() != limit {
                 return Err(DecodeError::new("delimited length exceeded"));

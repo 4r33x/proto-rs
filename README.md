@@ -4,7 +4,7 @@ Rust-first Protobuf and gRPC. Define messages, enums, and services as native Rus
 
 ```toml
 [dependencies]
-proto_rs = "0.11"
+proto_rs = "0.12"
 ```
 
 ## Why
@@ -12,7 +12,7 @@ proto_rs = "0.11"
 - Rust structs and enums are the source of truth, not `.proto` files
 - Zero conversion boilerplate between your domain types and the wire format
 - No `protoc` binary required — everything is pure Rust
-- Single-pass reverse encoder that avoids length precomputation
+- Single-pass reverse encoder without a full encoded-length traversal
 - Wire-compatible* (with regular, protobuf specification compatable rust types) with Prost and any standard Protobuf implementation
 
 ## proto_rs vs Prost
@@ -31,20 +31,29 @@ proto_rs = "0.11"
 
 ### Performance
 
-proto_rs uses a **single-pass reverse encoder** (upb-style). Fields are written payload-first, then prefixed with tags and lengths — no two-pass measure-then-write like Prost's `encoded_len()` + `encode()`.
+proto_rs uses a **single-pass reverse encoder** (upb-style). Fields are written payload-first, then prefixed with tags and lengths. Capacity hints avoid a full message-size traversal; small scalar/string/bytes collections may use a bounded sizing prepass.
 
-Encoding and decoding throughput is **on par with Prost** as far I managed to test it with totally unscientific benches. 
+In the targeted **0.12.0 benchmark runs on September 22, 2026**, all 27 cases previously more than 5% slower than Prost met that target: 26 were faster, and one was 0.8% slower. The runs covered 34 matched pairs, not the entire benchmark suite.
 
-Per-field micro-benchmarks show both libraries trading wins depending on field type — proto_rs is faster on enums, nested messages, and collections; Prost edges ahead on raw bytes and strings. Overall throughput is comparable.
+| Complex-message operation | proto_rs | Prost | Throughput ratio |
+| --- | ---: | ---: | ---: |
+| Encode | 2.041 µs | 3.823 µs | 1.87× |
+| Decode proto_rs output | 12.150 µs | 17.321 µs | 1.43× |
+| Decode Prost output | 15.610 µs | 17.562 µs | 1.12× |
+
+Measured with Criterion (100 samples, 3-second warmup, 5-second measurement), fat LTO, on an AMD RYZEN AI MAX+ 395 using rustc 1.100.0-nightly. Timings above are Criterion point estimates; the [benchmark log](benches/bench.md) records aggregate throughput, so its ratios differ slightly. These are codec microbenchmarks, not end-to-end gRPC results or guarantees for other workloads. Tiny enum-list Prost references varied between builds, so their apparent speedups should be treated cautiously.
+
+The optimizations include fused small byte/string writes, improved preallocation, fewer decode copies, and targeted inlining. One tradeoff: constructing a `DecodeError` now allocates its diagnostics to keep successful decode results small.
 
 ### Zero-copy
 
-`ZeroCopy<T>` pre-encodes a message once from ref. This eliminates cloning, so you can use references in RPC services
+`ZeroCopy<T>` pre-encodes a message from a reference into an owned buffer, avoiding a deep clone of the Rust message. In the same benchmark runs:
 
-| | Prost (clone + encode) | proto_rs (zero_copy) | Speedup |
-|---|---:|---:|---|
-| Complex message | 122K ops/s | 246K ops/s | **2.01x** |
+| | Prost (clone + encode) | proto_rs (encode from reference) | Throughput ratio |
+| --- | ---: | ---: | ---: |
+| Complex message | 14.531 µs | 2.045 µs | 7.11× |
 
+This compares different ownership workflows, not just encoders. “Zero-copy” does not mean allocation-free or end-to-end zero-copy networking: the current Tonic codec still copies the encoded bytes into Tonic's output buffer.
 
 ## Quick start
 
@@ -1068,6 +1077,8 @@ cargo bench -p bench_runner
 ```
 
 The Criterion harness under `benches/bench_runner` includes zero-copy vs clone comparisons and encode/decode micro-benchmarks against Prost.
+
+For a shorter run, select a benchmark group, for example `cargo bench -p bench_runner --bench main_bench -- complex_root_encode_decode`. The September 22 targeted results and historical runs, including the August 13 baseline, are preserved in [benches/bench.md](benches/bench.md).
 
 ## Testing
 

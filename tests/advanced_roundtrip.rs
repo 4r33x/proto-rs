@@ -345,7 +345,7 @@ impl From<&tonic_prost_test::advanced::AdvancedEdgeCase> for AdvancedEdgeCase {
 
         let attachments: Vec<Bytes> = value.attachments.iter().map(|bytes: &Vec<u8>| Bytes::from(bytes.clone())).collect();
 
-        let nested = value.nested.as_ref().map(AdvancedNested::from).unwrap_or_default();
+        let nested = value.nested.as_ref().map_or_default(AdvancedNested::from);
 
         let mut message = Self {
             id: value.id,

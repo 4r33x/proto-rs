@@ -362,49 +362,12 @@ fn collect_wrapper_definitions_for_entry(
     existing_names: &BTreeSet<String>,
     definitions: &mut BTreeMap<String, String>,
 ) {
-    match entry.content {
-        ProtoEntry::Struct { fields } => {
-            for field in fields {
-                collect_wrapper_definition_for_field(field, package_name, ident_index, substitution, existing_names, definitions);
-            }
+    // Fields use their inline protobuf shape; only RPC roots need wrapper messages.
+    if let ProtoEntry::Service { methods, .. } = entry.content {
+        for method in methods {
+            collect_wrapper_definition_for_method(method, package_name, ident_index, substitution, existing_names, definitions);
         }
-        ProtoEntry::ComplexEnum { variants } => {
-            for variant in variants {
-                for field in variant.fields {
-                    collect_wrapper_definition_for_field(field, package_name, ident_index, substitution, existing_names, definitions);
-                }
-            }
-        }
-        ProtoEntry::Service { methods, .. } => {
-            for method in methods {
-                collect_wrapper_definition_for_method(method, package_name, ident_index, substitution, existing_names, definitions);
-            }
-        }
-        ProtoEntry::SimpleEnum { .. } | ProtoEntry::Import { .. } => {}
     }
-}
-
-fn collect_wrapper_definition_for_field(
-    field: &Field,
-    package_name: &str,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
-    existing_names: &BTreeSet<String>,
-    definitions: &mut BTreeMap<String, String>,
-) {
-    // Bytes collection fields (Vec<u8>, HashSet<u8>, etc.) are rendered inline
-    // as the proto `bytes` scalar — no wrapper message needed.
-    if is_bytes_proto_field(field) {
-        return;
-    }
-    let Some(kind) = wrapper_kind_for(field.wrapper, field.proto_ident) else {
-        return;
-    };
-    if wrapper_kind_inline_for_field(field, kind) {
-        return;
-    }
-    let inner = wrapper_inner_for_field(field, kind, substitution);
-    register_wrapper_definition(kind, inner, package_name, ident_index, existing_names, definitions);
 }
 
 fn collect_wrapper_definition_for_method(
@@ -438,6 +401,33 @@ fn collect_wrapper_definition_for_method(
             substitution,
         );
         register_wrapper_definition(kind, inner, package_name, ident_index, existing_names, definitions);
+    }
+    for ident in [method.request, method.response] {
+        let ident = resolve_transparent_ident(apply_substitution(ident, substitution), ident_index);
+        if let Some(name) = scalar_message_name(ident, ident_index) {
+            let field_type = proto_ident_type_name(ident, package_name, ident_index);
+            definitions.entry(name.clone()).or_insert_with(|| format!("message {name} {{\n  {field_type} value = 1;\n}}\n"));
+        }
+    }
+}
+
+fn scalar_message_name(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> Option<String> {
+    if proto_scalar_type(&ident.proto_type).is_some()
+        || matches!(ident.proto_type, ProtoType::Enum)
+        || ident_index.get(&ident).is_some_and(|schema| matches!(schema.content, ProtoEntry::SimpleEnum { .. }))
+    {
+        Some(format!(
+            "{}Value",
+            proto_ident_base_type_name(ident)
+                .split('_')
+                .map(|part| {
+                    let mut chars = part.chars();
+                    chars.next().map_or_else(String::new, |first| first.to_uppercase().collect::<String>() + chars.as_str())
+                })
+                .collect::<String>()
+        ))
+    } else {
+        None
     }
 }
 
@@ -502,7 +492,11 @@ fn wrapper_message_name(kind: WrapperKind, inner: WrapperInner, ident_index: &BT
     let prefix = wrapper_prefix_for_kind(kind);
     match inner {
         WrapperInner::Single(ident) => {
-            let segment = wrapper_type_segment(ident, ident_index);
+            let segment = if is_byte_collection(kind, ident) {
+                "Bytes".to_string()
+            } else {
+                wrapper_type_segment(ident, ident_index)
+            };
             format!("{prefix}{segment}")
         }
         WrapperInner::Map { key, value } => {
@@ -515,7 +509,15 @@ fn wrapper_message_name(kind: WrapperKind, inner: WrapperInner, ident_index: &BT
 
 fn wrapper_type_segment(ident: ProtoIdent, ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>) -> String {
     let ident = resolve_transparent_ident(ident, ident_index);
-    proto_type_segment(&ident.proto_type)
+    if matches!(ident.proto_type, ProtoType::Enum) {
+        ident.name.to_string()
+    } else {
+        proto_type_segment(&ident.proto_type)
+    }
+}
+
+fn is_byte_collection(kind: WrapperKind, ident: ProtoIdent) -> bool {
+    matches!(kind, WrapperKind::Vec | WrapperKind::VecDeque) && ident.name == "u8"
 }
 
 const fn wrapper_prefix_for_kind(kind: WrapperKind) -> &'static str {
@@ -545,6 +547,9 @@ fn render_wrapper_message(
 ) -> String {
     let (label, field_type) = match inner {
         WrapperInner::Single(ident) => {
+            if is_byte_collection(kind, ident) {
+                return format!("message {name} {{\n  bytes value = 1;\n}}\n");
+            }
             let ident = resolve_transparent_ident(ident, ident_index);
             let field_type = proto_ident_type_name(ident, package_name, ident_index);
             let label = match kind {
@@ -712,9 +717,10 @@ fn render_named_fields(
 /// Returns `true` when a field should be rendered as the proto `bytes` scalar.
 ///
 /// This covers:
-///  - Fields already detected as `Bytes` by the derive macro (direct `Vec<u8>`, `Vec<AtomicU8>`, etc.)
-///  - Fields whose wrapper is a collection (Vec, VecDeque, HashSet, BTreeSet) with a byte-like
-///    inner element (`u8` or `AtomicU8`), including type-alias wrappers like `CustomVec<u8>`.
+///  - Fields already detected as `Bytes` by the derive macro (direct `Vec<u8>`, etc.)
+///  - Vec and VecDeque wrappers with u8 elements, including aliases.
+///
+/// Sets and atomic elements use ordinary repeated scalar encoding.
 fn is_bytes_proto_field(field: &Field) -> bool {
     // The derive macro already identified this as bytes.
     if matches!(field.proto_ident.proto_type, ProtoType::Bytes) {
@@ -726,15 +732,12 @@ fn is_bytes_proto_field(field: &Field) -> bool {
         return false;
     };
 
-    if !matches!(
-        kind,
-        WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet
-    ) {
+    if !matches!(kind, WrapperKind::Vec | WrapperKind::VecDeque) {
         return false;
     }
 
     let wrapper_ident = field.wrapper.unwrap_or(field.proto_ident);
-    wrapper_ident.generics.first().is_some_and(|inner| matches!(inner.name, "u8" | "AtomicU8"))
+    wrapper_ident.generics.first().is_some_and(|inner| inner.name == "u8")
 }
 
 fn render_field(
@@ -766,8 +769,8 @@ fn render_field(
     format!("  {label}{proto_type} {name} = {};", field.tag)
 }
 
-const fn proto_label_for_field(field: &Field) -> ProtoLabel {
-    field.proto_label
+fn proto_label_for_field(field: &Field) -> ProtoLabel {
+    super::utils::wrapper_label(field.wrapper, field.proto_ident, field.proto_label)
 }
 
 fn render_service(
@@ -818,10 +821,18 @@ fn field_type_name(
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
     substitution: Option<&BTreeMap<&str, ProtoIdent>>,
 ) -> String {
-    if let Some(wrapper_type) = wrapper_message_type_name_for_field(field, ident_index, substitution) {
-        return wrapper_type;
+    if let Some(kind) = wrapper_kind_for(field.wrapper, field.proto_ident)
+        && let Some(inner) = wrapper_inner_for_field(field, kind, substitution)
+    {
+        return match inner {
+            WrapperInner::Single(ident) => proto_ident_type_name(resolve_transparent_ident(ident, ident_index), package_name, ident_index),
+            WrapperInner::Map { key, value } => format!(
+                "map<{}, {}>",
+                proto_ident_type_name(key, package_name, ident_index),
+                proto_ident_type_name(value, package_name, ident_index)
+            ),
+        };
     }
-
     let ident = resolve_transparent_ident(field.proto_ident, ident_index);
     if proto_map_types(&ident.proto_type).is_some() {
         return proto_type_name(&ident.proto_type);
@@ -845,20 +856,12 @@ fn method_type_name(
         return wrapper_name;
     }
 
-    proto_ident_type_name_with_generics(ident, generic_args, package_name, ident_index, substitution)
-}
-
-fn wrapper_message_type_name_for_field(
-    field: &Field,
-    ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
-    substitution: Option<&BTreeMap<&str, ProtoIdent>>,
-) -> Option<String> {
-    let kind = wrapper_kind_for(field.wrapper, field.proto_ident)?;
-    if wrapper_kind_inline_for_field(field, kind) {
-        return None;
+    let resolved = resolve_transparent_ident(apply_substitution(ident, substitution), ident_index);
+    if let Some(name) = scalar_message_name(resolved, ident_index) {
+        return name;
     }
-    let inner = wrapper_inner_for_field(field, kind, substitution)?;
-    Some(wrapper_message_name(kind, inner, ident_index))
+
+    proto_ident_type_name_with_generics(ident, generic_args, package_name, ident_index, substitution)
 }
 
 fn wrapper_message_type_name_for_method(
@@ -941,17 +944,6 @@ fn wrapper_schema_message_name(schema: &ProtoSchema) -> Option<String> {
             let segment = proto_type_segment(&field.proto_ident.proto_type);
             Some(format!("{prefix}{segment}"))
         }
-    }
-}
-
-const fn wrapper_kind_inline_for_field(field: &Field, kind: WrapperKind) -> bool {
-    match kind {
-        WrapperKind::Option | WrapperKind::ArcSwapOption => matches!(field.proto_label, ProtoLabel::Optional),
-        WrapperKind::Vec | WrapperKind::VecDeque | WrapperKind::HashSet | WrapperKind::BTreeSet => {
-            matches!(field.proto_label, ProtoLabel::Repeated)
-        }
-        WrapperKind::HashMap | WrapperKind::BTreeMap => proto_map_types(&field.proto_ident.proto_type).is_some(),
-        WrapperKind::Box | WrapperKind::Arc | WrapperKind::Mutex | WrapperKind::ArcSwap | WrapperKind::CachePadded => true,
     }
 }
 

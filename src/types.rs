@@ -305,11 +305,7 @@ macro_rules! impl_proto_primitive_by_ref {
             #[inline]
             fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
                 let bytes = self.as_ref();
-                w.put_slice(bytes);
-                if TAG != 0 {
-                    w.put_varint(bytes.len() as u64);
-                    ArchivedProtoField::<TAG, Self>::put_key(w);
-                }
+                w.put_bytes::<TAG>(bytes);
             }
         }
 
@@ -443,9 +439,10 @@ impl ProtoArchive for Bytes {
 // ============================================================================
 
 macro_rules! impl_narrow_varint {
-    ($ty:ty, $wide_ty:ty, $prim_kind:ident, $err:literal) => {
+    ($ty:ty, $wide_ty:ty, $prim_kind:ident, $err:literal $(, $extra:item)*) => {
         impl ProtoExt for $ty {
             const KIND: ProtoKind = ProtoKind::Primitive(PrimitiveKind::$prim_kind);
+            $($extra)*
         }
 
         impl ProtoShadowDecode<$ty> for $ty {
@@ -530,7 +527,25 @@ macro_rules! impl_narrow_varint {
     };
 }
 
-impl_narrow_varint!(u8, u32, U8, "u8 overflow");
+impl_narrow_varint!(
+    u8,
+    u32,
+    U8,
+    "u8 overflow",
+    const IS_BYTE: bool = true;,
+    fn byte_slice(values: &[Self]) -> Option<&[u8]> {
+        Some(values)
+    },
+    fn byte_slice_mut(values: &mut [Self]) -> Option<&mut [u8]> {
+        Some(values)
+    },
+    fn byte_vec_mut(values: &mut Vec<Self>) -> Option<&mut Vec<u8>> {
+        Some(values)
+    },
+    fn byte_deque_mut(values: &mut std::collections::VecDeque<Self>) -> Option<&mut std::collections::VecDeque<u8>> {
+        Some(values)
+    }
+);
 impl_narrow_varint!(u16, u32, U16, "u16 overflow");
 impl_narrow_varint!(i8, i32, I8, "i8 overflow");
 impl_narrow_varint!(i16, i32, I16, "i16 overflow");

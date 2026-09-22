@@ -238,6 +238,14 @@ pub(super) fn generate_complex_enum_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+            }
+            #[inline]
+            fn merge_field_with_state(
+                value: &mut Self, tag: u32, wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext,
+                state: &::proto_rs::DecodeState<'_>,
+            ) -> Result<(), ::proto_rs::DecodeError> {
                 match tag {
                     #(#merge_field_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
@@ -246,19 +254,23 @@ pub(super) fn generate_complex_enum_impl(
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
+                self.merge_with_state(wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+            }
+            #[inline]
+            fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
                 if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
                     return Err(::proto_rs::DecodeError::invalid_wire_type_for_kind(<Self as ::proto_rs::ProtoExt>::KIND.dbg_name()));
                 }
                 ctx.limit_reached()?;
                 let inner_ctx = ctx.enter_recursion();
-                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let len = ::proto_rs::encoding::decode_length_delimiter(&mut *buf)?;
                 let remaining = buf.remaining();
                 if len > remaining {
                     return Err(::proto_rs::DecodeError::new("buffer underflow"));
                 }
                 let limit = remaining - len;
                 while buf.remaining() > limit {
-                    Self::decode_one_field(self, buf, inner_ctx)?;
+                    Self::decode_one_field_with_state(self, buf, inner_ctx, state)?;
                 }
                 if buf.remaining() != limit {
                     return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
@@ -814,6 +826,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     if len != 0 {
                         return Err(::proto_rs::DecodeError::new("expected empty variant payload"));
                     }
+                    state.clear();
                     *value = #name::#ident;
                     Ok(())
                 }
@@ -822,6 +835,21 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
         VariantKind::Tuple { field } => {
             let binding_ident = &field.binding_ident;
             let binding_default = field_proto_default_expr(&field.field);
+            if !field.field.config.skip && !needs_decode_conversion(&field.field.config, &field.field.parsed) {
+                let ty = &field.field.field.ty;
+                return quote! {
+                    #tag => {
+                        if !matches!(value, #name::#ident(_)) {
+                            state.clear();
+                            *value = #name::#ident(#binding_default);
+                        }
+                        if let #name::#ident(inner) = value {
+                            <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(inner, wire_type, buf, ctx, &state.field(#tag))?;
+                        }
+                        Ok(())
+                    }
+                };
+            }
             let decode_stmt = if field.field.config.skip {
                 quote! {
                     ::proto_rs::encoding::skip_field(wire_type, #tag, buf, ctx)?;
@@ -841,7 +869,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
             } else {
                 let ty = &field.field.field.ty;
                 quote! {
-                    <#ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #binding_ident, wire_type, buf, ctx)?;
+                    <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #binding_ident, wire_type, buf, ctx, &state.field(#tag))?;
                 }
             };
 
@@ -878,7 +906,10 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
 
             quote! {
                 #tag => {
-                    let mut #binding_ident = #binding_default;
+                    let mut #binding_ident = match ::core::mem::replace(value, <Self as ::proto_rs::ProtoDefault>::proto_default()) {
+                        #name::#ident(inner) => inner,
+                        _ => { state.clear(); #binding_default }
+                    };
                     #decode_stmt
                     #assign_variant
                     Ok(())
@@ -886,11 +917,14 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
             }
         }
         VariantKind::Struct { fields } => {
-            let field_inits = fields.iter().map(|info| {
-                let field_ident = info.field.ident.as_ref().expect("named field");
-                let init = field_proto_default_expr(info);
-                quote! { let mut #field_ident = #init; }
-            });
+            let field_names: Vec<_> = fields.iter().map(|info| info.field.ident.as_ref().expect("named field")).collect();
+            let field_defaults = fields.iter().map(field_proto_default_expr);
+            let field_inits = quote! {
+                let (#(mut #field_names,)*) = match ::core::mem::replace(value, <Self as ::proto_rs::ProtoDefault>::proto_default()) {
+                    #name::#ident { #(#field_names),* } => (#(#field_names,)*),
+                    _ => { state.clear(); (#(#field_defaults,)*) }
+                };
+            };
             let decode_match = fields
                 .iter()
                 .filter_map(|info| {
@@ -912,7 +946,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let ty = &info.field.ty;
                         Some(quote! {
                             #field_tag => {
-                                <#ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #field_ident, field_wire_type, buf, inner_ctx)?;
+                                <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #field_ident, field_wire_type, buf, inner_ctx, &state.field(#tag).field(#field_tag))?;
                             }
                         })
                     }
@@ -996,7 +1030,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         return Err(::proto_rs::DecodeError::new("buffer underflow"));
                     }
                     let limit = buf.remaining() - len as usize;
-                    #(#field_inits)*
+                    #field_inits
                     #decode_loop
                     if buf.remaining() != limit {
                         return Err(::proto_rs::DecodeError::new("delimited length exceeded"));

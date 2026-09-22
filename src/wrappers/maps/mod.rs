@@ -35,9 +35,21 @@ where
 {
     #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    #[inline]
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
         match tag {
-            1 => ProtoFieldMerge::merge_value(&mut value.key, wire_type, buf, ctx),
-            2 => ProtoFieldMerge::merge_value(&mut value.value, wire_type, buf, ctx),
+            1 => ProtoFieldMerge::merge_value_with_state(&mut value.key, wire_type, buf, ctx, &state.field(1)),
+            2 => ProtoFieldMerge::merge_value_with_state(&mut value.value, wire_type, buf, ctx, &state.field(2)),
             _ => skip_field(wire_type, tag, buf, ctx),
         }
     }

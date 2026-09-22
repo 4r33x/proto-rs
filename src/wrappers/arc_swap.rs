@@ -30,6 +30,7 @@ pub struct ArcSwapOptionShadow<T> {
 
 impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -62,9 +63,17 @@ impl<T: ProtoDefault> ProtoDefault for ArcSwap<T> {
 impl<T: ProtoDecode> ProtoDecode for ArcSwap<T>
 where
     T::ShadowDecoded: ProtoDecoder + ProtoExt,
-    ArcSwap<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
-    type ShadowDecoded = ArcSwap<T::ShadowDecoded>;
+    type ShadowDecoded = Box<T::ShadowDecoded>;
+}
+
+impl<T, U> ProtoShadowDecode<ArcSwap<U>> for Box<T>
+where
+    T: ProtoShadowDecode<U>,
+{
+    fn to_sun(self) -> Result<ArcSwap<U>, DecodeError> {
+        Ok(ArcSwap::from_pointee((*self).to_sun()?))
+    }
 }
 
 impl<T, U> ProtoShadowDecode<ArcSwap<U>> for ArcSwap<T>
@@ -85,6 +94,7 @@ where
     T: ProtoExt,
 {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -124,6 +134,7 @@ where
 
 impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -156,9 +167,18 @@ impl<T> ProtoDefault for ArcSwapOption<T> {
 impl<T: ProtoDecode> ProtoDecode for ArcSwapOption<T>
 where
     T::ShadowDecoded: ProtoDecoder + ProtoExt,
-    ArcSwapOption<T::ShadowDecoded>: ProtoDecoder + ProtoExt,
 {
-    type ShadowDecoded = ArcSwapOption<T::ShadowDecoded>;
+    type ShadowDecoded = Option<Box<T::ShadowDecoded>>;
+}
+
+impl<T, U> ProtoShadowDecode<ArcSwapOption<U>> for Option<Box<T>>
+where
+    T: ProtoShadowDecode<U>,
+{
+    fn to_sun(self) -> Result<ArcSwapOption<U>, DecodeError> {
+        let value = self.map(|value| (*value).to_sun()).transpose()?;
+        Ok(ArcSwapOption::from_pointee(value))
+    }
 }
 
 impl<T, U> ProtoShadowDecode<ArcSwapOption<U>> for ArcSwapOption<T>
@@ -184,13 +204,14 @@ where
     T: ProtoExt,
 {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
 impl<T: ProtoArchive + ProtoExt> ProtoArchive for ArcSwapOptionShadow<T> {
     #[inline]
     fn is_default(&self) -> bool {
-        self.value.as_ref().is_none_or(ProtoArchive::is_default)
+        self.value.is_none()
     }
 
     #[inline]

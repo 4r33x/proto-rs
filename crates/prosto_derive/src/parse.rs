@@ -562,7 +562,7 @@ pub fn extract_item_imports(item_attrs: &[Attribute]) -> BTreeMap<String, BTreeS
         }
 
         let _ = attr.parse_nested_meta(|meta| {
-            let package = meta.path.get_ident().map(ToString::to_string).unwrap_or_default();
+            let package = meta.path.get_ident().map_or_default(ToString::to_string);
 
             // Parse array value
             if let Ok(syn::Expr::Array(array)) = meta.value()?.parse::<syn::Expr>() {

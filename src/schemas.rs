@@ -407,8 +407,9 @@ impl_proto_ident_primitive!(::core::num::NonZeroIsize, ProtoType::Int64);
 
 #[cfg(feature = "build-schemas")]
 impl<T: ProtoIdentifiable, const N: usize> ProtoIdentifiable for [T; N] {
-    const PROTO_IDENT: ProtoIdent = T::PROTO_IDENT;
-    const PROTO_TYPE: ProtoType = T::PROTO_TYPE;
+    // Protobuf has no fixed-length arrays; their wire shape is a sequence.
+    const PROTO_IDENT: ProtoIdent = <Vec<T> as ProtoIdentifiable>::PROTO_IDENT;
+    const PROTO_TYPE: ProtoType = <Vec<T> as ProtoIdentifiable>::PROTO_TYPE;
 }
 
 #[cfg(feature = "build-schemas")]

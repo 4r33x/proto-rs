@@ -90,7 +90,7 @@ where
     Ok(Request::from_parts(metadata, extensions, message))
 }
 
-pub trait GrpcEncode {
+pub trait GrpcEncode<Mode = crate::SunByRef> {
     fn encode_grpc(self) -> Result<Bytes, Status>;
 }
 
@@ -103,7 +103,7 @@ where
     }
 }
 
-impl<T> GrpcEncode for ZeroCopy<T>
+impl<T> GrpcEncode<crate::BytesMode> for ZeroCopy<T>
 where
     T: ProtoEncode + ProtoExt,
 {
@@ -112,10 +112,22 @@ where
     }
 }
 
+// Response<Box<T>> and Response<Arc<T>> expose T in the RPC schema. Match
+// the tonic codec's SunByRefDeref mode rather than encoding a root wrapper.
+impl<T, P> GrpcEncode<crate::coders::SunByRefDeref> for P
+where
+    T: ProtoEncode + ProtoExt,
+    P: core::ops::Deref<Target = T>,
+{
+    fn encode_grpc(self) -> Result<Bytes, Status> {
+        Ok(self.deref().to_zero_copy().into_bytes())
+    }
+}
+
 pub fn encode_unary_response<R, P>(response: R) -> Result<Response<MessageStream>, Status>
 where
     R: ProtoResponse<P>,
-    R::Encode: GrpcEncode,
+    R::Encode: GrpcEncode<R::Mode>,
 {
     let (metadata, message, extensions) = response.into_response().into_parts();
     Ok(Response::from_parts(
@@ -129,7 +141,7 @@ pub fn encode_streaming_response<R, P, S>(response: Response<S>) -> Response<Mes
 where
     R: ProtoResponse<P> + 'static,
     P: 'static,
-    R::Encode: GrpcEncode,
+    R::Encode: GrpcEncode<R::Mode>,
     S: Stream<Item = Result<R, Status>> + Send + 'static,
 {
     let (metadata, stream, extensions) = response.into_parts();
@@ -148,7 +160,7 @@ struct EncodedResponseStream<S, R, P> {
 impl<S, R, P> Stream for EncodedResponseStream<S, R, P>
 where
     R: ProtoResponse<P>,
-    R::Encode: GrpcEncode,
+    R::Encode: GrpcEncode<R::Mode>,
     S: Stream<Item = Result<R, Status>>,
 {
     type Item = Result<Bytes, Status>;

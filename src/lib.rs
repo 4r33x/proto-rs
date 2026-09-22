@@ -23,6 +23,8 @@ pub use traits::ArchivedProtoField;
 pub use traits::ArchivedProtoMessage;
 pub use traits::ArchivedProtoMessageWriter;
 pub use traits::DecodeIrBuilder;
+#[doc(hidden)]
+pub use traits::DecodeState;
 pub use traits::EncodeSizeHint;
 pub use traits::MAX_PREALLOCATED_CAPACITY;
 pub use traits::ProtoShadowDecode;

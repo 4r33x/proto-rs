@@ -115,7 +115,8 @@ pub trait ProtoArchive {
 
     /// Returns a tagged wire-size estimate using only cheap runtime information.
     ///
-    /// Implementations should not traverse dynamic collections solely to improve the hint.
+    /// Avoid unbounded traversals solely to improve the hint. A small, bounded
+    /// scalar/byte/string prepass can eliminate buffer growth and compaction.
     #[inline]
     fn encoded_size_hint<const TAG: u32>(&self) -> EncodeSizeHint
     where
@@ -203,7 +204,7 @@ where
             return None;
         }
 
-        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+        if T::WRAP_ROOT {
             s.archive::<1>(&mut w);
         } else {
             s.archive::<0>(&mut w);
@@ -218,17 +219,24 @@ where
             _pd: PhantomData,
         })
     }
-    #[inline]
+    // This nonrecursive entry point must inline into encode_to_vec so LLVM can
+    // eliminate the optional writer aggregate and avoid copying it via the stack.
+    // Recursive field encoders deliberately retain normal inline heuristics.
+    #[inline(always)]
     pub fn new(input: &T) -> Option<Self> {
         let s = T::Shadow::from_sun(input);
         if !matches!(T::KIND, ProtoKind::Message) && <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::is_default(&s) {
             return None;
         }
-        let hint = <<T as ProtoEncode>::Shadow<'_> as ProtoArchive>::encoded_size_hint::<0>(&s);
+        let hint = if T::WRAP_ROOT {
+            s.encoded_size_hint::<1>()
+        } else {
+            s.encoded_size_hint::<0>()
+        };
         let capacity = hint.preallocation_capacity(Self::INIT_CAP);
         let mut w = W::with_capacity(capacity);
 
-        if matches!(T::KIND, ProtoKind::SimpleEnum) {
+        if T::WRAP_ROOT {
             s.archive::<1>(&mut w);
         } else {
             s.archive::<0>(&mut w);
@@ -417,7 +425,7 @@ mod tests {
         assert_eq!(<[String; 0] as ProtoExt>::ENCODED_SIZE_HINT, EncodeSizeHint::new(0, true));
 
         let encoded = 1.0f64.encode_to_vec();
-        assert_eq!(encoded.len(), 8);
-        assert_eq!(encoded.capacity(), 8);
+        assert_eq!(encoded.len(), 9); // field 1 key plus fixed64 payload
+        assert_eq!(encoded.capacity(), 9);
     }
 }

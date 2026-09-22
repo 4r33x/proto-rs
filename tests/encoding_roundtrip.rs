@@ -463,7 +463,8 @@ fn size_hint_preserves_present_default_option_fields() {
     let hint = runtime_size_hint(&value);
 
     assert_eq!(hint.size, encoded.len());
-    assert!(!hint.exact);
+    assert!(hint.exact);
+    assert_eq!(encoded.capacity(), encoded.len());
 }
 
 #[test]

@@ -20,6 +20,7 @@ use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Box<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -35,7 +36,32 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Box<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        T::merge_value(self.as_mut(), wire_type, buf, ctx)
+        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        T::merge_value_with_state(self.as_mut(), wire_type, buf, ctx, state)
     }
 }
 

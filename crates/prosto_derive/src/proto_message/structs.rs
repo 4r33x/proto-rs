@@ -364,6 +364,7 @@ fn generate_transparent_struct_impl(
 
         impl #shadow_impl_generics ::proto_rs::ProtoExt for #shadow_ident #shadow_ty_generics #shadow_where_clause {
             const KIND: ::proto_rs::ProtoKind = <#shadow_ty as ::proto_rs::ProtoExt>::KIND;
+            const WRAP_ROOT: bool = <#shadow_ty as ::proto_rs::ProtoExt>::WRAP_ROOT;
             const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = <#shadow_ty as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT;
         }
 
@@ -393,6 +394,7 @@ fn generate_transparent_struct_impl(
 
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = <#inner_ty as ::proto_rs::ProtoExt>::KIND;
+            const WRAP_ROOT: bool = <#inner_ty as ::proto_rs::ProtoExt>::WRAP_ROOT;
         }
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
@@ -404,12 +406,24 @@ fn generate_transparent_struct_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field(&mut #mut_value_access, tag, wire_type, buf, ctx)
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+            }
+            #[inline]
+            fn merge_field_with_state(
+                value: &mut Self, tag: u32, wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext,
+                state: &::proto_rs::DecodeState<'_>,
+            ) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field_with_state(&mut #mut_value_access, tag, wire_type, buf, ctx, state)
             }
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut #mut_self_access, wire_type, buf, ctx)?;
+                self.merge_with_state(wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+            }
+            #[inline]
+            fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_with_state(&mut #mut_self_access, wire_type, buf, ctx, state)?;
                 #field_validation_self
                 #message_validation_self
                 Ok(())
@@ -436,18 +450,7 @@ fn generate_transparent_struct_impl(
 
             #[inline]
             fn decode(mut buf: impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<Self, ::proto_rs::DecodeError> {
-                // For transparent types, we need to handle primitives vs messages differently:
-                // - Primitives are encoded as raw values (no field tags)
-                // - Messages are encoded with field tags
-                let inner = if <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE.is_length_delimited() {
-                    // Message type - decode using standard message decoding
-                    <#inner_ty as ::proto_rs::ProtoDecode>::decode(buf, ctx)?
-                } else {
-                    // Primitive type - read raw value using merge
-                    let mut inner = <#inner_ty as ::proto_rs::ProtoDefault>::proto_default();
-                    <#inner_ty as ::proto_rs::ProtoDecoder>::merge(&mut inner, <#inner_ty as ::proto_rs::ProtoExt>::WIRE_TYPE, &mut buf, ctx)?;
-                    inner
-                };
+                let inner = <#inner_ty as ::proto_rs::ProtoDecode>::decode(buf, ctx)?;
                 let mut value = #wrap_expr;
                 #field_validation_value
                 #message_validation_value
@@ -732,139 +735,135 @@ fn generate_proto_impls(
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
             let sun_ir_ty = sun.ir_ty.as_ref();
-            let sun_ir_archive_impl = sun_ir_ty
-                .map(|sun_ir_ty| {
-                    let mut sun_ir_archive_generics = shadow_generics.clone();
-                    sun_ir_archive_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
-                    let (sun_ir_archive_impl_generics, _sun_ir_archive_ty_generics, sun_ir_archive_where_clause) =
-                        sun_ir_archive_generics.split_for_impl();
-                    let shadow_lifetime = quote! { '_ };
-                    let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
-                    let is_default_checks = encoded_fields.iter().map(|info| {
-                        let base = quote! { self };
-                        let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
-                            parse_getter_expr(get, &base, info.field)
-                        } else {
-                            (info.access.access_tokens(base), false)
-                        };
-                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
-                        let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
-                            let ref_expr = quote! { #access_expr };
-                            let converted = encode_conversion_expr(info, &ref_expr);
-                            quote! { let __proto_shadow = #converted; }
-                        } else {
-                            let field_ty = &info.field.ty;
-                            quote! {
-                                let __proto_value = #access_expr;
-                                let __proto_shadow =
-                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
-                            }
-                        };
+            let sun_ir_archive_impl = sun_ir_ty.map_or_default(|sun_ir_ty| {
+                let mut sun_ir_archive_generics = shadow_generics.clone();
+                sun_ir_archive_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
+                let (sun_ir_archive_impl_generics, _sun_ir_archive_ty_generics, sun_ir_archive_where_clause) =
+                    sun_ir_archive_generics.split_for_impl();
+                let shadow_lifetime = quote! { '_ };
+                let encoded_fields: Vec<_> = fields.iter().filter(|info| info.tag.is_some()).collect();
+                let is_default_checks = encoded_fields.iter().map(|info| {
+                    let base = quote! { self };
+                    let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
+                        parse_getter_expr(get, &base, info.field)
+                    } else {
+                        (info.access.access_tokens(base), false)
+                    };
+                    let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
+                    let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
+                        let ref_expr = quote! { #access_expr };
+                        let converted = encode_conversion_expr(info, &ref_expr);
+                        quote! { let __proto_shadow = #converted; }
+                    } else {
+                        let field_ty = &info.field.ty;
                         quote! {
-                            {
-                                #shadow_init
-                                if !::proto_rs::ProtoArchive::is_default(&__proto_shadow) {
-                                    return false;
-                                }
-                            }
+                            let __proto_value = #access_expr;
+                            let __proto_shadow =
+                                <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
                         }
-                    });
-                    let archive_fields = encoded_fields.iter().rev().map(|info| {
-                        let tag = info.tag.expect("tag required");
-                        let base = quote! { self };
-                        let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
-                            parse_getter_expr(get, &base, info.field)
-                        } else {
-                            (info.access.access_tokens(base), false)
-                        };
-                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
-                        let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
-                            let ref_expr = quote! { #access_expr };
-                            let converted = encode_conversion_expr(info, &ref_expr);
-                            quote! { let __proto_shadow = #converted; }
-                        } else {
-                            let field_ty = &info.field.ty;
-                            quote! {
-                                let __proto_value = #access_expr;
-                                let __proto_shadow =
-                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
-                            }
-                        };
-                        quote! {
-                            {
-                                #shadow_init
-                                ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&__proto_shadow, w);
-                            }
-                        }
-                    });
-                    let size_hint_fields = encoded_fields.iter().map(|info| {
-                        let tag = info.tag.expect("tag required");
-                        let base = quote! { self };
-                        let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
-                            parse_getter_expr(get, &base, info.field)
-                        } else {
-                            (info.access.access_tokens(base), false)
-                        };
-                        let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
-                        let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
-                            let ref_expr = quote! { #access_expr };
-                            let converted = encode_conversion_expr(info, &ref_expr);
-                            quote! { let __proto_shadow = #converted; }
-                        } else {
-                            let field_ty = &info.field.ty;
-                            quote! {
-                                let __proto_value = #access_expr;
-                                let __proto_shadow =
-                                    <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
-                            }
-                        };
-                        quote! {
-                            {
-                                #shadow_init
-                                ::proto_rs::ProtoArchive::encoded_size_hint::<#tag>(&__proto_shadow)
-                            }
-                        }
-                    });
+                    };
                     quote! {
-                        impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
-                            #[inline]
-                            fn is_default(&self) -> bool {
-                                #( #is_default_checks )*
-                                true
-                            }
-
-                            #[inline]
-                            fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
-                                let payload = ::proto_rs::EncodeSizeHint::EMPTY #( .add(#size_hint_fields) )*;
-                                payload.for_field::<TAG>(<Self as ::proto_rs::ProtoExt>::WIRE_TYPE)
-                            }
-
-                            #[inline]
-                            fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
-                                let mark = w.mark();
-                                #( #archive_fields )*
-                                if TAG != 0 {
-                                    let payload_len = w.written_since(mark);
-                                    w.put_varint(payload_len as u64);
-                                    ::proto_rs::ArchivedProtoField::<TAG, Self>::put_key(w);
-                                }
+                        {
+                            #shadow_init
+                            if !::proto_rs::ProtoArchive::is_default(&__proto_shadow) {
+                                return false;
                             }
                         }
                     }
-                })
-                .unwrap_or_default();
-            let sun_ir_ext_impl = sun_ir_ty
-                .map(|sun_ir_ty| {
-                    let mut sun_ir_ext_generics = shadow_generics.clone();
-                    sun_ir_ext_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
-                    let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) = sun_ir_ext_generics.split_for_impl();
+                });
+                let archive_fields = encoded_fields.iter().rev().map(|info| {
+                    let tag = info.tag.expect("tag required");
+                    let base = quote! { self };
+                    let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
+                        parse_getter_expr(get, &base, info.field)
+                    } else {
+                        (info.access.access_tokens(base), false)
+                    };
+                    let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
+                    let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
+                        let ref_expr = quote! { #access_expr };
+                        let converted = encode_conversion_expr(info, &ref_expr);
+                        quote! { let __proto_shadow = #converted; }
+                    } else {
+                        let field_ty = &info.field.ty;
+                        quote! {
+                            let __proto_value = #access_expr;
+                            let __proto_shadow =
+                                <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
+                        }
+                    };
                     quote! {
-                        impl #sun_ir_ext_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #sun_ir_ext_where_clause {
-                            const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+                        {
+                            #shadow_init
+                            ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&__proto_shadow, w);
                         }
                     }
-                })
-                .unwrap_or_default();
+                });
+                let size_hint_fields = encoded_fields.iter().map(|info| {
+                    let tag = info.tag.expect("tag required");
+                    let base = quote! { self };
+                    let (access_expr, _) = if has_getters && let Some(get) = &info.config.getter {
+                        parse_getter_expr(get, &base, info.field)
+                    } else {
+                        (info.access.access_tokens(base), false)
+                    };
+                    let shadow_ty = shadow_field_ty_with_lifetime(info, &shadow_lifetime);
+                    let shadow_init = if needs_encode_conversion(&info.config, &info.parsed) {
+                        let ref_expr = quote! { #access_expr };
+                        let converted = encode_conversion_expr(info, &ref_expr);
+                        quote! { let __proto_shadow = #converted; }
+                    } else {
+                        let field_ty = &info.field.ty;
+                        quote! {
+                            let __proto_value = #access_expr;
+                            let __proto_shadow =
+                                <#shadow_ty as ::proto_rs::ProtoShadowEncode<#shadow_lifetime, #field_ty>>::from_sun(&__proto_value);
+                        }
+                    };
+                    quote! {
+                        {
+                            #shadow_init
+                            ::proto_rs::ProtoArchive::encoded_size_hint::<#tag>(&__proto_shadow)
+                        }
+                    }
+                });
+                quote! {
+                    impl #sun_ir_archive_impl_generics ::proto_rs::ProtoArchive for #sun_ir_ty #sun_ir_archive_where_clause {
+                        #[inline]
+                        fn is_default(&self) -> bool {
+                            #( #is_default_checks )*
+                            true
+                        }
+
+                        #[inline]
+                        fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                            let payload = ::proto_rs::EncodeSizeHint::EMPTY #( .add(#size_hint_fields) )*;
+                            payload.for_field::<TAG>(<Self as ::proto_rs::ProtoExt>::WIRE_TYPE)
+                        }
+
+                        #[inline]
+                        fn archive<const TAG: u32>(&self, w: &mut impl ::proto_rs::RevWriter) {
+                            let mark = w.mark();
+                            #( #archive_fields )*
+                            if TAG != 0 {
+                                let payload_len = w.written_since(mark);
+                                w.put_varint(payload_len as u64);
+                                ::proto_rs::ArchivedProtoField::<TAG, Self>::put_key(w);
+                            }
+                        }
+                    }
+                }
+            });
+            let sun_ir_ext_impl = sun_ir_ty.map_or_default(|sun_ir_ty| {
+                let mut sun_ir_ext_generics = shadow_generics.clone();
+                sun_ir_ext_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
+                let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) = sun_ir_ext_generics.split_for_impl();
+                quote! {
+                    impl #sun_ir_ext_impl_generics ::proto_rs::ProtoExt for #sun_ir_ty #sun_ir_ext_where_clause {
+                        const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::Message;
+                    }
+                }
+            });
             let sun_post_decode = if post_decode_hooks.is_empty() && field_validator_hooks.is_empty() && config.validator.is_none() {
                 quote! {}
             } else {
@@ -995,6 +994,14 @@ fn generate_proto_impls(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+            }
+            #[inline]
+            fn merge_field_with_state(
+                value: &mut Self, tag: u32, wire_type: ::proto_rs::encoding::WireType,
+                buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext,
+                state: &::proto_rs::DecodeState<'_>,
+            ) -> Result<(), ::proto_rs::DecodeError> {
                 match tag {
                     #(#decode_arms,)*
                     _ => ::proto_rs::encoding::skip_field(wire_type, tag, buf, ctx),
@@ -1003,19 +1010,23 @@ fn generate_proto_impls(
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
+                self.merge_with_state(wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+            }
+            #[inline]
+            fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
                 if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
                     return Err(::proto_rs::DecodeError::invalid_wire_type_for_kind(<Self as ::proto_rs::ProtoExt>::KIND.dbg_name()));
                 }
                 ctx.limit_reached()?;
                 let inner_ctx = ctx.enter_recursion();
-                let len = ::proto_rs::encoding::decode_varint(buf)? as usize;
+                let len = ::proto_rs::encoding::decode_length_delimiter(&mut *buf)?;
                 let remaining = buf.remaining();
                 if len > remaining {
                     return Err(::proto_rs::DecodeError::new("buffer underflow"));
                 }
                 let limit = remaining - len;
                 while buf.remaining() > limit {
-                    Self::decode_one_field(self, buf, inner_ctx)?;
+                    Self::decode_one_field_with_state(self, buf, inner_ctx, state)?;
                 }
                 if buf.remaining() != limit {
                     return Err(::proto_rs::DecodeError::new("delimited length exceeded"));

@@ -1,5 +1,4 @@
 use alloc::collections::VecDeque;
-use core::ptr;
 
 use bytes::Buf;
 
@@ -7,10 +6,8 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::bytes as bytes_encoding;
-use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
 use crate::traits::ArchivedProtoField;
-use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -24,14 +21,12 @@ use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for VecDeque<T> {
-    const KIND: ProtoKind = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
-        _ => ProtoKind::Repeated(&T::KIND),
+    const KIND: ProtoKind = if T::IS_BYTE {
+        ProtoKind::Bytes
+    } else {
+        ProtoKind::Repeated(&T::KIND)
     };
-    const REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => None,
-        _ => Some("VecDeque"),
-    };
+    const REPEATED_SUPPORT: Option<&'static str> = if T::IS_BYTE { None } else { Some("VecDeque") };
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
@@ -46,47 +41,13 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for VecDeque<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if T::KIND.is_bytes_kind() {
-            // SAFETY: only exercised for VecDeque<u8> which implements BytesAdapterDecode.
-            let bytes = unsafe { &mut *(ptr::from_mut(self).cast::<VecDeque<u8>>()) };
-            return bytes_encoding::merge(wire_type, bytes, buf, ctx);
+        if let Some(bytes) = T::byte_deque_mut(self) {
+            return bytes_encoding::merge_one_copy(wire_type, bytes, buf, ctx);
         }
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    if len > buf.remaining() {
-                        return Err(DecodeError::new("buffer underflow"));
-                    }
-                    let element_capacity = match T::WIRE_TYPE {
-                        WireType::ThirtyTwoBit => len / 4,
-                        WireType::SixtyFourBit => len / 8,
-                        WireType::Varint => len,
-                        WireType::LengthDelimited | WireType::StartGroup | WireType::EndGroup => 0,
-                    };
-                    self.reserve(element_capacity);
-                    let mut slice = buf.take(len);
-                    while slice.has_remaining() {
-                        let mut v = <T as ProtoDefault>::proto_default();
-                        T::merge_value(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
-                        self.push_back(v);
-                    }
-                    debug_assert!(!slice.has_remaining());
-                } else {
-                    let mut v = <T as ProtoDefault>::proto_default();
-                    T::merge_value(&mut v, wire_type, buf, ctx)?;
-                    self.push_back(v);
-                }
-                Ok(())
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = <T as ProtoDefault>::proto_default();
-                T::merge_value(&mut v, wire_type, buf, ctx)?;
-                self.push_back(v);
-                Ok(())
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
+        super::merge_repeated(self, wire_type, buf, ctx, Self::reserve, |values, value| {
+            values.push_back(value);
+            Ok(())
+        })
     }
 }
 
@@ -131,13 +92,11 @@ where
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        if T::KIND.is_bytes_kind() {
-            // SAFETY: only executed for VecDeque<u8>.
-            let bytes = unsafe { &*(ptr::from_ref(self).cast::<VecDeque<u8>>()) };
-            let (front, back) = bytes.as_slices();
+        let (front, back) = self.as_slices();
+        if let (Some(front), Some(back)) = (T::byte_slice(front), T::byte_slice(back)) {
             w.put_slice(back);
             w.put_slice(front);
-            let len = bytes.len();
+            let len = front.len() + back.len();
             if TAG != 0 {
                 w.put_varint(len as u64);
                 ArchivedProtoField::<TAG, Self>::put_key(w);
@@ -167,21 +126,36 @@ where
     }
 }
 
-impl<T: ProtoEncode> ProtoEncode for VecDeque<T>
-where
-    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
-    for<'a> VecDeque<T::Shadow<'a>>: ProtoArchive + ProtoExt,
-{
-    type Shadow<'a> = VecDeque<T::Shadow<'a>>;
+impl<T: ProtoEncode + ProtoExt + 'static> ProtoEncode for VecDeque<T> {
+    type Shadow<'a> = &'a VecDeque<T>;
 }
-
-impl<'a, T, S> ProtoShadowEncode<'a, VecDeque<T>> for VecDeque<S>
-where
-    S: ProtoShadowEncode<'a, T>,
-    T: ProtoEncode,
-{
-    #[inline]
+impl<'a, T> ProtoShadowEncode<'a, VecDeque<T>> for &'a VecDeque<T> {
     fn from_sun(value: &'a VecDeque<T>) -> Self {
-        value.iter().map(S::from_sun).collect()
+        value
+    }
+}
+impl<T: ProtoEncode + ProtoExt> ProtoArchive for &VecDeque<T> {
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        if T::IS_BYTE {
+            super::collection_size_hint::<T, TAG>(self.len())
+        } else {
+            super::repeated_size_hint::<T::Shadow<'_>, TAG>(self.len())
+        }
+    }
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        let (front, back) = self.as_slices();
+        if let (Some(front), Some(back)) = (T::byte_slice(front), T::byte_slice(back)) {
+            w.put_slice(back);
+            w.put_slice(front);
+            if TAG != 0 {
+                w.put_varint((front.len() + back.len()) as u64);
+                ArchivedProtoField::<TAG, Self>::put_key(w);
+            }
+        } else {
+            super::archive_repeated::<TAG, _>(self.iter().rev().map(T::Shadow::from_sun), w);
+        }
     }
 }

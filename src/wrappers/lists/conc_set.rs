@@ -1,18 +1,16 @@
-use alloc::vec::Vec;
 use core::hash::BuildHasher;
 use core::hash::Hash;
 
 use bytes::Buf;
 use papaya::HashSet;
 
+use super::Repeated;
 use crate::DecodeError;
 use crate::ProtoArchive;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
-use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
 use crate::traits::ArchivedProtoField;
-use crate::traits::PrimitiveKind;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
 use crate::traits::ProtoDefault;
@@ -25,23 +23,17 @@ use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt + Eq + Hash, S> ProtoExt for HashSet<T, S> {
-    const KIND: ProtoKind = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
-        _ => ProtoKind::Repeated(&T::KIND),
-    };
-    const REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => None,
-        _ => Some("papaya::HashSet"),
-    };
+    const KIND: ProtoKind = ProtoKind::Repeated(&T::KIND);
+    const REPEATED_SUPPORT: Option<&'static str> = Some("papaya::HashSet");
 }
 
 impl<T: ProtoDecode + Eq + Hash, S> ProtoDecode for HashSet<T, S>
 where
     T::ShadowDecoded: ProtoDecoder + ProtoExt,
     S: BuildHasher + Default,
-    Vec<<T as ProtoDecode>::ShadowDecoded>: ProtoShadowDecode<HashSet<T, S>>,
+    Repeated<<T as ProtoDecode>::ShadowDecoded>: ProtoShadowDecode<HashSet<T, S>>,
 {
-    type ShadowDecoded = Vec<T::ShadowDecoded>;
+    type ShadowDecoded = Repeated<T::ShadowDecoded>;
 }
 
 impl<T, S> ProtoDecoder for HashSet<T, S>
@@ -60,36 +52,18 @@ where
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let guard = self.pin();
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    if len > buf.remaining() {
-                        return Err(DecodeError::new("buffer underflow"));
-                    }
-                    let mut slice = buf.take(len);
-                    while slice.has_remaining() {
-                        let mut v = <T as ProtoDefault>::proto_default();
-                        T::merge_value(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
-                        guard.insert(v);
-                    }
-                    debug_assert!(!slice.has_remaining());
-                } else {
-                    let mut v = <T as ProtoDefault>::proto_default();
-                    T::merge_value(&mut v, wire_type, buf, ctx)?;
-                    guard.insert(v);
-                }
+        let mut guard = self.pin();
+        super::merge_repeated(
+            &mut guard,
+            wire_type,
+            buf,
+            ctx,
+            |_, _| {},
+            |values, value| {
+                values.insert(value);
                 Ok(())
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = <T as ProtoDefault>::proto_default();
-                T::merge_value(&mut v, wire_type, buf, ctx)?;
-                guard.insert(v);
-                Ok(())
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
+            },
+        )
     }
 }
 
@@ -103,7 +77,7 @@ where
     }
 }
 
-impl<T, U, S> ProtoShadowDecode<HashSet<U, S>> for Vec<T>
+impl<T, U, S> ProtoShadowDecode<HashSet<U, S>> for Repeated<T>
 where
     T: ProtoShadowDecode<U>,
     U: Eq + Hash,
@@ -113,7 +87,7 @@ where
     fn to_sun(self) -> Result<HashSet<U, S>, DecodeError> {
         let out = HashSet::default();
         let guard = out.pin();
-        for item in self {
+        for item in self.0 {
             guard.insert(item.to_sun()?);
         }
         drop(guard);
@@ -153,7 +127,7 @@ where
 
     #[inline]
     fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
-        super::collection_size_hint::<T, TAG>(self.len())
+        super::repeated_size_hint::<T, TAG>(self.len())
     }
 
     #[inline]

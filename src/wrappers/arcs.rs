@@ -19,6 +19,7 @@ use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Arc<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -47,11 +48,36 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl bytes::Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl bytes::Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
         if let Some(inner) = Arc::get_mut(self) {
-            T::merge_value(inner, wire_type, buf, ctx)
+            T::merge_value_with_state(inner, wire_type, buf, ctx, state)
         } else {
             let mut value = <T as ProtoDefault>::proto_default();
-            T::merge_value(&mut value, wire_type, buf, ctx)?;
+            T::merge_value_with_state(&mut value, wire_type, buf, ctx, state)?;
             *self = Arc::new(value);
             Ok(())
         }
@@ -72,10 +98,10 @@ where
     #[inline]
     fn to_sun(self) -> Result<Arc<U>, DecodeError> {
         // allocate Arc<MaybeUninit<T>>
-        let u: Arc<MaybeUninit<U>> = Arc::new_uninit();
+        let mut u: Arc<MaybeUninit<U>> = Arc::new_uninit();
 
         // just allocated -> unique; write T directly into the slot
-        let slot: &mut MaybeUninit<U> = unsafe { &mut *(Arc::as_ptr(&u).cast_mut()) };
+        let slot = Arc::get_mut(&mut u).expect("new Arc is uniquely owned");
         slot.write((*self).to_sun()?);
 
         // disambiguate: assume_init for Arc<MaybeUninit<T>>

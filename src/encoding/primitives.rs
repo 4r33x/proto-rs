@@ -475,7 +475,7 @@ pub mod bytes {
         Ok(())
     }
     #[inline]
-    pub(super) fn merge_one_copy(
+    pub(crate) fn merge_one_copy(
         wire_type: WireType,
         value: &mut impl BytesAdapterDecode,
         buf: &mut impl Buf,

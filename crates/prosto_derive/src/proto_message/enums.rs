@@ -46,6 +46,7 @@ pub(super) fn generate_simple_enum_impl(
         discriminants[zero_index] = default_value;
     }
     let default_ident = &data.variants[default_index].ident;
+    let one_byte_values = discriminants.iter().all(|value| (0..128).contains(value));
 
     enum_item.attrs.push(parse_quote!(#[repr(i32)]));
     for (variant, value) in enum_item.variants.iter_mut().zip(discriminants.iter()) {
@@ -211,6 +212,7 @@ pub(super) fn generate_simple_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoExt for #name #ty_generics #where_clause {
             const KIND: ::proto_rs::ProtoKind = ::proto_rs::ProtoKind::SimpleEnum;
+            const ENCODED_SIZE_HINT: ::proto_rs::EncodeSizeHint = ::proto_rs::EncodeSizeHint::new(1, #one_byte_values);
         }
 
         impl #shadow_impl_generics ::proto_rs::ProtoShadowEncode<'a, #name #ty_generics> for i32 #shadow_where_clause {

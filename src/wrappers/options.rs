@@ -23,6 +23,9 @@ pub(crate) fn present_size_hint<T: ProtoArchive + ProtoExt, const TAG: u32>(valu
         return hint;
     }
     match T::KIND {
+        // A present default scalar still occupies one byte in a packed list or
+        // an optional field, even when its type's general size is variable.
+        ProtoKind::Primitive(_) if T::WIRE_TYPE == WireType::Varint => crate::EncodeSizeHint::new(1, true).for_field::<TAG>(T::WIRE_TYPE),
         ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => T::ENCODED_SIZE_HINT.for_field::<TAG>(T::WIRE_TYPE),
         ProtoKind::String | ProtoKind::Bytes => crate::EncodeSizeHint::EMPTY.for_field::<TAG>(T::WIRE_TYPE),
         ProtoKind::Message => hint,
@@ -32,6 +35,7 @@ pub(crate) fn present_size_hint<T: ProtoArchive + ProtoExt, const TAG: u32>(valu
 
 impl<T: ProtoExt> ProtoExt for Option<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -48,8 +52,33 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
         let inner = self.get_or_insert_with(<T as ProtoDefault>::proto_default);
-        T::merge_value(inner, wire_type, buf, ctx)
+        T::merge_value_with_state(inner, wire_type, buf, ctx, state)
     }
 }
 

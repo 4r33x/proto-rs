@@ -439,7 +439,7 @@ fn is_byte_like(ty: &Type) -> bool {
     matches!(
         ty,
         Type::Path(inner_path)
-            if last_ident(inner_path).is_some_and(|id| id == "u8" || id == "AtomicU8")
+            if last_ident(inner_path).is_some_and(|id| id == "u8")
     )
 }
 

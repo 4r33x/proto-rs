@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.12.0]
+
+### Transport abstraction and traits
+
+- Add the transport-neutral `proto_rs::grpc` API: `Request`, `Response`, `Status`, `Code`, `MetadataMap`, and `Extensions`.
+- Add `GrpcTransport`, a client-side trait supporting unary, client-streaming, server-streaming, and bidirectional RPCs. Generated `<service>_transport_client` modules accept custom implementations without requiring Tonic.
+- Add `GrpcService`, `MethodDescriptor`, `RpcKind`, and `MessageStream`. Generated `<service>_service` routers handle protobuf decoding, validation, typed dispatch, and response encoding; transport implementations supply framing and I/O.
+- Provide `TonicTransport` and response-stream adapters behind the `tonic` feature. `tonic-transport` enables network transport and generated `connect` helpers; disable default features to use only a custom transport.
+- Make transport-neutral response encoding mode-aware through `GrpcEncode<Mode>` and `ProtoResponse`, including zero-copy responses and Box/Arc dereferencing.
+- Extend `ProtoExt` with `WRAP_ROOT` for standalone framing and `IS_BYTE` plus safe byte-access hooks for byte-container specialization. Add state-aware decoder hooks to preserve fixed-array cursors across field occurrences.
+
+### Breaking changes and migration
+
+- Use `proto_rs::grpc::{Request, Response, Status}` in transport-neutral service implementations. Request-scoped validators use `proto_rs::grpc::Extensions`; Tonic integration converts between the corresponding transport types.
+- Encode standalone scalars and collections as field 1 of an implicit wrapper message. Message-valued Option, Box, Arc, Mutex and related wrappers now also emit their schema-declared field-1 envelope. This changes previously inconsistent standalone wire representations; raw payload callers can still use `ProtoArchive::archive::<0>`.
+- Use repeated-varint encoding for byte-valued sets and wrapped u8 elements rather than treating them as raw byte buffers. Regenerate affected schemas and clients, and coordinate upgrades with peers or stored data using the previous representation.
+
+### Correctness and interoperability
+
+- Replace byte-container layout casts with safe byte access hooks.
+- Fix split packed/unpacked fixed arrays, including nested message occurrences, and merge repeated message-valued oneof variants.
+- Release mutex encoding guards between fields so aliased mutex fields do not deadlock.
+- Emit valid RPC message wrappers for scalars and enums, bytes (not repeated uint32) for byte collections, and inline optional/repeated fields for Rust aliases. Fixed arrays use the corresponding sequence schema; their length constraints remain Rust-side validation.
+- Honor Box/Arc response dereferencing in the transport-neutral gRPC encoder, matching the tonic codec and generated response schemas.
+- Preserve ArcSwapOption presence for default-valued payloads and merge ArcSwap message occurrences through owned decoding shadows.
+- Validate emitted schemas with protoc and compare encoding/decoding against its C++ implementation in interoperability regression tests (requires protoc, or the PROTOC environment variable).
+
+### Performance
+
+- Add `EncodeSizeHint` and runtime encoding-size hints with bounded initial preallocation; support reusable reverse-writer buffers through `ArchivedProtoMessage::new_with_buffer`.
+- Bound speculative repeated-field decoding allocations to 4 KiB; share repeated-field framing across collections.
+- Encode BTreeSet and VecDeque through borrowed views without allocating temporary shadow collections.
+- Decode owned byte containers with one copy, avoiding an intermediate `Bytes` allocation. Allocate fixed-array decode cursors lazily and merge unconverted tuple-oneof payloads in place.
+- Improve small scalar/string/bytes collection capacity hints and recognize enums whose values all fit in one byte.
+- Add `RevWriter::put_bytes` with a compatible default implementation; `RevVec` fuses small length-delimited fields into one reservation. Keep buffer growth out of line and inline nonrecursive encode/decode entry points to avoid aggregate copies.
+- Keep `DecodeError` pointer-sized so successful decode results do not carry large error storage; constructing an error now allocates its diagnostic payload, without changing diagnostic text or public methods.
+
 ## [0.11.26]
 - Gate generated tonic client transport codegen behind `tonic-transport`
 

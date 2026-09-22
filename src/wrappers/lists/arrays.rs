@@ -7,10 +7,8 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::check_wire_type;
-use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
 use crate::traits::ArchivedProtoField;
-use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -39,17 +37,16 @@ unsafe fn assume_init_array<T, const N: usize>(arr: [MaybeUninit<T>; N]) -> [T; 
 }
 
 impl<T: ProtoExt, const N: usize> ProtoExt for [T; N] {
-    const KIND: ProtoKind = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
-        _ => ProtoKind::Repeated(&T::KIND),
+    const KIND: ProtoKind = if T::IS_BYTE {
+        ProtoKind::Bytes
+    } else {
+        ProtoKind::Repeated(&T::KIND)
     };
-    const REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => None,
-        _ => Some("Array"),
-    };
-    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => crate::EncodeSizeHint::new(N, true),
-        _ => T::ENCODED_SIZE_HINT.repeated(N),
+    const REPEATED_SUPPORT: Option<&'static str> = if T::IS_BYTE { None } else { Some("Array") };
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = if T::IS_BYTE {
+        crate::EncodeSizeHint::new(N, true)
+    } else {
+        T::ENCODED_SIZE_HINT.repeated(N)
     };
 }
 
@@ -65,9 +62,34 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if T::KIND.is_bytes_kind() {
+        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if let Some(bytes) = T::byte_slice_mut(self) {
             check_wire_type(WireType::LengthDelimited, wire_type)?;
-            let len = decode_varint(buf)? as usize;
+            let len = crate::encoding::decode_length_delimiter(&mut *buf)?;
             if len != N {
                 return Err(DecodeError::new(format!(
                     "invalid length for fixed byte array: expected {N} got {len}"
@@ -76,43 +98,25 @@ impl<T: ProtoFieldMerge + ProtoDefault, const N: usize> ProtoDecoder for [T; N] 
             if len > buf.remaining() {
                 return Err(DecodeError::new("buffer underflow"));
             }
-            // SAFETY: only executed for [u8]
-            let bytes: &mut [u8] = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr().cast::<u8>(), self.len()) };
             buf.copy_to_slice(bytes);
             return Ok(());
         }
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    if len > buf.remaining() {
-                        return Err(DecodeError::new("buffer underflow"));
-                    }
-                    let mut slice = buf.take(len);
-                    for v in self.iter_mut() {
-                        if !slice.has_remaining() {
-                            break;
-                        }
-                        T::merge_value(v, T::WIRE_TYPE, &mut slice, ctx)?;
-                    }
-                    if slice.has_remaining() {
-                        return Err(DecodeError::new("packed array has too many elements"));
-                    }
-                } else {
-                    for v in self.iter_mut() {
-                        T::merge_value(v, wire_type, buf, ctx)?;
-                    }
-                }
+        let mut index = state.index();
+        let result = super::merge_repeated(
+            self,
+            wire_type,
+            buf,
+            ctx,
+            |_, _| {},
+            |values, value| {
+                let slot = values.get_mut(index).ok_or_else(|| DecodeError::new("packed array has too many elements"))?;
+                *slot = value;
+                index += 1;
                 Ok(())
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                for v in self.iter_mut() {
-                    T::merge_value(v, wire_type, buf, ctx)?;
-                }
-                Ok(())
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
+            },
+        );
+        state.set_index(index);
+        result
     }
 }
 
@@ -174,8 +178,7 @@ where
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        if T::KIND.is_bytes_kind() {
-            let bytes: &[u8] = unsafe { core::slice::from_raw_parts(self.as_ptr().cast::<u8>(), N) };
+        if let Some(bytes) = T::byte_slice(self) {
             w.put_slice(bytes);
             if TAG != 0 {
                 w.put_varint(bytes.len() as u64);

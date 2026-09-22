@@ -1,5 +1,3 @@
-use core::ops::Deref;
-
 use bytes::Buf;
 
 use crate::DecodeError;
@@ -18,12 +16,47 @@ use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
-pub struct MutexShadow<G> {
-    guard: G,
+pub struct MutexShadow<'a, M> {
+    mutex: &'a M,
 }
 
+pub trait MutexSource {
+    type Value: ProtoArchive + ProtoExt;
+    fn with_value<R>(&self, f: impl FnOnce(&Self::Value) -> R) -> R;
+}
+
+impl<T: ProtoArchive + ProtoExt> MutexSource for std::sync::Mutex<T> {
+    type Value = T;
+    fn with_value<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.lock().expect("Mutex lock poisoned"))
+    }
+}
+
+#[cfg(feature = "parking_lot")]
+impl<T: ProtoArchive + ProtoExt> MutexSource for parking_lot::Mutex<T> {
+    type Value = T;
+    fn with_value<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&self.lock())
+    }
+}
+impl<M: MutexSource> ProtoExt for MutexShadow<'_, M> {
+    const KIND: ProtoKind = M::Value::KIND;
+    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = M::Value::ENCODED_SIZE_HINT;
+}
+impl<M: MutexSource> ProtoArchive for MutexShadow<'_, M> {
+    fn is_default(&self) -> bool {
+        self.mutex.with_value(ProtoArchive::is_default)
+    }
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.mutex.with_value(ProtoArchive::encoded_size_hint::<TAG>)
+    }
+    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
+        self.mutex.with_value(|value| value.archive::<TAG>(w));
+    }
+}
 impl<T: ProtoExt> ProtoExt for std::sync::Mutex<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -39,8 +72,33 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for std::sync::Mutex<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
         let inner = self.get_mut().map_err(|_| DecodeError::new("Mutex lock poisoned"))?;
-        T::merge_value(inner, wire_type, buf, ctx)
+        T::merge_value_with_state(inner, wire_type, buf, ctx, state)
     }
 }
 
@@ -69,52 +127,10 @@ where
     }
 }
 
-impl<T: ProtoArchive + ProtoExt + 'static> ProtoEncode for std::sync::Mutex<T> {
-    type Shadow<'a> = MutexShadow<std::sync::MutexGuard<'a, T>>;
-}
-
-impl<'a, T: ProtoArchive + ProtoExt> ProtoShadowEncode<'a, std::sync::Mutex<T>> for MutexShadow<std::sync::MutexGuard<'a, T>> {
-    #[inline]
-    fn from_sun(value: &'a std::sync::Mutex<T>) -> Self {
-        Self {
-            guard: value.lock().expect("Mutex lock poisoned"),
-        }
-    }
-}
-
-impl<G> ProtoExt for MutexShadow<G>
-where
-    G: Deref,
-    G::Target: ProtoExt,
-{
-    const KIND: ProtoKind = G::Target::KIND;
-    const ENCODED_SIZE_HINT: crate::EncodeSizeHint = G::Target::ENCODED_SIZE_HINT;
-}
-
-impl<G> ProtoArchive for MutexShadow<G>
-where
-    G: Deref,
-    G::Target: ProtoArchive + ProtoExt,
-{
-    #[inline]
-    fn is_default(&self) -> bool {
-        self.guard.is_default()
-    }
-
-    #[inline]
-    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
-        self.guard.encoded_size_hint::<TAG>()
-    }
-
-    #[inline]
-    fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        self.guard.archive::<TAG>(w);
-    }
-}
-
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoExt> ProtoExt for parking_lot::Mutex<T> {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = true;
     const ENCODED_SIZE_HINT: crate::EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }
 
@@ -131,8 +147,33 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for parking_lot::Mutex<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
         let inner = self.get_mut();
-        T::merge_value(inner, wire_type, buf, ctx)
+        T::merge_value_with_state(inner, wire_type, buf, ctx, state)
     }
 }
 
@@ -164,15 +205,21 @@ where
     }
 }
 
+impl<T: ProtoArchive + ProtoExt + 'static> ProtoEncode for std::sync::Mutex<T> {
+    type Shadow<'a> = MutexShadow<'a, Self>;
+}
+impl<'a, T: ProtoArchive + ProtoExt> ProtoShadowEncode<'a, std::sync::Mutex<T>> for MutexShadow<'a, std::sync::Mutex<T>> {
+    fn from_sun(value: &'a std::sync::Mutex<T>) -> Self {
+        Self { mutex: value }
+    }
+}
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoArchive + ProtoExt + 'static> ProtoEncode for parking_lot::Mutex<T> {
-    type Shadow<'a> = MutexShadow<parking_lot::MutexGuard<'a, T>>;
+    type Shadow<'a> = MutexShadow<'a, Self>;
 }
-
 #[cfg(feature = "parking_lot")]
-impl<'a, T: ProtoArchive + ProtoExt> ProtoShadowEncode<'a, parking_lot::Mutex<T>> for MutexShadow<parking_lot::MutexGuard<'a, T>> {
-    #[inline]
+impl<'a, T: ProtoArchive + ProtoExt> ProtoShadowEncode<'a, parking_lot::Mutex<T>> for MutexShadow<'a, parking_lot::Mutex<T>> {
     fn from_sun(value: &'a parking_lot::Mutex<T>) -> Self {
-        Self { guard: value.lock() }
+        Self { mutex: value }
     }
 }

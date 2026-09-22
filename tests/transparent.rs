@@ -140,15 +140,9 @@ pub struct IdGenericTransparent<T> {
 fn transparent_generic_roundtrip() {
     let original: IdGenericTransparent<u64> = IdGenericTransparent { id: 12345 };
     let buf = <IdGenericTransparent<u64> as ProtoEncode>::encode_to_vec(&original);
-    // For a transparent wrapper around u64, the encoding should just be the varint
-    // Check that we get the correct varint encoding of 12345
-    println!("Encoded buffer: {:?}, len: {}", buf, buf.len());
-
-    // For a primitive type like u64, the transparent wrapper should encode
-    // just the raw varint. Let's decode using the merge method which handles
-    // primitives directly
-    let mut decoded = <IdGenericTransparent<u64> as ProtoDefault>::proto_default();
-    <IdGenericTransparent<u64> as ProtoDecoder>::merge(&mut decoded, WireType::Varint, &mut &buf[..], DecodeContext::default()).unwrap();
+    // Top-level scalar wrappers use field 1, just like their inner scalar.
+    assert_eq!(buf, vec![8, 185, 96]);
+    let decoded = <IdGenericTransparent<u64> as ProtoDecode>::decode(buf.as_slice(), DecodeContext::default()).unwrap();
     assert_eq!(decoded, original);
 }
 

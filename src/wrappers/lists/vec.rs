@@ -1,5 +1,4 @@
 use alloc::vec::Vec;
-use core::ptr;
 
 use bytes::Buf;
 
@@ -7,10 +6,8 @@ use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::bytes as bytes_encoding;
-use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
 use crate::traits::ArchivedProtoField;
-use crate::traits::PrimitiveKind;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -24,14 +21,12 @@ use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
 
 impl<T: ProtoExt> ProtoExt for Vec<T> {
-    const KIND: ProtoKind = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => ProtoKind::Bytes,
-        _ => ProtoKind::Repeated(&T::KIND),
+    const KIND: ProtoKind = if T::IS_BYTE {
+        ProtoKind::Bytes
+    } else {
+        ProtoKind::Repeated(&T::KIND)
     };
-    const REPEATED_SUPPORT: Option<&'static str> = match T::KIND {
-        ProtoKind::Primitive(PrimitiveKind::U8) => None,
-        _ => Some("Vec"),
-    };
+    const REPEATED_SUPPORT: Option<&'static str> = if T::IS_BYTE { None } else { Some("Vec") };
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Vec<T> {
@@ -46,51 +41,13 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Vec<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if T::KIND.is_bytes_kind() {
-            // SAFETY: only executed for Vec<u8>
-            let bytes = unsafe { &mut *(ptr::from_mut(self).cast::<Vec<u8>>()) };
-            return bytes_encoding::merge(wire_type, bytes, buf, ctx);
+        if let Some(bytes) = T::byte_vec_mut(self) {
+            return bytes_encoding::merge_one_copy(wire_type, bytes, buf, ctx);
         }
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    let remaining = buf.remaining();
-                    if len > remaining {
-                        return Err(DecodeError::new("buffer underflow"));
-                    }
-                    let element_capacity = match T::WIRE_TYPE {
-                        WireType::ThirtyTwoBit => len / 4,
-                        WireType::SixtyFourBit => len / 8,
-                        WireType::Varint => len,
-                        WireType::LengthDelimited | WireType::StartGroup | WireType::EndGroup => 0,
-                    };
-                    self.reserve(element_capacity);
-                    // Use limit-based decoding to avoid Take wrapper overhead
-                    let limit = remaining - len;
-                    while buf.remaining() > limit {
-                        let mut v = <T as ProtoDefault>::proto_default();
-                        T::merge_value(&mut v, T::WIRE_TYPE, buf, ctx)?;
-                        self.push(v);
-                    }
-                    if buf.remaining() != limit {
-                        return Err(DecodeError::new("delimited length exceeded"));
-                    }
-                } else {
-                    let mut v = <T as ProtoDefault>::proto_default();
-                    T::merge_value(&mut v, wire_type, buf, ctx)?;
-                    self.push(v);
-                }
-                Ok(())
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = <T as ProtoDefault>::proto_default();
-                T::merge_value(&mut v, wire_type, buf, ctx)?;
-                self.push(v);
-                Ok(())
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
+        super::merge_repeated(self, wire_type, buf, ctx, Self::reserve, |values, value| {
+            values.push(value);
+            Ok(())
+        })
     }
 }
 
@@ -130,19 +87,13 @@ where
 
     #[inline]
     fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
-        super::collection_size_hint::<T, TAG>(self.len())
+        super::slice_size_hint::<T, TAG>(self)
     }
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        if T::KIND.is_bytes_kind() {
-            // SAFETY: only executed for Vec<u8>.
-            let bytes = unsafe { (*(ptr::from_ref(self).cast::<Vec<u8>>())).as_slice() };
-            w.put_slice(bytes);
-            if TAG != 0 {
-                w.put_varint(bytes.len() as u64);
-                ArchivedProtoField::<TAG, Self>::put_key(w);
-            }
+        if let Some(bytes) = T::byte_slice(self) {
+            w.put_bytes::<TAG>(bytes);
             return;
         }
 

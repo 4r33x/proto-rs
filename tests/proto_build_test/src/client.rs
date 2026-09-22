@@ -34,6 +34,25 @@ pub mod custom_types {
         pub id: u64,
     }
 
+    #[derive(Clone, Debug, PartialEq)]
+    #[proto_message]
+    pub struct MixedTags {
+        #[proto(tag = 2)]
+        pub automatic: u32,
+        #[proto(tag = 1)]
+        pub explicit: u32,
+        pub trailing: u32,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    #[proto_message]
+    pub enum TaggedChoice {
+        First,
+        Second(
+            u32,
+        ),
+    }
+
 }
 #[allow(clippy::upper_case_acronyms)]
 pub mod extra_types {

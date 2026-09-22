@@ -62,7 +62,7 @@ impl<T> Request<T> {
         Self::from_parts(MetadataMap::new(), Extensions::new(), message)
     }
 
-    pub fn from_parts(metadata: MetadataMap, extensions: Extensions, message: T) -> Self {
+    pub const fn from_parts(metadata: MetadataMap, extensions: Extensions, message: T) -> Self {
         Self {
             metadata,
             extensions,
@@ -74,11 +74,11 @@ impl<T> Request<T> {
         (self.metadata, self.extensions, self.message)
     }
 
-    pub fn get_ref(&self) -> &T {
+    pub const fn get_ref(&self) -> &T {
         &self.message
     }
 
-    pub fn get_mut(&mut self) -> &mut T {
+    pub const fn get_mut(&mut self) -> &mut T {
         &mut self.message
     }
 
@@ -86,19 +86,19 @@ impl<T> Request<T> {
         self.message
     }
 
-    pub fn metadata(&self) -> &MetadataMap {
+    pub const fn metadata(&self) -> &MetadataMap {
         &self.metadata
     }
 
-    pub fn metadata_mut(&mut self) -> &mut MetadataMap {
+    pub const fn metadata_mut(&mut self) -> &mut MetadataMap {
         &mut self.metadata
     }
 
-    pub fn extensions(&self) -> &Extensions {
+    pub const fn extensions(&self) -> &Extensions {
         &self.extensions
     }
 
-    pub fn extensions_mut(&mut self) -> &mut Extensions {
+    pub const fn extensions_mut(&mut self) -> &mut Extensions {
         &mut self.extensions
     }
 
@@ -119,7 +119,7 @@ impl<T> Response<T> {
         Self::from_parts(MetadataMap::new(), message, Extensions::new())
     }
 
-    pub fn from_parts(metadata: MetadataMap, message: T, extensions: Extensions) -> Self {
+    pub const fn from_parts(metadata: MetadataMap, message: T, extensions: Extensions) -> Self {
         Self {
             metadata,
             message,
@@ -131,11 +131,11 @@ impl<T> Response<T> {
         (self.metadata, self.message, self.extensions)
     }
 
-    pub fn get_ref(&self) -> &T {
+    pub const fn get_ref(&self) -> &T {
         &self.message
     }
 
-    pub fn get_mut(&mut self) -> &mut T {
+    pub const fn get_mut(&mut self) -> &mut T {
         &mut self.message
     }
 
@@ -143,19 +143,19 @@ impl<T> Response<T> {
         self.message
     }
 
-    pub fn metadata(&self) -> &MetadataMap {
+    pub const fn metadata(&self) -> &MetadataMap {
         &self.metadata
     }
 
-    pub fn metadata_mut(&mut self) -> &mut MetadataMap {
+    pub const fn metadata_mut(&mut self) -> &mut MetadataMap {
         &mut self.metadata
     }
 
-    pub fn extensions(&self) -> &Extensions {
+    pub const fn extensions(&self) -> &Extensions {
         &self.extensions
     }
 
-    pub fn extensions_mut(&mut self) -> &mut Extensions {
+    pub const fn extensions_mut(&mut self) -> &mut Extensions {
         &mut self.extensions
     }
 

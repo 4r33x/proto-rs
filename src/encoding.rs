@@ -118,7 +118,9 @@ pub fn encode_key(tag: u32, wire_type: WireType, buf: &mut impl BufMut) {
 
 /// Decodes a Protobuf field key, which consists of a wire type designator and
 /// the field tag.
-#[inline]
+// Keep the common one-byte key in the caller's field-dispatch loop. This
+// nonrecursive helper otherwise remains an out-of-line call for every field.
+#[inline(always)]
 pub fn decode_key(buf: &mut impl Buf) -> Result<(u32, WireType), DecodeError> {
     let bytes = buf.chunk();
     let key = if !bytes.is_empty() && bytes[0] < 0x80 {

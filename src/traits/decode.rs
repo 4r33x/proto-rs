@@ -1,9 +1,9 @@
 use bytes::Buf;
 
+use crate::DecodeState;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::decode_key;
-use crate::encoding::decode_varint;
 use crate::error::DecodeError;
 use crate::traits::ProtoExt;
 
@@ -21,6 +21,31 @@ pub trait ProtoDecoder: ProtoExt {
     /// - Must fully consume the field payload from `buf` (or skip it).
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
 
+    #[doc(hidden)]
+    #[inline]
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        _state: &DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        Self::merge_field(value, tag, wire_type, buf, ctx)
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    fn merge_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        _state: &DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        self.merge(wire_type, buf, ctx)
+    }
+
     /// Merge an entire message payload
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -34,15 +59,16 @@ pub trait ProtoDecoder: ProtoExt {
         // Check recursion limit once at recursion boundary (not per-field)
         ctx.limit_reached()?;
         let inner_ctx = ctx.enter_recursion();
-        let len = decode_varint(buf)? as usize;
+        let len = crate::encoding::decode_length_delimiter(&mut *buf)?;
         let remaining = buf.remaining();
         if len > remaining {
             return Err(DecodeError::new("buffer underflow"));
         }
         // Use limit-based decoding to avoid Buf::take wrapper overhead
         let limit = remaining - len;
+        let state = DecodeState::default();
         while buf.remaining() > limit {
-            Self::decode_one_field(self, buf, inner_ctx)?;
+            Self::decode_one_field_with_state(self, buf, inner_ctx, &state)?;
         }
         if buf.remaining() != limit {
             return Err(DecodeError::new("delimited length exceeded"));
@@ -66,8 +92,9 @@ pub trait ProtoDecoder: ProtoExt {
     /// Decode until `buf` is exhausted. Caller must check ctx.limit_reached() before calling.
     #[inline]
     fn decode_into(value: &mut Self, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
+        let state = DecodeState::default();
         while buf.has_remaining() {
-            Self::decode_one_field(value, buf, ctx)?;
+            Self::decode_one_field_with_state(value, buf, ctx, &state)?;
         }
         Ok(())
     }
@@ -79,11 +106,25 @@ pub trait ProtoDecoder: ProtoExt {
         let (tag, wire) = decode_key(buf)?;
         Self::merge_field(value, tag, wire, buf, ctx)
     }
+
+    #[doc(hidden)]
+    #[inline]
+    fn decode_one_field_with_state(
+        value: &mut Self,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        let (tag, wire) = decode_key(buf)?;
+        Self::merge_field_with_state(value, tag, wire, buf, ctx, state)
+    }
 }
 
 pub trait ProtoDecode: Sized {
     type ShadowDecoded: ProtoDecoder + ProtoExt + ProtoShadowDecode<Self> + ProtoDefault;
-    #[inline]
+    // Construct the result in the caller, avoiding an aggregate return/copy for
+    // small messages. Nested messages use merge, not this top-level entry point.
+    #[inline(always)]
     fn decode(mut buf: impl Buf, ctx: DecodeContext) -> Result<Self, DecodeError> {
         ctx.limit_reached()?;
         let mut sh = <Self::ShadowDecoded as ProtoDefault>::proto_default();
@@ -107,6 +148,18 @@ pub trait ProtoDecode: Sized {
 pub trait ProtoFieldMerge: ProtoExt {
     /// Merge a single *field occurrence* into `self` given the field wire type.
     fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError>;
+
+    #[doc(hidden)]
+    #[inline]
+    fn merge_value_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        _state: &DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        self.merge_value(wire_type, buf, ctx)
+    }
 }
 
 pub trait ProtoDefault: Sized {
@@ -122,6 +175,17 @@ where
     #[inline]
     fn merge_value(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         <T as ProtoDecoder>::merge(self, wire_type, buf, ctx)
+    }
+
+    #[inline]
+    fn merge_value_with_state(
+        &mut self,
+        wire_type: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        <T as ProtoDecoder>::merge_with_state(self, wire_type, buf, ctx, state)
     }
 }
 

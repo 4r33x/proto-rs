@@ -1,12 +1,10 @@
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
 
 use bytes::Buf;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
-use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
@@ -36,35 +34,17 @@ impl<T: ProtoFieldMerge + ProtoDefault + Ord> ProtoDecoder for BTreeSet<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                if wire_type == WireType::LengthDelimited {
-                    let len = decode_varint(buf)? as usize;
-                    if len > buf.remaining() {
-                        return Err(DecodeError::new("buffer underflow"));
-                    }
-                    let mut slice = buf.take(len);
-                    while slice.has_remaining() {
-                        let mut v = <T as ProtoDefault>::proto_default();
-                        T::merge_value(&mut v, T::WIRE_TYPE, &mut slice, ctx)?;
-                        self.insert(v);
-                    }
-                    debug_assert!(!slice.has_remaining());
-                } else {
-                    let mut v = <T as ProtoDefault>::proto_default();
-                    T::merge_value(&mut v, wire_type, buf, ctx)?;
-                    self.insert(v);
-                }
+        super::merge_repeated(
+            self,
+            wire_type,
+            buf,
+            ctx,
+            |_, _| {},
+            |values, value| {
+                values.insert(value);
                 Ok(())
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                let mut v = <T as ProtoDefault>::proto_default();
-                T::merge_value(&mut v, wire_type, buf, ctx)?;
-                self.insert(v);
-                Ok(())
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
+            },
+        )
     }
 }
 
@@ -93,21 +73,24 @@ where
     }
 }
 
-impl<T: ProtoEncode + Ord> ProtoEncode for BTreeSet<T>
-where
-    for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, T>,
-    for<'a> Vec<T::Shadow<'a>>: crate::traits::ProtoArchive + ProtoExt,
-{
-    type Shadow<'a> = Vec<T::Shadow<'a>>;
+impl<T: ProtoEncode + ProtoExt + Ord + 'static> ProtoEncode for BTreeSet<T> {
+    type Shadow<'a> = &'a BTreeSet<T>;
 }
 
-impl<'a, T, S> ProtoShadowEncode<'a, BTreeSet<T>> for Vec<S>
-where
-    S: ProtoShadowEncode<'a, T>,
-    T: Ord,
-{
-    #[inline]
+impl<'a, T: Ord> ProtoShadowEncode<'a, BTreeSet<T>> for &'a BTreeSet<T> {
     fn from_sun(value: &'a BTreeSet<T>) -> Self {
-        value.iter().map(S::from_sun).collect()
+        value
+    }
+}
+
+impl<T: ProtoEncode + ProtoExt + Ord> ProtoArchive for &BTreeSet<T> {
+    fn is_default(&self) -> bool {
+        self.is_empty()
+    }
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        super::repeated_size_hint::<T::Shadow<'_>, TAG>(self.len())
+    }
+    fn archive<const TAG: u32>(&self, w: &mut impl crate::RevWriter) {
+        super::archive_repeated::<TAG, _>(self.iter().rev().map(T::Shadow::from_sun), w);
     }
 }

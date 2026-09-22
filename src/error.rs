@@ -1,6 +1,7 @@
 //! Protobuf encoding and decoding errors.
 
 use alloc::borrow::Cow;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -13,6 +14,14 @@ use crate::encoding::WireType;
 /// general it is not possible to exactly pinpoint why data is malformed.
 #[derive(Clone, PartialEq, Eq)]
 pub struct DecodeError {
+    // Keep Result's error arm pointer-sized. The uncommon failure path pays
+    // for this allocation instead of making successful field results carry the
+    // description and location stack (48 bytes on 64-bit targets).
+    inner: Box<DecodeErrorInner>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct DecodeErrorInner {
     /// A 'best effort' root cause description.
     description: Cow<'static, str>,
     /// A stack of (message, field) name pairs, which identify the specific
@@ -29,8 +38,10 @@ impl DecodeError {
     #[cold]
     pub fn new(description: impl Into<Cow<'static, str>>) -> DecodeError {
         DecodeError {
-            description: description.into(),
-            stack: Vec::new(),
+            inner: Box::new(DecodeErrorInner {
+                description: description.into(),
+                stack: Vec::new(),
+            }),
         }
     }
 
@@ -85,23 +96,23 @@ impl DecodeError {
     /// Meant to be used only by `Message` implementations.
     #[doc(hidden)]
     pub fn push(&mut self, message: &'static str, field: &'static str) {
-        self.stack.push((message, field));
+        self.inner.stack.push((message, field));
     }
 }
 
 impl fmt::Debug for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DecodeError").field("description", &self.description).field("stack", &self.stack).finish()
+        f.debug_struct("DecodeError").field("description", &self.inner.description).field("stack", &self.inner.stack).finish()
     }
 }
 
 impl fmt::Display for DecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("failed to decode Protobuf message: ")?;
-        for &(message, field) in &self.stack {
+        for &(message, field) in &self.inner.stack {
             write!(f, "{message}.{field}: ")?;
         }
-        f.write_str(&self.description)
+        f.write_str(&self.inner.description)
     }
 }
 
@@ -189,24 +200,32 @@ mod test {
             decode_error.to_string(),
             "failed to decode Protobuf message: Foo bad.bar.foo: Baz bad.bar.baz: something failed"
         );
+        let mut cloned = decode_error.clone();
+        assert_eq!(cloned, decode_error);
+        cloned.push("Other", "field");
+        assert_ne!(cloned, decode_error);
+        assert!(!decode_error.to_string().contains("Other"));
     }
 
     #[test]
-    #[cfg(target_pointer_width = "64")]
     fn decode_error_remains_compact() {
-        assert_eq!(core::mem::size_of::<DecodeError>(), 48);
+        assert_eq!(core::mem::size_of::<DecodeError>(), core::mem::size_of::<usize>());
+        assert_eq!(core::mem::size_of::<Result<(), DecodeError>>(), core::mem::size_of::<usize>());
     }
 
     #[test]
     fn typed_wire_errors_preserve_diagnostics_without_owned_strings() {
         let invalid = DecodeError::invalid_wire_type_value(7);
-        assert_eq!(invalid.description, Cow::Borrowed("invalid wire type value: 7"));
+        assert_eq!(invalid.inner.description, Cow::Borrowed("invalid wire type value: 7"));
 
         let mismatch = DecodeError::wire_type_mismatch(WireType::LengthDelimited);
-        assert_eq!(mismatch.description, Cow::Borrowed("invalid wire type (expected LengthDelimited)"));
+        assert_eq!(
+            mismatch.inner.description,
+            Cow::Borrowed("invalid wire type (expected LengthDelimited)")
+        );
 
         let kind = DecodeError::invalid_wire_type_for_kind("Message");
-        assert_eq!(kind.description, Cow::Borrowed("invalid wire type Message"));
+        assert_eq!(kind.inner.description, Cow::Borrowed("invalid wire type Message"));
     }
 
     #[test]

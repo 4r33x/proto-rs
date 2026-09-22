@@ -25,11 +25,38 @@ use crate::encoding::WireType;
 
 pub mod buffer;
 mod decode;
+mod decode_state;
+pub use decode_state::DecodeState;
 mod encode;
 mod utils;
 
 pub trait ProtoExt: Sized {
     const KIND: ProtoKind;
+    /// Encode this standalone value as field 1 of a wrapper message.
+    ///
+    /// This is independent of its field wire type: e.g. `Option<Message>` and
+    /// `Box<Message>` remain message fields, but have a wrapper at the root.
+    const WRAP_ROOT: bool = !matches!(Self::KIND, ProtoKind::Message);
+    /// Whether sequences of this element use protobuf `bytes`. Wrappers do not inherit this.
+    const IS_BYTE: bool = false;
+
+    // Safe specialization hooks: wire metadata never proves memory layout.
+    #[doc(hidden)]
+    fn byte_slice(_values: &[Self]) -> Option<&[u8]> {
+        None
+    }
+    #[doc(hidden)]
+    fn byte_slice_mut(_values: &mut [Self]) -> Option<&mut [u8]> {
+        None
+    }
+    #[doc(hidden)]
+    fn byte_vec_mut(_values: &mut Vec<Self>) -> Option<&mut Vec<u8>> {
+        None
+    }
+    #[doc(hidden)]
+    fn byte_deque_mut(_values: &mut std::collections::VecDeque<Self>) -> Option<&mut std::collections::VecDeque<u8>> {
+        None
+    }
     const WIRE_TYPE: WireType = Self::KIND.wire_type();
     const ENCODED_SIZE_HINT: EncodeSizeHint = EncodeSizeHint::from_kind(&Self::KIND);
     const REPEATED_SUPPORT: Option<&'static str> = None;
@@ -44,5 +71,6 @@ pub trait ProtoExt: Sized {
 }
 impl<T: ProtoExt> ProtoExt for &T {
     const KIND: ProtoKind = T::KIND;
+    const WRAP_ROOT: bool = T::WRAP_ROOT;
     const ENCODED_SIZE_HINT: EncodeSizeHint = T::ENCODED_SIZE_HINT;
 }

@@ -297,7 +297,7 @@ pub fn build_decode_match_arms(fields: &[FieldInfo<'_>], base: &TokenStream2) ->
                 let field_ty = &info.field.ty;
                 Some(quote! {
                     #tag => {
-                        <#field_ty as ::proto_rs::ProtoFieldMerge>::merge_value(&mut #access, wire_type, buf, ctx)?;
+                        <#field_ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #access, wire_type, buf, ctx, &state.field(#tag))?;
                         Ok(())
                     }
                 })
