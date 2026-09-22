@@ -32,12 +32,12 @@ impl<T> From<T> for TonicTransport<T> {
 }
 
 pub struct TonicResponseStream<T> {
-    inner: Pin<Box<tonic::Streaming<T>>>,
+    inner: tonic::Streaming<T>,
 }
 
 impl<T> TonicResponseStream<T> {
-    fn new(inner: tonic::Streaming<T>) -> Self {
-        Self { inner: Box::pin(inner) }
+    const fn new(inner: tonic::Streaming<T>) -> Self {
+        Self { inner }
     }
 }
 
@@ -45,7 +45,7 @@ impl<T> Stream for TonicResponseStream<T> {
     type Item = Result<T, Status>;
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(context).map(|item| item.map(|result| result.map_err(|status| status_from_tonic(&status))))
+        Pin::new(&mut self.inner).poll_next(context).map(|item| item.map(|result| result.map_err(status_from_tonic_owned)))
     }
 }
 
@@ -71,11 +71,7 @@ where
         self.ready().await?;
         let path = tonic::codegen::http::uri::PathAndQuery::from_static(route);
         let codec = crate::ProtoCodec::<Req, Res, crate::SunByVal>::default();
-        self.inner
-            .unary(request_into_tonic(request), path, codec)
-            .await
-            .map(response_from_tonic)
-            .map_err(|status| status_from_tonic(&status))
+        self.inner.unary(request_into_tonic(request), path, codec).await.map(response_from_tonic).map_err(status_from_tonic_owned)
     }
 
     async fn client_streaming<Req, Res, S>(&mut self, route: &'static str, request: Request<S>) -> Result<Response<Res>, Self::Error>
@@ -91,7 +87,7 @@ where
             .client_streaming(request_into_tonic(request), path, codec)
             .await
             .map(response_from_tonic)
-            .map_err(|status| status_from_tonic(&status))
+            .map_err(status_from_tonic_owned)
     }
 
     async fn server_streaming<Req, Res>(
@@ -110,7 +106,7 @@ where
             .server_streaming(request_into_tonic(request), path, codec)
             .await
             .map(|response| response_from_tonic(response).map(TonicResponseStream::new))
-            .map_err(|status| status_from_tonic(&status))
+            .map_err(status_from_tonic_owned)
     }
 
     async fn bidirectional_streaming<Req, Res, S>(
@@ -130,7 +126,7 @@ where
             .streaming(request_into_tonic(request), path, codec)
             .await
             .map(|response| response_from_tonic(response).map(TonicResponseStream::new))
-            .map_err(|status| status_from_tonic(&status))
+            .map_err(status_from_tonic_owned)
     }
 }
 
@@ -175,6 +171,17 @@ pub fn status_from_tonic(status: &tonic::Status) -> Status {
         status.message(),
         bytes::Bytes::copy_from_slice(status.details()),
         status.metadata().clone().into_headers(),
+    )
+}
+
+#[doc(hidden)]
+pub fn status_from_tonic_owned(mut status: tonic::Status) -> Status {
+    let metadata = core::mem::take(status.metadata_mut()).into_headers();
+    Status::with_details_and_metadata(
+        code_from_tonic(status.code()),
+        status.message(),
+        bytes::Bytes::copy_from_slice(status.details()),
+        metadata,
     )
 }
 

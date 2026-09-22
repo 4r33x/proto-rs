@@ -80,10 +80,20 @@ fn generate_proto_to_native_request(request_type: &Type, fallible: bool, request
 }
 
 fn wrap_call_future(is_async: bool, body: TokenStream) -> TokenStream {
-    if is_async || cfg!(feature = "stable") {
+    if is_async {
         wrap_async_block(quote! { async move { #body } }, true)
     } else {
-        wrap_async_block(quote! {  {::core::future::ready( #body )}  }, false)
+        // The closure keeps `?` and early returns inside the handler result,
+        // rather than returning from Service::call (which returns a future).
+        quote! { ::core::future::ready((|| { #body })()) }
+    }
+}
+
+fn call_future_type(is_async: bool, output: TokenStream) -> TokenStream {
+    if is_async {
+        associated_future_type(output, true)
+    } else {
+        quote! { ::core::future::Ready<#output> }
     }
 }
 
@@ -548,9 +558,9 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     } else {
         quote! {}
     };
-    let future_type = associated_future_type(
+    let future_type = call_future_type(
+        method.is_async,
         quote! { ::core::result::Result<tonic::Response<Self::Response>, tonic::Status> },
-        true,
     );
     let call_future = wrap_call_future(
         method.is_async,
@@ -562,19 +572,20 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     quote! {
         #route_path => {
             #[allow(non_camel_case_types)]
-            struct #svc_name<T: #trait_name>(pub Arc<T>);
+            // Tonic owns this adapter and calls it at most once per request.
+            struct #svc_name<T: #trait_name>(Option<Arc<T>>);
 
             impl<T: #trait_name> tonic::server::UnaryService<#request_proto> for #svc_name<T> {
                 type Response = <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
                 type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
-                    let inner = Arc::clone(&self.0);
+                    let inner = self.0.take().expect("RPC adapter called more than once");
                     #call_future
                 }
             }
 
-            let method = #svc_name(inner);
+            let method = #svc_name(Some(inner));
             #codec_init
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(
@@ -616,9 +627,9 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     };
 
     let (future_type, call_future) = if method.response_is_result {
-        let future_type = associated_future_type(
+        let future_type = call_future_type(
+            method.is_async,
             quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> },
-            true,
         );
         let body = quote! {
             let response = <T as #trait_name>::#method_name(&inner, request)#await_question_suffix;
@@ -638,9 +649,9 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
         };
         (future_type, wrap_call_future(method.is_async, body))
     } else {
-        let future_type = associated_future_type(
+        let future_type = call_future_type(
+            method.is_async,
             quote! { ::core::result::Result<tonic::Response<Self::ResponseStream>, tonic::Status> },
-            true,
         );
         let body = quote! {
             let response = <T as #trait_name>::#method_name(&inner, request)#await_suffix;
@@ -664,7 +675,8 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     quote! {
         #route_path => {
             #[allow(non_camel_case_types)]
-            struct #svc_name<T: #trait_name>(pub Arc<T>);
+            // Tonic owns this adapter and calls it at most once per request.
+            struct #svc_name<T: #trait_name>(Option<Arc<T>>);
 
             impl<T: #trait_name> tonic::server::ServerStreamingService<#request_proto> for #svc_name<T> {
                 type Response = <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode;
@@ -680,14 +692,14 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
                 type Future = #future_type;
 
                 fn call(&mut self, request: tonic::Request<#request_proto>) -> Self::Future {
-                    let inner = Arc::clone(&self.0);
+                    let inner = self.0.take().expect("RPC adapter called more than once");
                     #call_future
                 }
             }
 
 
 
-            let method = #svc_name(inner);
+            let method = #svc_name(Some(inner));
             #codec_init
             let mut grpc = tonic::server::Grpc::new(codec)
                 .apply_compression_config(

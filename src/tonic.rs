@@ -4,6 +4,7 @@ use tonic::codec::DecodeBuf;
 use tonic::codec::Decoder;
 use tonic::codec::EncodeBuf;
 use tonic::codec::Encoder;
+mod encode;
 mod req;
 mod resp;
 use bytes::BufMut;
@@ -65,7 +66,8 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        self.encode_direct(&item, dst);
+        Ok(())
     }
 }
 
@@ -74,7 +76,8 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: T, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        ProtoEncode::encode(&item, dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        self.encode_direct(&item, dst);
+        Ok(())
     }
 }
 
@@ -83,7 +86,8 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: Arc<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        self.encode_direct(item.as_ref(), dst);
+        Ok(())
     }
 }
 
@@ -92,7 +96,8 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_sun(&mut self, item: Box<T>, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
-        ProtoEncode::encode(item.as_ref(), dst).map_err(|e| Status::internal(format!("encode failed: {e}")))
+        self.encode_direct(item.as_ref(), dst);
+        Ok(())
     }
 }
 

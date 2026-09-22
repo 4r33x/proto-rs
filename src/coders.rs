@@ -54,14 +54,38 @@ impl<Encode, Decode, Mode> ProtoCodec<Encode, Decode, Mode> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProtoEncoder<T, Mode> {
     _marker: core::marker::PhantomData<(T, Mode)>,
+    #[cfg(feature = "tonic")]
+    pub(crate) scratch: crate::RevVec,
+    #[cfg(feature = "tonic")]
+    pub(crate) last_size: usize,
+}
+
+impl<T, Mode> Clone for ProtoEncoder<T, Mode> {
+    fn clone(&self) -> Self {
+        // Scratch contains no message state between calls. Do not allocate and
+        // copy an empty retained buffer just to clone an encoder.
+        Self {
+            _marker: PhantomData,
+            #[cfg(feature = "tonic")]
+            scratch: <crate::RevVec as crate::RevWriter>::empty(),
+            #[cfg(feature = "tonic")]
+            last_size: self.last_size,
+        }
+    }
 }
 
 impl<T, Mode> Default for ProtoEncoder<T, Mode> {
     fn default() -> Self {
-        Self { _marker: PhantomData }
+        Self {
+            _marker: PhantomData,
+            #[cfg(feature = "tonic")]
+            scratch: <crate::RevVec as crate::RevWriter>::empty(),
+            #[cfg(feature = "tonic")]
+            last_size: 0,
+        }
     }
 }
 

@@ -29,6 +29,10 @@
 
 ### Performance
 
+- Encode ordinary Tonic messages directly into the output buffer's spare capacity, with checked reverse writes, in-buffer compaction when needed, and a reusable spill buffer capped at 64 KiB of retained capacity. Preserve Tonic framing, compression, and message-size checks without vendoring; pre-encoded `ZeroCopy<T>` responses still use the byte-copy path.
+- Remove the second per-request service Arc clone and use concrete ready futures for synchronous RPC handlers on stable as well as nightly. Keep nightly async handler futures unboxed.
+- Store Tonic response streams inline; eliminate double boxing in transport-neutral streaming responses using pin projection, and avoid stream-container allocations for unary/empty messages. Move metadata from owned Tonic errors instead of cloning it.
+- Add focused Tonic-body benchmarks, allocation-counting and cancellation/metadata/compression regressions, and Miri-tested direct-buffer spill and panic-recovery paths.
 - Add `EncodeSizeHint` and runtime encoding-size hints with bounded initial preallocation; support reusable reverse-writer buffers through `ArchivedProtoMessage::new_with_buffer`.
 - Bound speculative repeated-field decoding allocations to 4 KiB; share repeated-field framing across collections.
 - Encode BTreeSet and VecDeque through borrowed views without allocating temporary shadow collections.

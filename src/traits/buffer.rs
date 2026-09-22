@@ -42,6 +42,7 @@ pub trait RevWriter {
     fn finish_tight(self) -> Self::TightBuf;
 }
 
+#[derive(Debug)]
 pub struct RevVec {
     buf: Vec<MaybeUninit<u8>>,
     pos: usize, // valid bytes are in [pos..cap)
@@ -56,6 +57,16 @@ impl AsRef<[u8]> for RevVec {
 
 impl RevVec {
     const MIN_GROW: usize = 64;
+
+    /// Clear initialized bytes, retaining at most `max_capacity` bytes of storage.
+    #[cfg(feature = "tonic")]
+    pub(crate) fn reset_for_reuse(&mut self, max_capacity: usize) {
+        if self.cap() > max_capacity {
+            *self = Self::empty();
+        } else {
+            self.pos = self.cap();
+        }
+    }
 
     #[inline]
     const fn cap(&self) -> usize {

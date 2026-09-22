@@ -53,7 +53,11 @@ The optimizations include fused small byte/string writes, improved preallocation
 | --- | ---: | ---: | ---: |
 | Complex message | 14.531 µs | 2.045 µs | 7.11× |
 
-This compares different ownership workflows, not just encoders. “Zero-copy” does not mean allocation-free or end-to-end zero-copy networking: the current Tonic codec still copies the encoded bytes into Tonic's output buffer.
+This compares different ownership workflows, not just encoders. “Zero-copy” does not mean allocation-free or end-to-end zero-copy networking: pre-encoded `ZeroCopy<T>` bytes are still copied into Tonic's output buffer.
+
+Ordinary Tonic messages now reverse-encode directly into the output buffer's spare capacity. This avoids a separate message buffer when the message fits; an exact size hint can also avoid final compaction. Otherwise, bytes are moved within the same buffer, or encoding spills into reusable scratch storage (retained up to 64 KiB). Speculative output reservations are capped at 1 MiB, not a message-size limit. Framing, compression, and message-size enforcement remain Tonic's responsibility. This uses Tonic's public API without a vendored fork.
+
+Generated servers move the per-call service handle into the handler instead of cloning it again. Nightly keeps unboxed handler futures; stable builds also avoid boxing synchronous handlers. Stream adapters avoid redundant boxes, and transport-neutral single-message/empty streams do not allocate stream containers.
 
 ## Quick start
 
@@ -1079,6 +1083,8 @@ cargo bench -p bench_runner
 The Criterion harness under `benches/bench_runner` includes zero-copy vs clone comparisons and encode/decode micro-benchmarks against Prost.
 
 For a shorter run, select a benchmark group, for example `cargo bench -p bench_runner --bench main_bench -- complex_root_encode_decode`. The September 22 targeted results and historical runs, including the August 13 baseline, are preserved in [benches/bench.md](benches/bench.md).
+
+Run `cargo bench -p proto_rs --bench tonic_encode` to compare direct output-buffer encoding with the previous scratch-buffer-and-copy implementation through Tonic's actual message framing. This focused benchmark covers unary and streaming bodies; it does not measure socket I/O. See the [results and allocation checks](benches/tonic-performance.md).
 
 ## Testing
 
