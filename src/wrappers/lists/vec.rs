@@ -7,7 +7,6 @@ use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
 use crate::encoding::bytes as bytes_encoding;
 use crate::encoding::skip_field;
-use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -92,30 +91,7 @@ where
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
-        if let Some(bytes) = T::byte_slice(self) {
-            w.put_bytes::<TAG>(bytes);
-            return;
-        }
-
-        match T::KIND {
-            ProtoKind::Primitive(_) | ProtoKind::SimpleEnum => {
-                let mark = w.mark();
-                for item in self.iter().rev() {
-                    item.archive::<0>(w);
-                }
-                if TAG != 0 {
-                    let payload_len = w.written_since(mark);
-                    w.put_varint(payload_len as u64);
-                    ArchivedProtoField::<TAG, Self>::put_key(w);
-                }
-            }
-            ProtoKind::String | ProtoKind::Bytes | ProtoKind::Message => {
-                for item in self.iter().rev() {
-                    ArchivedProtoField::<TAG, T>::new_always(item, w);
-                }
-            }
-            ProtoKind::Repeated(_) => unreachable!(),
-        }
+        self.as_slice().archive::<TAG>(w);
     }
 }
 
@@ -126,6 +102,11 @@ where
     for<'a> &'a [T]: ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = &'a [T];
+
+    #[inline]
+    fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.as_slice().encoded_size_hint::<TAG>()
+    }
 }
 
 impl<'a, T> ProtoShadowEncode<'a, Vec<T>> for &'a [T]

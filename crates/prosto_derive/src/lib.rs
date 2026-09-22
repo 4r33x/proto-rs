@@ -28,7 +28,7 @@ pub fn inject_proto_import(input: TokenStream) -> TokenStream {
 ///
 /// This macro works in conjunction with `#[proto_message]` to generate:
 /// - A trait definition for your service (using native Rust types)
-/// - An internal proto trait (using Proto types from `HasProto`)
+/// - An internal RPC service trait using the declared message types
 /// - Automatic conversion layer between native and proto types
 /// - A transport-independent client
 /// - Optional Tonic client and server boilerplate

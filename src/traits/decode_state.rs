@@ -4,11 +4,12 @@ use std::collections::BTreeMap;
 #[derive(Default)]
 struct Node {
     index: usize,
+    pending: bool,
     fields: BTreeMap<u32, Node>,
 }
 
 /// State shared by field occurrences during one message decode.
-/// Field paths borrow stack frames; only fixed-array cursors allocate storage.
+/// Field paths borrow stack frames; only array cursors and deferred hooks allocate.
 #[doc(hidden)]
 pub struct DecodeState<'a>(State<'a>);
 
@@ -24,6 +25,18 @@ impl Default for DecodeState<'_> {
 }
 
 impl DecodeState<'_> {
+    pub fn defer(&self) {
+        self.node(self.root().borrow_mut().get_or_insert_with(Box::default)).pending = true;
+    }
+
+    pub fn pending(&self) -> bool {
+        self.root().borrow_mut().as_deref_mut().and_then(|root| self.existing_node(root)).is_some_and(|node| node.pending)
+    }
+
+    pub fn has_data(&self) -> bool {
+        self.root().borrow_mut().as_deref_mut().and_then(|root| self.existing_node(root)).is_some()
+    }
+
     pub const fn field(&self, tag: u32) -> DecodeState<'_> {
         DecodeState(State::Field(self, tag))
     }

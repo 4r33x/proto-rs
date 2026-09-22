@@ -472,7 +472,6 @@ pub struct SchemaTokens {
     pub inventory_submit: TokenStream2,
 }
 
-impl SchemaTokens {}
 #[allow(clippy::too_many_arguments)]
 fn build_schema_tokens(
     type_ident: &syn::Ident,
@@ -511,7 +510,6 @@ fn build_schema_tokens_impl(
 ) -> SchemaTokens {
     let (proto_package, proto_file_path) = proto_path_info(config);
     let schema_ident = schema_ident(type_ident, const_suffix);
-    let _reg_ident = reg_ident(type_ident, const_suffix);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -647,37 +645,31 @@ fn build_schema_tokens_impl(
     // Register all schemas with inventory
     // Generic parameter references in field types are now handled with placeholders
     // so it's safe to register base generic types
-    let should_register = true;
-
-    let inventory_submit = if should_register {
-        match kind {
-            SchemaKind::Message if has_type_params => {
-                // Type with generic parameters - schema is at module level
-                quote! {
-                #[cfg(feature = "build-schemas")]
-                inventory::submit! {
-                    #schema_ident
-                }}
+    let inventory_submit = match kind {
+        SchemaKind::Message if has_type_params => {
+            // Type with generic parameters - schema is at module level
+            quote! {
+            #[cfg(feature = "build-schemas")]
+            inventory::submit! {
+                #schema_ident
+            }}
+        }
+        SchemaKind::Message => {
+            // Non-generic type - schema is in impl block
+            quote! {
+            #[cfg(feature = "build-schemas")]
+            inventory::submit! {
+                #type_ident::#schema_ident
+            }}
+        }
+        SchemaKind::Service => {
+            quote! {
+            #[cfg(feature = "build-schemas")]
+            inventory::submit! {
+                #schema_ident
             }
-            SchemaKind::Message => {
-                // Non-generic type - schema is in impl block
-                quote! {
-                #[cfg(feature = "build-schemas")]
-                inventory::submit! {
-                    #type_ident::#schema_ident
-                }}
-            }
-            SchemaKind::Service => {
-                quote! {
-                #[cfg(feature = "build-schemas")]
-                inventory::submit! {
-                    #schema_ident
-                }
-                }
             }
         }
-    } else {
-        quote! {}
     };
     SchemaTokens { schema, inventory_submit }
 }
@@ -1638,15 +1630,6 @@ fn proto_path_info(config: &UnifiedProtoConfig) -> (String, String) {
 fn schema_ident(type_ident: &syn::Ident, suffix: &str) -> syn::Ident {
     let name = format!(
         "PROTO_SCHEMA_{}_{}",
-        sanitize_ident(&type_ident.to_string()),
-        sanitize_ident(suffix)
-    );
-    syn::Ident::new(&name, Span::call_site())
-}
-
-fn reg_ident(type_ident: &syn::Ident, suffix: &str) -> syn::Ident {
-    let name = format!(
-        "_REGISTRY_PROTO_SCHEMA_{}_{}",
         sanitize_ident(&type_ident.to_string()),
         sanitize_ident(suffix)
     );

@@ -1,7 +1,7 @@
 use crate::BytesMode;
+use crate::EncodedSnapshot;
 use crate::ProtoEncode;
 use crate::SunByRef;
-use crate::ZeroCopy;
 use crate::alloc::boxed::Box;
 use crate::alloc::sync::Arc;
 use crate::grpc::Response;
@@ -61,11 +61,11 @@ where
     }
 }
 
-impl<T> ProtoResponse<T> for Response<ZeroCopy<T>>
+impl<T> ProtoResponse<T> for Response<EncodedSnapshot<T>>
 where
     T: ProtoEncode + Send + Sync + 'static,
 {
-    type Encode = ZeroCopy<T>;
+    type Encode = EncodedSnapshot<T>;
     type Mode = BytesMode;
 
     fn into_response(self) -> Response<Self::Encode> {
@@ -73,11 +73,11 @@ where
     }
 }
 
-impl<T> ProtoResponse<T> for ZeroCopy<T>
+impl<T> ProtoResponse<T> for EncodedSnapshot<T>
 where
     T: ProtoEncode + Send + Sync + 'static,
 {
-    type Encode = ZeroCopy<T>;
+    type Encode = EncodedSnapshot<T>;
     type Mode = BytesMode;
 
     fn into_response(self) -> Response<Self::Encode> {

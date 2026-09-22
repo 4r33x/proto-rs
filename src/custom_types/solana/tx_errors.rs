@@ -121,6 +121,9 @@ pub enum InstructionErrorProto {
     MaxInstructionTraceLengthExceeded,
     #[proto(tag = 54)]
     BuiltinProgramsMustConsumeComputeUnits,
+    /// A native instruction error variant this version does not recognize.
+    #[proto(tag = 55)]
+    Unknown,
 }
 
 impl ProtoShadowDecode<InstructionError> for InstructionErrorProto {
@@ -180,6 +183,7 @@ impl ProtoShadowDecode<InstructionError> for InstructionErrorProto {
             Self::MaxAccountsExceeded => InstructionError::MaxAccountsExceeded,
             Self::MaxInstructionTraceLengthExceeded => InstructionError::MaxInstructionTraceLengthExceeded,
             Self::BuiltinProgramsMustConsumeComputeUnits => InstructionError::BuiltinProgramsMustConsumeComputeUnits,
+            Self::Unknown => return Err(DecodeError::new("unknown Solana instruction error")),
         };
 
         Ok(value)
@@ -284,6 +288,9 @@ pub enum TransactionErrorProto {
     ProgramCacheHitMaxLimit,
     #[proto(tag = 39)]
     CommitCancelled,
+    /// A native transaction error variant this version does not recognize.
+    #[proto(tag = 40)]
+    Unknown,
 }
 
 impl ProtoShadowDecode<TransactionError> for TransactionErrorProto {
@@ -333,6 +340,7 @@ impl ProtoShadowDecode<TransactionError> for TransactionErrorProto {
             Self::UnbalancedTransaction => TransactionError::UnbalancedTransaction,
             Self::ProgramCacheHitMaxLimit => TransactionError::ProgramCacheHitMaxLimit,
             Self::CommitCancelled => TransactionError::CommitCancelled,
+            Self::Unknown => return Err(DecodeError::new("unknown Solana transaction error")),
         };
 
         Ok(value)
@@ -401,6 +409,7 @@ const fn instruction_error_from_native(value: &InstructionError) -> InstructionE
         InstructionError::MaxAccountsExceeded => InstructionErrorProto::MaxAccountsExceeded,
         InstructionError::MaxInstructionTraceLengthExceeded => InstructionErrorProto::MaxInstructionTraceLengthExceeded,
         InstructionError::BuiltinProgramsMustConsumeComputeUnits => InstructionErrorProto::BuiltinProgramsMustConsumeComputeUnits,
+        _ => InstructionErrorProto::Unknown,
     }
 }
 
@@ -454,6 +463,7 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
         TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
         TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
         TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
+        _ => TransactionErrorProto::Unknown,
     }
 }
 
@@ -503,5 +513,40 @@ mod tests {
         let encoded = <TransactionError as ProtoEncode>::encode_to_vec(&error);
         let decoded = <TransactionError as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded, TransactionError::InsufficientFundsForRent { account_index: 9 },);
+    }
+
+    #[test]
+    fn unknown_instruction_error_roundtrip_rejects_native_decode() {
+        let encoded = InstructionErrorProto::Unknown.encode_to_vec();
+        let decoded = InstructionErrorProto::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
+        assert!(matches!(decoded, InstructionErrorProto::Unknown));
+        assert_eq!(
+            ProtoShadowDecode::<InstructionError>::to_sun(decoded),
+            Err(DecodeError::new("unknown Solana instruction error"))
+        );
+        assert!(InstructionError::decode(encoded.as_slice(), DecodeContext::default()).is_err());
+    }
+
+    #[test]
+    fn unknown_transaction_error_roundtrip_rejects_native_decode() {
+        let encoded = TransactionErrorProto::Unknown.encode_to_vec();
+        let decoded = TransactionErrorProto::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
+        assert!(matches!(decoded, TransactionErrorProto::Unknown));
+        assert_eq!(
+            ProtoShadowDecode::<TransactionError>::to_sun(decoded),
+            Err(DecodeError::new("unknown Solana transaction error"))
+        );
+        assert!(TransactionError::decode(encoded.as_slice(), DecodeContext::default()).is_err());
+    }
+
+    #[test]
+    fn transaction_error_with_unknown_instruction_rejects_native_decode() {
+        let proto = TransactionErrorProto::InstructionError {
+            index: 3,
+            error: InstructionErrorProto::Unknown,
+        };
+        let encoded = proto.encode_to_vec();
+        let error = TransactionError::decode(encoded.as_slice(), DecodeContext::default()).expect_err("unknown instruction error");
+        assert!(error.to_string().contains("unknown Solana instruction error"));
     }
 }

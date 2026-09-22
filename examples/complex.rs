@@ -5,8 +5,8 @@
 use std::pin::Pin;
 
 use proto_rs::DecodeError;
+use proto_rs::EncodedSnapshot;
 use proto_rs::ProtoEncode;
-use proto_rs::ZeroCopy;
 use proto_rs::grpc::Request;
 use proto_rs::grpc::Response;
 use proto_rs::grpc::Status;
@@ -105,9 +105,9 @@ pub struct BarSub;
 pub trait SigmaRpc {
     type RizzUniStream: Stream<Item = Result<FooResponse, Status>> + Send;
     type RizzUniStream2: Stream<Item = Result<FooResponse, Status>> + Send;
-    type GenericUniStream: Stream<Item = Result<ZeroCopy<IdGeneric<u64>>, Status>> + Send;
+    type GenericUniStream: Stream<Item = Result<EncodedSnapshot<IdGeneric<u64>>, Status>> + Send;
     async fn rizz_ping(&self, request: Request<RizzPing>) -> Result<Response<GoonPong>, Status>;
-    async fn goon_pong(&self, request: Request<GoonPong>) -> Result<Response<ZeroCopy<RizzPing>>, Status>;
+    async fn goon_pong(&self, request: Request<GoonPong>) -> Result<Response<EncodedSnapshot<RizzPing>>, Status>;
     async fn rizz_uni(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream>, Status>;
     async fn rizz_uni2(&self, request: Request<BarSub>) -> Result<Response<Self::RizzUniStream2>, Status>;
     async fn generic_uni(&self, request: Request<BarSub>) -> Result<Response<Self::GenericUniStream>, Status>;
@@ -155,10 +155,10 @@ impl SigmaRpc for S {
     type RizzUniStream2 = impl Stream<Item = Result<FooResponse, Status>> + Send;
 
     #[cfg(feature = "stable")]
-    type GenericUniStream = Pin<Box<dyn Stream<Item = Result<ZeroCopy<IdGeneric<u64>>, Status>> + Send>>;
+    type GenericUniStream = Pin<Box<dyn Stream<Item = Result<EncodedSnapshot<IdGeneric<u64>>, Status>> + Send>>;
 
     #[cfg(not(feature = "stable"))]
-    type GenericUniStream = impl Stream<Item = Result<ZeroCopy<IdGeneric<u64>>, Status>> + Send;
+    type GenericUniStream = impl Stream<Item = Result<EncodedSnapshot<IdGeneric<u64>>, Status>> + Send;
 
     async fn rizz_ping(&self, _req: Request<RizzPing>) -> Result<Response<GoonPong>, Status> {
         Ok(Response::new(GoonPong {
@@ -206,7 +206,7 @@ impl SigmaRpc for S {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             for _ in 0..5 {
-                if tx.send(Ok(IdGeneric { id: 0 }.to_zero_copy())).await.is_err() {
+                if tx.send(Ok(IdGeneric { id: 0 }.to_encoded_snapshot())).await.is_err() {
                     break;
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -237,13 +237,13 @@ impl SigmaRpc for S {
         Ok(Response::new(stream))
     }
 
-    async fn goon_pong(&self, _request: Request<GoonPong>) -> Result<Response<ZeroCopy<RizzPing>>, Status> {
+    async fn goon_pong(&self, _request: Request<GoonPong>) -> Result<Response<EncodedSnapshot<RizzPing>>, Status> {
         Ok(Response::new(
             RizzPing {
                 id: Id { id: 1 },
                 status: ServiceStatus::Active,
             }
-            .to_zero_copy(),
+            .to_encoded_snapshot(),
         ))
     }
 

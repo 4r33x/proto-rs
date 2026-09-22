@@ -127,6 +127,8 @@ message InstructionErrorMaxAccountsExceeded {}
 message InstructionErrorMaxInstructionTraceLengthExceeded {}
 
 message InstructionErrorBuiltinProgramsMustConsumeComputeUnits {}
+
+message InstructionErrorUnknown {}
 message InstructionError {
   oneof value {
     InstructionErrorGenericError generic_error = 1;
@@ -183,6 +185,7 @@ message InstructionError {
     InstructionErrorMaxAccountsExceeded max_accounts_exceeded = 52;
     InstructionErrorMaxInstructionTraceLengthExceeded max_instruction_trace_length_exceeded = 53;
     InstructionErrorBuiltinProgramsMustConsumeComputeUnits builtin_programs_must_consume_compute_units = 54;
+    InstructionErrorUnknown unknown = 55;
   }
 }
 
@@ -276,6 +279,8 @@ message TransactionErrorUnbalancedTransaction {}
 message TransactionErrorProgramCacheHitMaxLimit {}
 
 message TransactionErrorCommitCancelled {}
+
+message TransactionErrorUnknown {}
 message TransactionError {
   oneof value {
     TransactionErrorAccountInUse account_in_use = 1;
@@ -317,6 +322,6 @@ message TransactionError {
     TransactionErrorUnbalancedTransaction unbalanced_transaction = 37;
     TransactionErrorProgramCacheHitMaxLimit program_cache_hit_max_limit = 38;
     TransactionErrorCommitCancelled commit_cancelled = 39;
+    TransactionErrorUnknown unknown = 40;
   }
 }
-

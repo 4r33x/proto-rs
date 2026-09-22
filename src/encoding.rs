@@ -3,6 +3,7 @@
 //! This module contains the encoding and decoding primatives for Protobuf as described in
 //! <https://protobuf.dev/programming-guides/encoding/>.
 
+#[cfg(feature = "std_legacy")]
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -10,9 +11,12 @@ use ::bytes::Buf;
 use ::bytes::BufMut;
 
 mod bytes_adapter;
+#[cfg(feature = "std_legacy")]
 mod map;
 mod primitives;
 pub use bytes_adapter::*;
+#[cfg(feature = "std_legacy")]
+#[allow(deprecated)]
 pub use map::*;
 pub use primitives::*;
 pub mod varint;
@@ -379,110 +383,6 @@ mod test {
         r.expect_err("must be an error");
         assert_eq!(s, "");
     }
-
-    /// This big bowl o' macro soup generates an encoding property test for each combination of map
-    /// type, scalar map key, and value type.
-    /// TODO: these tests take a long time to compile, can this be improved?
-    #[cfg(feature = "std_legacy")]
-    macro_rules! map_tests {
-        (keys: $keys:tt,
-         vals: $vals:tt) => {
-            mod hash_map {
-                map_tests!(@private HashMap, hash_map, $keys, $vals);
-            }
-            mod btree_map {
-                map_tests!(@private BTreeMap, btree_map, $keys, $vals);
-            }
-        };
-
-        (@private $map_type:ident,
-                  $mod_name:ident,
-                  [$(($key_ty:ty, $key_proto:ident)),*],
-                  $vals:tt) => {
-            $(
-                mod $key_proto {
-                    use std::collections::$map_type;
-
-                    use proptest::prelude::*;
-
-                    use crate::encoding::*;
-                    use crate::encoding::test::check_collection_type;
-
-                    map_tests!(@private $map_type, $mod_name, ($key_ty, $key_proto), $vals);
-                }
-            )*
-        };
-
-        (@private $map_type:ident,
-                  $mod_name:ident,
-                  ($key_ty:ty, $key_proto:ident),
-                  [$(($val_ty:ty, $val_proto:ident)),*]) => {
-            $(
-                proptest! {
-                    #[test]
-                    fn $val_proto(values: $map_type<$key_ty, $val_ty>, tag in MIN_TAG..=MAX_TAG) {
-                        check_collection_type(values, tag, WireType::LengthDelimited,
-                                              |tag, values, buf| {
-                                                  $mod_name::encode($key_proto::_encode_by_ref_tagged,
-                                                                    $key_proto::_encoded_len_by_ref_tagged,
-                                                                    $val_proto::_encode_by_ref_tagged,
-                                                                    $val_proto::_encoded_len_by_ref_tagged,
-                                                                    tag,
-                                                                    values,
-                                                                    buf)
-                                              },
-                                              |wire_type, values, buf, ctx| {
-                                                  check_wire_type(WireType::LengthDelimited, wire_type)?;
-                                                  $mod_name::merge($key_proto::merge,
-                                                                   $val_proto::merge,
-                                                                   values,
-                                                                   buf,
-                                                                   ctx)
-                                              },
-                                              |tag, values| {
-                                                  $mod_name::encoded_len($key_proto::_encoded_len_by_ref_tagged,
-                                                                         $val_proto::_encoded_len_by_ref_tagged,
-                                                                         tag,
-                                                                         values)
-                                              })?;
-                    }
-                }
-             )*
-        };
-    }
-
-    #[cfg(feature = "std_legacy")]
-    map_tests!(keys: [
-        (i32, int32),
-        (i64, int64),
-        (u32, uint32),
-        (u64, uint64),
-        (i32, sint32),
-        (i64, sint64),
-        (u32, fixed32),
-        (u64, fixed64),
-        (i32, sfixed32),
-        (i64, sfixed64),
-        (bool, bool),
-        (String, string)
-    ],
-    vals: [
-        (f32, float),
-        (f64, double),
-        (i32, int32),
-        (i64, int64),
-        (u32, uint32),
-        (u64, uint64),
-        (i32, sint32),
-        (i64, sint64),
-        (u32, fixed32),
-        (u64, fixed64),
-        (i32, sfixed32),
-        (i64, sfixed64),
-        (bool, bool),
-        (String, string),
-        (Vec<u8>, bytes)
-    ]);
 
     #[test]
     /// `decode_varint` accepts a `Buf`, which can be multiple concatinated buffers.

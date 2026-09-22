@@ -10,10 +10,10 @@ use super::Request;
 use super::Response;
 use super::Status;
 use super::Stream;
+use crate::EncodedSnapshot;
 use crate::ProtoDecode;
 use crate::ProtoEncode;
 use crate::ProtoExt;
-use crate::ZeroCopy;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RpcKind {
@@ -103,11 +103,11 @@ where
     T: ProtoEncode + ProtoExt,
 {
     fn encode_grpc(self) -> Result<Bytes, Status> {
-        Ok(self.to_zero_copy().into_bytes())
+        Ok(self.to_encoded_snapshot().into_bytes())
     }
 }
 
-impl<T> GrpcEncode<crate::BytesMode> for ZeroCopy<T>
+impl<T> GrpcEncode<crate::BytesMode> for EncodedSnapshot<T>
 where
     T: ProtoEncode + ProtoExt,
 {
@@ -124,7 +124,7 @@ where
     P: core::ops::Deref<Target = T>,
 {
     fn encode_grpc(self) -> Result<Bytes, Status> {
-        Ok(self.deref().to_zero_copy().into_bytes())
+        Ok(self.deref().to_encoded_snapshot().into_bytes())
     }
 }
 

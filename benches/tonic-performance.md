@@ -1,5 +1,10 @@
 # Tonic encoding and allocation changes — 2026-09-22
 
+Historical report from before eager snapshot handoff. The subsequent
+[owned-snapshot integration](owned-snapshot.md) vendors Tonic and removes the
+`ZeroCopy<T>` payload copy; statements below about unmodified Tonic describe this
+earlier measurement only.
+
 These compare the new direct-buffer encoder with the previous `ProtoEncode::encode`
 scratch-buffer-and-copy path, **not with Prost**. Both run through Tonic 0.14.6's
 real `EncodeBody`, including gRPC framing, output-buffer allocation, polling, and
@@ -45,7 +50,8 @@ benchmark was run for this change.
   messages require an in-buffer move.
 - Insufficient space spills once into scratch and continues encoding, without
   repeating reads of the message. Scratch is reused between stream items and
-  retains at most 64 KiB. Speculative output reservations are capped at 1 MiB;
+  retains at most 64 KiB. Speculative output reservations default to a 1 MiB cap
+  (now configurable via `with_max_encode_preallocation`);
   this is not a message-size limit. Encoder clones do not copy scratch capacity.
 - The 32-message allocation regression fixture measured **33 → 2 allocations**;
   the test requires at most two allocations on the direct path and at least 31

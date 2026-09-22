@@ -2,41 +2,8 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Type;
 
-use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
-
-/// Generate native-to-proto request conversion (used in client - unary)
-pub fn generate_native_to_proto_request_unary(request_type: &Type) -> TokenStream {
-    let _ = request_type;
-    quote! {}
-}
-
-/// Generate native-to-proto request conversion (used in client - streaming)
-pub fn generate_native_to_proto_request_streaming(request_type: &Type) -> TokenStream {
-    let _ = request_type;
-    quote! {}
-}
-
-/// Generate proto-to-native response conversion (used in client)
-pub fn generate_proto_to_native_response(_response_type: &Type) -> TokenStream {
-    quote! { Ok(response) }
-}
-
-// ============================================================================
-// PROTO TYPE HELPERS
-// ============================================================================
-
-/// Generate proto type reference for request
-pub fn generate_request_proto_type(request_type: &Type) -> TokenStream {
-    quote! { #request_type }
-}
-
-/// Generate proto type reference for response
-pub fn generate_response_proto_type(response_type: &Type) -> TokenStream {
-    quote! { #response_type }
-}
 
 // ============================================================================
 // ROUTE AND CODEC
@@ -50,37 +17,11 @@ pub fn generate_route_path(package_name: &str, trait_name: &syn::Ident, method_n
 /// Generate codec initialization
 pub fn generate_codec_init(encode: TokenStream, decode: TokenStream, mode: Option<TokenStream>) -> TokenStream {
     if let Some(mode) = mode {
-        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode, #mode>::default(); }
+        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode, #mode>::default()
+        .with_max_encode_preallocation(max_encode_preallocation); }
     } else {
-        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode>::default(); }
-    }
-}
-
-// ============================================================================
-// STREAMING HELPERS
-// ============================================================================
-
-/// Generate stream conversion for streaming responses (client side)
-pub fn generate_stream_conversion(_inner_response_type: &Type) -> TokenStream {
-    quote! { Ok(response) }
-}
-
-/// Check if method is streaming
-pub fn is_streaming_method(method: &MethodInfo) -> bool {
-    method.is_streaming
-}
-
-// ============================================================================
-// ERROR HANDLING
-// ============================================================================
-
-/// Generate service ready check (used by client)
-pub fn generate_ready_check() -> TokenStream {
-    quote! {
-        self.inner
-            .ready()
-            .await
-            .map_err(|e| tonic::Status::unknown(format!("Service was not ready: {}", e.into())))?;
+        quote! { let codec = ::proto_rs::ProtoCodec::<#encode, #decode>::default()
+        .with_max_encode_preallocation(max_encode_preallocation); }
     }
 }
 
@@ -122,6 +63,7 @@ pub fn generate_service_struct_fields() -> TokenStream {
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
+        max_encode_preallocation: usize,
     }
 }
 
@@ -139,6 +81,7 @@ pub fn generate_service_constructors() -> TokenStream {
                 send_compression_encodings: Default::default(),
                 max_decoding_message_size: None,
                 max_encoding_message_size: None,
+                max_encode_preallocation: ::proto_rs::DEFAULT_MAX_ENCODE_PREALLOCATION,
             }
         }
     }
@@ -158,10 +101,11 @@ pub fn generate_client_with_interceptor(client_struct: &syn::Ident, has_ctx: boo
             interceptor: F,
         ) -> #return_ty
         where
-            F: tonic::service::Interceptor,
+            F: tonic::service::Interceptor + Send,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<http::Request<tonic::body::Body>, Response = http::Response<<T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody>>,
             <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Error: Into<StdError> + ::core::marker::Send + ::core::marker::Sync,
+            <T as tonic::codegen::Service<http::Request<tonic::body::Body>>>::Future: Send,
         {
             #client_struct::new(InterceptedService::new(inner, interceptor))
         }
@@ -196,14 +140,5 @@ mod tests {
 
         let server_mod = server_module_name(&trait_name);
         assert_eq!(server_mod.to_string(), "test_service_server");
-    }
-
-    #[test]
-    fn test_proto_type_generation() {
-        let ty: Type = parse_quote! { MyRequest };
-        let proto_type = generate_request_proto_type(&ty);
-
-        let expected = quote! { MyRequest };
-        assert_eq!(proto_type.to_string(), expected.to_string());
     }
 }

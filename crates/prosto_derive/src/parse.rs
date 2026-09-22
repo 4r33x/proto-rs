@@ -172,20 +172,8 @@ impl UnifiedProtoConfig {
 }
 
 fn parse_interceptor_config(input: &str) -> Option<InterceptorConfig> {
-    // Parse format: "TraitName<Ctx>"
     let input = input.trim();
-
-    // Find the first '<' to separate trait name from type parameter
-    // let angle_pos = input.find('<')?;
-    // let trait_name = input[..angle_pos].trim();
-
-    // // Find the matching closing '>' to extract the type parameter
-    // let type_param_str = &input[angle_pos + 1..];
-    // let closing_pos = type_param_str.rfind('>')?;
-    // let type_param_str = type_param_str[..closing_pos].trim();
-
     let trait_ident: syn::Ident = syn::parse_str(input).ok()?;
-    // let ctx_ident: syn::Ident = syn::parse_str(type_param_str).ok()?;
 
     Some(InterceptorConfig { trait_ident })
 }

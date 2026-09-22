@@ -20,16 +20,11 @@ use super::unified_field_handler::build_field_validator_hooks_for_base;
 use super::unified_field_handler::build_post_decode_hooks;
 use super::unified_field_handler::build_post_decode_hooks_for_base;
 use super::unified_field_handler::build_proto_default_expr;
-use super::unified_field_handler::compute_decode_ty;
-use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::encode_conversion_expr;
 use super::unified_field_handler::encode_conversion_expr_direct;
 use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::strip_proto_attrs;
 use crate::parse::UnifiedProtoConfig;
-use crate::utils::parse_field_config;
-use crate::utils::parse_field_type;
-use crate::utils::resolved_field_type;
 
 pub(super) fn generate_struct_impl(
     input: &DeriveInput,
@@ -42,53 +37,15 @@ pub(super) fn generate_struct_impl(
 
     let struct_item = sanitize_struct(item_struct.clone());
 
-    let mut fields = match &data.fields {
-        syn::Fields::Named(named) => named
-            .named
-            .iter()
-            .enumerate()
-            .map(|(idx, field)| {
-                let config = parse_field_config(field);
-                let effective_ty = resolved_field_type(field, &config);
-                let parsed = parse_field_type(&effective_ty);
-                let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
-                let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
-                FieldInfo {
-                    index: idx,
-                    field,
-                    access: FieldAccess::Named(field.ident.as_ref().expect("named field missing ident")),
-                    config,
-                    tag: None,
-                    parsed,
-                    proto_ty,
-                    decode_ty,
-                }
-            })
-            .collect::<Vec<_>>(),
-        syn::Fields::Unnamed(unnamed) => unnamed
-            .unnamed
-            .iter()
-            .enumerate()
-            .map(|(idx, field)| {
-                let config = parse_field_config(field);
-                let effective_ty = resolved_field_type(field, &config);
-                let parsed = parse_field_type(&effective_ty);
-                let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
-                let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
-                FieldInfo {
-                    index: idx,
-                    field,
-                    access: FieldAccess::Tuple(idx),
-                    config,
-                    tag: None,
-                    parsed,
-                    proto_ty,
-                    decode_ty,
-                }
-            })
-            .collect::<Vec<_>>(),
-        syn::Fields::Unit => Vec::new(),
-    };
+    let mut fields = data
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let access = field.ident.as_ref().map_or(FieldAccess::Tuple(index), FieldAccess::Named);
+            FieldInfo::new(index, field, access)
+        })
+        .collect::<Vec<_>>();
 
     if config.transparent {
         assert!(fields.len() == 1, "#[proto_message(transparent)] requires a single-field struct");
@@ -121,7 +78,6 @@ pub(super) fn generate_struct_impl(
     let fields = assign_tags(fields);
 
     let shadow_ident = syn::Ident::new(&format!("{name}Shadow"), name.span());
-    let archived_ident = syn::Ident::new(&format!("{name}Archived"), name.span());
 
     let has_sun_ir = config.suns.iter().any(|sun| sun.ir_ty.is_some());
     let shadow_impls = if has_sun_ir {
@@ -130,7 +86,6 @@ pub(super) fn generate_struct_impl(
         generate_shadow_impls(
             name,
             &shadow_ident,
-            &archived_ident,
             &item_struct.vis,
             &data.fields,
             &fields,
@@ -142,7 +97,6 @@ pub(super) fn generate_struct_impl(
     let proto_impls = generate_proto_impls(
         name,
         &shadow_ident,
-        &archived_ident,
         &bounded_generics,
         &impl_generics,
         &ty_generics,
@@ -356,6 +310,11 @@ fn generate_transparent_struct_impl(
     } else {
         quote! {}
     };
+    let defer_hooks = if field.config.validator.is_some() || config.validator.is_some() {
+        quote! { state.defer(); }
+    } else {
+        quote! {}
+    };
     let mut shadow_generics = generics.clone();
     shadow_generics.params.insert(0, parse_quote!('a));
     let (shadow_impl_generics, shadow_ty_generics, shadow_where_clause) = shadow_generics.split_for_impl();
@@ -399,6 +358,16 @@ fn generate_transparent_struct_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline]
+            fn finish(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                <#inner_ty as ::proto_rs::ProtoDecoder>::finish(&mut #mut_self_access, &state.field(0))?;
+                if state.pending() {
+                    #field_validation_self
+                    #message_validation_self
+                }
+                Ok(())
+            }
+
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -406,7 +375,9 @@ fn generate_transparent_struct_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+                let state = ::proto_rs::DecodeState::default();
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &state)?;
+                Self::finish(value, &state)
             }
             #[inline]
             fn merge_field_with_state(
@@ -414,18 +385,19 @@ fn generate_transparent_struct_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext,
                 state: &::proto_rs::DecodeState<'_>,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field_with_state(&mut #mut_value_access, tag, wire_type, buf, ctx, state)
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_field_with_state(&mut #mut_value_access, tag, wire_type, buf, ctx, &state.field(0))
             }
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
-                self.merge_with_state(wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+                let state = ::proto_rs::DecodeState::default();
+                self.merge_with_state(wire_type, buf, ctx, &state)?;
+                self.finish(&state)
             }
             #[inline]
             fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
-                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_with_state(&mut #mut_self_access, wire_type, buf, ctx, state)?;
-                #field_validation_self
-                #message_validation_self
+                <#inner_ty as ::proto_rs::ProtoDecoder>::merge_with_state(&mut #mut_self_access, wire_type, buf, ctx, &state.field(0))?;
+                #defer_hooks
                 Ok(())
             }
 
@@ -475,7 +447,6 @@ fn generate_transparent_struct_impl(
 fn generate_shadow_impls(
     proto_ident: &syn::Ident,
     shadow_ident: &syn::Ident,
-    _archived_ident: &syn::Ident,
     vis: &syn::Visibility,
     original_fields: &syn::Fields,
     fields: &[FieldInfo<'_>],
@@ -546,15 +517,23 @@ fn generate_shadow_impls(
         syn::Fields::Unit => quote! { Self { #phantom_ident: ::core::marker::PhantomData } },
     };
 
-    let archive_fields = encoded_fields.iter().rev().map(|info| {
+    // Tuple shadows omit skipped fields, so their positions differ from the source.
+    let shadow_access = |index: usize, info: &FieldInfo<'_>| match info.access {
+        FieldAccess::Tuple(_) => {
+            let index = syn::Index::from(index);
+            quote! { self.#index }
+        }
+        _ => info.access.access_tokens(quote! { self }),
+    };
+    let archive_fields = encoded_fields.iter().enumerate().rev().map(|(index, info)| {
         let tag = info.tag.expect("tag required");
         let shadow_ty = shadow_field_ty(info);
-        let access = info.access.access_tokens(quote! { self });
+        let access = shadow_access(index, info);
         quote! { ::proto_rs::ArchivedProtoField::<#tag, #shadow_ty>::archive(&#access, w); }
     });
 
-    let is_default_checks = encoded_fields.iter().map(|info| {
-        let access = info.access.access_tokens(quote! { self });
+    let is_default_checks = encoded_fields.iter().enumerate().map(|(index, info)| {
+        let access = shadow_access(index, info);
         quote! { ::proto_rs::ProtoArchive::is_default(&#access) }
     });
 
@@ -564,9 +543,9 @@ fn generate_shadow_impls(
         quote! { #( #is_default_checks )&&* }
     };
 
-    let value_size_hints = encoded_fields.iter().map(|info| {
+    let value_size_hints = encoded_fields.iter().enumerate().map(|(index, info)| {
         let tag = info.tag.expect("tag required");
-        let access = info.access.access_tokens(quote! { self });
+        let access = shadow_access(index, info);
         quote! { ::proto_rs::ProtoArchive::encoded_size_hint::<#tag>(&#access) }
     });
 
@@ -625,7 +604,6 @@ fn generate_shadow_impls(
 fn generate_proto_impls(
     name: &syn::Ident,
     shadow_ident: &syn::Ident,
-    _archived_ident: &syn::Ident,
     generics: &syn::Generics,
     impl_generics: &syn::ImplGenerics,
     ty_generics: &syn::TypeGenerics,
@@ -640,6 +618,20 @@ fn generate_proto_impls(
     let field_validator_hooks = build_field_validator_hooks_for_base(fields, &quote! { shadow });
     let merge_post_decode_hooks = build_post_decode_hooks_for_base(fields, &quote! { (*self) });
     let merge_field_validator_hooks = build_field_validator_hooks_for_base(fields, &quote! { (*self) });
+    let defer_hooks = if !merge_post_decode_hooks.is_empty() || !merge_field_validator_hooks.is_empty() || config.validator.is_some() {
+        quote! { state.defer(); }
+    } else {
+        quote! {}
+    };
+    let finish_fields = fields
+        .iter()
+        .filter(|info| info.tag.is_some() && !super::unified_field_handler::needs_decode_conversion(&info.config, &info.parsed))
+        .map(|info| {
+            let tag = info.tag.unwrap();
+            let ty = &info.field.ty;
+            let access = info.access.access_tokens(quote! { self });
+            quote! { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(&mut #access, &state.field(#tag))?; }
+        });
     let decode_post_decode_hooks = build_post_decode_hooks_for_base(fields, &quote! { value });
     let decode_field_validator_hooks = build_field_validator_hooks_for_base(fields, &quote! { value });
     let validate_with_ext_impl = build_validate_with_ext_impl(config);
@@ -706,8 +698,7 @@ fn generate_proto_impls(
 
                 #[inline]
                 fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
-                    let shadow = <#shadow_ty_short as ::proto_rs::ProtoShadowEncode<'_, #name #ty_generics>>::from_sun(self);
-                    <#shadow_ty_short as ::proto_rs::ProtoArchive>::encoded_size_hint::<TAG>(&shadow)
+                    <Self as ::proto_rs::ProtoEncode>::size_hint::<TAG>(self)
                 }
 
                 #[inline]
@@ -718,12 +709,31 @@ fn generate_proto_impls(
             }
         }
     };
+    let cheap_field_hints = fields.iter().filter_map(|info| {
+        let tag = info.tag?;
+        let ty = &info.field.ty;
+        let access = info.access.access_tokens(quote! { self });
+        Some(
+            if needs_encode_conversion(&info.config, &info.parsed) || info.config.getter.is_some() {
+                let ty = &info.proto_ty;
+                quote! { <#ty as ::proto_rs::ProtoExt>::ENCODED_SIZE_HINT.for_field::<#tag>(<#ty as ::proto_rs::ProtoExt>::WIRE_TYPE) }
+            } else {
+                quote! { <#ty as ::proto_rs::ProtoEncode>::size_hint::<#tag>(&#access) }
+            },
+        )
+    });
     let proto_encode_impl = if has_sun_ir {
         quote! {}
     } else {
         quote! {
             impl #impl_generics ::proto_rs::ProtoEncode for #name #ty_generics #where_clause {
                 type Shadow<'a> = #shadow_ty;
+
+                #[inline]
+                fn size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
+                    let payload = ::proto_rs::EncodeSizeHint::EMPTY #(.add(#cheap_field_hints))*;
+                    payload.for_field::<TAG>(<Self as ::proto_rs::ProtoExt>::WIRE_TYPE)
+                }
             }
         }
     };
@@ -939,6 +949,29 @@ fn generate_proto_impls(
 
                 impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
                     #[inline]
+                    fn finish_value(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                        if !state.has_data() { return Ok(()); }
+                        #sun_decode_shadow_init_self
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::finish(&mut shadow, state)?;
+                        *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
+                    }
+
+                    #[inline]
+                    fn merge_value_with_state(
+                        &mut self,
+                        wire_type: ::proto_rs::encoding::WireType,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                        state: &::proto_rs::DecodeState<'_>,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        #sun_decode_shadow_init_self
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_with_state(&mut shadow, wire_type, buf, ctx, state)?;
+                        *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
+                    }
+
+                    #[inline]
                     fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
@@ -962,8 +995,7 @@ fn generate_proto_impls(
 
                     #[inline]
                     fn encoded_size_hint<const TAG: u32>(&self) -> ::proto_rs::EncodeSizeHint {
-                        let shadow = <#sun_encode_shadow_archive as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#sun_encode_shadow_archive as ::proto_rs::ProtoArchive>::encoded_size_hint::<TAG>(&shadow)
+                        <Self as ::proto_rs::ProtoEncode>::size_hint::<TAG>(self)
                     }
 
                     #[inline]
@@ -987,6 +1019,18 @@ fn generate_proto_impls(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline]
+            fn finish(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                if !state.has_data() { return Ok(()); }
+                #(#finish_fields)*
+                if state.pending() {
+                    #(#merge_post_decode_hooks)*
+                    #(#merge_field_validator_hooks)*
+                    #merge_message_validation
+                }
+                Ok(())
+            }
+
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -994,7 +1038,9 @@ fn generate_proto_impls(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+                let state = ::proto_rs::DecodeState::default();
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &state)?;
+                Self::finish(value, &state)
             }
             #[inline]
             fn merge_field_with_state(
@@ -1010,30 +1056,14 @@ fn generate_proto_impls(
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
-                self.merge_with_state(wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+                let state = ::proto_rs::DecodeState::default();
+                self.merge_with_state(wire_type, buf, ctx, &state)?;
+                self.finish(&state)
             }
             #[inline]
             fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
-                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
-                    return Err(::proto_rs::DecodeError::invalid_wire_type_for_kind(<Self as ::proto_rs::ProtoExt>::KIND.dbg_name()));
-                }
-                ctx.limit_reached()?;
-                let inner_ctx = ctx.enter_recursion();
-                let len = ::proto_rs::encoding::decode_length_delimiter(&mut *buf)?;
-                let remaining = buf.remaining();
-                if len > remaining {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
-                let limit = remaining - len;
-                while buf.remaining() > limit {
-                    Self::decode_one_field_with_state(self, buf, inner_ctx, state)?;
-                }
-                if buf.remaining() != limit {
-                    return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
-                }
-                #(#merge_post_decode_hooks)*
-                #(#merge_field_validator_hooks)*
-                #merge_message_validation
+                self.merge_message_fields(wire_type, buf, ctx, state)?;
+                #defer_hooks
                 Ok(())
             }
 

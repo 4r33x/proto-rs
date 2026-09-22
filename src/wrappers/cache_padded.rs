@@ -25,6 +25,11 @@ impl<T: ProtoExt> ProtoExt for CachePadded<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
     #[inline]
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        T::finish_value(self, state)
+    }
+
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             value.merge(wire_type, buf, ctx)
@@ -35,7 +40,9 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for CachePadded<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+        let state = crate::DecodeState::default();
+        self.merge_with_state(wire_type, buf, ctx, &state)?;
+        self.finish(&state)
     }
 
     fn merge_field_with_state(
@@ -92,11 +99,19 @@ where
 
 impl<T> ProtoArchive for CachePadded<T>
 where
-    T: ProtoArchive,
+    T: ProtoArchive + ProtoExt,
 {
     #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self)
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        <T as ProtoArchive>::encoded_size_hint::<TAG>(self)
     }
 
     #[inline]
@@ -110,6 +125,10 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = T::Shadow<'a>;
+    #[inline]
+    fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        T::size_hint::<TAG>(self)
+    }
 }
 
 impl<'a, T, S> ProtoShadowEncode<'a, CachePadded<T>> for S
@@ -124,11 +143,19 @@ where
 
 impl<T> ProtoArchive for &CachePadded<T>
 where
-    T: ProtoArchive,
+    T: ProtoArchive + ProtoExt,
 {
     #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self)
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        <T as ProtoArchive>::encoded_size_hint::<TAG>(self)
     }
 
     #[inline]

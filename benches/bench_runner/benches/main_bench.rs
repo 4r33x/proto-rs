@@ -394,7 +394,7 @@ fn bench_zero_copy_vs_prost(c: &mut Criterion) {
         b.iter_custom(|iters| {
             let start = Instant::now();
             for _ in 0..iters {
-                let bytes = message.to_zero_copy().into_bytes();
+                let bytes = message.to_encoded_snapshot().into_bytes();
                 black_box(bytes);
             }
             let total = start.elapsed();

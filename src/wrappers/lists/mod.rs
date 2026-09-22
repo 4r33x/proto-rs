@@ -179,6 +179,19 @@ where
     }
 
     #[inline]
+    fn output_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        if matches!(T::KIND, ProtoKind::Message) && self.len() <= 32 {
+            // Use ordinary field hints, not output hints: do not recursively
+            // walk collections. Byte payloads are inspected only for length.
+            self.iter().fold(crate::EncodeSizeHint::EMPTY, |hint, value| {
+                hint.add(value.encoded_size_hint::<TAG>())
+            })
+        } else {
+            self.encoded_size_hint::<TAG>()
+        }
+    }
+
+    #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         if let Some(bytes) = T::byte_slice(self) {
             w.put_bytes::<TAG>(bytes);

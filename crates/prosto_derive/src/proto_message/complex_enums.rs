@@ -11,8 +11,6 @@ use super::generic_bounds::add_proto_wire_bounds;
 use super::unified_field_handler::FieldAccess;
 use super::unified_field_handler::FieldInfo;
 use super::unified_field_handler::assign_tags;
-use super::unified_field_handler::compute_decode_ty;
-use super::unified_field_handler::compute_proto_ty;
 use super::unified_field_handler::decode_conversion_assign;
 use super::unified_field_handler::encode_conversion_expr;
 use super::unified_field_handler::field_proto_default_expr;
@@ -21,11 +19,8 @@ use super::unified_field_handler::needs_encode_conversion;
 use super::unified_field_handler::parse_path_string;
 use super::unified_field_handler::sanitize_enum;
 use crate::parse::UnifiedProtoConfig;
-use crate::utils::parse_field_config;
-use crate::utils::parse_field_type;
 use crate::utils::parse_variant_tag;
 use crate::utils::resolve_proto_tags;
-use crate::utils::resolved_field_type;
 
 pub(super) fn generate_complex_enum_impl(
     input: &DeriveInput,
@@ -65,6 +60,37 @@ pub(super) fn generate_complex_enum_impl(
     });
     let field_validation_arms = build_variant_field_validation_arms(name, &variants);
     let has_field_validation = !field_validation_arms.is_empty();
+    let defer_hooks = if has_field_validation || config.validator.is_some() {
+        quote! { state.defer(); }
+    } else {
+        quote! {}
+    };
+    let finish_arms = variants.iter().map(|variant| {
+        let ident = variant.ident;
+        let tag = variant.tag;
+        match &variant.kind {
+            VariantKind::Unit => quote! { #name::#ident => {} },
+            VariantKind::Tuple { field } => {
+                if field.field.config.skip || needs_decode_conversion(&field.field.config, &field.field.parsed) {
+                    quote! { #name::#ident(..) => {} }
+                } else {
+                    let ty = &field.field.field.ty;
+                    quote! { #name::#ident(inner) => { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(inner, &state.field(#tag))?; } }
+                }
+            }
+            VariantKind::Struct { fields } => {
+                let bindings = build_struct_field_bindings(fields);
+                let finishes =
+                    fields.iter().filter(|info| !info.config.skip && !needs_decode_conversion(&info.config, &info.parsed)).map(|info| {
+                        let field = info.field.ident.as_ref().unwrap();
+                        let field_tag = info.tag.unwrap();
+                        let ty = &info.field.ty;
+                        quote! { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(#field, &state.field(#tag).field(#field_tag))?; }
+                    });
+                quote! { #name::#ident { #(#bindings),* } => { #(#finishes)* } }
+            }
+        }
+    });
     let field_validation = if field_validation_arms.is_empty() {
         quote! {}
     } else {
@@ -185,6 +211,29 @@ pub(super) fn generate_complex_enum_impl(
 
                 impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
                     #[inline]
+                    fn finish_value(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                        if !state.has_data() { return Ok(()); }
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::finish(&mut shadow, state)?;
+                        *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
+                    }
+
+                    #[inline]
+                    fn merge_value_with_state(
+                        &mut self,
+                        wire_type: ::proto_rs::encoding::WireType,
+                        buf: &mut impl ::proto_rs::bytes::Buf,
+                        ctx: ::proto_rs::encoding::DecodeContext,
+                        state: &::proto_rs::DecodeState<'_>,
+                    ) -> Result<(), ::proto_rs::DecodeError> {
+                        let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_with_state(&mut shadow, wire_type, buf, ctx, state)?;
+                        *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
+                        Ok(())
+                    }
+
+                    #[inline]
                     fn merge_value(
                         &mut self,
                         wire_type: ::proto_rs::encoding::WireType,
@@ -231,6 +280,17 @@ pub(super) fn generate_complex_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline]
+            fn finish(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                if !state.has_data() { return Ok(()); }
+                match self { #(#finish_arms),* }
+                if state.pending() {
+                    #merge_field_validation
+                    #merge_message_validation
+                }
+                Ok(())
+            }
+
+            #[inline]
             fn merge_field(
                 value: &mut Self,
                 tag: u32,
@@ -238,7 +298,9 @@ pub(super) fn generate_complex_enum_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+                let state = ::proto_rs::DecodeState::default();
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &state)?;
+                Self::finish(value, &state)
             }
             #[inline]
             fn merge_field_with_state(
@@ -254,29 +316,14 @@ pub(super) fn generate_complex_enum_impl(
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
-                self.merge_with_state(wire_type, buf, ctx, &::proto_rs::DecodeState::default())
+                let state = ::proto_rs::DecodeState::default();
+                self.merge_with_state(wire_type, buf, ctx, &state)?;
+                self.finish(&state)
             }
             #[inline]
             fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
-                if wire_type != ::proto_rs::encoding::WireType::LengthDelimited {
-                    return Err(::proto_rs::DecodeError::invalid_wire_type_for_kind(<Self as ::proto_rs::ProtoExt>::KIND.dbg_name()));
-                }
-                ctx.limit_reached()?;
-                let inner_ctx = ctx.enter_recursion();
-                let len = ::proto_rs::encoding::decode_length_delimiter(&mut *buf)?;
-                let remaining = buf.remaining();
-                if len > remaining {
-                    return Err(::proto_rs::DecodeError::new("buffer underflow"));
-                }
-                let limit = remaining - len;
-                while buf.remaining() > limit {
-                    Self::decode_one_field_with_state(self, buf, inner_ctx, state)?;
-                }
-                if buf.remaining() != limit {
-                    return Err(::proto_rs::DecodeError::new("delimited length exceeded"));
-                }
-                #merge_field_validation
-                #merge_message_validation
+                self.merge_message_fields(wire_type, buf, ctx, state)?;
+                #defer_hooks
                 Ok(())
             }
 
@@ -411,26 +458,12 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                 }
 
                 let field = &fields.unnamed[0];
-                let config = parse_field_config(field);
-                let effective_ty = resolved_field_type(field, &config);
-                let parsed = parse_field_type(&effective_ty);
-                let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
-                let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
                 let binding_ident = Ident::new(
                     &format!("__proto_rs_variant_{}_value", variant.ident.to_string().to_lowercase()),
                     field.span(),
                 );
 
-                let field_info = FieldInfo {
-                    index: 0,
-                    field,
-                    access: FieldAccess::Direct(quote! { #binding_ident }),
-                    config,
-                    tag: None,
-                    parsed,
-                    proto_ty,
-                    decode_ty,
-                };
+                let field_info = FieldInfo::new(0, field, FieldAccess::Direct(quote! { #binding_ident }));
 
                 let field_info = assign_tags(vec![field_info]).pop().expect("tuple variant field");
 
@@ -447,24 +480,8 @@ fn collect_variant_infos<'a>(data: &'a syn::DataEnum, _config: &'a UnifiedProtoC
                     .iter()
                     .enumerate()
                     .map(|(field_idx, field)| {
-                        let config = parse_field_config(field);
-                        let effective_ty = resolved_field_type(field, &config);
-                        let parsed = parse_field_type(&effective_ty);
-                        let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
-                        let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
-                        FieldInfo {
-                            index: field_idx,
-                            field,
-                            access: FieldAccess::Direct({
-                                let ident = field.ident.as_ref().expect("named variant field");
-                                quote! { #ident }
-                            }),
-                            config,
-                            tag: None,
-                            parsed,
-                            proto_ty,
-                            decode_ty,
-                        }
+                        let ident = field.ident.as_ref().expect("named variant field");
+                        FieldInfo::new(field_idx, field, FieldAccess::Direct(quote! { #ident }))
                     })
                     .collect();
                 infos = assign_tags(infos);

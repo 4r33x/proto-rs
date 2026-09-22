@@ -32,6 +32,15 @@ where
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
     #[inline]
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        if !state.has_data() {
+            return Ok(());
+        }
+        let inner = Arc::get_mut(self).ok_or_else(|| DecodeError::new("cannot decode into a shared Arc"))?;
+        T::finish_value(inner, state)
+    }
+
+    #[inline]
     fn merge_field(
         value: &mut Self,
         tag: u32,
@@ -48,7 +57,9 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl bytes::Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+        let state = crate::DecodeState::default();
+        self.merge_with_state(wire_type, buf, ctx, &state)?;
+        self.finish(&state)
     }
 
     fn merge_field_with_state(
@@ -76,10 +87,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Arc<T> {
         if let Some(inner) = Arc::get_mut(self) {
             T::merge_value_with_state(inner, wire_type, buf, ctx, state)
         } else {
-            let mut value = <T as ProtoDefault>::proto_default();
-            T::merge_value_with_state(&mut value, wire_type, buf, ctx, state)?;
-            *self = Arc::new(value);
-            Ok(())
+            Err(DecodeError::new("cannot decode into a shared Arc"))
         }
     }
 }
@@ -112,11 +120,19 @@ where
 
 impl<T> ProtoArchive for Arc<T>
 where
-    T: ProtoArchive,
+    T: ProtoArchive + ProtoExt,
 {
     #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        <T as ProtoArchive>::encoded_size_hint::<TAG>(self.as_ref())
     }
 
     #[inline]
@@ -130,6 +146,10 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = T::Shadow<'a>;
+    #[inline]
+    fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        T::size_hint::<TAG>(self.as_ref())
+    }
 }
 
 impl<'a, T, S> ProtoShadowEncode<'a, Arc<T>> for S
@@ -144,11 +164,19 @@ where
 
 impl<T> ProtoArchive for &Arc<T>
 where
-    T: ProtoArchive,
+    T: ProtoArchive + ProtoExt,
 {
     #[inline]
     fn is_default(&self) -> bool {
         T::is_default(self.as_ref())
+    }
+
+    #[inline]
+    fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        <T as ProtoArchive>::encoded_size_hint::<TAG>(self.as_ref())
     }
 
     #[inline]

@@ -2,8 +2,6 @@
 //! Lightweight type analysis used by the codegen. 100% `syn` v2 compatible.
 
 use proc_macro2::Span;
-use proc_macro2::TokenStream;
-use quote::quote;
 use syn::GenericArgument;
 use syn::PathArguments;
 use syn::Type;
@@ -33,8 +31,6 @@ pub struct ParsedFieldType {
     pub rust_type: Type,
     /// Protobuf scalar kind used for prost attributes ("uint32", "bytes", ...).
     pub proto_type: String,
-    /// Prost attribute fragment (e.g. `quote! { uint32 }`).
-    pub prost_type: TokenStream,
     /// Whether the field is wrapped in `Option<T>`.
     pub is_option: bool,
     /// Whether the field should be treated as a protobuf message (length-delimited payload).
@@ -56,7 +52,6 @@ impl ParsedFieldType {
     fn new(
         rust_type: Type,
         proto_type: &str,
-        prost_type: TokenStream,
         is_message_like: bool,
         is_numeric_scalar: bool,
         proto_rust_type: Type,
@@ -66,7 +61,6 @@ impl ParsedFieldType {
         Self {
             rust_type,
             proto_type: proto_type.to_string(),
-            prost_type,
             is_option: false,
             is_message_like,
             is_numeric_scalar,
@@ -123,12 +117,11 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
     let rust_ty = Type::Array(array.clone());
 
     if is_bytes_array(&rust_ty) {
-        return ParsedFieldType::new(rust_ty.clone(), "bytes", quote! { bytes }, false, false, rust_ty, elem_ty, false);
+        return ParsedFieldType::new(rust_ty.clone(), "bytes", false, false, rust_ty, elem_ty, false);
     }
 
     let inner = parse_field_type(&elem_ty);
     let proto_type = inner.proto_type.clone();
-    let prost_type = inner.prost_type.clone();
     let is_message_like = inner.is_message_like;
     let is_numeric_scalar = inner.is_numeric_scalar;
     let inner_proto = inner.proto_rust_type.clone();
@@ -137,7 +130,6 @@ fn parse_array_type(array: &TypeArray) -> ParsedFieldType {
     ParsedFieldType {
         rust_type: rust_ty,
         proto_type,
-        prost_type,
         is_option: false,
 
         is_message_like,
@@ -197,7 +189,6 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         return ParsedFieldType::new(
             ty.clone(),
             "bytes",
-            quote! { bytes },
             false,
             false,
             parse_quote! { ::proto_rs::alloc::vec::Vec<u8> },
@@ -210,7 +201,6 @@ fn parse_vec_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     ParsedFieldType {
         rust_type: ty.clone(),
         proto_type: inner.proto_type.clone(),
-        prost_type: inner.prost_type.clone(),
         is_option: false,
 
         is_message_like: inner.is_message_like,
@@ -231,7 +221,6 @@ fn parse_vec_deque_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
         return ParsedFieldType::new(
             ty.clone(),
             "bytes",
-            quote! { bytes },
             false,
             false,
             parse_quote! { ::proto_rs::alloc::collections::VecDeque<u8> },
@@ -244,7 +233,6 @@ fn parse_vec_deque_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     ParsedFieldType {
         rust_type: ty.clone(),
         proto_type: inner.proto_type.clone(),
-        prost_type: inner.prost_type.clone(),
         is_option: false,
 
         is_message_like: inner.is_message_like,
@@ -286,31 +274,12 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "NonZeroU64" | "NonZeroUsize" => numeric_scalar(ty.clone(), parse_quote! { u64 }, "uint64"),
                     "NonZeroI8" | "NonZeroI16" | "NonZeroI32" => numeric_scalar(ty.clone(), parse_quote! { i32 }, "int32"),
                     "NonZeroI64" | "NonZeroIsize" => numeric_scalar(ty.clone(), parse_quote! { i64 }, "int64"),
-                    "f32" => ParsedFieldType::new(
-                        ty.clone(),
-                        "float",
-                        quote! { float },
-                        false,
-                        true,
-                        parse_quote! { f32 },
-                        ty.clone(),
-                        false,
-                    ),
-                    "f64" => ParsedFieldType::new(
-                        ty.clone(),
-                        "double",
-                        quote! { double },
-                        false,
-                        true,
-                        parse_quote! { f64 },
-                        ty.clone(),
-                        false,
-                    ),
+                    "f32" => ParsedFieldType::new(ty.clone(), "float", false, true, parse_quote! { f32 }, ty.clone(), false),
+                    "f64" => ParsedFieldType::new(ty.clone(), "double", false, true, parse_quote! { f64 }, ty.clone(), false),
                     "bool" => numeric_scalar(ty.clone(), parse_quote! { bool }, "bool"),
                     "String" => ParsedFieldType::new(
                         ty.clone(),
                         "string",
-                        quote! { string },
                         false,
                         false,
                         parse_quote! { ::proto_rs::alloc::string::String },
@@ -320,7 +289,6 @@ fn parse_primitive_or_custom(ty: &Type) -> ParsedFieldType {
                     "Bytes" => ParsedFieldType::new(
                         ty.clone(),
                         "bytes",
-                        quote! { bytes },
                         false,
                         false,
                         parse_quote! { ::proto_rs::bytes::Bytes },
@@ -373,7 +341,6 @@ fn parse_map_type(path: &TypePath, ty: &Type, kind: MapKind) -> ParsedFieldType 
     ParsedFieldType {
         rust_type: ty.clone(),
         proto_type,
-        prost_type: quote! { map },
         is_option: false,
 
         is_message_like: true,
@@ -404,7 +371,6 @@ fn parse_set_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
     ParsedFieldType {
         rust_type: ty.clone(),
         proto_type: inner.proto_type.clone(),
-        prost_type: inner.prost_type.clone(),
         is_option: false,
         is_message_like: inner.is_message_like,
         is_numeric_scalar: inner.is_numeric_scalar,
@@ -416,8 +382,7 @@ fn parse_set_type(path: &TypePath, ty: &Type) -> ParsedFieldType {
 }
 
 fn numeric_scalar(rust: Type, proto: Type, name: &str) -> ParsedFieldType {
-    let ident = syn::Ident::new(name, Span::call_site());
-    ParsedFieldType::new(rust.clone(), name, quote! { #ident }, false, true, proto, rust, false)
+    ParsedFieldType::new(rust.clone(), name, false, true, proto, rust, false)
 }
 
 fn parse_array_proto_suffix(ty: &Type) -> Type {
@@ -432,7 +397,7 @@ fn parse_array_proto_suffix(ty: &Type) -> Type {
 
 fn parse_custom_type(ty: &Type) -> ParsedFieldType {
     let proto_ty = parse_array_proto_suffix(ty);
-    ParsedFieldType::new(ty.clone(), "message", quote! { message }, true, false, proto_ty, ty.clone(), false)
+    ParsedFieldType::new(ty.clone(), "message", true, false, proto_ty, ty.clone(), false)
 }
 
 fn is_byte_like(ty: &Type) -> bool {

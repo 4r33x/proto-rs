@@ -25,6 +25,26 @@ pub struct FieldInfo<'a> {
     pub decode_ty: Type,
 }
 
+impl<'a> FieldInfo<'a> {
+    pub fn new(index: usize, field: &'a Field, access: FieldAccess<'a>) -> Self {
+        let config = crate::utils::parse_field_config(field);
+        let effective_ty = crate::utils::resolved_field_type(field, &config);
+        let parsed = crate::utils::parse_field_type(&effective_ty);
+        let proto_ty = compute_proto_ty(field, &config, &parsed, &effective_ty);
+        let decode_ty = compute_decode_ty(field, &config, &parsed, &proto_ty);
+        Self {
+            index,
+            field,
+            access,
+            config,
+            tag: None,
+            parsed,
+            proto_ty,
+            decode_ty,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum FieldAccess<'a> {
     Named(&'a Ident),

@@ -19,6 +19,45 @@ mod hash_map;
 
 pub(crate) const MAP_ENTRY_KIND: ProtoKind = ProtoKind::Message;
 
+pub(super) fn decode_entry<K: ProtoDecode, V: ProtoDecode>(
+    wire: WireType,
+    buf: &mut impl Buf,
+    ctx: DecodeContext,
+) -> Result<(K, V), DecodeError> {
+    let mut entry = MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::proto_default();
+    entry.merge(wire, buf, ctx)?;
+    entry.to_sun()
+}
+
+pub(super) fn size_hint<K: crate::ProtoEncode, V: crate::ProtoEncode, const TAG: u32>(len: usize) -> crate::EncodeSizeHint {
+    if len == 0 {
+        return crate::EncodeSizeHint::EMPTY;
+    }
+    crate::EncodeSizeHint::EMPTY
+        .add_field::<1>(K::Shadow::ENCODED_SIZE_HINT, K::Shadow::WIRE_TYPE)
+        .add_field::<2>(V::Shadow::ENCODED_SIZE_HINT, V::Shadow::WIRE_TYPE)
+        .for_field::<TAG>(WireType::LengthDelimited)
+        .repeated(len)
+}
+
+pub(super) fn archive_entry<K: crate::ProtoEncode, V: crate::ProtoEncode, const TAG: u32>(
+    key: &K,
+    value: &V,
+    w: &mut impl crate::RevWriter,
+) {
+    use crate::ArchivedProtoField;
+    use crate::ProtoShadowEncode;
+    let key = K::Shadow::from_sun(key);
+    let value = V::Shadow::from_sun(value);
+    let mark = w.mark();
+    ArchivedProtoField::<2, V::Shadow<'_>>::archive(&value, w);
+    ArchivedProtoField::<1, K::Shadow<'_>>::archive(&key, w);
+    if TAG != 0 {
+        w.put_varint(w.written_since(mark) as u64);
+        ArchivedProtoField::<TAG, ()>::put_key(w);
+    }
+}
+
 pub struct MapEntryDecoded<K, V> {
     key: K,
     value: V,
@@ -33,6 +72,11 @@ where
     Kd: ProtoDecoder,
     Vd: ProtoDecoder,
 {
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        self.key.finish(&state.field(1))?;
+        self.value.finish(&state.field(2))
+    }
+
     #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &crate::DecodeState::default())

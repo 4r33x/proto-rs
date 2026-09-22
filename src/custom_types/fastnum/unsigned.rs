@@ -23,17 +23,14 @@ pub struct UD128Proto {
 
 impl ProtoShadowDecode<UD128> for UD128Proto {
     fn to_sun(self) -> Result<UD128, DecodeError> {
-        let digits = ((self.hi as u128) << 64) | (self.lo as u128);
+        let digits = fastnum::U128::from_digits([self.lo, self.hi]);
 
-        let mut result = UD128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
-
-        if self.fractional_digits_count > 0 {
-            result /= UD128::TEN.powi(self.fractional_digits_count);
-        } else if self.fractional_digits_count < 0 {
-            result *= UD128::TEN.powi(-self.fractional_digits_count);
+        let exponent = super::decode_exponent(self.fractional_digits_count)?;
+        let result = UD128::from_parts(digits, exponent, fastnum::decimal::Context::default().without_traps());
+        if !result.is_finite() || !result.is_op_ok() {
+            return Err(DecodeError::new("decimal value is out of range"));
         }
-
-        Ok(result)
+        Ok(result.with_ctx(fastnum::decimal::Context::default()))
     }
 }
 

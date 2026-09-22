@@ -7,12 +7,9 @@ use quote::quote;
 use syn::Type;
 
 use crate::proto_rpc::rpc_common::generate_codec_init;
-use crate::proto_rpc::rpc_common::generate_request_proto_type;
-use crate::proto_rpc::rpc_common::generate_response_proto_type;
 use crate::proto_rpc::rpc_common::generate_route_path;
 use crate::proto_rpc::rpc_common::generate_service_constructors;
 use crate::proto_rpc::rpc_common::generate_service_struct_fields;
-use crate::proto_rpc::rpc_common::is_streaming_method;
 use crate::proto_rpc::rpc_common::server_module_name;
 use crate::proto_rpc::rpc_common::server_struct_name;
 use crate::proto_rpc::utils::associated_future_type;
@@ -22,7 +19,7 @@ use crate::proto_rpc::utils::wrap_async_block;
 use crate::utils::MethodInfo;
 use crate::utils::to_pascal_case;
 
-fn response_to_proto_response(response_return_type: &Type, response_binding: &TokenStream, response_proto: &TokenStream) -> TokenStream {
+fn response_to_proto_response(response_return_type: &Type, response_binding: &TokenStream, response_proto: &Type) -> TokenStream {
     let normalized = if is_response_wrapper(response_return_type) {
         quote! { #response_binding }
     } else {
@@ -207,6 +204,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                     let send_compression_encodings = self.send_compression_encodings;
                     let max_decoding_message_size = self.max_decoding_message_size;
                     let max_encoding_message_size = self.max_encoding_message_size;
+                    let max_encode_preallocation = self.max_encode_preallocation;
                     let inner = self.inner.clone();
                     #call_future_body
                 }
@@ -220,6 +218,7 @@ pub fn generate_server_module(trait_name: &syn::Ident, vis: &syn::Visibility, pa
                         send_compression_encodings: self.send_compression_encodings,
                         max_decoding_message_size: self.max_decoding_message_size,
                         max_encoding_message_size: self.max_encoding_message_size,
+                        max_encode_preallocation: self.max_encode_preallocation,
                     }
                 }
             }
@@ -245,7 +244,7 @@ fn generate_trait_components(methods: &[MethodInfo]) -> (Vec<TokenStream>, Vec<T
     for method in methods {
         trait_methods.push(generate_trait_method(method));
 
-        if is_streaming_method(method) {
+        if method.is_streaming {
             let stream_name = method.stream_type_name.as_ref().unwrap();
             if seen_streams.insert(stream_name) {
                 associated_types.push(generate_stream_associated_type(method));
@@ -259,9 +258,9 @@ fn generate_trait_components(methods: &[MethodInfo]) -> (Vec<TokenStream>, Vec<T
 fn generate_trait_method(method: &MethodInfo) -> TokenStream {
     let method_name = &method.name;
     let request_type = &method.request_type;
-    let request_proto = generate_request_proto_type(request_type);
+    let request_proto = request_type;
 
-    if is_streaming_method(method) {
+    if method.is_streaming {
         let stream_name = method.stream_type_name.as_ref().unwrap();
         let return_type = if method.response_is_result {
             quote! { ::core::result::Result<tonic::Response<Self::#stream_name>, tonic::Status> }
@@ -285,7 +284,7 @@ fn generate_trait_method(method: &MethodInfo) -> TokenStream {
     } else {
         let response_type = &method.response_type;
         let response_return_type = &method.response_return_type;
-        let response_proto = generate_response_proto_type(response_type);
+        let response_proto = response_type;
         let return_type = quote! {
             ::core::result::Result<
                 tonic::Response<
@@ -330,7 +329,7 @@ fn generate_blanket_impl_components(methods: &[MethodInfo], trait_name: &syn::Id
     let mut seen_streams = HashSet::new();
 
     for method in methods {
-        if is_streaming_method(method) {
+        if method.is_streaming {
             let stream_name = method.stream_type_name.as_ref().unwrap();
             if seen_streams.insert(stream_name.to_string()) {
                 blanket_types.push(generate_blanket_stream_type(method, trait_name));
@@ -360,7 +359,7 @@ fn generate_blanket_stream_type(method: &MethodInfo, trait_name: &syn::Ident) ->
 }
 
 fn generate_blanket_method(method: &MethodInfo, trait_name: &syn::Ident) -> TokenStream {
-    if is_streaming_method(method) {
+    if method.is_streaming {
         generate_blanket_streaming_method(method, trait_name)
     } else {
         generate_blanket_unary_method(method, trait_name)
@@ -372,11 +371,11 @@ fn generate_blanket_unary_method(method: &MethodInfo, trait_name: &syn::Ident) -
     let request_type = &method.request_type;
     let response_type = &method.response_type;
     let response_return_type = &method.response_return_type;
-    let request_proto = generate_request_proto_type(request_type);
-    let response_proto = generate_response_proto_type(response_type);
+    let request_proto = request_type;
+    let response_proto = response_type;
 
     let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result, method.request_is_wrapped);
-    let response_conversion = response_to_proto_response(response_return_type, &quote! { native_response }, &response_proto);
+    let response_conversion = response_to_proto_response(response_return_type, &quote! { native_response }, response_proto);
 
     if method.is_async {
         let await_suffix = if method.response_is_result {
@@ -452,7 +451,7 @@ fn generate_blanket_streaming_method(method: &MethodInfo, trait_name: &syn::Iden
     let request_type = &method.request_type;
     let stream_name = method.stream_type_name.as_ref().unwrap();
     let item_type = method.stream_item_type.as_ref().unwrap();
-    let request_proto = generate_request_proto_type(request_type);
+    let request_proto = request_type;
 
     let request_conversion = generate_proto_to_native_request(request_type, method.response_is_result, method.request_is_wrapped);
     let call_suffix = match (method.is_async, method.response_is_result) {
@@ -530,7 +529,7 @@ fn generate_route_handler(method: &MethodInfo, package_name: &str, trait_name: &
     let route_path = generate_route_path(package_name, trait_name, method_name);
     let svc_name = syn::Ident::new(&format!("{}Svc", to_pascal_case(&method_name.to_string())), method_name.span());
 
-    if is_streaming_method(method) {
+    if method.is_streaming {
         generate_streaming_route_handler(method, &route_path, &svc_name, trait_name)
     } else {
         generate_unary_route_handler(method, &route_path, &svc_name, trait_name)
@@ -542,8 +541,8 @@ fn generate_unary_route_handler(method: &MethodInfo, route_path: &str, svc_name:
     let request_type = &method.request_type;
     let response_type = &method.response_type;
     let response_return_type = &method.response_return_type;
-    let request_proto = generate_request_proto_type(request_type);
-    let response_proto = generate_response_proto_type(response_type);
+    let request_proto = request_type;
+    let response_proto = response_type;
 
     let encode_type = quote! {
         <#response_return_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode
@@ -608,8 +607,8 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
     let inner_type = method.inner_response_type.as_ref().unwrap();
     let item_type = method.stream_item_type.as_ref().unwrap();
     let stream_name = method.stream_type_name.as_ref().unwrap();
-    let request_proto = generate_request_proto_type(request_type);
-    let response_proto = generate_response_proto_type(inner_type);
+    let request_proto = request_type;
+    let response_proto = inner_type;
 
     let encode_type = quote! { <#item_type as ::proto_rs::ProtoResponse<#response_proto>>::Encode };
     let decode_type = quote! { #request_proto };
@@ -721,6 +720,14 @@ fn generate_streaming_route_handler(method: &MethodInfo, route_path: &str, svc_n
 // ============================================================================
 pub fn generate_server_compression_methods() -> TokenStream {
     quote! {
+        /// Limit speculative output reservation (default 1 MiB, minimum 64 bytes).
+        /// This is not a message size or total memory limit.
+        #[must_use]
+        pub fn with_max_encode_preallocation(mut self, limit: usize) -> Self {
+            self.max_encode_preallocation = limit;
+            self
+        }
+
         #[must_use]
         pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
             self.accept_compression_encodings.enable(encoding);

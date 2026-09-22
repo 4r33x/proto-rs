@@ -185,7 +185,7 @@ mod tests {
     fn instruction_zero_copy_bytes_match_encode() {
         let original = sample_instruction();
         let via_encode = <Instruction as ProtoEncode>::encode_to_vec(&original);
-        let zero_copy = <Instruction as ProtoEncode>::to_zero_copy(&original);
+        let zero_copy = <Instruction as ProtoEncode>::to_encoded_snapshot(&original);
         assert_eq!(zero_copy.as_bytes(), via_encode.as_slice());
     }
 }

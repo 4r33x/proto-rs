@@ -795,7 +795,7 @@ fn zero_copy_container_roundtrip() {
 
 #[test]
 fn zero_copy_into_bytes_transfers_the_archived_allocation() {
-    let archived = zero_copy_fixture().to_zero_copy();
+    let archived = zero_copy_fixture().to_encoded_snapshot();
     let archived_ptr = archived.as_bytes().as_ptr();
     let bytes = archived.into_bytes();
 

@@ -28,6 +28,37 @@ pub struct ArcSwapOptionShadow<T> {
     value: Option<Arc<T>>,
 }
 
+// Restore the stored pointer even when a user-supplied hook unwinds. A shared
+// pointee cannot be merged without Clone; reject it instead of losing fields.
+fn update_arc_swap<T: ProtoDefault>(slot: &mut ArcSwap<T>, f: impl FnOnce(&mut T) -> Result<(), DecodeError>) -> Result<(), DecodeError> {
+    struct Restore<'a, T>(&'a ArcSwap<T>, Option<Arc<T>>);
+    impl<T> Drop for Restore<'_, T> {
+        fn drop(&mut self) {
+            self.0.store(self.1.take().unwrap());
+        }
+    }
+    let old = slot.swap(Arc::new(T::proto_default()));
+    let mut guard = Restore(slot, Some(old));
+    let inner = Arc::get_mut(guard.1.as_mut().unwrap()).ok_or_else(|| DecodeError::new("cannot decode into a shared ArcSwap"))?;
+    f(inner)
+}
+
+fn update_arc_swap_option<T: ProtoDefault>(
+    slot: &mut ArcSwapOption<T>,
+    f: impl FnOnce(&mut T) -> Result<(), DecodeError>,
+) -> Result<(), DecodeError> {
+    struct Restore<'a, T>(&'a ArcSwapOption<T>, Option<Arc<T>>);
+    impl<T> Drop for Restore<'_, T> {
+        fn drop(&mut self) {
+            self.0.store(self.1.take());
+        }
+    }
+    let old = slot.swap(None).unwrap_or_else(|| Arc::new(T::proto_default()));
+    let mut guard = Restore(slot, Some(old));
+    let inner = Arc::get_mut(guard.1.as_mut().unwrap()).ok_or_else(|| DecodeError::new("cannot decode into a shared ArcSwapOption"))?;
+    f(inner)
+}
+
 impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
     const KIND: ProtoKind = T::KIND;
     const WRAP_ROOT: bool = true;
@@ -35,6 +66,38 @@ impl<T: ProtoExt> ProtoExt for ArcSwap<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        if !state.has_data() {
+            return Ok(());
+        }
+        update_arc_swap(self, |inner| T::finish_value(inner, state))
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        update_arc_swap(self, |inner| T::merge_value_with_state(inner, wire, buf, ctx, state))
+    }
+
     #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
@@ -46,10 +109,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwap<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = <T as ProtoDefault>::proto_default();
-        T::merge_value(&mut inner, wire_type, buf, ctx)?;
-        self.store(Arc::new(inner));
-        Ok(())
+        update_arc_swap(self, |inner| T::merge_value(inner, wire_type, buf, ctx))
     }
 }
 
@@ -139,6 +199,38 @@ impl<T: ProtoExt> ProtoExt for ArcSwapOption<T> {
 }
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        if !state.has_data() || self.load().is_none() {
+            return Ok(());
+        }
+        update_arc_swap_option(self, |inner| T::finish_value(inner, state))
+    }
+
+    fn merge_field_with_state(
+        value: &mut Self,
+        tag: u32,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        if tag == 1 {
+            value.merge_with_state(wire, buf, ctx, state)
+        } else {
+            skip_field(wire, tag, buf, ctx)
+        }
+    }
+
+    fn merge_with_state(
+        &mut self,
+        wire: WireType,
+        buf: &mut impl Buf,
+        ctx: DecodeContext,
+        state: &crate::DecodeState<'_>,
+    ) -> Result<(), DecodeError> {
+        update_arc_swap_option(self, |inner| T::merge_value_with_state(inner, wire, buf, ctx, state))
+    }
+
     #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
@@ -150,10 +242,7 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for ArcSwapOption<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        let mut inner = <T as ProtoDefault>::proto_default();
-        T::merge_value(&mut inner, wire_type, buf, ctx)?;
-        self.store(Some(Arc::new(inner)));
-        Ok(())
+        update_arc_swap_option(self, |inner| T::merge_value(inner, wire_type, buf, ctx))
     }
 }
 

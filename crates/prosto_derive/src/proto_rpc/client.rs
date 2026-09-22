@@ -7,13 +7,7 @@ use crate::parse::InterceptorConfig;
 use crate::proto_rpc::rpc_common::client_module_name;
 use crate::proto_rpc::rpc_common::client_struct_name;
 use crate::proto_rpc::rpc_common::generate_client_with_interceptor;
-use crate::proto_rpc::rpc_common::generate_native_to_proto_request_streaming;
-use crate::proto_rpc::rpc_common::generate_native_to_proto_request_unary;
-use crate::proto_rpc::rpc_common::generate_proto_to_native_response;
-use crate::proto_rpc::rpc_common::generate_ready_check;
 use crate::proto_rpc::rpc_common::generate_route_path;
-use crate::proto_rpc::rpc_common::generate_stream_conversion;
-use crate::proto_rpc::rpc_common::is_streaming_method;
 use crate::utils::MethodInfo;
 
 // ============================================================================
@@ -45,8 +39,8 @@ pub fn generate_client_module(
     ) = if interceptor_config.is_some() {
         (
             quote! { <T, Ctx> },
-            quote! { inner: tonic::client::Grpc<T>, _ctx: ::core::marker::PhantomData<Ctx> },
-            quote! { Self { inner, _ctx: ::core::marker::PhantomData } },
+            quote! { inner: tonic::client::Grpc<T>, max_encode_preallocation: usize, _ctx: ::core::marker::PhantomData<Ctx> },
+            quote! { Self { inner, max_encode_preallocation: ::proto_rs::DEFAULT_MAX_ENCODE_PREALLOCATION, _ctx: ::core::marker::PhantomData } },
             quote! { <T, Ctx> },
             quote! { <Ctx> },
             quote! { <tonic::transport::Channel, Ctx> },
@@ -54,8 +48,8 @@ pub fn generate_client_module(
     } else {
         (
             quote! { <T> },
-            quote! { inner: tonic::client::Grpc<T> },
-            quote! { Self { inner } },
+            quote! { inner: tonic::client::Grpc<T>, max_encode_preallocation: usize },
+            quote! { Self { inner, max_encode_preallocation: ::proto_rs::DEFAULT_MAX_ENCODE_PREALLOCATION } },
             quote! { <T> },
             quote! {},
             quote! { <tonic::transport::Channel> },
@@ -63,7 +57,22 @@ pub fn generate_client_module(
     };
 
     let connect_impl = if cfg!(feature = "tonic-transport") {
+        let auto_args = if interceptor_config.is_some() {
+            quote! { <::proto_rs::grpc::AutoChannel, Ctx> }
+        } else {
+            quote! { <::proto_rs::grpc::AutoChannel> }
+        };
         quote! {
+            impl #client_connect_impl_generics #client_struct #auto_args {
+                /// Select owned Linux sends when requested, with automatic
+                /// ordinary-write/TLS fallback and one warning per channel.
+                pub async fn connect_auto(
+                    endpoint: tonic::transport::Endpoint,
+                    options: ::proto_rs::grpc::ChannelOptions,
+                ) -> Result<Self, tonic::codegen::StdError> {
+                    Ok(Self::new(::proto_rs::grpc::AutoChannel::connect(endpoint, options).await?))
+                }
+            }
             impl #client_connect_impl_generics #client_struct #client_connect_type_args {
                 pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
                 where
@@ -101,7 +110,8 @@ pub fn generate_client_module(
 
             impl #client_impl_generics #client_struct #client_struct_generics
             where
-                T: tonic::client::GrpcService<tonic::body::Body>,
+                T: tonic::client::GrpcService<tonic::body::Body> + Send,
+                T::Future: Send,
                 T::Error: Into<StdError>,
                 T::ResponseBody: Body<Data = ::proto_rs::bytes::Bytes> + ::core::marker::Send + 'static,
                 <T::ResponseBody as Body>::Error: Into<StdError> + ::core::marker::Send,
@@ -203,27 +213,18 @@ fn generate_client_method(
     trait_name: &syn::Ident,
     interceptor_config: Option<&InterceptorConfig>,
 ) -> TokenStream {
-    if is_streaming_method(method) {
-        generate_streaming_client_method(method, package_name, trait_name, interceptor_config)
-    } else {
-        generate_unary_client_method(method, package_name, trait_name, interceptor_config)
-    }
-}
-
-fn generate_unary_client_method(
-    method: &MethodInfo,
-    package_name: &str,
-    trait_name: &syn::Ident,
-    interceptor_config: Option<&InterceptorConfig>,
-) -> TokenStream {
     let method_name = &method.name;
     let request_type = &method.request_type;
-    let response_type = &method.response_type;
+    let (response_type, future, call) = if method.is_streaming {
+        (
+            method.inner_response_type.as_ref().expect("stream response type"),
+            quote! { Streaming },
+            quote! { prepared_streaming },
+        )
+    } else {
+        (&method.response_type, quote! { Unary }, quote! { prepared_unary })
+    };
     let route_path = generate_route_path(package_name, trait_name, method_name);
-
-    let ready_check = generate_ready_check();
-    let request_conversion = generate_native_to_proto_request_unary(request_type);
-    let response_conversion = generate_proto_to_native_response(response_type);
 
     // Generate ctx parameter and interceptor call if configured
     let (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds) = if let Some(config) = interceptor_config {
@@ -245,87 +246,26 @@ fn generate_unary_client_method(
     };
 
     quote! {
-        pub async fn #method_name<R #interceptor_generics>(
+        pub fn #method_name<R #interceptor_generics>(
             &mut self,
             #ctx_param
             request: R,
-        ) -> ::core::result::Result<tonic::Response<#response_type>, tonic::Status>
+        ) -> <tonic::client::Grpc<T> as ::proto_rs::PreparedRpc<#response_type>>::#future<'_>
         where
-            R: ::proto_rs::ProtoRequest<#request_type>,
-            ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
+            R: ::proto_rs::PrepareRequest<#request_type>,
             #interceptor_bounds
         {
-            #request_conversion
-            #ready_check
-            let mut request = request.into_request();
+            let prepared = (|| {
+            let mut request = request.prepare_request(self.max_encode_preallocation)?;
             #interceptor_call
             request.extensions_mut().insert(
                 tonic::codegen::GrpcMethod::new(#package_name, stringify!(#method_name))
             );
 
-            let codec = ::proto_rs::ProtoCodec::<R::Encode, #response_type, R::Mode>::default();
+            Ok(request)
+            })();
             let path = http::uri::PathAndQuery::from_static(#route_path);
-            let response = self.inner.unary(request, path, codec).await?;
-
-            #response_conversion
-        }
-    }
-}
-
-fn generate_streaming_client_method(
-    method: &MethodInfo,
-    package_name: &str,
-    trait_name: &syn::Ident,
-    interceptor_config: Option<&InterceptorConfig>,
-) -> TokenStream {
-    let method_name = &method.name;
-    let request_type = &method.request_type;
-    let inner_response_type = method.inner_response_type.as_ref().unwrap();
-    let route_path = generate_route_path(package_name, trait_name, method_name);
-
-    let ready_check = generate_ready_check();
-    let request_conversion = generate_native_to_proto_request_streaming(request_type);
-    let stream_conversion = generate_stream_conversion(inner_response_type);
-
-    // Generate ctx parameter and interceptor call if configured
-    let (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds) = if let Some(config) = interceptor_config {
-        let trait_ident = &config.trait_ident;
-
-        let ctx_param = quote! { ctx: I, };
-        let interceptor_call = quote! {
-            let ctx_payload: Ctx::Payload = ::core::convert::Into::into(ctx);
-            Ctx::intercept(ctx_payload, &mut request)?;
-        };
-        let interceptor_generics = quote! { , I };
-        let interceptor_bounds = quote! {
-            I: ::core::convert::Into<Ctx::Payload>,
-            Ctx: #trait_ident
-        };
-        (ctx_param, interceptor_call, interceptor_generics, interceptor_bounds)
-    } else {
-        (quote! {}, quote! {}, quote! {}, quote! {})
-    };
-
-    quote! {
-        pub async fn #method_name<R #interceptor_generics>(
-            &mut self,
-            #ctx_param
-            request: R,
-        ) -> ::core::result::Result<tonic::Response<impl tonic::codegen::tokio_stream::Stream<Item = ::core::result::Result<#inner_response_type, tonic::Status>> + Send + 'static>, tonic::Status>
-        where
-            R: ::proto_rs::ProtoRequest<#request_type>,
-            ::proto_rs::ProtoEncoder<R::Encode, R::Mode>: ::proto_rs::EncoderExt<R::Encode, R::Mode>,
-            #interceptor_bounds
-        {
-            #request_conversion
-            #ready_check
-            let mut request = request.into_request();
-            #interceptor_call
-            let codec = ::proto_rs::ProtoCodec::<R::Encode, #inner_response_type, R::Mode>::default();
-            let path = http::uri::PathAndQuery::from_static(#route_path);
-            let response = self.inner.server_streaming(request, path, codec).await?;
-
-            #stream_conversion
+            ::proto_rs::PreparedRpc::<#response_type>::#call(&mut self.inner, prepared, path)
         }
     }
 }
@@ -335,6 +275,14 @@ fn generate_streaming_client_method(
 // ============================================================================
 pub fn generate_client_compression_methods() -> TokenStream {
     quote! {
+        /// Limit speculative output reservation (default 1 MiB, minimum 64 bytes).
+        /// This is not a message size or total memory limit.
+        #[must_use]
+        pub fn with_max_encode_preallocation(mut self, limit: usize) -> Self {
+            self.max_encode_preallocation = limit;
+            self
+        }
+
         #[must_use]
         pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
             self.inner = self.inner.send_compressed(encoding);

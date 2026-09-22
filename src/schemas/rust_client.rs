@@ -61,19 +61,23 @@ impl ClientImport {
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn write_rust_client_module(
-    output_path: Option<&str>,
-    imports: &[&str],
-    client_attrs: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
-    client_attr_removals: &BTreeMap<ProtoIdent, Vec<UserAttr>>,
-    module_attrs: &BTreeMap<String, Vec<String>>,
-    module_type_attrs: &BTreeMap<String, Vec<String>>,
-    statements: &BTreeMap<String, Vec<String>>,
-    type_replacements: &BTreeMap<ProtoIdent, Vec<TypeReplace>>,
-    split_modules: &BTreeMap<String, String>,
-    only_these_modules: Option<&BTreeMap<String, String>>,
+    config: &super::RustClientCtx<'_>,
     registry: &BTreeMap<String, Vec<&'static ProtoSchema>>,
     ident_index: &BTreeMap<ProtoIdent, &'static ProtoSchema>,
 ) -> io::Result<()> {
+    let super::RustClientCtx {
+        output_path,
+        imports,
+        client_attrs,
+        client_attr_removals,
+        module_attrs,
+        module_type_attrs,
+        statements,
+        type_replacements,
+        split_modules,
+        only_these_modules,
+    } = config;
+    let only_these_modules = only_these_modules.as_ref();
     let client_imports = parse_client_imports(imports);
     let client_imports_by_type = client_imports.iter().map(|import| (import.type_name.clone(), import.clone())).collect::<BTreeMap<_, _>>();
     let mut package_by_ident = BTreeMap::new();

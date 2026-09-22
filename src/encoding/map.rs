@@ -183,11 +183,13 @@ macro_rules! map {
 }
 
 #[cfg(feature = "std_legacy")]
+#[deprecated(note = "use ProtoEncode and ProtoDecode on HashMap instead")]
 pub mod hash_map {
     use std::collections::HashMap;
     map!(HashMap);
 }
 
+#[deprecated(note = "use ProtoEncode and ProtoDecode on BTreeMap instead")]
 pub mod btree_map {
     map!(BTreeMap);
 }

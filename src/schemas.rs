@@ -823,20 +823,7 @@ pub fn write_all(output_dir: &str, rust_client_output: &RustClientCtx<'_>) -> io
     write_generated_manifest(output_dir, registry.keys().map(String::as_str))?;
 
     if rust_client_output.output_path.is_some() || rust_client_output.only_these_modules.is_some() {
-        rust_client::write_rust_client_module(
-            rust_client_output.output_path,
-            rust_client_output.imports,
-            &rust_client_output.client_attrs,
-            &rust_client_output.client_attr_removals,
-            &rust_client_output.module_attrs,
-            &rust_client_output.module_type_attrs,
-            &rust_client_output.statements,
-            &rust_client_output.type_replacements,
-            &rust_client_output.split_modules,
-            rust_client_output.only_these_modules.as_ref(),
-            &registry,
-            &ident_index,
-        )?;
+        rust_client::write_rust_client_module(rust_client_output, &registry, &ident_index)?;
     }
 
     Ok(registry.len())
@@ -869,20 +856,7 @@ pub fn write_only_these(protos: &[(&str, &str)], rust_client_output: &RustClient
     }
 
     if rust_client_output.output_path.is_some() || rust_client_output.only_these_modules.is_some() {
-        rust_client::write_rust_client_module(
-            rust_client_output.output_path,
-            rust_client_output.imports,
-            &rust_client_output.client_attrs,
-            &rust_client_output.client_attr_removals,
-            &rust_client_output.module_attrs,
-            &rust_client_output.module_type_attrs,
-            &rust_client_output.statements,
-            &rust_client_output.type_replacements,
-            &rust_client_output.split_modules,
-            rust_client_output.only_these_modules.as_ref(),
-            &registry,
-            &ident_index,
-        )?;
+        rust_client::write_rust_client_module(rust_client_output, &registry, &ident_index)?;
     }
 
     Ok(registry.keys().filter(|name| filter.contains_key(name.as_str())).count())

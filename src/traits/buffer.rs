@@ -58,28 +58,40 @@ impl AsRef<[u8]> for RevVec {
 impl RevVec {
     const MIN_GROW: usize = 64;
 
-    /// Clear initialized bytes, retaining at most `max_capacity` bytes of storage.
-    #[cfg(feature = "tonic")]
-    pub(crate) fn reset_for_reuse(&mut self, max_capacity: usize) {
-        if self.cap() > max_capacity {
-            *self = Self::empty();
-        } else {
-            self.pos = self.cap();
-        }
-    }
-
     #[inline]
-    const fn cap(&self) -> usize {
+    pub(crate) const fn cap(&self) -> usize {
         self.buf.capacity()
     }
 
     #[inline]
-    fn ensure_space(&mut self, need: usize) {
+    pub(crate) fn ensure_space(&mut self, need: usize) {
         if self.pos >= need {
             return;
         }
 
         self.grow(need);
+    }
+
+    pub(crate) const fn clear(&mut self) {
+        self.pos = self.cap();
+    }
+
+    /// Discard all written bytes, trimming oversized idle storage. This may
+    /// reallocate and must only run after the final payload owner releases it.
+    pub(crate) fn clear_and_shrink(&mut self, max_capacity: usize) {
+        if self.cap() > max_capacity {
+            self.shrink_empty(max_capacity);
+        }
+        self.clear();
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn shrink_empty(&mut self, max_capacity: usize) {
+        self.buf.truncate(max_capacity);
+        self.buf.shrink_to_fit();
+        // Preserve len == capacity even if an allocator keeps extra space.
+        self.buf.resize_with(self.buf.capacity(), MaybeUninit::uninit);
     }
 
     #[cold]
@@ -245,6 +257,21 @@ impl RevWriter for RevVec {
 mod tests {
     use super::RevVec;
     use super::RevWriter;
+
+    #[test]
+    fn retired_buffer_can_be_trimmed_and_grown_again() {
+        for cap in [0, 1, 63, 513, 4096] {
+            let mut writer = RevVec::with_capacity(8192);
+            writer.put_slice(&[42; 2048]);
+            writer.clear_and_shrink(cap);
+            assert_eq!(writer.cap(), cap);
+            assert_eq!(writer.buf.len(), writer.buf.capacity());
+            assert!(writer.as_written_slice().is_empty());
+            writer.put_slice(&[7; 8192]);
+            assert_eq!(writer.as_written_slice(), &[7; 8192]);
+            assert_eq!(writer.buf.len(), writer.buf.capacity());
+        }
+    }
 
     #[test]
     fn reverse_writer_grows_and_returns_only_initialized_bytes() {

@@ -2,7 +2,6 @@ use core::marker::PhantomData;
 
 use bytes::BufMut;
 
-use crate::coders::AsBytes;
 use crate::error::EncodeError;
 use crate::traits::PrimitiveKind;
 use crate::traits::ProtoExt;
@@ -11,6 +10,18 @@ use crate::traits::buffer::RevVec;
 use crate::traits::buffer::RevWriter;
 use crate::traits::utils::VarintConst;
 use crate::traits::utils::encode_varint_const;
+
+mod pool;
+mod snapshot;
+pub use pool::EncodePoolConfig;
+pub use pool::configure_encode_pool;
+pub use snapshot::EncodedSnapshot;
+#[cfg(feature = "tonic-owned")]
+pub(crate) use snapshot::encode_batch;
+#[cfg(feature = "tonic")]
+pub(crate) use snapshot::encode_into;
+#[cfg(feature = "tonic")]
+pub(crate) use snapshot::prepare_owned;
 
 pub trait ProtoShadowEncode<'a, T: ?Sized> {
     fn from_sun(value: &'a T) -> Self;
@@ -128,6 +139,18 @@ pub trait ProtoArchive {
             Self::ENCODED_SIZE_HINT.for_field::<TAG>(Self::WIRE_TYPE)
         }
     }
+    /// Hint for reserving a contiguous transport output buffer. Unlike nested
+    /// field hints, this may inspect a bounded number of top-level messages.
+    /// Implementations must not recursively invoke this method on children.
+    /// This remains an estimate: writers must handle under- and overestimates.
+    #[inline]
+    fn output_size_hint<const TAG: u32>(&self) -> EncodeSizeHint
+    where
+        Self: ProtoExt,
+    {
+        self.encoded_size_hint::<TAG>()
+    }
+
     /// Reverse one-pass archive into a [`RevWriter`].
     ///
     /// TAG semantics:
@@ -140,6 +163,13 @@ pub type ArchivedProtoMessageWriter<T> = ArchivedProtoMessage<T, RevVec>;
 
 pub trait ProtoEncode {
     type Shadow<'a>: ProtoArchive + ProtoExt + ProtoShadowEncode<'a, Self>;
+
+    /// Cheap reservation estimate without preparing a shadow, invoking getters,
+    /// acquiring locks, or running field conversions. Inexact hints are safe.
+    #[inline]
+    fn size_hint<const TAG: u32>(&self) -> EncodeSizeHint {
+        Self::Shadow::ENCODED_SIZE_HINT.for_field::<TAG>(Self::Shadow::WIRE_TYPE)
+    }
 
     #[inline]
     fn encode(&self, buf: &mut impl BufMut) -> Result<(), EncodeError>
@@ -168,13 +198,13 @@ pub trait ProtoEncode {
         value.to_vec_tight()
     }
 
+    /// Eager immutable snapshot for encode-once, send-to-many fan-out.
     #[inline]
-    fn to_zero_copy(&self) -> ZeroCopy<Self>
+    fn to_encoded_snapshot(&self) -> EncodedSnapshot<Self>
     where
         Self: ProtoExt,
-        for<'s> <Self as ProtoEncode>::Shadow<'s>: ProtoArchive,
     {
-        ZeroCopy::new(self)
+        EncodedSnapshot::new(self)
     }
 }
 
@@ -294,56 +324,6 @@ impl<T: ProtoEncode, W: RevWriter> ArchivedProtoMessage<T, W> {
     #[inline]
     pub fn as_written_slice(&self) -> &[u8] {
         self.inner.as_written_slice()
-    }
-}
-
-pub struct ZeroCopy<T: ProtoEncode>(ArchivedProtoMessage<T, RevVec>);
-
-impl<T: ProtoEncode> ZeroCopy<T>
-where
-    T: ProtoExt,
-    for<'s> <T as ProtoEncode>::Shadow<'s>: ProtoArchive,
-{
-    #[inline]
-    pub fn new(value: &T) -> Self {
-        if let Some(message) = ArchivedProtoMessage::new(value) {
-            return Self(message);
-        }
-
-        let empty = ArchivedProtoMessage {
-            inner: <RevVec as RevWriter>::empty(),
-            _pd: PhantomData,
-        };
-        Self(empty)
-    }
-
-    #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_written_slice()
-    }
-
-    #[inline]
-    pub fn into_inner(self) -> ArchivedProtoMessage<T, RevVec> {
-        self.0
-    }
-
-    #[inline]
-    pub fn into_bytes(self) -> bytes::Bytes {
-        self.0.into_bytes()
-    }
-}
-
-impl<T: ProtoEncode> From<ArchivedProtoMessage<T, RevVec>> for ZeroCopy<T> {
-    #[inline]
-    fn from(value: ArchivedProtoMessage<T, RevVec>) -> Self {
-        Self(value)
-    }
-}
-
-impl<T: ProtoEncode> AsBytes for ZeroCopy<T> {
-    #[inline]
-    fn as_bytes(&self) -> &[u8] {
-        self.0.as_written_slice()
     }
 }
 

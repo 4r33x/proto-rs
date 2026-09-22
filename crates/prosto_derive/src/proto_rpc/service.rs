@@ -1,7 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::proto_rpc::rpc_common::generate_response_proto_type;
 use crate::proto_rpc::rpc_common::generate_route_path;
 use crate::utils::MethodInfo;
 
@@ -104,7 +103,7 @@ fn generate_route(trait_name: &syn::Ident, method: &MethodInfo, package_name: &s
     };
     let response = if method.is_streaming {
         let item_type = method.stream_item_type.as_ref().expect("stream item type");
-        let response_proto = generate_response_proto_type(method.inner_response_type.as_ref().expect("stream response type"));
+        let response_proto = method.inner_response_type.as_ref().expect("stream response type");
         let normalized = if method.response_is_response {
             quote! { response }
         } else {
@@ -116,7 +115,7 @@ fn generate_route(trait_name: &syn::Ident, method: &MethodInfo, package_name: &s
         }
     } else {
         let response_type = &method.response_return_type;
-        let response_proto = generate_response_proto_type(&method.response_type);
+        let response_proto = &method.response_type;
         quote! {
             ::proto_rs::grpc::encode_unary_response::<#response_type, #response_proto>(response)
         }

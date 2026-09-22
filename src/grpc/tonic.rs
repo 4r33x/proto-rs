@@ -1,3 +1,4 @@
+use core::future::Future;
 use core::pin::Pin;
 use core::task::Context;
 use core::task::Poll;
@@ -11,23 +12,156 @@ use super::Stream;
 
 pub struct TonicTransport<T> {
     inner: tonic::client::Grpc<T>,
+    max_encode_preallocation: usize,
 }
 
 impl<T> TonicTransport<T> {
     pub fn new(inner: T) -> Self {
         Self {
             inner: tonic::client::Grpc::new(inner),
+            max_encode_preallocation: crate::DEFAULT_MAX_ENCODE_PREALLOCATION,
         }
     }
 
     pub fn into_inner(self) -> tonic::client::Grpc<T> {
         self.inner
     }
+
+    /// See [`crate::ProtoCodec::with_max_encode_preallocation`].
+    #[must_use]
+    pub const fn with_max_encode_preallocation(mut self, limit: usize) -> Self {
+        self.max_encode_preallocation = limit;
+        self
+    }
 }
 
 impl<T> From<T> for TonicTransport<T> {
     fn from(inner: T) -> Self {
         Self::new(inner)
+    }
+}
+
+pin_project_lite::pin_project! {
+    pub struct TonicUnaryFuture<F> { #[pin] inner: F }
+}
+impl<F, R> Future for TonicUnaryFuture<F>
+where
+    F: Future<Output = Result<tonic::Response<R>, tonic::Status>>,
+{
+    type Output = Result<Response<R>, Status>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.project().inner.poll(cx).map(|result| result.map(response_from_tonic).map_err(status_from_tonic_owned))
+    }
+}
+
+pin_project_lite::pin_project! {
+    pub struct TonicStreamingFuture<F> { #[pin] inner: F }
+}
+impl<F, R> Future for TonicStreamingFuture<F>
+where
+    F: Future<Output = Result<tonic::Response<tonic::Streaming<R>>, tonic::Status>>,
+{
+    type Output = Result<Response<TonicResponseStream<R>>, Status>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.project().inner.poll(cx).map(|result| {
+            result.map(|response| response_from_tonic(response).map(TonicResponseStream::new)).map_err(status_from_tonic_owned)
+        })
+    }
+}
+
+impl<T> TonicTransport<T>
+where
+    T: tonic::client::GrpcService<tonic::body::Body> + Send,
+    T::Future: Send,
+    T::Error: Into<tonic::codegen::StdError>,
+    T::ResponseBody: tonic::codegen::Body<Data = bytes::Bytes> + Send + 'static,
+    <T::ResponseBody as tonic::codegen::Body>::Error: Into<tonic::codegen::StdError> + Send,
+{
+    /// Prepare before returning: the resulting future borrows only this client.
+    pub fn unary_ref<'a, Req, Res>(
+        &'a mut self,
+        route: &'static str,
+        request: Request<&Req>,
+    ) -> TonicUnaryFuture<<tonic::client::Grpc<T> as crate::PreparedRpc<Res>>::Unary<'a>>
+    where
+        Req: crate::ProtoEncode + crate::ProtoExt,
+        Res: crate::ProtoDecode + Send + Sync + 'static,
+    {
+        let request = <tonic::Request<&Req> as crate::PrepareRequest<Req>>::prepare_request(
+            request_into_tonic(request),
+            self.max_encode_preallocation,
+        );
+        TonicUnaryFuture {
+            inner: crate::PreparedRpc::prepared_unary(
+                &mut self.inner,
+                request,
+                tonic::codegen::http::uri::PathAndQuery::from_static(route),
+            ),
+        }
+    }
+
+    pub fn server_streaming_ref<'a, Req, Res>(
+        &'a mut self,
+        route: &'static str,
+        request: Request<&Req>,
+    ) -> TonicStreamingFuture<<tonic::client::Grpc<T> as crate::PreparedRpc<Res>>::Streaming<'a>>
+    where
+        Req: crate::ProtoEncode + crate::ProtoExt,
+        Res: crate::ProtoDecode + Send + Sync + 'static,
+    {
+        let request = <tonic::Request<&Req> as crate::PrepareRequest<Req>>::prepare_request(
+            request_into_tonic(request),
+            self.max_encode_preallocation,
+        );
+        TonicStreamingFuture {
+            inner: crate::PreparedRpc::prepared_streaming(
+                &mut self.inner,
+                request,
+                tonic::codegen::http::uri::PathAndQuery::from_static(route),
+            ),
+        }
+    }
+
+    #[cfg(feature = "tonic-transport")]
+    pub async fn client_streaming_encoded<Res>(
+        &mut self,
+        route: &'static str,
+        request: Request<super::EncodedStream>,
+    ) -> Result<Response<Res>, Status>
+    where
+        Res: crate::ProtoDecode + Send + Sync + 'static,
+    {
+        self.ready().await?;
+        self.inner
+            .client_streaming(
+                request_into_tonic(request),
+                tonic::codegen::http::uri::PathAndQuery::from_static(route),
+                crate::ProtoCodec::<crate::PreparedMessage, Res, crate::BytesMode>::default(),
+            )
+            .await
+            .map(response_from_tonic)
+            .map_err(status_from_tonic_owned)
+    }
+
+    #[cfg(feature = "tonic-transport")]
+    pub async fn bidirectional_encoded<Res>(
+        &mut self,
+        route: &'static str,
+        request: Request<super::EncodedStream>,
+    ) -> Result<Response<TonicResponseStream<Res>>, Status>
+    where
+        Res: crate::ProtoDecode + Send + Sync + 'static,
+    {
+        self.ready().await?;
+        self.inner
+            .streaming(
+                request_into_tonic(request),
+                tonic::codegen::http::uri::PathAndQuery::from_static(route),
+                crate::ProtoCodec::<crate::PreparedMessage, Res, crate::BytesMode>::default(),
+            )
+            .await
+            .map(|response| response_from_tonic(response).map(TonicResponseStream::new))
+            .map_err(status_from_tonic_owned)
     }
 }
 
@@ -63,15 +197,13 @@ where
     where
         R: Send + 'static;
 
-    async fn unary<Req, Res>(&mut self, route: &'static str, request: Request<Req>) -> Result<Response<Res>, Self::Error>
+    fn unary<Req, Res>(&mut self, route: &'static str, request: Request<Req>) -> impl Future<Output = Result<Response<Res>, Self::Error>>
     where
         Req: crate::ProtoEncode + crate::ProtoExt + Send + Sync + 'static,
         Res: crate::ProtoDecode + Send + Sync + 'static,
     {
-        self.ready().await?;
-        let path = tonic::codegen::http::uri::PathAndQuery::from_static(route);
-        let codec = crate::ProtoCodec::<Req, Res, crate::SunByVal>::default();
-        self.inner.unary(request_into_tonic(request), path, codec).await.map(response_from_tonic).map_err(status_from_tonic_owned)
+        let (metadata, extensions, value) = request.into_parts();
+        self.unary_ref(route, Request::from_parts(metadata, extensions, &value))
     }
 
     async fn client_streaming<Req, Res, S>(&mut self, route: &'static str, request: Request<S>) -> Result<Response<Res>, Self::Error>
@@ -82,7 +214,7 @@ where
     {
         self.ready().await?;
         let path = tonic::codegen::http::uri::PathAndQuery::from_static(route);
-        let codec = crate::ProtoCodec::<Req, Res, crate::SunByVal>::default();
+        let codec = crate::ProtoCodec::<Req, Res, crate::SunByRef>::default().with_max_encode_preallocation(self.max_encode_preallocation);
         self.inner
             .client_streaming(request_into_tonic(request), path, codec)
             .await
@@ -90,23 +222,17 @@ where
             .map_err(status_from_tonic_owned)
     }
 
-    async fn server_streaming<Req, Res>(
+    fn server_streaming<Req, Res>(
         &mut self,
         route: &'static str,
         request: Request<Req>,
-    ) -> Result<Response<Self::ResponseStream<Res>>, Self::Error>
+    ) -> impl Future<Output = Result<Response<Self::ResponseStream<Res>>, Self::Error>>
     where
         Req: crate::ProtoEncode + crate::ProtoExt + Send + Sync + 'static,
         Res: crate::ProtoDecode + Send + Sync + 'static,
     {
-        self.ready().await?;
-        let path = tonic::codegen::http::uri::PathAndQuery::from_static(route);
-        let codec = crate::ProtoCodec::<Req, Res, crate::SunByVal>::default();
-        self.inner
-            .server_streaming(request_into_tonic(request), path, codec)
-            .await
-            .map(|response| response_from_tonic(response).map(TonicResponseStream::new))
-            .map_err(status_from_tonic_owned)
+        let (metadata, extensions, value) = request.into_parts();
+        self.server_streaming_ref(route, Request::from_parts(metadata, extensions, &value))
     }
 
     async fn bidirectional_streaming<Req, Res, S>(
@@ -121,7 +247,7 @@ where
     {
         self.ready().await?;
         let path = tonic::codegen::http::uri::PathAndQuery::from_static(route);
-        let codec = crate::ProtoCodec::<Req, Res, crate::SunByVal>::default();
+        let codec = crate::ProtoCodec::<Req, Res, crate::SunByRef>::default().with_max_encode_preallocation(self.max_encode_preallocation);
         self.inner
             .streaming(request_into_tonic(request), path, codec)
             .await

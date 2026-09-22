@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
+
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;

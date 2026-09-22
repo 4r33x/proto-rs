@@ -7,6 +7,21 @@ Rust-first Protobuf and gRPC. Define messages, enums, and services as native Rus
 proto_rs = "0.12"
 ```
 
+Development checkout note: the unified owned Tonic encoder currently requires the
+bundled Tonic patch at your workspace root. A crates.io dependency alone does not
+provide that fork; see [downstream setup](benches/owned-snapshot.md#downstream-setup--important-distribution-constraint).
+
+For unpatched upstream Tonic, disable defaults and enable `tonic-transport` (plus
+`stable` on stable Rust). This uses the buffered copy adapter; the default
+`tonic-owned` feature retains optimized owned handoff and requires the patch.
+
+```toml
+proto_rs = { version = "0.12", default-features = false, features = ["stable", "tonic-transport"] }
+```
+
+The deprecated callback map API now requires `std_legacy`. Use `ProtoEncode` and
+`ProtoDecode` on maps for the maintained codec. See [refactoring notes](docs/refactoring.md).
+
 ## Why
 
 - Rust structs and enums are the source of truth, not `.proto` files
@@ -45,17 +60,27 @@ Measured with Criterion (100 samples, 3-second warmup, 5-second measurement), fa
 
 The optimizations include fused small byte/string writes, improved preallocation, fewer decode copies, and targeted inlining. One tradeoff: constructing a `DecodeError` now allocates its diagnostics to keep successful decode results small.
 
-### Zero-copy
+### Encode-once fan-out
 
-`ZeroCopy<T>` pre-encodes a message from a reference into an owned buffer, avoiding a deep clone of the Rust message. In the same benchmark runs:
+`EncodedSnapshot<T>` pre-encodes a message from a reference and shares its immutable allocation across cheap clones. Use it to encode once and send to multiple clients; ordinary calls accept `&T` without a wrapper. Historical encoding-workflow measurements (before shared snapshots):
 
 | | Prost (clone + encode) | proto_rs (encode from reference) | Throughput ratio |
 | --- | ---: | ---: | ---: |
 | Complex message | 14.531 µs | 2.045 µs | 7.11× |
 
-This compares different ownership workflows, not just encoders. “Zero-copy” does not mean allocation-free or end-to-end zero-copy networking: pre-encoded `ZeroCopy<T>` bytes are still copied into Tonic's output buffer.
+This compares different ownership workflows, not just encoders. The shared snapshot uses `Bytes`' atomic reference-counted owner (Arc-style lifetime), with no extra Arc wrapper. Cloning and Tonic handoff allocate nothing and do not copy or re-encode the payload. Only the final snapshot/byte-slice/transport owner returns the allocation to its pool. This is not a kernel zero-copy guarantee. **Tonic integration requires the bundled patch**, including in downstream workspace roots; see [setup and limitations](benches/owned-snapshot.md).
 
-Ordinary Tonic messages now reverse-encode directly into the output buffer's spare capacity. This avoids a separate message buffer when the message fits; an exact size hint can also avoid final compaction. Otherwise, bytes are moved within the same buffer, or encoding spills into reusable scratch storage (retained up to 64 KiB). Speculative output reservations are capped at 1 MiB, not a message-size limit. Framing, compression, and message-size enforcement remain Tonic's responsibility. This uses Tonic's public API without a vendored fork.
+Ordinary Tonic messages, eager snapshots and synchronous destination encoding share one reverse-buffer implementation and one lazy TLS slot pool per encoding thread. All services on that thread reuse it automatically; no service holds a pool handle. Before the first encoding operation, call `configure_encode_pool(EncodePoolConfig { max_buffers: 8, max_buffer_capacity: 32 * 1024 * 1024 })` to set process-wide defaults. Each thread has a fixed slot array, guarded by cache-padded `AtomicU64` masks. The same masks track shard lifetime, avoiding separate pool reference-count updates. Final release trims oversized storage and restores its original slot; a full pool uses a temporary allocation without eviction. Speculative reservation still uses `.with_max_encode_preallocation(bytes)`. Retention limits multiply by thread count and do not limit in-flight memory or message size. See [TLS pool lifetimes and tradeoffs](benches/unified-owned-encoding.md#thread-local-slot-pools).
+
+For large flat batches, transport sizing examines at most 32 top-level messages using ordinary field hints; it does not recursively walk collections or read byte payloads. Sufficient cached capacity avoids payload allocation/growth, and owned handoff avoids a second payload copy. Ordinary uncompressed streams coalesce ready messages into one pooled allocation per batch, encoding each once. They flush on source `Pending`/end, a 32 KiB size-hint threshold, or 128 messages; there is no fill timer. Input staging is reused within the RPC. Already-encoded snapshots retain their direct handoff. First-use growth and small ownership metadata allocations remain possible. Compression and TLS record allocation are unchanged; this is not a blanket speedup (see [measurements](benches/unified-owned-encoding.md)).
+
+The optional `tonic-gzip` feature enables Tonic gzip with flate2's `zlib-rs` backend; callers still select `.send_compressed(CompressionEncoding::Gzip)`. Cargo feature unification affects other flate2 users in the same dependency graph (an explicitly enabled C backend takes precedence). See the [64 MiB pipeline benchmark](benches/bytes-pipeline-performance.md) for body-only and real plain/gzip/TLS RPC results and limitations.
+
+The experimental Linux-only `linux-zerocopy` feature adds an ownership-aware Hyper/h2 transport: **payload → encode into owned output → `MSG_ZEROCOPY` → kernel references those output pages** when supported. Large DATA buffers pass through HTTP/2 without another payload copy and remain alive until kernel completion, including after cancellation. The isolated Hyper/h2 forks do not replace the normal transport; Tonic is patched separately for eager snapshots. Gzip submits its compressed output instead. HTTPS is explicitly unsupported on this channel; use the ordinary Tonic transport for TLS.
+
+`EncodedSnapshot::new`, `with_max_preallocation` and `to_encoded_snapshot` automatically use TLS pooling. The final snapshot/Bytes/transport owner returns its slot to the originating pool, even on another thread or after the originating thread exits. There is no queue, configuration LRU, aggregate byte counter, retirement protocol or owner-count fast path. Public bytes remain protobuf-only; `clone()`/`into_bytes()` share storage. Explicit `SnapshotPool` handles and `with_encode_pool` builders were removed; use the one-time `configure_encode_pool` setting instead. The old `ZeroCopy`/`ZeroCopyPool`/`to_zero_copy`, mutable snapshot-buffer conversions, `ProtoRequest`, and duplicate `SunByVal` mode were removed. Use `EncodedSnapshot`/`to_encoded_snapshot`, `PrepareRequest`, and `SunByRef` instead. `connect_auto(endpoint, ChannelOptions { kernel_zero_copy: true, ..Default::default() })` selects optional Linux sends, automatically falling back for TLS or unavailable support. The owned backend now reuses Tonic's connection manager: reconnects, shared buffering/backpressure, endpoint policies, and graceful GOAWAY draining. `AutoChannel::balance_list` and `balance_channel` reuse Tonic's balancer for static/dynamic endpoints, including encrypted TLS fallback. One tracing WARN is shared across clones and reconnects. Possibly executed RPCs are never automatically replayed; TLS is never downgraded.
+
+Kernel copying remains possible and is reported in socket metrics and cumulative channel metrics (including replaced connections). Loopback always copies; no physical-network zero-copy speedup is claimed. Adaptive fallback persists across reconnects per endpoint. This experimental path uses one completion thread per enabled connection and has important memory-retention and packaging constraints: connection management does not make kernel zero-copy universally cheaper than ordinary sends. See [usage, two-host validation, and limitations](benches/linux-zerocopy.md) before enabling it.
 
 Generated servers move the per-call service handle into the handler instead of cloning it again. Nightly keeps unboxed handler futures; stable builds also avoid boxing synchronous handlers. Stream adapters avoid redundant boxes, and transport-neutral single-message/empty streams do not allocate stream containers.
 
@@ -534,7 +559,7 @@ Define gRPC services as Rust traits. The macro generates transport-neutral clien
 The macro parses your trait methods and generates both the server trait and client struct. Return types are flexible — you can use or omit `Result` and `Response` wrappers depending on what makes sense semantically:
 
 ```rust
-use proto_rs::{proto_rpc, proto_message, ZeroCopy};
+use proto_rs::{proto_rpc, proto_message, EncodedSnapshot};
 use proto_rs::grpc::{Request, Response, Status};
 
 #[proto_message]
@@ -560,7 +585,7 @@ pub trait EchoService {
     async fn echo_bare(&self, request: Request<Ping>) -> Pong;
 
     // Zero-copy: pre-encoded bytes, avoids re-encoding on send
-    async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<ZeroCopy<Pong>>, Status>;
+    async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<EncodedSnapshot<Pong>>, Status>;
 
     // Smart pointer responses work too
     async fn echo_boxed(&self, request: Request<Ping>) -> Result<Response<Box<Pong>>, Status>;
@@ -572,7 +597,7 @@ pub trait EchoService {
 }
 ```
 
-The macro unwraps `Result`, `Response`, `Box`, `Arc`, and `ZeroCopy` layers automatically to determine the proto message type for the generated `.proto` definition — you get clean trait signatures without affecting the wire format.
+The macro unwraps `Result`, `Response`, `Box`, `Arc`, and `EncodedSnapshot` automatically to determine the proto message type for the generated `.proto` definition — you get clean trait signatures without affecting the wire format.
 
 ### Transport abstraction
 
@@ -593,9 +618,9 @@ impl EchoService for MyService {
         Ok(Response::new(Pong { id: ping.id, message: "pong".into() }))
     }
 
-    async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<ZeroCopy<Pong>>, Status> {
+    async fn echo_fast(&self, request: Request<Ping>) -> Result<Response<EncodedSnapshot<Pong>>, Status> {
         let pong = Pong { id: request.into_inner().id, message: "fast".into() };
-        Ok(Response::new(pong.to_zero_copy()))
+        Ok(Response::new(pong.to_encoded_snapshot()))
     }
 
     // ...
@@ -610,11 +635,12 @@ Server::builder()
 
 ### Generated client
 
-The generated client methods accept any type that implements `ProtoRequest<T>` — not just `Request<T>`. This means you can pass:
+Generated client methods accept `PrepareRequest<T>`, including borrowed inputs without a user-visible snapshot wrapper:
 
 - **Bare values:** `client.echo(Ping { id: 1 })` — auto-wrapped in `Request`
+- **References:** `client.echo(&ping)` or `client.echo(tonic::Request::new(&ping))` — encoded before the future is returned
 - **Wrapped requests:** `client.echo(Request::new(Ping { id: 1 }))` — passed through
-- **Zero-copy:** `client.echo(ping.to_zero_copy())` — sent as pre-encoded bytes
+- **Shared snapshot:** `client.echo(ping.to_encoded_snapshot())` — pre-encoded bytes; clone a snapshot to reuse the same allocation across calls
 
 ```rust
 let mut client = echo_service_client::EchoServiceClient::connect("http://127.0.0.1:50051").await?;
@@ -622,18 +648,10 @@ let mut client = echo_service_client::EchoServiceClient::connect("http://127.0.0
 // All three are equivalent — pass whatever is convenient:
 let r1 = client.echo(Ping { id: 1 }).await?;
 let r2 = client.echo(Request::new(Ping { id: 1 })).await?;
-let r3 = client.echo(Ping { id: 1 }.to_zero_copy()).await?;
+let r3 = client.echo(Ping { id: 1 }.to_encoded_snapshot()).await?;
 ```
 
-The generated method signature is:
-
-```rust
-pub async fn echo<R>(&mut self, request: R) -> Result<Response<Pong>, Status>
-where
-    R: ProtoRequest<Ping>,
-```
-
-This generic bound is what makes all three call styles work — `ProtoRequest<T>` is implemented for `T`, `Request<T>`, `ZeroCopy<T>`, and `Request<ZeroCopy<T>>`.
+The method is a synchronous `fn` returning an awaitable, request-independent future. `let pending = client.echo(&ping); drop(ping); pending.await?;` is valid. Owned values, Arc/Box and eager snapshots remain supported. Nightly uses unboxed futures; stable uses one boxed future. Custom adapters implement `PrepareRequest<T>`. Client-context interception now occurs during preparation, before readiness polling.
 
 ### RPC imports
 
@@ -672,14 +690,14 @@ pub trait SecureService {
 The generated client becomes `SecureServiceClient<T, Ctx>` where `Ctx: AuthInterceptor`. Each method gains an extra first parameter for the interceptor payload, with the bound `I: Into<Ctx::Payload>`:
 
 ```rust
-// Generated signature:
-pub async fn protected<R, I>(
+// Generated signature (transport bounds omitted):
+pub fn protected<R, I>(
     &mut self,
     ctx: I,          // interceptor payload — first argument
     request: R,
-) -> Result<Response<Pong>, Status>
+) -> <tonic::client::Grpc<T> as proto_rs::PreparedRpc<Pong>>::Unary<'_>
 where
-    R: ProtoRequest<Ping>,
+    R: PrepareRequest<Ping>,
     I: Into<Ctx::Payload>,
     Ctx: AuthInterceptor,
 ```
@@ -708,21 +726,23 @@ client.protected("Bearer abc123".to_string(), Ping { id: 1 }).await?;
 
 Multiple services can share the same interceptor trait with different concrete implementations
 
-## Zero-copy encoding
+## Shared encoded snapshots
 
 Pre-encode a message and reuse the bytes:
 
 ```rust
-use proto_rs::{ProtoEncode, ZeroCopy};
+use proto_rs::{ProtoEncode, EncodedSnapshot};
 
 let msg = Pong { id: 1, message: "hello".into() };
-let zc: ZeroCopy<Pong> = ProtoEncode::to_zero_copy(&msg);
+let snapshot: EncodedSnapshot<Pong> = msg.to_encoded_snapshot();
 
 // Access raw bytes without re-encoding
-let bytes: &[u8] = zc.as_bytes();
+let bytes: &[u8] = snapshot.as_bytes();
 
-// Use in Tonic responses — sent without re-encoding
-Ok(Response::new(zc))
+// Each recipient shares the same framed allocation, without re-encoding.
+let first_recipient = Response::new(snapshot.clone());
+let second_recipient = Response::new(snapshot.clone());
+drop(snapshot); // the recipient/transport owners keep the allocation alive
 ```
 
 ## Built-in type support
@@ -1038,6 +1058,7 @@ inject_proto_import!("protos/service.proto", "google.protobuf.timestamp", "commo
 |---------|---------|-------------|
 | `tonic` | yes | Tonic gRPC integration: codecs, service/client generation |
 | `tonic-transport` | yes | Tonic network transport and `connect` helpers; implies `tonic` |
+| `tonic-gzip` | no | Tonic gzip support using flate2's `zlib-rs` backend; implies `tonic` |
 | `stable` | no | Compile on stable Rust (boxes async futures) |
 | `build-schemas` | no | Compile-time schema registry via `inventory` |
 | `chrono` | no | `DateTime<Utc>`, `TimeDelta` support |
@@ -1084,7 +1105,9 @@ The Criterion harness under `benches/bench_runner` includes zero-copy vs clone c
 
 For a shorter run, select a benchmark group, for example `cargo bench -p bench_runner --bench main_bench -- complex_root_encode_decode`. The September 22 targeted results and historical runs, including the August 13 baseline, are preserved in [benches/bench.md](benches/bench.md).
 
-Run `cargo bench -p proto_rs --bench tonic_encode` to compare direct output-buffer encoding with the previous scratch-buffer-and-copy implementation through Tonic's actual message framing. This focused benchmark covers unary and streaming bodies; it does not measure socket I/O. See the [results and allocation checks](benches/tonic-performance.md).
+Run `cargo bench -p proto_rs --bench tonic_encode` for owned-buffer versus legacy copy-path body benchmarks. The historical `direct` case name now measures the unified owned encoder to preserve saved baseline comparisons. This does not measure socket I/O. See [current architecture and results](benches/unified-owned-encoding.md) and [historical measurements](benches/tonic-performance.md).
+
+Run `cargo bench -p proto_rs --bench bytes_pipeline --features tonic-gzip` for the 20-record, 64 MiB batch through body encoding and localhost HTTP/2, gzip, TLS, and gzip+TLS. Set `PROTO_RS_BENCH_DATA=compressible` for repetitive payloads, or `PROTO_RS_BENCH_NO_NETWORK=1` to skip socket cases. Fixtures, certificate generation, and connection setup are outside timing; RPC timing includes receiver decoding and a small reply. This is a focused target, not the full benchmark suite.
 
 ## Testing
 

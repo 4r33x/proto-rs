@@ -26,21 +26,19 @@ pub struct D128Proto {
 
 impl ProtoShadowDecode<D128> for D128Proto {
     fn to_sun(self) -> Result<D128, DecodeError> {
-        let digits = ((self.hi as u128) << 64) | (self.lo as u128);
+        let digits = fastnum::U128::from_digits([self.lo, self.hi]);
 
-        let mut result = D128::from_u128(digits).map_err(|err| DecodeError::new(err.to_string()))?;
-
-        if self.fractional_digits_count > 0 {
-            result /= D128::TEN.powi(self.fractional_digits_count);
-        } else if self.fractional_digits_count < 0 {
-            result *= D128::TEN.powi(-self.fractional_digits_count);
+        let exponent = super::decode_exponent(self.fractional_digits_count)?;
+        let sign = if self.is_negative {
+            fastnum::decimal::Sign::Minus
+        } else {
+            fastnum::decimal::Sign::Plus
+        };
+        let result = D128::from_parts(digits, exponent, sign, fastnum::decimal::Context::default().without_traps());
+        if !result.is_finite() || !result.is_op_ok() {
+            return Err(DecodeError::new("decimal value is out of range"));
         }
-
-        if self.is_negative {
-            result = -result;
-        }
-
-        Ok(result)
+        Ok(result.with_ctx(fastnum::decimal::Context::default()))
     }
 }
 
@@ -61,18 +59,25 @@ impl<'a> ProtoShadowEncode<'a, D128> for D128Proto {
 
 impl ProtoShadowDecode<D64> for D128Proto {
     fn to_sun(self) -> Result<D64, DecodeError> {
-        let mut result = D64::from_u64(self.lo);
-
-        if self.fractional_digits_count > 0 {
-            result /= D64::TEN.powi(self.fractional_digits_count);
-        } else if self.fractional_digits_count < 0 {
-            result *= D64::TEN.powi(-self.fractional_digits_count);
+        if self.hi != 0 {
+            return Err(DecodeError::new("decimal coefficient exceeds D64 capacity"));
         }
-        if self.is_negative {
-            result = -result;
+        let exponent = super::decode_exponent(self.fractional_digits_count)?;
+        let sign = if self.is_negative {
+            fastnum::decimal::Sign::Minus
+        } else {
+            fastnum::decimal::Sign::Plus
+        };
+        let result = D64::from_parts(
+            fastnum::U64::from(self.lo),
+            exponent,
+            sign,
+            fastnum::decimal::Context::default().without_traps(),
+        );
+        if !result.is_finite() || !result.is_op_ok() {
+            return Err(DecodeError::new("decimal value is out of range"));
         }
-
-        Ok(result)
+        Ok(result.with_ctx(fastnum::decimal::Context::default()))
     }
 }
 

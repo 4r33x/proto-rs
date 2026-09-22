@@ -17,6 +17,7 @@ all-features = true
 
 [workspace]
 resolver = "3"
+exclude = ["vendor/h2", "vendor/hyper", "vendor/tonic"]
 members = [
   "benches/bench_runner",
   "crates/prosto_derive",
@@ -49,7 +50,8 @@ inventory = { version = "0.3" }
 prost = { version = "0.14.4", default-features = false }
 prosto_derive = { path = "crates/prosto_derive", version = "0.12.0" }
 proto_rs = { path = "./", version = "0.12.0" }
-tonic = { version = "0.14.6", default-features = false,  }
+tonic = { version = "0.14.6", default-features = false }
+
 
 [workspace.lints.clippy]
 # cargo = { level = "deny", priority = -1 }
@@ -63,16 +65,41 @@ style = { level = "deny", priority = -1 }
 [workspace.lints.rust]
 unsafe_code = { level = "forbid", priority = 0 }
 
+# Tonic/tonic-prost must share one type identity. Downstream workspace roots
+# must carry this patch as well; Cargo does not inherit dependency patches.
+[patch.crates-io]
+tonic = { path = "vendor/tonic" }
+
+
 [[bench]]
 harness = false
 name = "varint"
 
 [[bench]]
 harness = false
+name = "encode_pool"
+
+[[bench]]
+harness = false
 name = "tonic_encode"
 required-features = ["tonic"]
 
+[[bench]]
+harness = false
+name = "bytes_pipeline"
+required-features = ["tonic-transport"]
+
+[[example]]
+name = "zerocopy_transfer"
+required-features = ["linux-zerocopy"]
+
+[[bench]]
+harness = false
+name = "zerocopy_channel"
+required-features = ["linux-zerocopy"]
+
 [dependencies]
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"], optional = true }
 ahash = { version = "0.8.12", optional = true }
 arc-swap = { version = "1.9", optional = true }
 bytes.workspace = true
@@ -81,7 +108,7 @@ const_panic = { version = "0.2.15", features = [
   "derive",
   "rust_latest_stable",
 ] }
-crossbeam-utils = { version = "0.8", optional = true }
+crossbeam-utils = "0.8"
 fastnum = { version = "0.7.5", optional = true }
 futures-core = "0.3"
 http = "1"
@@ -101,6 +128,13 @@ tokio-stream = { version = "0.1", optional = true }
 
 teloxide-core = { version = "0.13", optional = true, default-features = false }
 tonic = { workspace = true, optional = true }
+tracing = { version = "0.1", optional = true }
+tokio = { version = "1.52", features = ["net", "rt", "sync", "io-util", "time"], optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+hyper-zerocopy = { package = "proto-rs-hyper", path = "vendor/hyper", version = "1.11.0-proto.1", default-features = false, features = ["client", "server", "http2"], optional = true }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio"], optional = true }
+libc = { version = "0.2", optional = true }
 
 
 [dev-dependencies]
@@ -108,11 +142,12 @@ criterion.workspace = true
 proptest = "1.11"
 prost.workspace = true
 rand = "0.10"
-tonic = { workspace = true, features = ["gzip"] }
-tonic-prost = "0.14.4"
+tonic = { workspace = true, features = ["gzip", "tls-ring"] }
+tonic-prost = "0.14.6"
+rcgen = "0.14"
 
 tokio = { version = "1.52", features = ["full"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 chrono.workspace = true
 serde = { version = "1", features = ["derive"] }
@@ -121,12 +156,18 @@ tonic_prost_test = { path = "tests/tonic_prost_test" }
 
 [features]
 tonic = ["bytes/std", "dep:tonic", "tonic/codegen", "prosto_derive/tonic"]
-tonic-transport = ["tonic", "tonic/transport", "prosto_derive/tonic-transport"]
+# Requires the vendored Tonic extension; plain `tonic` uses upstream's buffered codec.
+tonic-owned = ["tonic", "tonic/proto-rs-owned"]
+tonic-transport = ["tonic", "tonic/transport", "prosto_derive/tonic-transport", "dep:tracing", "dep:tokio"]
+# Opt-in faster gzip backend, shared with Tonic through Cargo feature unification.
+tonic-gzip = ["tonic", "tonic/gzip", "dep:flate2"]
+# Isolated owned-buffer HTTP/2 fork and Linux MSG_ZEROCOPY transport.
+linux-zerocopy = ["tonic-owned", "tonic-transport", "dep:hyper-zerocopy", "dep:hyper-util", "dep:libc", "dep:tokio"]
 
 ahash = ["dep:ahash"]
 block_razor = ["dep:tokio-stream", "tonic"]
 bloxroute = ["tonic"]
-cache_padded = ["dep:crossbeam-utils"]
+cache_padded = []
 fastnum = ["dep:fastnum"]
 jito = ["dep:tokio-stream", "tonic"]
 next_block = ["tonic"]
@@ -157,8 +198,7 @@ parking_lot = ["dep:parking_lot"]
 # Compile on the stable toolchain
 stable = ["prosto_derive/stable"]
 
-# TODO!
-default = ["tonic", "tonic-transport"]
+default = ["tonic-owned", "tonic-transport"]
 no-recursion-limit = []
 # derive = ["dep:prost-derive"]
 

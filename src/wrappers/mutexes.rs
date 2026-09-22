@@ -62,6 +62,12 @@ impl<T: ProtoExt> ProtoExt for std::sync::Mutex<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for std::sync::Mutex<T> {
     #[inline]
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        let inner = self.get_mut().map_err(|_| DecodeError::new("Mutex lock poisoned"))?;
+        T::finish_value(inner, state)
+    }
+
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -72,7 +78,9 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for std::sync::Mutex<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+        let state = crate::DecodeState::default();
+        self.merge_with_state(wire_type, buf, ctx, &state)?;
+        self.finish(&state)
     }
 
     fn merge_field_with_state(
@@ -137,6 +145,11 @@ impl<T: ProtoExt> ProtoExt for parking_lot::Mutex<T> {
 #[cfg(feature = "parking_lot")]
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for parking_lot::Mutex<T> {
     #[inline]
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        T::finish_value(self.get_mut(), state)
+    }
+
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             Self::merge(value, wire_type, buf, ctx)
@@ -147,7 +160,9 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for parking_lot::Mutex<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+        let state = crate::DecodeState::default();
+        self.merge_with_state(wire_type, buf, ctx, &state)?;
+        self.finish(&state)
     }
 
     fn merge_field_with_state(

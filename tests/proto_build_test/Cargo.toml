@@ -19,3 +19,4 @@ parking_lot = "0.12.5"
 [features]
 default = ["build-schemas"]
 build-schemas = []
+stable = ["proto_rs/stable"]

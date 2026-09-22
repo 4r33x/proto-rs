@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "stable"), feature(maybe_uninit_array_assume_init))]
+#![cfg_attr(not(feature = "stable"), feature(impl_trait_in_assoc_type))]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::cast_possible_truncation)]
@@ -25,13 +26,15 @@ pub use traits::ArchivedProtoMessageWriter;
 pub use traits::DecodeIrBuilder;
 #[doc(hidden)]
 pub use traits::DecodeState;
+pub use traits::EncodePoolConfig;
 pub use traits::EncodeSizeHint;
+pub use traits::EncodedSnapshot;
 pub use traits::MAX_PREALLOCATED_CAPACITY;
 pub use traits::ProtoShadowDecode;
 pub use traits::ProtoShadowEncode;
-pub use traits::ZeroCopy;
 pub use traits::buffer::RevVec;
 pub use traits::buffer::RevWriter;
+pub use traits::configure_encode_pool;
 pub use traits::const_test_validate_with_ext;
 
 #[cfg(not(feature = "no-recursion-limit"))]
@@ -71,10 +74,10 @@ mod traits;
 pub mod schemas;
 
 pub use crate::coders::BytesMode;
+pub use crate::coders::DEFAULT_MAX_ENCODE_PREALLOCATION;
 pub use crate::coders::ProtoCodec;
 pub use crate::coders::ProtoEncoder;
 pub use crate::coders::SunByRef;
-pub use crate::coders::SunByVal;
 pub use crate::encoding::DecodeContext;
 pub use crate::encoding::length_delimiter::decode_length_delimiter;
 pub use crate::encoding::length_delimiter::encode_length_delimiter;
@@ -88,7 +91,11 @@ pub use crate::name::Name;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::EncoderExt;
 #[cfg(feature = "tonic")]
-pub use crate::tonic::ProtoRequest;
+pub use crate::tonic::PrepareRequest;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::PreparedMessage;
+#[cfg(feature = "tonic")]
+pub use crate::tonic::PreparedRpc;
 #[cfg(feature = "tonic")]
 pub use crate::tonic::map_proto_stream_result;
 pub use crate::traits::ProtoArchive;

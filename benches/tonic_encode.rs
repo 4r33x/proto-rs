@@ -1,4 +1,5 @@
-//! Focused comparison of the direct Tonic encoder and its previous scratch+copy path.
+//! Owned Tonic encoding versus legacy scratch+copy. The historical `direct`
+//! case name is retained for comparison with saved borrowed-writer baselines.
 use std::hint::black_box;
 use std::pin::pin;
 use std::sync::Arc;
@@ -12,6 +13,8 @@ use criterion::Criterion;
 use criterion::Throughput;
 use criterion::criterion_group;
 use criterion::criterion_main;
+use proto_rs::BytesMode;
+use proto_rs::EncodedSnapshot;
 use proto_rs::ProtoEncode;
 use proto_rs::ProtoEncoder;
 use proto_rs::ProtoResponse;
@@ -32,7 +35,68 @@ struct Message {
 
 struct PreviousEncoder;
 
+// Exercise the required copying adapter and its synchronous TLS scratch cache.
+struct ScratchEncoder(ProtoEncoder<Arc<Message>, ResponseMode>);
+
+impl Encoder for ScratchEncoder {
+    type Item = Arc<Message>;
+    type Error = tonic::Status;
+
+    fn encode(&mut self, item: Self::Item, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
+        self.0.encode(item, dst)
+    }
+}
+
+struct SnapshotEncoder {
+    owned: bool,
+}
+
+impl Encoder for SnapshotEncoder {
+    fn supports_owned(&self) -> bool {
+        true
+    }
+    type Item = Arc<Message>;
+    type Error = tonic::Status;
+
+    fn encode(&mut self, item: Self::Item, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
+        use bytes::BufMut;
+        let snapshot = item.as_ref().to_encoded_snapshot();
+        dst.put_slice(snapshot.as_bytes());
+        Ok(())
+    }
+
+    fn encode_owned(&mut self, item: Self::Item) -> Result<tonic::codec::EncodeResult<Self::Item>, Self::Error> {
+        use tonic::codec::EncodeResult;
+        if !self.owned {
+            return Ok(EncodeResult::Buffered(item));
+        }
+        let snapshot = item.as_ref().to_encoded_snapshot();
+        match ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default().encode_owned(snapshot)? {
+            EncodeResult::Owned(message) => Ok(EncodeResult::Owned(message)),
+            EncodeResult::Buffered(_) => unreachable!("snapshot ownership hook was bypassed"),
+        }
+    }
+}
+
 type ResponseMode = <proto_rs::grpc::Response<Arc<Message>> as ProtoResponse<Message>>::Mode;
+
+// Same pooled owned writer, but the pre-batching one-message-per-frame dispatch.
+// Keep this benchmark-only control for matched comparisons in one executable.
+struct UnbatchedOwned(ProtoEncoder<Arc<Message>, ResponseMode>);
+
+impl Encoder for UnbatchedOwned {
+    type Item = Arc<Message>;
+    type Error = tonic::Status;
+    fn supports_owned(&self) -> bool {
+        true
+    }
+    fn encode(&mut self, item: Self::Item, dst: &mut EncodeBuf<'_>) -> Result<(), Self::Error> {
+        self.0.encode(item, dst)
+    }
+    fn encode_owned(&mut self, item: Self::Item) -> Result<tonic::codec::EncodeResult<Self::Item>, Self::Error> {
+        self.0.encode_owned(item)
+    }
+}
 
 impl Encoder for PreviousEncoder {
     type Item = Arc<Message>;
@@ -45,6 +109,13 @@ impl Encoder for PreviousEncoder {
 
 fn drain(encoder: impl Encoder<Item = Arc<Message>, Error = tonic::Status>, message: &Arc<Message>, count: usize) -> usize {
     let source = tokio_stream::iter((0..count).map(|_| Ok(Arc::clone(message))));
+    drain_source(encoder, source)
+}
+
+fn drain_source<E: Encoder<Error = tonic::Status>>(
+    encoder: E,
+    source: impl tokio_stream::Stream<Item = Result<E::Item, tonic::Status>>,
+) -> usize {
     let mut body = pin!(EncodeBody::new_client(encoder, source, None, None));
     let mut context = Context::from_waker(Waker::noop());
     let mut total = 0;
@@ -79,12 +150,40 @@ fn bench(c: &mut Criterion) {
             bytes: vec![42; size],
             values: vec![1, 127, 128, u64::MAX],
         });
+        // All independently constructed encoders share this thread's pool.
         group.throughput(Throughput::Elements(count as u64));
         group.bench_with_input(BenchmarkId::new(name, "previous"), &message, |b, message| {
             b.iter(|| drain(PreviousEncoder, black_box(message), count));
         });
         group.bench_with_input(BenchmarkId::new(name, "direct"), &message, |b, message| {
             b.iter(|| drain(ProtoEncoder::<Arc<Message>, ResponseMode>::default(), black_box(message), count));
+        });
+        group.bench_with_input(BenchmarkId::new(name, "unbatched_owned"), &message, |b, message| {
+            b.iter(|| drain(UnbatchedOwned(ProtoEncoder::default()), black_box(message), count));
+        });
+        group.bench_with_input(BenchmarkId::new(name, "exhausted_pool"), &message, |b, message| {
+            let _held: Vec<_> =
+                (0..proto_rs::EncodePoolConfig::default().max_buffers).map(|_| message.as_ref().to_encoded_snapshot()).collect();
+            b.iter(|| drain(ProtoEncoder::<Arc<Message>, ResponseMode>::default(), black_box(message), count));
+        });
+        group.bench_with_input(BenchmarkId::new(name, "tls_copy"), &message, |b, message| {
+            b.iter(|| drain(ScratchEncoder(ProtoEncoder::default()), black_box(message), count));
+        });
+        for (variant, owned) in [("snapshot_copy", false), ("snapshot_owned", true)] {
+            group.bench_with_input(BenchmarkId::new(name, variant), &message, |b, message| {
+                b.iter(|| drain(SnapshotEncoder { owned }, black_box(message), count));
+            });
+        }
+        // Fan-out workflow: encoding is intentionally outside timing. Each send
+        // clones the same immutable snapshot; this is not encoder throughput.
+        group.bench_with_input(BenchmarkId::new(name, "shared_snapshot"), &message, |b, message| {
+            let snapshot = message.as_ref().to_encoded_snapshot();
+            b.iter(|| {
+                drain_source(
+                    ProtoEncoder::<proto_rs::EncodedSnapshot<Message>, BytesMode>::default(),
+                    tokio_stream::iter((0..count).map(|_| Ok(black_box(&snapshot).clone()))),
+                )
+            });
         });
     }
     group.finish();

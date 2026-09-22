@@ -134,6 +134,10 @@ macro_rules! impl_proto_primitive_varint_by_value {
 
         impl ProtoEncode for $ty {
             type Shadow<'a> = $ty;
+            #[inline]
+            fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                <Self as ProtoArchive>::encoded_size_hint::<TAG>(self)
+            }
         }
 
         impl Name for $ty {
@@ -218,6 +222,10 @@ macro_rules! impl_proto_primitive_fixed_by_value {
 
         impl ProtoEncode for $ty {
             type Shadow<'a> = $ty;
+            #[inline]
+            fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                <Self as ProtoArchive>::encoded_size_hint::<TAG>(self)
+            }
         }
 
         impl Name for $ty {
@@ -311,6 +319,11 @@ macro_rules! impl_proto_primitive_by_ref {
 
         impl ProtoEncode for $ty {
             type Shadow<'a> = &'a $ty;
+
+            #[inline]
+            fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                <&Self as ProtoArchive>::encoded_size_hint::<TAG>(&self)
+            }
         }
 
         impl Name for $ty {
@@ -523,6 +536,10 @@ macro_rules! impl_narrow_varint {
 
         impl ProtoEncode for $ty {
             type Shadow<'a> = $ty;
+            #[inline]
+            fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                <Self as ProtoArchive>::encoded_size_hint::<TAG>(self)
+            }
         }
     };
 }
@@ -939,6 +956,10 @@ macro_rules! impl_nonzero_wide_varint {
 
         impl ProtoEncode for $ty {
             type Shadow<'a> = $ty;
+            #[inline]
+            fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                <Self as ProtoArchive>::encoded_size_hint::<TAG>(self)
+            }
         }
     };
 }
@@ -1018,6 +1039,10 @@ macro_rules! impl_nonzero_narrow_varint {
 
         impl ProtoEncode for $ty {
             type Shadow<'a> = $ty;
+            #[inline]
+            fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+                <Self as ProtoArchive>::encoded_size_hint::<TAG>(self)
+            }
         }
     };
 }

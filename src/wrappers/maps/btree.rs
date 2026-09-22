@@ -1,14 +1,11 @@
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 
 use bytes::Buf;
 
 use crate::DecodeError;
 use crate::encoding::DecodeContext;
 use crate::encoding::WireType;
-use crate::encoding::decode_varint;
 use crate::encoding::skip_field;
-use crate::traits::ArchivedProtoField;
 use crate::traits::ProtoArchive;
 use crate::traits::ProtoDecode;
 use crate::traits::ProtoDecoder;
@@ -19,7 +16,6 @@ use crate::traits::ProtoKind;
 use crate::traits::ProtoShadowDecode;
 use crate::traits::ProtoShadowEncode;
 use crate::traits::buffer::RevWriter;
-use crate::wrappers::maps::MapEntryDecoded;
 
 impl<'a, K, V> ProtoShadowEncode<'a, BTreeMap<K, V>> for &'a BTreeMap<K, V>
 where
@@ -46,35 +42,13 @@ where
 
     #[inline]
     fn encoded_size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
-        if self.is_empty() {
-            return crate::EncodeSizeHint::EMPTY;
-        }
-        let entry = crate::EncodeSizeHint::EMPTY
-            .add_field::<1>(
-                <<K as ProtoEncode>::Shadow<'_> as ProtoExt>::ENCODED_SIZE_HINT,
-                <<K as ProtoEncode>::Shadow<'_> as ProtoExt>::WIRE_TYPE,
-            )
-            .add_field::<2>(
-                <<V as ProtoEncode>::Shadow<'_> as ProtoExt>::ENCODED_SIZE_HINT,
-                <<V as ProtoEncode>::Shadow<'_> as ProtoExt>::WIRE_TYPE,
-            )
-            .for_field::<TAG>(WireType::LengthDelimited);
-        entry.repeated(self.len())
+        super::size_hint::<K, V, TAG>(self.len())
     }
 
     #[inline]
     fn archive<const TAG: u32>(&self, w: &mut impl RevWriter) {
         for (key_value, value_value) in self.iter().rev() {
-            let key = <K as ProtoEncode>::Shadow::from_sun(key_value);
-            let value = <V as ProtoEncode>::Shadow::from_sun(value_value);
-            let mark = w.mark();
-            ArchivedProtoField::<2, <V as ProtoEncode>::Shadow<'_>>::archive(&value, w);
-            ArchivedProtoField::<1, <K as ProtoEncode>::Shadow<'_>>::archive(&key, w);
-            if TAG != 0 {
-                let payload_len = w.written_since(mark);
-                w.put_varint(payload_len as u64);
-                ArchivedProtoField::<TAG, Self>::put_key(w);
-            }
+            super::archive_entry::<K, V, TAG>(key_value, value_value, w);
         }
     }
 }
@@ -87,10 +61,7 @@ impl<K, V> ProtoExt for BTreeMap<K, V> {
 impl<K, V> ProtoDecoder for BTreeMap<K, V>
 where
     K: ProtoDecode + Ord,
-    V: ProtoDecode + ProtoExt,
-    K::ShadowDecoded: ProtoDecoder + ProtoExt + Ord,
-    V::ShadowDecoded: ProtoDecoder + ProtoExt,
-    MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>: ProtoDecoder + ProtoExt,
+    V: ProtoDecode,
 {
     #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
@@ -103,28 +74,7 @@ where
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        if wire_type != WireType::LengthDelimited {
-            return Err(DecodeError::new("map entry must be length-delimited"));
-        }
-        let len = decode_varint(buf)? as usize;
-        let remaining = buf.remaining();
-        if len > remaining {
-            return Err(DecodeError::new("buffer underflow"));
-        }
-        // Each merge call handles exactly one map entry
-        let mut entry = <MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded> as ProtoDefault>::proto_default();
-        let state = crate::DecodeState::default();
-        if len > 0 {
-            // Use limit-based decoding to avoid Take wrapper overhead
-            let limit = remaining - len;
-            while buf.remaining() > limit {
-                MapEntryDecoded::<K::ShadowDecoded, V::ShadowDecoded>::decode_one_field_with_state(&mut entry, buf, ctx, &state)?;
-            }
-            if buf.remaining() != limit {
-                return Err(DecodeError::new("delimited length exceeded"));
-            }
-        }
-        let (key, value) = entry.to_sun()?;
+        let (key, value) = super::decode_entry::<K, V>(wire_type, buf, ctx)?;
         self.insert(key, value);
         Ok(())
     }
@@ -141,27 +91,14 @@ impl<K, V> ProtoDecode for BTreeMap<K, V>
 where
     K: ProtoDecode + Ord,
     V: ProtoDecode,
-    K::ShadowDecoded: Ord,
-    Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>: ProtoDecoder + ProtoExt,
 {
-    type ShadowDecoded = Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>;
+    type ShadowDecoded = Self;
 }
 
-impl<K, V> ProtoShadowDecode<BTreeMap<K, V>> for Vec<MapEntryDecoded<K::ShadowDecoded, V::ShadowDecoded>>
-where
-    K: ProtoDecode + Ord,
-    V: ProtoDecode,
-    K::ShadowDecoded: ProtoShadowDecode<K> + Ord,
-    V::ShadowDecoded: ProtoShadowDecode<V>,
-{
+impl<K, V> ProtoShadowDecode<BTreeMap<K, V>> for BTreeMap<K, V> {
     #[inline]
-    fn to_sun(self) -> Result<BTreeMap<K, V>, DecodeError> {
-        let mut out = BTreeMap::new();
-        for entry in self {
-            let (key, value) = entry.to_sun()?;
-            out.insert(key, value);
-        }
-        Ok(out)
+    fn to_sun(self) -> Result<Self, DecodeError> {
+        Ok(self)
     }
 }
 

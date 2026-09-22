@@ -19,6 +19,11 @@ use crate::traits::buffer::RevWriter;
 #[inline]
 pub(crate) fn present_size_hint<T: ProtoArchive + ProtoExt, const TAG: u32>(value: &T) -> crate::EncodeSizeHint {
     let hint = value.encoded_size_hint::<TAG>();
+    present_hint::<T, TAG>(hint)
+}
+
+#[inline]
+fn present_hint<T: ProtoExt, const TAG: u32>(hint: crate::EncodeSizeHint) -> crate::EncodeSizeHint {
     if hint != crate::EncodeSizeHint::EMPTY {
         return hint;
     }
@@ -41,6 +46,14 @@ impl<T: ProtoExt> ProtoExt for Option<T> {
 
 impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
     #[inline]
+    fn finish(&mut self, state: &crate::DecodeState<'_>) -> Result<(), DecodeError> {
+        if let Some(inner) = self {
+            T::finish_value(inner, state)?;
+        }
+        Ok(())
+    }
+
+    #[inline]
     fn merge_field(value: &mut Self, tag: u32, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
         if tag == 1 {
             let inner = value.get_or_insert_with(<T as ProtoDefault>::proto_default);
@@ -52,7 +65,9 @@ impl<T: ProtoFieldMerge + ProtoDefault> ProtoDecoder for Option<T> {
 
     #[inline]
     fn merge(&mut self, wire_type: WireType, buf: &mut impl Buf, ctx: DecodeContext) -> Result<(), DecodeError> {
-        self.merge_with_state(wire_type, buf, ctx, &crate::DecodeState::default())
+        let state = crate::DecodeState::default();
+        self.merge_with_state(wire_type, buf, ctx, &state)?;
+        self.finish(&state)
     }
 
     fn merge_field_with_state(
@@ -139,6 +154,13 @@ where
     for<'a> T::Shadow<'a>: ProtoArchive + ProtoExt,
 {
     type Shadow<'a> = Option<T::Shadow<'a>>;
+
+    #[inline]
+    fn size_hint<const TAG: u32>(&self) -> crate::EncodeSizeHint {
+        self.as_ref().map_or(crate::EncodeSizeHint::EMPTY, |inner| {
+            present_hint::<T::Shadow<'_>, TAG>(inner.size_hint::<TAG>())
+        })
+    }
 }
 
 impl<'a, T, S> ProtoShadowEncode<'a, Option<T>> for Option<S>

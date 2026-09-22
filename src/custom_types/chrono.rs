@@ -20,7 +20,7 @@ pub struct DateTimeProto {
 
 impl ProtoShadowDecode<DateTime<Utc>> for DateTimeProto {
     fn to_sun(self) -> Result<DateTime<Utc>, DecodeError> {
-        DateTime::from_timestamp(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
+        DateTime::from_timestamp(self.secs, self.ns).ok_or_else(|| DecodeError::new("failed to decode DateTime"))
     }
 }
 
@@ -43,7 +43,7 @@ pub struct TimeDeltaProto {
 
 impl ProtoShadowDecode<TimeDelta> for TimeDeltaProto {
     fn to_sun(self) -> Result<TimeDelta, DecodeError> {
-        TimeDelta::new(self.secs, self.ns).ok_or(DecodeError::new("failed to decode TimeDelta"))
+        TimeDelta::new(self.secs, self.ns).ok_or_else(|| DecodeError::new("failed to decode TimeDelta"))
     }
 }
 

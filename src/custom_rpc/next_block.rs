@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 pub use api_client::ApiClient as NextBLockClient;
-use tokio_stream::Stream;
 use tonic::Request as TonicRequest;
 use tonic::Status as TonicStatus;
 use tonic::metadata::MetadataValue;
 
+use crate::grpc::Stream;
 use crate::proto_message;
 use crate::proto_rpc;
 
@@ -124,23 +124,4 @@ impl tonic::service::Interceptor for NextBlockAuthInterceptor {
         request.metadata_mut().insert("authorization", (*self.api_key).clone());
         Ok(request)
     }
-}
-
-#[cfg(test)]
-mod tests {
-
-    use tonic::transport::Channel;
-
-    use super::NextBLockClient;
-    use super::NextBlockAuthInterceptor;
-    use super::PingRequest;
-
-    // #[tokio::test]
-    // async fn test_ping() {
-    //     let c = Channel::from_shared("http://frankfurt.nextblock.io".to_owned()).unwrap().connect().await.unwrap();
-    //     let i = NextBlockAuthInterceptor::new("key".to_owned()).unwrap();
-    //     let mut client = NextBLockClient::with_interceptor(c, i);
-    //     let res = client.ping(PingRequest {}).await.expect_err("No auth key");
-    //     println!("{res:?}");
-    // }
 }
