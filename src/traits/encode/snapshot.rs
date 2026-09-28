@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn snapshot_headroom_survives_growth_and_dishonest_hints_without_reencoding() {
-        for (hint, cap) in [(0, 64), (1, 8192), (4096, 8192), (100000, 8192)] {
+        for (hint, cap) in [(0, 64), (1, 8192), (4096, 8192), (100_000, 8192)] {
             let raw = Raw {
                 bytes: vec![42; 4096],
                 hint: EncodeSizeHint::new(hint, true),
@@ -375,7 +375,7 @@ mod tests {
                 assert_eq!(&data[5..5 + len], &input.bytes);
                 data = &data[5 + len..];
             }
-            assert!(data.is_empty());
+            assert_eq!(data, []);
             assert!(staging.is_empty());
         }
     }

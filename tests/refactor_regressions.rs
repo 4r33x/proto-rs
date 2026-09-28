@@ -91,9 +91,9 @@ fn validation_finalizes_through_oneofs_transparent_and_map_values() {
 }
 
 thread_local! { static CONVERSIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
-fn clone_data(value: &String) -> String {
+fn clone_data(value: &str) -> String {
     CONVERSIONS.set(CONVERSIONS.get() + 1);
-    value.clone()
+    value.to_owned()
 }
 #[proto_message]
 struct Converted {
