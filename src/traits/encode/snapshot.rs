@@ -375,7 +375,7 @@ mod tests {
                 assert_eq!(&data[5..5 + len], &input.bytes);
                 data = &data[5 + len..];
             }
-            assert_eq!(data, []);
+            assert_eq!(data, b"");
             assert!(staging.is_empty());
         }
     }

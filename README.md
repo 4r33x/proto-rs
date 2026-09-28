@@ -844,8 +844,15 @@ Native support for Solana SDK types:
 | `AccountMeta` | message with `Address` pubkey, `bool` is_signer, `bool` is_writable |
 | `InstructionError` | `oneof` with all error variants |
 | `TransactionError` | `oneof` with all error variants |
+| `MessageHeader`, `CompiledInstruction`, `v0::MessageAddressTableLookup` | messages with native fields |
+| `solana_message::Message`, `v0::Message`, `v1::Message` | distinct `LegacyMessage`, `MessageV0`, `MessageV1` messages |
+| `v1::TransactionConfig` | optional priority fee, compute-unit limit, loaded-account-data limit, and heap size |
+| `VersionedMessage` | `oneof` for legacy, V0, and V1 |
+| `Transaction`, `VersionedTransaction` | signatures and message |
 
-`Instruction` uses `sun_ir` for zero-copy encoding — account lists and data are borrowed, not cloned.
+Supports `solana-message` / `solana-transaction` 5.1, including TxnV1, and the instruction/transaction `BailOut` errors. Existing error tags are unchanged.
+
+Instruction and transaction encoding borrows signatures, account lists, and instruction data without cloning payload collections. These adapters produce **protobuf**, not Solana's native transaction wire format. Decoding does not sanitize transactions or verify signatures; callers must do that before execution. V1 config preserves `None` versus `Some(0)`.
 
 ### Teloxide (`teloxide` feature)
 

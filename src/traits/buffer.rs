@@ -266,7 +266,7 @@ mod tests {
             writer.clear_and_shrink(cap);
             assert_eq!(writer.cap(), cap);
             assert_eq!(writer.buf.len(), writer.buf.capacity());
-            assert_eq!(writer.as_written_slice(), []);
+            assert_eq!(writer.as_written_slice(), b"");
             writer.put_slice(&[7; 8192]);
             assert_eq!(writer.as_written_slice(), &[7; 8192]);
             assert_eq!(writer.buf.len(), writer.buf.capacity());

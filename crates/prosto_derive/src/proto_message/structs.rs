@@ -745,7 +745,7 @@ fn generate_proto_impls(
         let sun_impls = config.suns.iter().map(|sun| {
             let target_ty = &sun.ty;
             let sun_ir_ty = sun.ir_ty.as_ref();
-            let sun_ir_archive_impl = sun_ir_ty.map_or_default(|sun_ir_ty| {
+            let sun_ir_archive_impl = sun_ir_ty.map_or_else(Default::default, |sun_ir_ty| {
                 let mut sun_ir_archive_generics = shadow_generics.clone();
                 sun_ir_archive_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
                 let (sun_ir_archive_impl_generics, _sun_ir_archive_ty_generics, sun_ir_archive_where_clause) =
@@ -864,7 +864,7 @@ fn generate_proto_impls(
                     }
                 }
             });
-            let sun_ir_ext_impl = sun_ir_ty.map_or_default(|sun_ir_ty| {
+            let sun_ir_ext_impl = sun_ir_ty.map_or_else(Default::default, |sun_ir_ty| {
                 let mut sun_ir_ext_generics = shadow_generics.clone();
                 sun_ir_ext_generics.make_where_clause().predicates.push(parse_quote!(#sun_ir_ty: 'a));
                 let (sun_ir_ext_impl_generics, _sun_ir_ext_ty_generics, sun_ir_ext_where_clause) = sun_ir_ext_generics.split_for_impl();
