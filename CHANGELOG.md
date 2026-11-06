@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Flush completed gRPC output before reporting encoding or size-limit failures, discarding partial failed output.
+- Expose framed snapshot bytes, fresh accepted TCP stream adoption, and custom connection metrics registration.
+
 ## [0.12.0]
 
 ### Transport abstraction and traits

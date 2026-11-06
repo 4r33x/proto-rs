@@ -242,3 +242,16 @@ fn failed_worker_quarantines_unreleased_memory() {
     assert_eq!(shared.metrics.snapshot().completion_errors, 1);
     assert!(shared.lock().failed);
 }
+
+#[tokio::test]
+async fn adopting_fresh_stream_preserves_socket_options() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let peer = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+    let (socket, _) = listener.accept().await.unwrap();
+    socket.set_nodelay(false).unwrap();
+    // SAFETY: this freshly accepted socket has never sent data or been cloned.
+    let io = unsafe { ZeroCopyIo::from_fresh_stream(socket, ZeroCopyConfig::default()) }.unwrap();
+    assert!(!io.socket.nodelay().unwrap());
+    drop(io);
+    drop(peer);
+}

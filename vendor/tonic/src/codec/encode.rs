@@ -151,9 +151,11 @@ where
                                 *pending_owned = Some(frames);
                                 Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())))
                             }
-                            frames => Poll::Ready(Some(frames)),
+                            Err(status) => flush_before_error(buf, error, status),
+                            Ok(frames) => Poll::Ready(Some(Ok(frames))),
                         };
                     }
+                    let offset = buf.len();
                     let owned = if encoder.supports_owned() {
                         encode_item_owned(
                             encoder,
@@ -178,7 +180,11 @@ where
                     };
                     let owned = match owned {
                         Ok(owned) => owned,
-                        Err(status) => return Poll::Ready(Some(Err(status))),
+                        Err(status) => {
+                            // Discard only the failed message; flush earlier output first.
+                            buf.truncate(offset);
+                            return flush_before_error(buf, error, status);
+                        }
                     };
                     if let Some(frame) = owned {
                         if buf.is_empty() {
@@ -195,15 +201,25 @@ where
                     }
                 }
                 Poll::Ready(Some(Err(status))) => {
-                    if buf.is_empty() {
-                        return Poll::Ready(Some(Err(status)));
-                    }
-                    *error = Some(status);
-                    return Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())));
+                    return flush_before_error(buf, error, status);
                 }
             }
         }
     }
+}
+
+// An RPC error follows all previously completed messages. A caller that was
+// encoding into buf must first truncate any partial failed message.
+fn flush_before_error(
+    buf: &mut BytesMut,
+    error: &mut Option<Status>,
+    status: Status,
+) -> Poll<Option<Result<Bytes, Status>>> {
+    if buf.is_empty() {
+        return Poll::Ready(Some(Err(status)));
+    }
+    *error = Some(status);
+    Poll::Ready(Some(Ok(buf.split().freeze())))
 }
 
 fn check_batch(mut frames: &[u8], max_message_size: Option<usize>) -> Result<(), Status> {
@@ -297,10 +313,7 @@ where
 {
     let offset = buf.len();
 
-    buf.reserve(HEADER_SIZE);
-    unsafe {
-        buf.advance_mut(HEADER_SIZE);
-    }
+    buf.extend_from_slice(&[0; HEADER_SIZE]);
 
     if let Some(encoding) = compression_encoding {
         uncompression_buf.clear();
@@ -485,5 +498,84 @@ where
             },
             None => self_proj.state.trailers().map(|t| t.map(Frame::trailers)).into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct PartialEncoder;
+
+    impl Encoder for PartialEncoder {
+        type Item = &'static [u8];
+        type Error = Status;
+
+        fn encode(&mut self, item: Self::Item, buf: &mut EncodeBuf<'_>) -> Result<(), Status> {
+            buf.put_slice(item);
+            if item == b"bad" {
+                return Err(Status::internal("failed after writing"));
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn buffered_errors_flush_only_complete_messages() {
+        for invalid in [b"bad".as_slice(), b"too large".as_slice()] {
+            let mut frames = EncodedBytes::new(
+                PartialEncoder,
+                tokio_stream::iter([Ok(b"ok".as_slice()), Ok(invalid)]),
+                None,
+                SingleMessageCompressionOverride::Inherit,
+                Some(2),
+            );
+            assert_eq!(
+                frames.next().await.unwrap().unwrap().as_ref(),
+                b"\0\0\0\0\x02ok"
+            );
+            assert!(frames.next().await.unwrap().is_err());
+        }
+    }
+
+    struct FailingBatchEncoder(bool);
+
+    impl Encoder for FailingBatchEncoder {
+        type Item = &'static [u8];
+        type Error = Status;
+
+        fn supports_owned_batch(&self) -> bool {
+            self.0
+        }
+
+        fn encode(&mut self, item: Self::Item, buf: &mut EncodeBuf<'_>) -> Result<(), Status> {
+            self.0 = true;
+            PartialEncoder.encode(item, buf)
+        }
+
+        fn encode_owned_batch(
+            &mut self,
+            _: Self::Item,
+            _: &mut dyn FnMut() -> Option<Self::Item>,
+            _: usize,
+        ) -> Result<Bytes, Status> {
+            Err(Status::internal("batch failed"))
+        }
+    }
+
+    #[tokio::test]
+    async fn batch_errors_follow_completed_buffered_messages() {
+        let mut frames = EncodedBytes::new(
+            FailingBatchEncoder(false),
+            tokio_stream::iter([Ok(b"ok".as_slice()), Ok(b"next".as_slice())]),
+            None,
+            SingleMessageCompressionOverride::Inherit,
+            None,
+        );
+        assert_eq!(
+            frames.next().await.unwrap().unwrap().as_ref(),
+            b"\0\0\0\0\x02ok"
+        );
+        assert!(frames.next().await.unwrap().is_err());
     }
 }

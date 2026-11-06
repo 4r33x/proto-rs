@@ -76,6 +76,12 @@ impl<T: ProtoEncode> EncodedSnapshot<T> {
         &self.frame[HEADER..]
     }
 
+    /// Transfer the encoded allocation including its uncompressed gRPC header.
+    /// The transport validates the gRPC size limit when adopting this frame.
+    pub fn into_framed_bytes(self) -> bytes::Bytes {
+        self.frame
+    }
+
     /// Share the protobuf-only slice without copying. Its owner keeps the full
     /// framed allocation alive until the final slice/clone is dropped.
     pub fn into_bytes(mut self) -> bytes::Bytes {

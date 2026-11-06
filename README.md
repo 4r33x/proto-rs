@@ -84,6 +84,12 @@ Kernel copying remains possible and is reported in socket metrics and cumulative
 
 Generated servers move the per-call service handle into the handler instead of cloning it again. Nightly keeps unboxed handler futures; stable builds also avoid boxing synchronous handlers. Stream adapters avoid redundant boxes, and transport-neutral single-message/empty streams do not allocate stream containers.
 
+### Custom owned transports
+
+`EncodedSnapshot::into_framed_bytes()` transfers the snapshot's existing allocation, including its five-byte uncompressed gRPC header. Pass it to `PreparedMessage::from_uncompressed_frame()` to validate the frame before transport use.
+
+With `linux-zerocopy`, custom servers can adopt an accepted TCP stream using `unsafe { ZeroCopyIo::from_fresh_stream(socket, config) }`, preserving its socket options. The socket must be fresh: no prior `MSG_ZEROCOPY` sends, no duplicate descriptor submitting them, and exclusive ownership of its error queue. Register each connection's metrics once through `ZeroCopyChannelMetrics::register()` for cumulative accounting.
+
 ## Quick start
 
 ```rust
