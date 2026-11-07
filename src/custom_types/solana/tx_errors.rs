@@ -124,8 +124,6 @@ pub enum InstructionErrorProto {
     /// A native instruction error variant this version does not recognize.
     #[proto(tag = 55)]
     Unknown,
-    #[proto(tag = 56)]
-    BailOut,
 }
 
 impl ProtoShadowDecode<InstructionError> for InstructionErrorProto {
@@ -185,7 +183,6 @@ impl ProtoShadowDecode<InstructionError> for InstructionErrorProto {
             Self::MaxAccountsExceeded => InstructionError::MaxAccountsExceeded,
             Self::MaxInstructionTraceLengthExceeded => InstructionError::MaxInstructionTraceLengthExceeded,
             Self::BuiltinProgramsMustConsumeComputeUnits => InstructionError::BuiltinProgramsMustConsumeComputeUnits,
-            Self::BailOut => InstructionError::BailOut,
             Self::Unknown => return Err(DecodeError::new("unknown Solana instruction error")),
         };
 
@@ -294,8 +291,6 @@ pub enum TransactionErrorProto {
     /// A native transaction error variant this version does not recognize.
     #[proto(tag = 40)]
     Unknown,
-    #[proto(tag = 41)]
-    BailOut,
 }
 
 impl ProtoShadowDecode<TransactionError> for TransactionErrorProto {
@@ -345,7 +340,6 @@ impl ProtoShadowDecode<TransactionError> for TransactionErrorProto {
             Self::UnbalancedTransaction => TransactionError::UnbalancedTransaction,
             Self::ProgramCacheHitMaxLimit => TransactionError::ProgramCacheHitMaxLimit,
             Self::CommitCancelled => TransactionError::CommitCancelled,
-            Self::BailOut => TransactionError::BailOut,
             Self::Unknown => return Err(DecodeError::new("unknown Solana transaction error")),
         };
 
@@ -415,7 +409,6 @@ const fn instruction_error_from_native(value: &InstructionError) -> InstructionE
         InstructionError::MaxAccountsExceeded => InstructionErrorProto::MaxAccountsExceeded,
         InstructionError::MaxInstructionTraceLengthExceeded => InstructionErrorProto::MaxInstructionTraceLengthExceeded,
         InstructionError::BuiltinProgramsMustConsumeComputeUnits => InstructionErrorProto::BuiltinProgramsMustConsumeComputeUnits,
-        InstructionError::BailOut => InstructionErrorProto::BailOut,
         _ => InstructionErrorProto::Unknown,
     }
 }
@@ -470,7 +463,6 @@ fn transaction_error_from_native(value: &TransactionError) -> TransactionErrorPr
         TransactionError::UnbalancedTransaction => TransactionErrorProto::UnbalancedTransaction,
         TransactionError::ProgramCacheHitMaxLimit => TransactionErrorProto::ProgramCacheHitMaxLimit,
         TransactionError::CommitCancelled => TransactionErrorProto::CommitCancelled,
-        TransactionError::BailOut => TransactionErrorProto::BailOut,
         _ => TransactionErrorProto::Unknown,
     }
 }
@@ -521,32 +513,6 @@ mod tests {
         let encoded = <TransactionError as ProtoEncode>::encode_to_vec(&error);
         let decoded = <TransactionError as ProtoDecode>::decode(encoded.as_slice(), DecodeContext::default()).expect("decode");
         assert_eq!(decoded, TransactionError::InsufficientFundsForRent { account_index: 9 },);
-    }
-
-    #[test]
-    fn every_current_native_error_variant_roundtrips_without_unknown_fallback() {
-        for error in InstructionError::VARIANTS {
-            let encoded = error.encode_to_vec();
-            assert_eq!(
-                InstructionError::decode(encoded.as_slice(), DecodeContext::default()).unwrap(),
-                error
-            );
-        }
-        for error in TransactionError::VARIANTS {
-            let encoded = error.encode_to_vec();
-            assert_eq!(
-                TransactionError::decode(encoded.as_slice(), DecodeContext::default()).unwrap(),
-                error
-            );
-        }
-    }
-
-    #[test]
-    fn bailout_does_not_reuse_the_existing_unknown_tag() {
-        assert_eq!(InstructionErrorProto::Unknown.encode_to_vec(), [0xba, 0x03, 0]);
-        assert_eq!(InstructionError::BailOut.encode_to_vec(), [0xc2, 0x03, 0]);
-        assert_eq!(TransactionErrorProto::Unknown.encode_to_vec(), [0xc2, 0x02, 0]);
-        assert_eq!(TransactionError::BailOut.encode_to_vec(), [0xca, 0x02, 0]);
     }
 
     #[test]

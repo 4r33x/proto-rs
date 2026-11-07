@@ -100,7 +100,7 @@ default = [
     "codegen",
 ]
 deflate = ["dep:flate2"]
-gzip = ["dep:flate2"]
+gzip = ["dep:flate2", "dep:libdeflater"]
 router = [
     "dep:axum",
     "dep:tower",
@@ -175,6 +175,10 @@ version = "1.0"
 
 [dependencies.flate2]
 version = "1.0"
+optional = true
+
+[dependencies.libdeflater]
+version = "1.26"
 optional = true
 
 [dependencies.h2]

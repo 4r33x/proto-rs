@@ -76,6 +76,12 @@ impl<T: ProtoEncode> EncodedSnapshot<T> {
         &self.frame[HEADER..]
     }
 
+    /// Transfer the encoded allocation including its uncompressed gRPC header.
+    /// The transport validates the gRPC size limit when adopting this frame.
+    pub fn into_framed_bytes(self) -> bytes::Bytes {
+        self.frame
+    }
+
     /// Share the protobuf-only slice without copying. Its owner keeps the full
     /// framed allocation alive until the final slice/clone is dropped.
     pub fn into_bytes(mut self) -> bytes::Bytes {
@@ -332,7 +338,7 @@ mod tests {
 
     #[test]
     fn snapshot_headroom_survives_growth_and_dishonest_hints_without_reencoding() {
-        for (hint, cap) in [(0, 64), (1, 8192), (4096, 8192), (100_000, 8192)] {
+        for (hint, cap) in [(0, 64), (1, 8192), (4096, 8192), (100000, 8192)] {
             let raw = Raw {
                 bytes: vec![42; 4096],
                 hint: EncodeSizeHint::new(hint, true),
@@ -375,7 +381,7 @@ mod tests {
                 assert_eq!(&data[5..5 + len], &input.bytes);
                 data = &data[5 + len..];
             }
-            assert_eq!(data, b"");
+            assert!(data.is_empty());
             assert!(staging.is_empty());
         }
     }
@@ -393,7 +399,9 @@ mod tests {
         let request = <&Raw as crate::PrepareRequest<Raw>>::prepare_request(&raw, 64).unwrap();
         assert_eq!(raw.calls.get(), 1);
         drop(raw);
-        assert_eq!(request.into_inner().payload(), vec![42; 16384]);
+        let message = request.into_inner();
+        let mut payload = message.payload();
+        assert_eq!(bytes::Buf::copy_to_bytes(&mut payload, 16384), vec![42; 16384]);
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::ready;
 
+use bytes::Buf;
 use bytes::BufMut;
 use bytes::Bytes;
 use bytes::BytesMut;
@@ -24,7 +25,7 @@ use super::compression::CompressionEncoding;
 use super::compression::CompressionSettings;
 use super::compression::SingleMessageCompressionOverride;
 use super::compression::compress;
-use super::compression::compress_slice;
+use super::compression::compress_buf;
 use crate::Status;
 
 /// Combinator for efficient encoding of messages into reasonably sized buffers.
@@ -43,7 +44,8 @@ struct EncodedBytes<T, U> {
     buf: BytesMut,
     uncompression_buf: BytesMut,
     error: Option<Status>,
-    pending_owned: Option<Bytes>,
+    pending_owned: std::array::IntoIter<Bytes, 3>,
+    pending_compression: Option<super::OwnedMessage>,
 }
 
 impl<T: Encoder, U: Stream> EncodedBytes<T, U> {
@@ -84,7 +86,8 @@ impl<T: Encoder, U: Stream> EncodedBytes<T, U> {
             buf,
             uncompression_buf,
             error: None,
-            pending_owned: None,
+            pending_owned: [Bytes::new(), Bytes::new(), Bytes::new()].into_iter(),
+            pending_compression: None,
         }
     }
 }
@@ -106,10 +109,12 @@ where
             uncompression_buf,
             error,
             pending_owned,
+            pending_compression,
         } = self.project();
         let buffer_settings = encoder.buffer_settings();
+        let small_threshold = buffer_settings.yield_threshold.min(32 * 1024);
 
-        if let Some(frame) = pending_owned.take() {
+        if let Some(frame) = pending_owned.find(|frame| !frame.is_empty()) {
             return Poll::Ready(Some(Ok(frame)));
         }
 
@@ -117,18 +122,46 @@ where
             return Poll::Ready(Some(Err(status)));
         }
 
-        loop {
-            match source.as_mut().poll_next(cx) {
-                Poll::Pending if buf.is_empty() => {
+        let mut first_small: Option<[Bytes; 3]> = None;
+        if let Some(message) = pending_compression.take() {
+            match encode_owned_message(
+                &message,
+                cx,
+                compression_encoding.unwrap(),
+                *max_message_size,
+                buffer_settings,
+            ) {
+                Poll::Ready(Ok(frame)) if frame.len() < small_threshold => {
+                    // Resumed cache waiters still participate in batching.
+                    first_small = Some([frame, Bytes::new(), Bytes::new()]);
+                }
+                Poll::Ready(frame) => return Poll::Ready(Some(frame)),
+                Poll::Pending => {
+                    *pending_compression = Some(message);
                     return Poll::Pending;
                 }
-                Poll::Ready(None) if buf.is_empty() => {
-                    return Poll::Ready(None);
-                }
-                Poll::Pending | Poll::Ready(None) => {
+            }
+        }
+
+        loop {
+            match source.as_mut().poll_next(cx) {
+                exhausted @ (Poll::Pending | Poll::Ready(None)) => {
+                    if let Some(frames) = first_small.take() {
+                        *pending_owned = frames.into_iter();
+                        return Poll::Ready(pending_owned.find(|frame| !frame.is_empty()).map(Ok));
+                    }
+                    if buf.is_empty() {
+                        return exhausted.map(|_| None);
+                    }
                     return Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())));
                 }
                 Poll::Ready(Some(Ok(item))) => {
+                    if let Some(frames) = first_small.take() {
+                        buf.reserve(buffer_settings.yield_threshold);
+                        for frame in frames {
+                            buf.extend_from_slice(&frame);
+                        }
+                    }
                     if compression_encoding.is_none() && encoder.supports_owned_batch() {
                         let frames = encoder.encode_owned_batch(
                             item,
@@ -148,12 +181,13 @@ where
                         });
                         return match frames {
                             Ok(frames) if !buf.is_empty() => {
-                                *pending_owned = Some(frames);
+                                *pending_owned = [frames, Bytes::new(), Bytes::new()].into_iter();
                                 Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())))
                             }
                             frames => Poll::Ready(Some(frames)),
                         };
                     }
+                    let offset = buf.len();
                     let owned = if encoder.supports_owned() {
                         encode_item_owned(
                             encoder,
@@ -163,6 +197,8 @@ where
                             *max_message_size,
                             buffer_settings,
                             item,
+                            cx,
+                            pending_compression,
                         )
                     } else {
                         encode_item(
@@ -178,15 +214,49 @@ where
                     };
                     let owned = match owned {
                         Ok(owned) => owned,
-                        Err(status) => return Poll::Ready(Some(Err(status))),
+                        Err(status) => {
+                            // A buffered encoder may leave a partial failed message.
+                            buf.truncate(offset);
+                            if buf.is_empty() {
+                                return Poll::Ready(Some(Err(status)));
+                            }
+                            *error = Some(status);
+                            return Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())));
+                        }
                     };
-                    if let Some(frame) = owned {
+                    if pending_compression.is_some() {
                         if buf.is_empty() {
-                            return Poll::Ready(Some(Ok(frame)));
+                            return Poll::Pending;
+                        }
+                        return Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())));
+                    }
+                    if let Some(frames) = owned {
+                        let size = frames.iter().map(Bytes::len).sum::<usize>();
+                        // Batch ready small messages, including cached compressed frames.
+                        // Large payloads retain their shared owned segments.
+                        if size < small_threshold {
+                            if buf.is_empty() {
+                                // Keep singleton messages owned. Only copy once a
+                                // second message is already available for batching.
+                                first_small = Some(frames);
+                                continue;
+                            }
+                            for frame in frames {
+                                buf.extend_from_slice(&frame);
+                            }
+                            if buf.len() >= buffer_settings.yield_threshold {
+                                return Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())));
+                            }
+                            continue;
+                        }
+                        *pending_owned = frames.into_iter();
+                        if buf.is_empty() {
+                            return Poll::Ready(
+                                pending_owned.find(|frame| !frame.is_empty()).map(Ok),
+                            );
                         }
                         // Preserve stream order when an encoder mixes owned
                         // frames with its ordinary coalesced buffered output.
-                        *pending_owned = Some(frame);
                         return Poll::Ready(Some(Ok(buf.split_to(buf.len()).freeze())));
                     }
 
@@ -195,6 +265,11 @@ where
                     }
                 }
                 Poll::Ready(Some(Err(status))) => {
+                    if let Some(frames) = first_small.take() {
+                        *error = Some(status);
+                        *pending_owned = frames.into_iter();
+                        return Poll::Ready(pending_owned.find(|frame| !frame.is_empty()).map(Ok));
+                    }
                     if buf.is_empty() {
                         return Poll::Ready(Some(Err(status)));
                     }
@@ -233,7 +308,9 @@ fn encode_item_owned<T>(
     max_message_size: Option<usize>,
     buffer_settings: BufferSettings,
     item: T::Item,
-) -> Result<Option<Bytes>, Status>
+    cx: &mut Context<'_>,
+    pending_compression: &mut Option<super::OwnedMessage>,
+) -> Result<Option<[Bytes; 3]>, Status>
 where
     T: Encoder<Error = Status>,
 {
@@ -242,25 +319,24 @@ where
         EncodeResult::Buffered(item) => item,
         EncodeResult::Owned(message) => {
             if let Some(encoding) = compression_encoding {
-                if buf.capacity() == 0 {
-                    buf.reserve(buffer_settings.buffer_size);
+                match encode_owned_message(
+                    &message,
+                    cx,
+                    encoding,
+                    max_message_size,
+                    buffer_settings,
+                ) {
+                    Poll::Ready(frame) => {
+                        return frame.map(|frame| Some([frame, Bytes::new(), Bytes::new()]));
+                    }
+                    Poll::Pending => {
+                        *pending_compression = Some(message);
+                        return Ok(None);
+                    }
                 }
-                let offset = buf.len();
-                buf.extend_from_slice(&[0; HEADER_SIZE]);
-                compress_slice(
-                    CompressionSettings {
-                        encoding,
-                        buffer_growth_interval: buffer_settings.buffer_size,
-                    },
-                    message.payload(),
-                    buf,
-                )
-                .map_err(|err| Status::internal(format!("Error compressing: {err}")))?;
-                finish_encoding(compression_encoding, max_message_size, &mut buf[offset..])?;
-                return Ok(None);
             }
-            check_message_size(message.payload().len(), max_message_size)?;
-            return Ok(Some(message.into_frame()));
+            check_message_size(message.payload().remaining(), max_message_size)?;
+            return Ok(Some(message.into_frames()));
         }
     };
     if buf.capacity() == 0 {
@@ -279,6 +355,38 @@ where
         item,
     )?;
     Ok(None)
+}
+
+fn encode_owned_message(
+    message: &super::OwnedMessage,
+    cx: &mut Context<'_>,
+    encoding: CompressionEncoding,
+    max_message_size: Option<usize>,
+    buffer_settings: BufferSettings,
+) -> Poll<Result<Bytes, Status>> {
+    let compress = || {
+        let mut frame = BytesMut::new();
+        frame.extend_from_slice(&[0; HEADER_SIZE]);
+        compress_buf(
+            CompressionSettings {
+                encoding,
+                buffer_growth_interval: buffer_settings.buffer_size,
+            },
+            message.payload(),
+            &mut frame,
+        )
+        .map_err(|err| Status::internal(format!("Error compressing: {err}")))?;
+        finish_encoding(Some(encoding), None, &mut frame)?;
+        Ok(frame.freeze())
+    };
+    let frame = match &message.compressed {
+        Some(cache) => std::task::ready!(cache[encoding as usize].poll_frame(cx, compress)),
+        None => compress(),
+    };
+    Poll::Ready(frame.and_then(|frame| {
+        check_message_size(frame.len() - HEADER_SIZE, max_message_size)?;
+        Ok(frame)
+    }))
 }
 
 // Keep the original buffered entry point and return type. Owned-message
@@ -483,7 +591,49 @@ where
                     Some(Ok(Frame::trailers(status.to_header_map()?))).into()
                 }
             },
-            None => self_proj.state.trailers().map(|t| t.map(Frame::trailers)).into(),
+            None => self_proj
+                .state
+                .trailers()
+                .map(|t| t.map(Frame::trailers))
+                .into(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct PartialEncoder;
+
+    impl Encoder for PartialEncoder {
+        type Item = &'static [u8];
+        type Error = Status;
+
+        fn encode(&mut self, item: Self::Item, buf: &mut EncodeBuf<'_>) -> Result<(), Status> {
+            buf.put_slice(item);
+            if item == b"bad" {
+                return Err(Status::internal("failed after writing"));
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn buffered_errors_flush_only_complete_messages() {
+        for invalid in [b"bad".as_slice(), b"too large".as_slice()] {
+            let mut frames = EncodedBytes::new(
+                PartialEncoder,
+                tokio_stream::iter([Ok(b"ok".as_slice()), Ok(invalid)]),
+                None,
+                SingleMessageCompressionOverride::Inherit,
+                Some(2),
+            );
+            assert_eq!(
+                frames.next().await.unwrap().unwrap().as_ref(),
+                b"\0\0\0\0\x02ok"
+            );
+            assert!(frames.next().await.unwrap().is_err());
         }
     }
 }

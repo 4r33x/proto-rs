@@ -162,13 +162,18 @@ impl<T, Mode> ProtoEncoder<T, Mode> {
     }
 }
 
-impl AsBytes for crate::PreparedMessage {
-    fn as_bytes(&self) -> &[u8] {
-        self.payload()
+impl EncoderExt<crate::PreparedMessage, BytesMode> for ProtoEncoder<crate::PreparedMessage, BytesMode> {
+    fn encode_sun(&mut self, item: crate::PreparedMessage, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
+        dst.put(item.payload());
+        Ok(())
     }
     #[cfg(feature = "tonic-owned")]
-    fn into_owned_message(self) -> Result<tonic::codec::EncodeResult<Self>, Status> {
-        Ok(tonic::codec::EncodeResult::Owned(self))
+    fn supports_owned_sun(&self) -> bool {
+        true
+    }
+    #[cfg(feature = "tonic-owned")]
+    fn encode_owned_sun(&mut self, item: crate::PreparedMessage) -> Result<tonic::codec::EncodeResult<crate::PreparedMessage>, Status> {
+        Ok(tonic::codec::EncodeResult::Owned(item))
     }
 }
 
@@ -176,6 +181,9 @@ impl<T, Mode> Encoder for ProtoEncoder<T, Mode>
 where
     ProtoEncoder<T, Mode>: EncoderExt<T, Mode>,
 {
+    fn buffer_settings(&self) -> tonic::codec::BufferSettings {
+        tonic::codec::BufferSettings::new(8 * 1024, 128 * 1024)
+    }
     #[cfg(feature = "tonic-owned")]
     fn supports_owned_batch(&self) -> bool {
         <Self as EncoderExt<T, Mode>>::supports_owned_batch_sun(self)

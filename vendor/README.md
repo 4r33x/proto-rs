@@ -12,20 +12,15 @@ The `linux-zerocopy` feature implies `tonic-owned`.
 
 | Directory | Published source | Local package |
 | --- | --- | --- |
-| h2 | h2 0.4.20 | proto-rs-h2 0.4.20-proto.1 |
+| h2 | h2 0.4.15 | proto-rs-h2 0.4.15-proto.1 |
 | hyper | hyper 1.11.0 | proto-rs-hyper 1.11.0-proto.1 |
 | tonic | tonic 0.14.6 | tonic 0.14.6, Cargo patch with proto-rs-owned marker feature |
 
 Source copied from the corresponding crates.io packages. Upstream MIT licenses,
 original manifests, and available source metadata are retained. The h2 package's
-VCS revision is `b0e890842ac16d3c76836fd4fcc06421acb15fa7`; Hyper's is
+VCS revision is `21211d065f8acd96827414020b5f53b63653f406`; Hyper's is
 `540fff9180ce47ee5fab01b6cc2126eb6c286eda` (published metadata marks it dirty).
 Tonic's VCS revision is `6cb6056b5a748bc5a29bd48f4602dbc4e552bb7d`.
-
-The October 2026 refresh keeps Tonic at the latest published `0.14.6`, updates
-both registry h2 and this fork to `0.4.20`, and retains the owned-buffer hooks.
-The h2 merge preserves upstream's zero-progress write error on the borrowed path
-as well as the local owned-write validation.
 
 Local changes:
 

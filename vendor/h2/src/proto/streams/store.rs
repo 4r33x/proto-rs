@@ -87,9 +87,9 @@ impl Store {
     }
 
     pub fn find_mut(&mut self, id: &StreamId) -> Option<Ptr<'_>> {
-        let index = {
-            let key = self.ids.get(id)?;
-            *key
+        let index = match self.ids.get(id) {
+            Some(key) => *key,
+            None => return None,
         };
 
         Some(Ptr {
