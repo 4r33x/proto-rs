@@ -133,7 +133,7 @@ default-features = false
 [dependencies.h2]
 package = "proto-rs-h2"
 path = "../h2"
-version = "0.4.15-proto.1"
+version = "0.4.20-proto.1"
 optional = true
 
 [dependencies.http]

@@ -14,7 +14,7 @@ const HEADER: usize = 5;
 
 /// Encode once, then clone to fan out the same immutable payload to many peers.
 /// Clones share the allocation through Bytes' atomic reference count, without
-/// copying or re-encoding. Public bytes exclude transport framing.
+/// copying or re-encoding. Byte views exclude transport framing; `into_framed_bytes` includes it.
 /// Allocations automatically reuse the encoding thread's pool.
 pub struct EncodedSnapshot<T: ProtoEncode> {
     frame: bytes::Bytes,
@@ -76,8 +76,8 @@ impl<T: ProtoEncode> EncodedSnapshot<T> {
         &self.frame[HEADER..]
     }
 
-    /// Transfer the encoded allocation including its uncompressed gRPC header.
-    /// The transport validates the gRPC size limit when adopting this frame.
+    /// Return the shared allocation with its five-byte uncompressed gRPC header.
+    /// The receiving transport must validate the payload length against its size limit.
     pub fn into_framed_bytes(self) -> bytes::Bytes {
         self.frame
     }
@@ -337,8 +337,22 @@ mod tests {
     }
 
     #[test]
+    fn framed_snapshot_keeps_shared_payload_and_valid_header() {
+        let snapshot = EncodedSnapshot::new(&123u64);
+        let payload = snapshot.as_bytes().to_vec();
+        let shared = snapshot.clone();
+        let frame = snapshot.into_framed_bytes();
+        assert_eq!(frame[0], 0);
+        assert_eq!(u32::from_be_bytes(frame[1..HEADER].try_into().unwrap()) as usize, payload.len());
+        assert_eq!(&frame[HEADER..], payload);
+        assert_eq!(frame.as_ptr().wrapping_add(HEADER), shared.as_bytes().as_ptr());
+        drop(shared);
+        assert_eq!(&frame[HEADER..], payload);
+    }
+
+    #[test]
     fn snapshot_headroom_survives_growth_and_dishonest_hints_without_reencoding() {
-        for (hint, cap) in [(0, 64), (1, 8192), (4096, 8192), (100000, 8192)] {
+        for (hint, cap) in [(0, 64), (1, 8192), (4096, 8192), (100_000, 8192)] {
             let raw = Raw {
                 bytes: vec![42; 4096],
                 hint: EncodeSizeHint::new(hint, true),
@@ -381,7 +395,7 @@ mod tests {
                 assert_eq!(&data[5..5 + len], &input.bytes);
                 data = &data[5 + len..];
             }
-            assert!(data.is_empty());
+            assert_eq!(data, b"");
             assert!(staging.is_empty());
         }
     }

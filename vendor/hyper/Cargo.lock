@@ -277,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "proto-rs-h2"
-version = "0.4.15-proto.1"
+version = "0.4.20-proto.1"
 dependencies = [
  "atomic-waker",
  "bytes",

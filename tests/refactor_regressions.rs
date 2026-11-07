@@ -71,6 +71,23 @@ enum Choice {
     Fields { pair: Pair },
 }
 
+#[proto_message]
+enum StateField {
+    Empty,
+    Landed { state: Pair },
+}
+
+#[test]
+fn enum_state_field_does_not_shadow_decoder_state() {
+    let original = StateField::Landed { state: Pair { a: 7, b: 9 } };
+    let bytes = original.encode_to_vec();
+    let restored = StateField::decode(bytes.as_slice(), DecodeContext::default()).unwrap();
+    assert!(matches!(restored, StateField::Landed { state: Pair { a: 7, b: 9 } }));
+    // Validation must still finalize nested state across repeated oneof fields.
+    let restored = StateField::decode(&[18, 4, 10, 2, 8, 1, 18, 4, 10, 2, 16, 2][..], DecodeContext::default()).unwrap();
+    assert!(matches!(restored, StateField::Landed { state: Pair { a: 1, b: 2 } }));
+}
+
 #[proto_message(transparent)]
 struct Transparent(Pair);
 #[proto_message]
@@ -91,9 +108,9 @@ fn validation_finalizes_through_oneofs_transparent_and_map_values() {
 }
 
 thread_local! { static CONVERSIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
-fn clone_data(value: &String) -> String {
+fn clone_data(value: &str) -> String {
     CONVERSIONS.set(CONVERSIONS.get() + 1);
-    value.clone()
+    value.to_owned()
 }
 #[proto_message]
 struct Converted {

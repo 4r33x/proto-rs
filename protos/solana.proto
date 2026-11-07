@@ -12,6 +12,12 @@ message Address {
   bytes inner = 1;
 }
 
+message CompiledInstruction {
+  uint32 program_id_index = 1;
+  bytes accounts = 2;
+  bytes data = 3;
+}
+
 message Hash {
   bytes inner = 1;
 }
@@ -20,6 +26,66 @@ message Instruction {
   Address program_id = 1;
   repeated AccountMeta accounts = 2;
   bytes data = 3;
+}
+
+message Keypair {
+  bytes inner = 1;
+}
+
+message LegacyMessage {
+  MessageHeader header = 1;
+  repeated Address account_keys = 2;
+  Hash recent_blockhash = 3;
+  repeated CompiledInstruction instructions = 4;
+}
+
+message MessageAddressTableLookup {
+  Address account_key = 1;
+  bytes writable_indexes = 2;
+  bytes readonly_indexes = 3;
+}
+
+message MessageHeader {
+  uint32 num_required_signatures = 1;
+  uint32 num_readonly_signed_accounts = 2;
+  uint32 num_readonly_unsigned_accounts = 3;
+}
+
+message MessageV0 {
+  MessageHeader header = 1;
+  repeated Address account_keys = 2;
+  Hash recent_blockhash = 3;
+  repeated CompiledInstruction instructions = 4;
+  repeated MessageAddressTableLookup address_table_lookups = 5;
+}
+
+message MessageV1 {
+  MessageHeader header = 1;
+  repeated Address account_keys = 2;
+  Hash lifetime_specifier = 3;
+  repeated CompiledInstruction instructions = 4;
+  TransactionConfig config = 5;
+}
+
+message Signature {
+  bytes inner = 1;
+}
+
+message Transaction {
+  repeated Signature signatures = 1;
+  LegacyMessage message = 2;
+}
+
+message TransactionConfig {
+  optional uint64 priority_fee = 1;
+  optional uint32 compute_unit_limit = 2;
+  optional uint32 loaded_accounts_data_size_limit = 3;
+  optional uint32 heap_size = 4;
+}
+
+message VersionedTransaction {
+  repeated Signature signatures = 1;
+  VersionedMessage message = 2;
 }
 
 message InstructionErrorGenericError {}
@@ -129,6 +195,8 @@ message InstructionErrorMaxInstructionTraceLengthExceeded {}
 message InstructionErrorBuiltinProgramsMustConsumeComputeUnits {}
 
 message InstructionErrorUnknown {}
+
+message InstructionErrorBailOut {}
 message InstructionError {
   oneof value {
     InstructionErrorGenericError generic_error = 1;
@@ -186,15 +254,8 @@ message InstructionError {
     InstructionErrorMaxInstructionTraceLengthExceeded max_instruction_trace_length_exceeded = 53;
     InstructionErrorBuiltinProgramsMustConsumeComputeUnits builtin_programs_must_consume_compute_units = 54;
     InstructionErrorUnknown unknown = 55;
+    InstructionErrorBailOut bail_out = 56;
   }
-}
-
-message Keypair {
-  bytes inner = 1;
-}
-
-message Signature {
-  bytes inner = 1;
 }
 
 message TransactionErrorAccountInUse {}
@@ -281,6 +342,8 @@ message TransactionErrorProgramCacheHitMaxLimit {}
 message TransactionErrorCommitCancelled {}
 
 message TransactionErrorUnknown {}
+
+message TransactionErrorBailOut {}
 message TransactionError {
   oneof value {
     TransactionErrorAccountInUse account_in_use = 1;
@@ -323,5 +386,15 @@ message TransactionError {
     TransactionErrorProgramCacheHitMaxLimit program_cache_hit_max_limit = 38;
     TransactionErrorCommitCancelled commit_cancelled = 39;
     TransactionErrorUnknown unknown = 40;
+    TransactionErrorBailOut bail_out = 41;
+  }
+}
+
+
+message VersionedMessage {
+  oneof value {
+    LegacyMessage legacy = 1;
+    MessageV0 v0 = 2;
+    MessageV1 v1 = 3;
   }
 }

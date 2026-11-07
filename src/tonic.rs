@@ -181,9 +181,6 @@ impl<T, Mode> Encoder for ProtoEncoder<T, Mode>
 where
     ProtoEncoder<T, Mode>: EncoderExt<T, Mode>,
 {
-    fn buffer_settings(&self) -> tonic::codec::BufferSettings {
-        tonic::codec::BufferSettings::new(8 * 1024, 128 * 1024)
-    }
     #[cfg(feature = "tonic-owned")]
     fn supports_owned_batch(&self) -> bool {
         <Self as EncoderExt<T, Mode>>::supports_owned_batch_sun(self)

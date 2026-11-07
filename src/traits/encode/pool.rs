@@ -91,7 +91,7 @@ impl ShardOwner {
             valid: (1u64 << count) - 1,
             max_capacity,
             #[cfg(test)]
-            drops: Default::default(),
+            drops: alloc::sync::Arc::default(),
         });
         Self(NonNull::from(Box::leak(shard)))
     }

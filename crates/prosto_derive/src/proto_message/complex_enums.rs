@@ -61,7 +61,7 @@ pub(super) fn generate_complex_enum_impl(
     let field_validation_arms = build_variant_field_validation_arms(name, &variants);
     let has_field_validation = !field_validation_arms.is_empty();
     let defer_hooks = if has_field_validation || config.validator.is_some() {
-        quote! { state.defer(); }
+        quote! { __proto_rs_decode_state.defer(); }
     } else {
         quote! {}
     };
@@ -75,7 +75,7 @@ pub(super) fn generate_complex_enum_impl(
                     quote! { #name::#ident(..) => {} }
                 } else {
                     let ty = &field.field.field.ty;
-                    quote! { #name::#ident(inner) => { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(inner, &state.field(#tag))?; } }
+                    quote! { #name::#ident(inner) => { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(inner, &__proto_rs_decode_state.field(#tag))?; } }
                 }
             }
             VariantKind::Struct { fields } => {
@@ -85,7 +85,7 @@ pub(super) fn generate_complex_enum_impl(
                         let field = info.field.ident.as_ref().unwrap();
                         let field_tag = info.tag.unwrap();
                         let ty = &info.field.ty;
-                        quote! { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(#field, &state.field(#tag).field(#field_tag))?; }
+                        quote! { <#ty as ::proto_rs::ProtoFieldMerge>::finish_value(#field, &__proto_rs_decode_state.field(#tag).field(#field_tag))?; }
                     });
                 quote! { #name::#ident { #(#bindings),* } => { #(#finishes)* } }
             }
@@ -211,10 +211,10 @@ pub(super) fn generate_complex_enum_impl(
 
                 impl #impl_generics ::proto_rs::ProtoFieldMerge for #target_ty #where_clause {
                     #[inline]
-                    fn finish_value(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
-                        if !state.has_data() { return Ok(()); }
+                    fn finish_value(&mut self, __proto_rs_decode_state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                        if !__proto_rs_decode_state.has_data() { return Ok(()); }
                         let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::finish(&mut shadow, state)?;
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::finish(&mut shadow, __proto_rs_decode_state)?;
                         *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
                     }
@@ -225,10 +225,10 @@ pub(super) fn generate_complex_enum_impl(
                         wire_type: ::proto_rs::encoding::WireType,
                         buf: &mut impl ::proto_rs::bytes::Buf,
                         ctx: ::proto_rs::encoding::DecodeContext,
-                        state: &::proto_rs::DecodeState<'_>,
+                        __proto_rs_decode_state: &::proto_rs::DecodeState<'_>,
                     ) -> Result<(), ::proto_rs::DecodeError> {
                         let mut shadow = <#name #ty_generics as ::proto_rs::ProtoShadowEncode<'_, #target_ty>>::from_sun(self);
-                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_with_state(&mut shadow, wire_type, buf, ctx, state)?;
+                        <#name #ty_generics as ::proto_rs::ProtoDecoder>::merge_with_state(&mut shadow, wire_type, buf, ctx, __proto_rs_decode_state)?;
                         *self = <#name #ty_generics as ::proto_rs::ProtoShadowDecode<#target_ty>>::to_sun(shadow)?;
                         Ok(())
                     }
@@ -280,10 +280,10 @@ pub(super) fn generate_complex_enum_impl(
 
         impl #impl_generics ::proto_rs::ProtoDecoder for #name #ty_generics #where_clause {
             #[inline]
-            fn finish(&mut self, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
-                if !state.has_data() { return Ok(()); }
+            fn finish(&mut self, __proto_rs_decode_state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                if !__proto_rs_decode_state.has_data() { return Ok(()); }
                 match self { #(#finish_arms),* }
-                if state.pending() {
+                if __proto_rs_decode_state.pending() {
                     #merge_field_validation
                     #merge_message_validation
                 }
@@ -298,15 +298,15 @@ pub(super) fn generate_complex_enum_impl(
                 buf: &mut impl ::proto_rs::bytes::Buf,
                 ctx: ::proto_rs::encoding::DecodeContext,
             ) -> Result<(), ::proto_rs::DecodeError> {
-                let state = ::proto_rs::DecodeState::default();
-                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &state)?;
-                Self::finish(value, &state)
+                let __proto_rs_decode_state = ::proto_rs::DecodeState::default();
+                Self::merge_field_with_state(value, tag, wire_type, buf, ctx, &__proto_rs_decode_state)?;
+                Self::finish(value, &__proto_rs_decode_state)
             }
             #[inline]
             fn merge_field_with_state(
                 value: &mut Self, tag: u32, wire_type: ::proto_rs::encoding::WireType,
                 buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext,
-                state: &::proto_rs::DecodeState<'_>,
+                __proto_rs_decode_state: &::proto_rs::DecodeState<'_>,
             ) -> Result<(), ::proto_rs::DecodeError> {
                 match tag {
                     #(#merge_field_arms,)*
@@ -316,13 +316,13 @@ pub(super) fn generate_complex_enum_impl(
 
             #[inline]
             fn merge(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext) -> Result<(), ::proto_rs::DecodeError> {
-                let state = ::proto_rs::DecodeState::default();
-                self.merge_with_state(wire_type, buf, ctx, &state)?;
-                self.finish(&state)
+                let __proto_rs_decode_state = ::proto_rs::DecodeState::default();
+                self.merge_with_state(wire_type, buf, ctx, &__proto_rs_decode_state)?;
+                self.finish(&__proto_rs_decode_state)
             }
             #[inline]
-            fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
-                self.merge_message_fields(wire_type, buf, ctx, state)?;
+            fn merge_with_state(&mut self, wire_type: ::proto_rs::encoding::WireType, buf: &mut impl ::proto_rs::bytes::Buf, ctx: ::proto_rs::encoding::DecodeContext, __proto_rs_decode_state: &::proto_rs::DecodeState<'_>) -> Result<(), ::proto_rs::DecodeError> {
+                self.merge_message_fields(wire_type, buf, ctx, __proto_rs_decode_state)?;
                 #defer_hooks
                 Ok(())
             }
@@ -843,7 +843,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                     if len != 0 {
                         return Err(::proto_rs::DecodeError::new("expected empty variant payload"));
                     }
-                    state.clear();
+                    __proto_rs_decode_state.clear();
                     *value = #name::#ident;
                     Ok(())
                 }
@@ -857,11 +857,11 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 return quote! {
                     #tag => {
                         if !matches!(value, #name::#ident(_)) {
-                            state.clear();
+                            __proto_rs_decode_state.clear();
                             *value = #name::#ident(#binding_default);
                         }
                         if let #name::#ident(inner) = value {
-                            <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(inner, wire_type, buf, ctx, &state.field(#tag))?;
+                            <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(inner, wire_type, buf, ctx, &__proto_rs_decode_state.field(#tag))?;
                         }
                         Ok(())
                     }
@@ -886,7 +886,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
             } else {
                 let ty = &field.field.field.ty;
                 quote! {
-                    <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #binding_ident, wire_type, buf, ctx, &state.field(#tag))?;
+                    <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #binding_ident, wire_type, buf, ctx, &__proto_rs_decode_state.field(#tag))?;
                 }
             };
 
@@ -925,7 +925,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                 #tag => {
                     let mut #binding_ident = match ::core::mem::replace(value, <Self as ::proto_rs::ProtoDefault>::proto_default()) {
                         #name::#ident(inner) => inner,
-                        _ => { state.clear(); #binding_default }
+                        _ => { __proto_rs_decode_state.clear(); #binding_default }
                     };
                     #decode_stmt
                     #assign_variant
@@ -939,7 +939,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
             let field_inits = quote! {
                 let (#(mut #field_names,)*) = match ::core::mem::replace(value, <Self as ::proto_rs::ProtoDefault>::proto_default()) {
                     #name::#ident { #(#field_names),* } => (#(#field_names,)*),
-                    _ => { state.clear(); (#(#field_defaults,)*) }
+                    _ => { __proto_rs_decode_state.clear(); (#(#field_defaults,)*) }
                 };
             };
             let decode_match = fields
@@ -963,7 +963,7 @@ fn build_variant_merge_arm(name: &Ident, variant: &VariantInfo<'_>) -> TokenStre
                         let ty = &info.field.ty;
                         Some(quote! {
                             #field_tag => {
-                                <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #field_ident, field_wire_type, buf, inner_ctx, &state.field(#tag).field(#field_tag))?;
+                                <#ty as ::proto_rs::ProtoFieldMerge>::merge_value_with_state(&mut #field_ident, field_wire_type, buf, inner_ctx, &__proto_rs_decode_state.field(#tag).field(#field_tag))?;
                             }
                         })
                     }

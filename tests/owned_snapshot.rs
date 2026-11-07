@@ -105,15 +105,9 @@ async fn eager_snapshots_interoperate_over_plain_and_tls_with_gzip() {
                         .await
                         .unwrap();
                 });
-                let channel = proto_rs::grpc::AutoChannel::connect(
-                    endpoint,
-                    proto_rs::grpc::ChannelOptions {
-                        kernel_zero_copy: true,
-                        ..Default::default()
-                    },
-                )
-                .await
-                .unwrap();
+                let channel = proto_rs::grpc::AutoChannel::connect(endpoint, proto_rs::grpc::ChannelOptions { kernel_zero_copy: true, ..Default::default() })
+                    .await
+                    .unwrap();
                 if tls {
                     assert!(channel.fallback_reason().unwrap().contains("TLS"));
                 }
@@ -518,7 +512,10 @@ impl Encoder for MixedEncoder {
 
 #[test]
 fn mixed_buffered_owned_and_error_order_is_preserved() {
-    let owned = Bytes::from_static(&[0, 0, 0, 0, 1, 2]);
+    let mut owned = vec![2; 5 + 65536];
+    owned[..5].copy_from_slice(&[0, 0, 1, 0, 0]);
+    let owned = Bytes::from(owned);
+    let expected = owned.clone();
     let pointer = owned.as_ptr();
     let source = tokio_stream::iter([
         Ok(Mixed::Buffered(vec![1])),
@@ -530,7 +527,7 @@ fn mixed_buffered_owned_and_error_order_is_preserved() {
     assert_eq!(&data_frame(&mut body)[..], &[0, 0, 0, 0, 1, 1]);
     let frame = data_frame(&mut body);
     assert_eq!(frame.as_ptr(), pointer);
-    assert_eq!(&frame[..], &[0, 0, 0, 0, 1, 2]);
+    assert_eq!(frame, expected);
     assert_eq!(&data_frame(&mut body)[..], &[0, 0, 0, 0, 1, 3]);
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
         panic!("missing terminal error")

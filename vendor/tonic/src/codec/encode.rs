@@ -591,11 +591,7 @@ where
                     Some(Ok(Frame::trailers(status.to_header_map()?))).into()
                 }
             },
-            None => self_proj
-                .state
-                .trailers()
-                .map(|t| t.map(Frame::trailers))
-                .into(),
+            None => self_proj.state.trailers().map(|t| t.map(Frame::trailers)).into(),
         }
     }
 }
@@ -603,6 +599,98 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct OwnedEncoder;
+
+    impl Encoder for OwnedEncoder {
+        type Item = super::super::OwnedMessage;
+        type Error = Status;
+
+        fn encode(&mut self, _: Self::Item, _: &mut EncodeBuf<'_>) -> Result<(), Status> {
+            unreachable!("owned messages bypass buffered encoding")
+        }
+
+        fn supports_owned(&self) -> bool {
+            true
+        }
+
+        fn encode_owned(&mut self, item: Self::Item) -> Result<EncodeResult<Self::Item>, Status> {
+            Ok(EncodeResult::Owned(item))
+        }
+    }
+
+    #[tokio::test]
+    async fn segmented_messages_batch_in_order_without_copying_large_payloads() {
+        let small = Bytes::from_static(b"small");
+        let large = Bytes::from(vec![9; 65536]);
+        let suffix = Bytes::from_static(b"suffix");
+        let messages = [
+            super::super::OwnedMessage::from_segments(small.clone(), Bytes::new()),
+            super::super::OwnedMessage::from_segments(small.clone(), Bytes::new()),
+            super::super::OwnedMessage::from_segments(large.clone(), suffix.clone()),
+            super::super::OwnedMessage::from_segments(small, Bytes::new()),
+        ];
+        let mut frames = EncodedBytes::new(
+            OwnedEncoder,
+            tokio_stream::iter(messages),
+            None,
+            SingleMessageCompressionOverride::Inherit,
+            None,
+        );
+        let mut chunks = Vec::new();
+        while let Some(frame) = frames.next().await {
+            chunks.push(frame.unwrap());
+        }
+        assert_eq!(chunks.len(), 6);
+        assert_eq!(chunks[2].as_ptr(), large.as_ptr());
+        let mut wire = Bytes::from(chunks.concat());
+        let mut payloads = Vec::new();
+        while wire.has_remaining() {
+            assert_eq!(wire.get_u8(), 0);
+            let len = wire.get_u32() as usize;
+            payloads.push(wire.split_to(len));
+        }
+        assert_eq!(payloads.len(), 4);
+        assert_eq!(payloads[0].as_ref(), b"small");
+        assert_eq!(payloads[1].as_ref(), b"small");
+        assert_eq!(payloads[2].as_ref(), [large.as_ref(), suffix.as_ref()].concat());
+        assert_eq!(payloads[3].as_ref(), b"small");
+    }
+
+    #[cfg(feature = "gzip")]
+    #[tokio::test]
+    async fn cached_segmented_gzip_roundtrips_and_checks_each_subscribers_limit() {
+        use std::io::Read;
+        let message = super::super::OwnedMessage::from_segments(
+            Bytes::from(vec![42; 4096]), Bytes::from_static(b"suffix"),
+        ).unwrap().with_compression_cache();
+        let mut cached_frame: Option<Bytes> = None;
+        for limit in [None, None, Some(1)] {
+            let mut frames = EncodedBytes::new(
+                OwnedEncoder,
+                tokio_stream::iter([Ok(message.clone())]),
+                Some(CompressionEncoding::Gzip),
+                SingleMessageCompressionOverride::Inherit,
+                limit,
+            );
+            let frame = frames.next().await.unwrap();
+            if limit.is_some() {
+                assert_eq!(frame.unwrap_err().code(), crate::Code::OutOfRange);
+                continue;
+            }
+            let frame = frame.unwrap();
+            assert_eq!(frame[0], 1);
+            assert_eq!(u32::from_be_bytes(frame[1..5].try_into().unwrap()) as usize, frame.len() - 5);
+            let mut decoded = Vec::new();
+            flate2::read::GzDecoder::new(&frame[5..]).read_to_end(&mut decoded).unwrap();
+            assert_eq!(decoded, [vec![42; 4096], b"suffix".to_vec()].concat());
+            if let Some(previous) = &cached_frame {
+                assert_eq!(frame.as_ptr(), previous.as_ptr());
+            }
+            cached_frame = Some(frame);
+            assert!(frames.next().await.is_none());
+        }
+    }
 
     struct PartialEncoder;
 

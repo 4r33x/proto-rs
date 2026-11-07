@@ -25,7 +25,7 @@
 - Use repeated-varint encoding for byte-valued sets and wrapped u8 elements rather than treating them as raw byte buffers. Regenerate affected schemas and clients, and coordinate upgrades with peers or stored data using the previous representation.
 
 ### Correctness and interoperability
-
+- Update Solana dependencies and add borrowed-encoding protobuf adapters for legacy, V0, and V1 messages/transactions (`solana-message` / `solana-transaction` 5.1), including optional V1 configuration. Preserve existing error tags and add the previously unmapped instruction `BailOut` and new transaction `BailOut` variants.
 - Replace byte-container layout casts with safe byte access hooks.
 - Fix split packed/unpacked fixed arrays, including nested message occurrences, and merge repeated message-valued oneof variants.
 - Release mutex encoding guards between fields so aliased mutex fields do not deadlock.

@@ -290,10 +290,10 @@ fn compress_gzip(mut input: impl Buf, output: &mut BytesMut) -> std::io::Result<
     COMPRESSOR.with(|slot| {
         // Custom Buf implementations may reenter compression.
         let Ok(mut slot) = slot.try_borrow_mut() else {
-            return compress(&mut Compressor::new(CompressionLvl::fastest()), output);
+            return compress(&mut Compressor::new(CompressionLvl::new(1).expect("libdeflate supports level 1")), output);
         };
         compress(
-            slot.get_or_insert_with(|| Compressor::new(CompressionLvl::fastest())),
+            slot.get_or_insert_with(|| Compressor::new(CompressionLvl::new(1).expect("libdeflate supports level 1"))),
             output,
         )
     })
@@ -378,6 +378,41 @@ pub enum SingleMessageCompressionOverride {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(all(feature = "gzip", feature = "deflate", feature = "zstd"))]
+    fn segmented_inputs_roundtrip_with_each_compressor() {
+        use std::io::Read;
+        for encoding in [
+            CompressionEncoding::Gzip,
+            CompressionEncoding::Deflate,
+            CompressionEncoding::Zstd,
+        ] {
+            for len in [0, 4096, 17] {
+                let body = vec![42; len];
+                let suffix = b"suffix";
+                let mut compressed = BytesMut::new();
+                compress_buf(
+                    CompressionSettings { encoding, buffer_growth_interval: 32 },
+                    bytes::Buf::chain(body.as_slice(), suffix.as_slice()),
+                    &mut compressed,
+                ).unwrap();
+                let mut decoded = Vec::new();
+                match encoding {
+                    CompressionEncoding::Gzip => {
+                        flate2::read::GzDecoder::new(compressed.as_ref()).read_to_end(&mut decoded).unwrap();
+                    }
+                    CompressionEncoding::Deflate => {
+                        flate2::read::ZlibDecoder::new(compressed.as_ref()).read_to_end(&mut decoded).unwrap();
+                    }
+                    CompressionEncoding::Zstd => {
+                        zstd::stream::read::Decoder::new(compressed.as_ref()).unwrap().read_to_end(&mut decoded).unwrap();
+                    }
+                }
+                assert_eq!(decoded, [body.as_slice(), suffix].concat());
+            }
+        }
+    }
+
     #[cfg(any(feature = "gzip", feature = "deflate", feature = "zstd"))]
     use http::HeaderValue;
 

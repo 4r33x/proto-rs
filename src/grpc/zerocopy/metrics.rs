@@ -61,7 +61,7 @@ impl ZeroCopyChannelMetrics {
         }
     }
 
-    /// Register a custom-transport connection exactly once for cumulative metrics.
+    /// Include a connection in the aggregate counters. Register each connection only once.
     pub fn register(&self, metrics: ZeroCopyMetrics) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.collect();

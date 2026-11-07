@@ -76,6 +76,39 @@ fn fresh_encoders_share_the_warmed_tls_pool() {
     );
 }
 
+#[cfg(feature = "solana")]
+#[test]
+fn v1_owned_encoding_does_not_clone_payload_collections() {
+    use proto_rs::ProtoEncode;
+    use solana_message::VersionedMessage;
+    use solana_message::compiled_instruction::CompiledInstruction;
+    use solana_message::v1;
+    use solana_transaction::versioned::VersionedTransaction;
+
+    let transaction = VersionedTransaction {
+        signatures: vec![solana_signature::Signature::from([7; 64])],
+        message: VersionedMessage::V1(v1::Message {
+            account_keys: vec![solana_address::Address::new_from_array([1; 32]); 4],
+            instructions: vec![CompiledInstruction {
+                program_id_index: 0,
+                accounts: vec![1, 2, 3],
+                data: vec![42; 2048],
+            }],
+            ..Default::default()
+        }),
+    };
+    drop(transaction.to_encoded_snapshot());
+    assert_eq!(
+        count_allocations(|| {
+            for _ in 0..100 {
+                drop(transaction.to_encoded_snapshot());
+            }
+        }),
+        100,
+        "only Bytes ownership metadata should allocate, not signatures, accounts or instructions"
+    );
+}
+
 #[tokio::test]
 async fn multiple_generated_clients_and_servers_need_no_pool_handles() {
     for _ in 0..6 {
