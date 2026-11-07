@@ -187,11 +187,11 @@ where
 
     pub(crate) fn graceful_shutdown(&mut self) {
         trace!("graceful_shutdown");
-        match self.state {
+        match &mut self.state {
             State::Handshaking { .. } => {
                 self.close_pending = true;
             }
-            State::Serving(ref mut srv) => {
+            State::Serving(srv) => {
                 if srv.closing.is_none() {
                     srv.conn.graceful_shutdown();
                 }
@@ -213,11 +213,8 @@ where
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let me = &mut *self;
         loop {
-            let next = match me.state {
-                State::Handshaking {
-                    ref mut hs,
-                    ref ping_config,
-                } => {
+            let next = match &mut me.state {
+                State::Handshaking { hs, ping_config } => {
                     let mut conn = ready!(Pin::new(hs).poll(cx).map_err(crate::Error::new_h2))?;
                     let ping = if ping_config.is_enabled() {
                         let pp = conn.ping_pong().expect("conn.ping_pong");
@@ -232,7 +229,7 @@ where
                         date_header: me.date_header,
                     })
                 }
-                State::Serving(ref mut srv) => {
+                State::Serving(srv) => {
                     // graceful_shutdown was called before handshaking finished,
                     if me.close_pending && srv.closing.is_none() {
                         srv.conn.graceful_shutdown();
@@ -273,8 +270,7 @@ where
                         let ping = self
                             .ping
                             .as_ref()
-                            .map(|ping| ping.0.clone())
-                            .unwrap_or_else(ping::disabled);
+                            .map_or_else(ping::disabled, |ping| ping.0.clone());
 
                         // Record the headers received
                         ping.record_non_data();
@@ -327,7 +323,7 @@ where
                     }
                     None => {
                         // no more incoming streams...
-                        if let Some((ref ping, _)) = self.ping {
+                        if let Some((ping, _)) = &self.ping {
                             ping.ensure_not_timed_out()?;
                         }
 
@@ -349,7 +345,7 @@ where
     }
 
     fn poll_ping(&mut self, cx: &mut Context<'_>) {
-        if let Some((_, ref mut estimator)) = self.ping {
+        if let Some((_, estimator)) = &mut self.ping {
             match estimator.poll(cx) {
                 Poll::Ready(ping::Ponged::SizeUpdate(wnd)) => {
                     self.conn.set_target_window_size(wnd);

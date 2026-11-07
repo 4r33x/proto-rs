@@ -132,7 +132,7 @@ impl Encoder {
         let len = msg.remaining();
         debug_assert!(len > 0, "encode() called with empty buf");
 
-        let kind = match self.kind {
+        let kind = match &mut self.kind {
             Kind::Chunked(_) => {
                 trace!("encoding chunked {}B", len);
                 let buf = ChunkSize::new(len)
@@ -140,15 +140,20 @@ impl Encoder {
                     .chain(b"\r\n" as &'static [u8]);
                 BufKind::Chunked(buf)
             }
-            Kind::Length(ref mut remaining) => {
+            Kind::Length(remaining) => {
                 trace!("sized write, len = {}", len);
-                if len as u64 > *remaining {
-                    let limit = *remaining as usize;
-                    *remaining = 0;
-                    BufKind::Limited(msg.take(limit))
-                } else {
-                    *remaining -= len as u64;
-                    BufKind::Exact(msg)
+                match usize::try_from(*remaining) {
+                    // Holding more than is owed, so write only what is left.
+                    Ok(limit) if limit < len => {
+                        *remaining = 0;
+                        BufKind::Limited(msg.take(limit))
+                    }
+                    // Ok(_) => Owed at least what we hold, write all of it.
+                    // Err(_) => Owed more than `usize` can represent, write all of it.
+                    Ok(_) | Err(_) => {
+                        *remaining -= len as u64;
+                        BufKind::Exact(msg)
+                    }
                 }
             }
             #[cfg(feature = "server")]
@@ -241,6 +246,7 @@ impl Encoder {
                         dst.buffer(msg);
                         !self.is_last
                     }
+                    #[allow(clippy::cast_possible_truncation)]
                     Ordering::Greater => {
                         dst.buffer(msg.take(remaining as usize));
                         !self.is_last
@@ -285,54 +291,50 @@ where
 {
     #[inline]
     fn remaining(&self) -> usize {
-        match self.kind {
-            BufKind::Exact(ref b) => b.remaining(),
-            BufKind::Limited(ref b) => b.remaining(),
-            BufKind::Chunked(ref b) => b.remaining(),
-            BufKind::ChunkedEnd(ref b) => b.remaining(),
-            BufKind::Trailers(ref b) => b.remaining(),
+        match &self.kind {
+            BufKind::Exact(b) => b.remaining(),
+            BufKind::Limited(b) => b.remaining(),
+            BufKind::Chunked(b) => b.remaining(),
+            BufKind::ChunkedEnd(b) => b.remaining(),
+            BufKind::Trailers(b) => b.remaining(),
         }
     }
 
     #[inline]
     fn chunk(&self) -> &[u8] {
-        match self.kind {
-            BufKind::Exact(ref b) => b.chunk(),
-            BufKind::Limited(ref b) => b.chunk(),
-            BufKind::Chunked(ref b) => b.chunk(),
-            BufKind::ChunkedEnd(ref b) => b.chunk(),
-            BufKind::Trailers(ref b) => b.chunk(),
+        match &self.kind {
+            BufKind::Exact(b) => b.chunk(),
+            BufKind::Limited(b) => b.chunk(),
+            BufKind::Chunked(b) => b.chunk(),
+            BufKind::ChunkedEnd(b) => b.chunk(),
+            BufKind::Trailers(b) => b.chunk(),
         }
     }
 
     #[inline]
     fn advance(&mut self, cnt: usize) {
-        match self.kind {
-            BufKind::Exact(ref mut b) => b.advance(cnt),
-            BufKind::Limited(ref mut b) => b.advance(cnt),
-            BufKind::Chunked(ref mut b) => b.advance(cnt),
-            BufKind::ChunkedEnd(ref mut b) => b.advance(cnt),
-            BufKind::Trailers(ref mut b) => b.advance(cnt),
+        match &mut self.kind {
+            BufKind::Exact(b) => b.advance(cnt),
+            BufKind::Limited(b) => b.advance(cnt),
+            BufKind::Chunked(b) => b.advance(cnt),
+            BufKind::ChunkedEnd(b) => b.advance(cnt),
+            BufKind::Trailers(b) => b.advance(cnt),
         }
     }
 
     #[inline]
-    fn chunks_vectored<'t>(&'t self, dst: &mut [IoSlice<'t>]) -> usize {
-        match self.kind {
-            BufKind::Exact(ref b) => b.chunks_vectored(dst),
-            BufKind::Limited(ref b) => b.chunks_vectored(dst),
-            BufKind::Chunked(ref b) => b.chunks_vectored(dst),
-            BufKind::ChunkedEnd(ref b) => b.chunks_vectored(dst),
-            BufKind::Trailers(ref b) => b.chunks_vectored(dst),
+    fn chunks_vectored<'data>(&'data self, dst: &mut [IoSlice<'data>]) -> usize {
+        match &self.kind {
+            BufKind::Exact(b) => b.chunks_vectored(dst),
+            BufKind::Limited(b) => b.chunks_vectored(dst),
+            BufKind::Chunked(b) => b.chunks_vectored(dst),
+            BufKind::ChunkedEnd(b) => b.chunks_vectored(dst),
+            BufKind::Trailers(b) => b.chunks_vectored(dst),
         }
     }
 }
 
-#[cfg(target_pointer_width = "32")]
-const USIZE_BYTES: usize = 4;
-
-#[cfg(target_pointer_width = "64")]
-const USIZE_BYTES: usize = 8;
+const USIZE_BYTES: usize = std::mem::size_of::<usize>();
 
 // each byte will become 2 hex
 const CHUNK_SIZE_MAX_BYTES: usize = USIZE_BYTES * 2;
@@ -369,6 +371,7 @@ impl Buf for ChunkSize {
     }
 
     #[inline]
+    #[allow(clippy::cast_possible_truncation)]
     fn advance(&mut self, cnt: usize) {
         assert!(cnt <= self.remaining());
         self.pos += cnt as u8; // just asserted cnt fits in u8
@@ -385,12 +388,14 @@ impl fmt::Debug for ChunkSize {
 }
 
 impl fmt::Write for ChunkSize {
+    #[allow(clippy::cast_possible_truncation)]
     fn write_str(&mut self, num: &str) -> fmt::Result {
         use std::io::Write;
         (&mut self.bytes[self.len.into()..])
             .write_all(num.as_bytes())
             .expect("&mut [u8].write() cannot error");
-        self.len += num.len() as u8; // safe because bytes is never bigger than 256
+        debug_assert!(u8::try_from(num.len()).is_ok());
+        self.len += num.len() as u8; // safe because bytes is never bigger than 255
         Ok(())
     }
 }
