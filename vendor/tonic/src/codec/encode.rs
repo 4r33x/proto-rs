@@ -391,7 +391,7 @@ fn encode_owned_message(
     max_message_size: Option<usize>,
     buffer_settings: BufferSettings,
 ) -> Poll<Result<Bytes, Status>> {
-    let compress = || {
+    let mut compress = || {
         let mut frame = BytesMut::new();
         frame.extend_from_slice(&[0; HEADER_SIZE]);
         compress_buf(
@@ -407,10 +407,16 @@ fn encode_owned_message(
         Ok(frame.freeze())
     };
     let frame = match &message.compressed {
-        Some(cache) => std::task::ready!(cache[encoding as usize].poll_frame(cx, compress)),
+        Some(cache) => std::task::ready!(cache.poll_frame(encoding, cx, &mut compress)),
         None => compress(),
     };
     Poll::Ready(frame.and_then(|frame| {
+        if frame.len() < HEADER_SIZE
+            || frame[0] != 1
+            || u32::from_be_bytes(frame[1..HEADER_SIZE].try_into().unwrap()) as usize != frame.len() - HEADER_SIZE
+        {
+            return Err(Status::internal("invalid cached compressed gRPC frame"));
+        }
         check_message_size(frame.len() - HEADER_SIZE, max_message_size)?;
         Ok(frame)
     }))
@@ -721,13 +727,27 @@ mod tests {
         assert_eq!(payloads[3].as_ref(), b"small");
     }
 
+    #[derive(Debug, Default)]
+    struct TestCache(std::sync::OnceLock<Result<Bytes, Status>>);
+
+    impl super::super::CompressionCache for TestCache {
+        fn poll_frame(
+            &self,
+            _: CompressionEncoding,
+            _: &mut Context<'_>,
+            compress: &mut dyn FnMut() -> Result<Bytes, Status>,
+        ) -> Poll<Result<Bytes, Status>> {
+            Poll::Ready(self.0.get_or_init(compress).clone())
+        }
+    }
+
     #[cfg(feature = "gzip")]
     #[tokio::test]
     async fn cached_segmented_gzip_roundtrips_and_checks_each_subscribers_limit() {
         use std::io::Read;
         let message = super::super::OwnedMessage::from_segments(
             Bytes::from(vec![42; 4096]), Bytes::from_static(b"suffix"),
-        ).unwrap().with_compression_cache();
+        ).unwrap().with_compression_cache(TestCache::default());
         let mut cached_frame: Option<Bytes> = None;
         for limit in [None, None, Some(1)] {
             let mut frames = EncodedBytes::new(
@@ -753,6 +773,66 @@ mod tests {
             }
             cached_frame = Some(frame);
             assert!(frames.next().await.is_none());
+        }
+    }
+
+    #[cfg(feature = "gzip")]
+    #[test]
+    fn default_messages_are_uncached_and_application_hooks_can_suspend() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        #[derive(Debug, Default)]
+        struct Deferred(AtomicBool);
+        impl super::super::CompressionCache for Deferred {
+            fn poll_frame(
+                &self,
+                _: CompressionEncoding,
+                cx: &mut Context<'_>,
+                compress: &mut dyn FnMut() -> Result<Bytes, Status>,
+            ) -> Poll<Result<Bytes, Status>> {
+                if !self.0.swap(true, Ordering::Relaxed) {
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
+                Poll::Ready(compress())
+            }
+        }
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        let message = super::super::OwnedMessage::from_segments(Bytes::from_static(b"payload"), Bytes::new()).unwrap();
+        let mut encode = |message: &super::super::OwnedMessage| {
+            encode_owned_message(message, &mut cx, CompressionEncoding::Gzip, None, BufferSettings::default())
+        };
+        let Poll::Ready(Ok(first)) = encode(&message) else { panic!("uncached compression must be ready") };
+        let Poll::Ready(Ok(second)) = encode(&message.clone()) else { panic!("uncached compression must be ready") };
+        assert_eq!(first, second);
+        assert_ne!(first.as_ptr(), second.as_ptr());
+        let deferred = message.with_compression_cache(Deferred::default());
+        assert!(encode(&deferred).is_pending());
+        assert!(matches!(encode(&deferred), Poll::Ready(Ok(frame)) if frame == first));
+    }
+
+    #[cfg(feature = "gzip")]
+    #[test]
+    fn application_cache_cannot_return_invalid_grpc_frames() {
+        #[derive(Debug)]
+        struct Invalid(&'static [u8]);
+        impl super::super::CompressionCache for Invalid {
+            fn poll_frame(
+                &self,
+                _: CompressionEncoding,
+                _: &mut Context<'_>,
+                _: &mut dyn FnMut() -> Result<Bytes, Status>,
+            ) -> Poll<Result<Bytes, Status>> {
+                Poll::Ready(Ok(Bytes::from_static(self.0)))
+            }
+        }
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        for frame in [&b""[..], &[0, 0, 0, 0, 0], &[1, 0, 0, 0, 1]] {
+            let message = super::super::OwnedMessage::from_segments(Bytes::new(), Bytes::new()).unwrap()
+                .with_compression_cache(Invalid(frame));
+            assert!(matches!(
+                encode_owned_message(&message, &mut cx, CompressionEncoding::Gzip, None, BufferSettings::default()),
+                Poll::Ready(Err(status)) if status.code() == crate::Code::Internal
+            ));
         }
     }
 

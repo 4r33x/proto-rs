@@ -25,7 +25,7 @@
 use crate::{Status, metadata::MetadataValue};
 use bytes::{Buf, BufMut, BytesMut};
 #[cfg(feature = "gzip")]
-use flate2::read::GzDecoder;
+use flate2::{bufread::GzEncoder, read::GzDecoder};
 #[cfg(feature = "deflate")]
 use flate2::{bufread::ZlibEncoder, read::ZlibDecoder};
 use std::{borrow::Cow, fmt};
@@ -244,110 +244,39 @@ pub(crate) fn compress(
     Ok(())
 }
 
-/// Compress an immutable owned-message payload. Gzip joins segmented input
-/// for its whole-message compressor; other encodings read the segments directly.
+/// Compress a payload without requiring its segments to be joined.
 #[allow(unused_variables, unreachable_code)]
 pub(crate) fn compress_buf(
     settings: CompressionSettings,
     decompressed_buf: impl Buf,
     out_buf: &mut BytesMut,
 ) -> Result<(), std::io::Error> {
-    let growth = settings
-        .buffer_growth_interval
-        .max(1)
-        .min(decompressed_buf.remaining().saturating_add(128));
+    let len = decompressed_buf.remaining();
+    let interval = settings.buffer_growth_interval;
+    let capacity = ((len / interval) + 1) * interval;
+    out_buf.reserve(capacity);
+
+    #[cfg(any(feature = "gzip", feature = "deflate", feature = "zstd"))]
+    let mut out_writer = out_buf.writer();
 
     match settings.encoding {
         #[cfg(feature = "gzip")]
         CompressionEncoding::Gzip => {
-            compress_gzip(decompressed_buf, out_buf)?;
+            let mut encoder = GzEncoder::new(decompressed_buf.reader(), flate2::Compression::new(6));
+            std::io::copy(&mut encoder, &mut out_writer)?;
         }
         #[cfg(feature = "deflate")]
         CompressionEncoding::Deflate => {
-            let mut deflate_encoder = ZlibEncoder::new(
-                decompressed_buf.reader(),
-                // FIXME: support customizing the compression level
-                flate2::Compression::new(6),
-            );
-            read_compressed(&mut deflate_encoder, out_buf, growth)?;
+            let mut encoder = ZlibEncoder::new(decompressed_buf.reader(), flate2::Compression::new(6));
+            std::io::copy(&mut encoder, &mut out_writer)?;
         }
         #[cfg(feature = "zstd")]
         CompressionEncoding::Zstd => {
-            let mut zstd_encoder = Encoder::with_buffer(
-                decompressed_buf.reader(),
-                // FIXME: support customizing the compression level
-                zstd::DEFAULT_COMPRESSION_LEVEL,
-            )?;
-            read_compressed(&mut zstd_encoder, out_buf, growth)?;
+            let mut encoder = Encoder::with_buffer(decompressed_buf.reader(), zstd::DEFAULT_COMPRESSION_LEVEL)?;
+            std::io::copy(&mut encoder, &mut out_writer)?;
         }
     }
-
     Ok(())
-}
-
-#[cfg(feature = "gzip")]
-fn compress_gzip(mut input: impl Buf, output: &mut BytesMut) -> std::io::Result<()> {
-    use libdeflater::{CompressionLvl, Compressor};
-    thread_local! {
-        static COMPRESSOR: std::cell::RefCell<Option<Compressor>> = const { std::cell::RefCell::new(None) };
-    }
-    let mut compress = |compressor: &mut Compressor, output: &mut BytesMut| {
-        let length = input.remaining();
-        let bound = compressor.gzip_compress_bound(length);
-        let start = output.len();
-        let end = start
-            .checked_add(bound)
-            .ok_or_else(|| std::io::Error::other("gzip output size overflow"))?;
-        output.resize(end, 0);
-        let result = if input.chunk().len() == length {
-            compressor.gzip_compress(input.chunk(), &mut output[start..])
-        } else {
-            // The bulk body and small filter suffix must form one gzip member.
-            let joined = input.copy_to_bytes(length);
-            compressor.gzip_compress(&joined, &mut output[start..])
-        };
-        match result {
-            Ok(written) => {
-                output.truncate(start + written);
-                Ok(())
-            }
-            Err(error) => {
-                output.truncate(start);
-                Err(std::io::Error::other(error))
-            }
-        }
-    };
-    COMPRESSOR.with(|slot| {
-        // Custom Buf implementations may reenter compression.
-        let Ok(mut slot) = slot.try_borrow_mut() else {
-            return compress(&mut Compressor::new(CompressionLvl::new(1).expect("libdeflate supports level 1")), output);
-        };
-        compress(
-            slot.get_or_insert_with(|| Compressor::new(CompressionLvl::new(1).expect("libdeflate supports level 1"))),
-            output,
-        )
-    })
-}
-
-// Read directly into the final allocation, without io::copy's staging buffer.
-#[cfg(any(feature = "deflate", feature = "zstd"))]
-fn read_compressed(
-    reader: &mut impl std::io::Read,
-    out: &mut BytesMut,
-    growth: usize,
-) -> std::io::Result<()> {
-    loop {
-        let start = out.len();
-        out.resize(start + growth, 0);
-        let result = reader.read(&mut out[start..]);
-        out.truncate(start + result.as_ref().copied().unwrap_or(0));
-        match result {
-            Ok(0) => return Ok(()),
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
-        }
-    }
 }
 
 /// Decompress `len` bytes from `compressed_buf` into `out_buf`.

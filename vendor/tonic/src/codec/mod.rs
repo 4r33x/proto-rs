@@ -211,53 +211,23 @@ pub enum EncodeResult<T> {
 #[derive(Debug, Clone)]
 pub struct OwnedMessage {
     frames: [bytes::Bytes; 3],
-    compressed: Option<std::sync::Arc<[CompressionCache; 3]>>,
+    compressed: Option<std::sync::Arc<dyn CompressionCache>>,
 }
 
-#[derive(Debug, Default)]
-struct CompressionCache {
-    frame: std::sync::OnceLock<Result<bytes::Bytes, Status>>,
-    waiters: std::sync::Mutex<Option<Vec<std::task::Waker>>>,
-}
-
-struct CompressionCompletion<'a>(&'a CompressionCache);
-
-impl Drop for CompressionCompletion<'_> {
-    fn drop(&mut self) {
-        let waiters = self.0.waiters.lock().unwrap().take().unwrap();
-        for waiter in waiters {
-            waiter.wake();
-        }
-    }
-}
-
-impl CompressionCache {
+/// Optional cache for the compressed frames of one immutable message.
+///
+/// Each result must be a complete gRPC frame for the requested encoding. Do not
+/// share a cache between different payloads. Call `compress` at most once per poll;
+/// it cannot be retained after this call. Returning `Pending` requires arranging
+/// for `cx.waker()` to be woken when another poll can make progress.
+pub trait CompressionCache: std::fmt::Debug + Send + Sync {
+    /// Return a cached frame or produce one using Tonic's configured compressor.
     fn poll_frame(
         &self,
+        encoding: CompressionEncoding,
         cx: &mut std::task::Context<'_>,
-        compress: impl FnOnce() -> Result<bytes::Bytes, Status>,
-    ) -> std::task::Poll<Result<bytes::Bytes, Status>> {
-        use std::task::Poll;
-        if let Some(frame) = self.frame.get() {
-            return Poll::Ready(frame.clone());
-        }
-        let mut state = self.waiters.lock().unwrap();
-        // Completion can race with acquiring the waiter registration lock.
-        if let Some(frame) = self.frame.get() {
-            return Poll::Ready(frame.clone());
-        }
-        if let Some(waiters) = state.as_mut() {
-            if !waiters.iter().any(|waker| waker.will_wake(cx.waker())) {
-                waiters.push(cx.waker().clone());
-            }
-            return Poll::Pending;
-        }
-        *state = Some(Vec::new());
-        drop(state);
-        // Release and wake waiters even if compression unwinds.
-        let _completion = CompressionCompletion(self);
-        Poll::Ready(self.frame.get_or_init(compress).clone())
-    }
+        compress: &mut dyn FnMut() -> Result<bytes::Bytes, Status>,
+    ) -> std::task::Poll<Result<bytes::Bytes, Status>>;
 }
 
 impl OwnedMessage {
@@ -295,12 +265,10 @@ impl OwnedMessage {
         })
     }
 
-    /// Cache compression once per encoding across clones of this message.
-    /// Entries live only as long as the shared message; compression settings are fixed.
-    pub fn with_compression_cache(mut self) -> Self {
-        self.compressed.get_or_insert_with(|| {
-            std::sync::Arc::new(std::array::from_fn(|_| CompressionCache::default()))
-        });
+    /// Attach an application cache, shared by clones of this message.
+    /// Messages have no compression cache by default.
+    pub fn with_compression_cache<C: CompressionCache + 'static>(mut self, cache: C) -> Self {
+        self.compressed = Some(std::sync::Arc::new(cache));
         self
     }
 
@@ -335,66 +303,5 @@ pub trait Decoder {
     /// Controls how tonic creates and expands decode buffers.
     fn buffer_settings(&self) -> BufferSettings {
         BufferSettings::default()
-    }
-}
-
-#[cfg(test)]
-mod compression_cache_tests {
-    use super::CompressionCache;
-    use std::{
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-            mpsc,
-        },
-        task::{Context, Wake, Waker},
-    };
-
-    #[derive(Default)]
-    struct WakeCount(AtomicUsize);
-
-    impl Wake for WakeCount {
-        fn wake(self: Arc<Self>) {
-            self.0.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-
-    #[test]
-    fn compression_cache_recovers_after_producer_panics() {
-        let cache = Arc::new(CompressionCache::default());
-        let (started_tx, started_rx) = mpsc::channel();
-        let (release_tx, release_rx) = mpsc::channel();
-        let producer_cache = cache.clone();
-        let producer = std::thread::spawn(move || {
-            let waker = Waker::from(Arc::new(WakeCount::default()));
-            producer_cache.poll_frame(&mut Context::from_waker(&waker), || {
-                started_tx.send(()).unwrap();
-                release_rx.recv().unwrap();
-                panic!("compression failed");
-            })
-        });
-        started_rx.recv().unwrap();
-        let wakes = Arc::new(WakeCount::default());
-        let waker = Waker::from(wakes.clone());
-        let mut cx = Context::from_waker(&waker);
-        for _ in 0..2 {
-            assert!(
-                cache
-                    .poll_frame(&mut cx, || panic!("another producer started"))
-                    .is_pending()
-            );
-        }
-        release_tx.send(()).unwrap();
-        assert!(producer.join().is_err());
-        assert_eq!(wakes.0.load(Ordering::Relaxed), 1);
-        let frame = bytes::Bytes::from_static(b"recovered");
-        assert!(matches!(
-            cache.poll_frame(&mut cx, || Ok(frame.clone())),
-            std::task::Poll::Ready(Ok(ref value)) if value == &frame
-        ));
-        assert!(matches!(
-            cache.poll_frame(&mut cx, || panic!("cached frame recompressed")),
-            std::task::Poll::Ready(Ok(ref value)) if value == &frame
-        ));
     }
 }

@@ -40,12 +40,11 @@ Local changes:
   segments. Large messages keep their shared payload allocations; ready messages
   below 32 KiB are coalesced, while singleton messages remain owned.
   The body preserves message order and flushes complete messages before errors.
-  `with_compression_cache` shares compressed frames across message clones,
-  wakes concurrent waiters, and applies each subscriber's size limit.
-  Gzip uses a reusable libdeflate compressor at level 1 instead of
-  flate2 level 6; this trades compression ratio for speed and adds a C dependency.
-  Segmented gzip input is joined before compression. Deflate and zstd read
-  segments directly.
+  `with_compression_cache(cache)` accepts an application-defined `CompressionCache`;
+  messages are uncached by default. Tonic validates cached frames and applies
+  each subscriber's size limit. Cache storage and synchronization live in the
+  application. Compression uses the standard flate2/zstd backends and levels;
+  their readers consume the protobuf segments without joining them.
   The separate `supports_owned_batch`/`encode_owned_batch` hooks let ordinary
   codecs drain ready inputs into an uncompressed batch with per-message limits.
 
