@@ -61,7 +61,8 @@ impl ZeroCopyChannelMetrics {
         }
     }
 
-    pub(super) fn register(&self, metrics: ZeroCopyMetrics) {
+    /// Include a connection in the aggregate counters. Register each connection only once.
+    pub fn register(&self, metrics: ZeroCopyMetrics) {
         let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         state.collect();
         state.connections += 1;

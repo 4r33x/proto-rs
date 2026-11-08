@@ -1,9 +1,33 @@
+/*
+ *
+ * Copyright 2025 gRPC authors.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ *
+ */
+
 use crate::{Status, metadata::MetadataValue};
 use bytes::{Buf, BufMut, BytesMut};
 #[cfg(feature = "gzip")]
-use flate2::read::{GzDecoder, GzEncoder};
+use flate2::{bufread::GzEncoder, read::GzDecoder};
 #[cfg(feature = "deflate")]
-use flate2::read::{ZlibDecoder, ZlibEncoder};
+use flate2::{bufread::ZlibEncoder, read::ZlibDecoder};
 use std::{borrow::Cow, fmt};
 #[cfg(feature = "zstd")]
 use zstd::stream::read::{Decoder, Encoder};
@@ -118,11 +142,17 @@ impl CompressionEncoding {
 
         split_by_comma(header_value_str).find_map(|value| match value {
             #[cfg(feature = "gzip")]
-            "gzip" => Some(CompressionEncoding::Gzip),
+            "gzip" if enabled_encodings.is_enabled(CompressionEncoding::Gzip) => {
+                Some(CompressionEncoding::Gzip)
+            }
             #[cfg(feature = "deflate")]
-            "deflate" => Some(CompressionEncoding::Deflate),
+            "deflate" if enabled_encodings.is_enabled(CompressionEncoding::Deflate) => {
+                Some(CompressionEncoding::Deflate)
+            }
             #[cfg(feature = "zstd")]
-            "zstd" => Some(CompressionEncoding::Zstd),
+            "zstd" if enabled_encodings.is_enabled(CompressionEncoding::Zstd) => {
+                Some(CompressionEncoding::Zstd)
+            }
             _ => None,
         })
     }
@@ -209,21 +239,21 @@ pub(crate) fn compress(
     out_buf: &mut BytesMut,
     len: usize,
 ) -> Result<(), std::io::Error> {
-    compress_slice(settings, &decompressed_buf[..len], out_buf)?;
+    compress_buf(settings, &decompressed_buf[..len], out_buf)?;
     decompressed_buf.advance(len);
     Ok(())
 }
 
-/// Compress an immutable owned-message payload without an intermediate copy.
+/// Compress a payload without requiring its segments to be joined.
 #[allow(unused_variables, unreachable_code)]
-pub(crate) fn compress_slice(
+pub(crate) fn compress_buf(
     settings: CompressionSettings,
-    decompressed_buf: &[u8],
+    decompressed_buf: impl Buf,
     out_buf: &mut BytesMut,
 ) -> Result<(), std::io::Error> {
-    let len = decompressed_buf.len();
-    let buffer_growth_interval = settings.buffer_growth_interval;
-    let capacity = ((len / buffer_growth_interval) + 1) * buffer_growth_interval;
+    let len = decompressed_buf.remaining();
+    let interval = settings.buffer_growth_interval;
+    let capacity = ((len / interval) + 1) * interval;
     out_buf.reserve(capacity);
 
     #[cfg(any(feature = "gzip", feature = "deflate", feature = "zstd"))]
@@ -232,33 +262,20 @@ pub(crate) fn compress_slice(
     match settings.encoding {
         #[cfg(feature = "gzip")]
         CompressionEncoding::Gzip => {
-            let mut gzip_encoder = GzEncoder::new(
-                &decompressed_buf[0..len],
-                // FIXME: support customizing the compression level
-                flate2::Compression::new(6),
-            );
-            std::io::copy(&mut gzip_encoder, &mut out_writer)?;
+            let mut encoder = GzEncoder::new(decompressed_buf.reader(), flate2::Compression::new(6));
+            std::io::copy(&mut encoder, &mut out_writer)?;
         }
         #[cfg(feature = "deflate")]
         CompressionEncoding::Deflate => {
-            let mut deflate_encoder = ZlibEncoder::new(
-                &decompressed_buf[0..len],
-                // FIXME: support customizing the compression level
-                flate2::Compression::new(6),
-            );
-            std::io::copy(&mut deflate_encoder, &mut out_writer)?;
+            let mut encoder = ZlibEncoder::new(decompressed_buf.reader(), flate2::Compression::new(6));
+            std::io::copy(&mut encoder, &mut out_writer)?;
         }
         #[cfg(feature = "zstd")]
         CompressionEncoding::Zstd => {
-            let mut zstd_encoder = Encoder::new(
-                &decompressed_buf[0..len],
-                // FIXME: support customizing the compression level
-                zstd::DEFAULT_COMPRESSION_LEVEL,
-            )?;
-            std::io::copy(&mut zstd_encoder, &mut out_writer)?;
+            let mut encoder = Encoder::with_buffer(decompressed_buf.reader(), zstd::DEFAULT_COMPRESSION_LEVEL)?;
+            std::io::copy(&mut encoder, &mut out_writer)?;
         }
     }
-
     Ok(())
 }
 
@@ -320,6 +337,41 @@ pub enum SingleMessageCompressionOverride {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(all(feature = "gzip", feature = "deflate", feature = "zstd"))]
+    fn segmented_inputs_roundtrip_with_each_compressor() {
+        use std::io::Read;
+        for encoding in [
+            CompressionEncoding::Gzip,
+            CompressionEncoding::Deflate,
+            CompressionEncoding::Zstd,
+        ] {
+            for len in [0, 4096, 17] {
+                let body = vec![42; len];
+                let suffix = b"suffix";
+                let mut compressed = BytesMut::new();
+                compress_buf(
+                    CompressionSettings { encoding, buffer_growth_interval: 32 },
+                    bytes::Buf::chain(body.as_slice(), suffix.as_slice()),
+                    &mut compressed,
+                ).unwrap();
+                let mut decoded = Vec::new();
+                match encoding {
+                    CompressionEncoding::Gzip => {
+                        flate2::read::GzDecoder::new(compressed.as_ref()).read_to_end(&mut decoded).unwrap();
+                    }
+                    CompressionEncoding::Deflate => {
+                        flate2::read::ZlibDecoder::new(compressed.as_ref()).read_to_end(&mut decoded).unwrap();
+                    }
+                    CompressionEncoding::Zstd => {
+                        zstd::stream::read::Decoder::new(compressed.as_ref()).unwrap().read_to_end(&mut decoded).unwrap();
+                    }
+                }
+                assert_eq!(decoded, [body.as_slice(), suffix].concat());
+            }
+        }
+    }
+
     #[cfg(any(feature = "gzip", feature = "deflate", feature = "zstd"))]
     use http::HeaderValue;
 
@@ -366,6 +418,87 @@ mod tests {
         };
 
         assert_eq!(encodings.into_accept_encoding_header_value().unwrap(), ZSTD);
+    }
+
+    #[test]
+    #[cfg(all(feature = "gzip", feature = "zstd"))]
+    fn from_accept_encoding_header_respects_server_enabled_encodings() {
+        // Regression test for the case where the client advertises multiple
+        // encodings in its `grpc-accept-encoding` header but the server only
+        // enabled a subset of them via `.send_compressed(...)`.
+        //
+        // Previously, `from_accept_encoding_header` would pick the first
+        // encoding in the client's list whose `cfg(feature = ...)` was
+        // compiled in, without checking whether the server actually enabled
+        // that encoding. That meant a server configured for Zstd-only would
+        // gzip its responses whenever a client listed `gzip` before `zstd`
+        // in `grpc-accept-encoding` — even though the server never asked for
+        // gzip and (in `into_accept_encoding_header_value`) would never have
+        // advertised it.
+        //
+        // The selected encoding must come from the intersection of the
+        // server's enabled set and the client's accept list, preserving the
+        // client's preference order.
+        let mut enabled = EnabledCompressionEncodings::default();
+        enabled.enable(CompressionEncoding::Zstd);
+        assert!(enabled.is_enabled(CompressionEncoding::Zstd));
+        assert!(!enabled.is_enabled(CompressionEncoding::Gzip));
+
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            ACCEPT_ENCODING_HEADER,
+            HeaderValue::from_static("gzip,zstd,identity"),
+        );
+
+        assert_eq!(
+            CompressionEncoding::from_accept_encoding_header(&headers, enabled),
+            Some(CompressionEncoding::Zstd),
+            "server has only Zstd enabled; must not pick Gzip just because \
+             the client listed it first",
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "gzip", feature = "zstd"))]
+    fn from_accept_encoding_header_returns_none_when_no_overlap() {
+        // If the client's `grpc-accept-encoding` and the server's enabled
+        // encodings have no overlap, no compression should be selected — the
+        // server should fall back to sending the response uncompressed.
+        let mut enabled = EnabledCompressionEncodings::default();
+        enabled.enable(CompressionEncoding::Zstd);
+
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            ACCEPT_ENCODING_HEADER,
+            HeaderValue::from_static("gzip,identity"),
+        );
+
+        assert_eq!(
+            CompressionEncoding::from_accept_encoding_header(&headers, enabled),
+            None,
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "gzip", feature = "zstd"))]
+    fn from_accept_encoding_header_uses_client_preference_order() {
+        // When multiple enabled encodings appear in the client's accept list,
+        // the client's ordering wins. Both encodings are enabled on the
+        // server, but the client prefers gzip.
+        let mut enabled = EnabledCompressionEncodings::default();
+        enabled.enable(CompressionEncoding::Zstd);
+        enabled.enable(CompressionEncoding::Gzip);
+
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            ACCEPT_ENCODING_HEADER,
+            HeaderValue::from_static("gzip,zstd,identity"),
+        );
+
+        assert_eq!(
+            CompressionEncoding::from_accept_encoding_header(&headers, enabled),
+            Some(CompressionEncoding::Gzip),
+        );
     }
 
     #[test]

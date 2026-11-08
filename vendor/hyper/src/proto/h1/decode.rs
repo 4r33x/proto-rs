@@ -147,8 +147,8 @@ impl Decoder {
         body: &mut R,
     ) -> Poll<Result<Frame<Bytes>, io::Error>> {
         trace!("decode; state={:?}", self.kind);
-        match self.kind {
-            Length(ref mut remaining) => {
+        match &mut self.kind {
+            Length(remaining) => {
                 if *remaining == 0 {
                     Poll::Ready(Ok(Frame::data(Bytes::new())))
                 } else {
@@ -169,13 +169,13 @@ impl Decoder {
                 }
             }
             Chunked {
-                ref mut state,
-                ref mut chunk_len,
-                ref mut extensions_cnt,
-                ref mut trailers_buf,
-                ref mut trailers_cnt,
-                ref h1_max_headers,
-                ref h1_max_header_size,
+                state,
+                chunk_len,
+                extensions_cnt,
+                trailers_buf,
+                trailers_cnt,
+                h1_max_headers,
+                h1_max_header_size,
             } => {
                 let h1_max_headers = h1_max_headers.unwrap_or(DEFAULT_MAX_HEADERS);
                 let h1_max_header_size = h1_max_header_size.unwrap_or(TRAILER_LIMIT);
@@ -221,7 +221,7 @@ impl Decoder {
                     }
                 }
             }
-            Eof(ref mut is_eof) => {
+            Eof(is_eof) => {
                 if *is_eof {
                     Poll::Ready(Ok(Frame::data(Bytes::new())))
                 } else {
@@ -286,12 +286,12 @@ macro_rules! put_u8 {
     };
 }
 
-struct StepArgs<'a> {
-    chunk_size: &'a mut u64,
-    chunk_buf: &'a mut Option<Bytes>,
-    extensions_cnt: &'a mut u64,
-    trailers_buf: &'a mut Option<BytesMut>,
-    trailers_cnt: &'a mut usize,
+struct StepArgs<'args> {
+    chunk_size: &'args mut u64,
+    chunk_buf: &'args mut Option<Bytes>,
+    extensions_cnt: &'args mut u64,
+    trailers_buf: &'args mut Option<BytesMut>,
+    trailers_cnt: &'args mut usize,
     max_headers_cnt: usize,
     max_headers_bytes: usize,
 }
@@ -314,7 +314,10 @@ impl ChunkedState {
             max_headers_bytes,
         }: StepArgs<'_>,
     ) -> Poll<Result<ChunkedState, io::Error>> {
-        use self::ChunkedState::*;
+        use self::ChunkedState::{
+            Body, BodyCr, BodyLf, End, EndCr, EndLf, Extension, Size, SizeLf, SizeLws, Start,
+            Trailer, TrailerLf,
+        };
         match *self {
             Start => ChunkedState::read_start(cx, body, chunk_size),
             Size => ChunkedState::read_size(cx, body, chunk_size),
@@ -604,7 +607,7 @@ impl ChunkedState {
                         buf.put_u8(byte);
                         *trailers_buf = Some(buf);
                     }
-                    Some(ref mut trailers_buf) => {
+                    Some(trailers_buf) => {
                         put_u8!(trailers_buf, byte, h1_max_header_size);
                     }
                 }
@@ -649,7 +652,7 @@ fn decode_trailers(buf: &mut BytesMut, count: usize) -> Result<HeaderMap, io::Er
                     Err(_) => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            format!("Invalid header name: {:?}", &header),
+                            format!("Invalid header name: {header:?}"),
                         ));
                     }
                 };
@@ -659,7 +662,7 @@ fn decode_trailers(buf: &mut BytesMut, count: usize) -> Result<HeaderMap, io::Er
                     Err(_) => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            format!("Invalid header value: {:?}", &header),
+                            format!("Invalid header value: {header:?}"),
                         ));
                     }
                 };

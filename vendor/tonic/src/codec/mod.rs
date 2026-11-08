@@ -1,3 +1,27 @@
+/*
+ *
+ * Copyright 2025 gRPC authors.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ *
+ */
+
 //! Generic encoding and decoding.
 //!
 //! This module contains the generic `Codec`, `Encoder` and `Decoder` traits.
@@ -184,9 +208,26 @@ pub enum EncodeResult<T> {
 
 /// Validated immutable uncompressed gRPC frame. Its payload allocation can be
 /// handed directly to the HTTP body, or read directly by a compressor.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OwnedMessage {
-    frame: bytes::Bytes,
+    frames: [bytes::Bytes; 3],
+    compressed: Option<std::sync::Arc<dyn CompressionCache>>,
+}
+
+/// Optional cache for the compressed frames of one immutable message.
+///
+/// Each result must be a complete gRPC frame for the requested encoding. Do not
+/// share a cache between different payloads. Call `compress` at most once per poll;
+/// it cannot be retained after this call. Returning `Pending` requires arranging
+/// for `cx.waker()` to be woken when another poll can make progress.
+pub trait CompressionCache: std::fmt::Debug + Send + Sync {
+    /// Return a cached frame or produce one using Tonic's configured compressor.
+    fn poll_frame(
+        &self,
+        encoding: CompressionEncoding,
+        cx: &mut std::task::Context<'_>,
+        compress: &mut dyn FnMut() -> Result<bytes::Bytes, Status>,
+    ) -> std::task::Poll<Result<bytes::Bytes, Status>>;
 }
 
 impl OwnedMessage {
@@ -201,16 +242,46 @@ impl OwnedMessage {
         if len != frame.len() - HEADER_SIZE {
             return Err(crate::Status::internal("invalid owned gRPC frame length"));
         }
-        Ok(Self { frame })
+        Ok(Self {
+            frames: [frame, bytes::Bytes::new(), bytes::Bytes::new()],
+            compressed: None,
+        })
     }
 
-    /// Borrow the protobuf payload, excluding its gRPC frame header.
-    pub fn payload(&self) -> &[u8] {
-        &self.frame[HEADER_SIZE..]
+    /// Frame a shared protobuf body and trailing fields without joining them.
+    pub fn from_segments(body: bytes::Bytes, suffix: bytes::Bytes) -> Result<Self, crate::Status> {
+        let len = body
+            .len()
+            .checked_add(suffix.len())
+            .and_then(|len| u32::try_from(len).ok())
+            .ok_or_else(|| {
+                crate::Status::resource_exhausted("message exceeds gRPC's 4 GiB limit")
+            })?;
+        let mut header = [0; HEADER_SIZE];
+        header[1..].copy_from_slice(&len.to_be_bytes());
+        Ok(Self {
+            frames: [bytes::Bytes::copy_from_slice(&header), body, suffix],
+            compressed: None,
+        })
     }
 
-    pub(crate) fn into_frame(self) -> bytes::Bytes {
-        self.frame
+    /// Attach an application cache, shared by clones of this message.
+    /// Messages have no compression cache by default.
+    pub fn with_compression_cache<C: CompressionCache + 'static>(mut self, cache: C) -> Self {
+        self.compressed = Some(std::sync::Arc::new(cache));
+        self
+    }
+
+    /// Borrow the protobuf segments, excluding the gRPC header.
+    pub fn payload(&self) -> impl bytes::Buf + '_ {
+        use bytes::Buf;
+        self.frames[0][HEADER_SIZE..]
+            .chain(&self.frames[1][..])
+            .chain(&self.frames[2][..])
+    }
+
+    pub(crate) fn into_frames(self) -> [bytes::Bytes; 3] {
+        self.frames
     }
 }
 
