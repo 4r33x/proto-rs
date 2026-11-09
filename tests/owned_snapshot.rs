@@ -170,12 +170,12 @@ fn snapshot_is_eager_and_tonic_preserves_its_allocation() {
         let pointer = snapshot.as_bytes().as_ptr();
         value.data.fill(99);
         assert_eq!(snapshot.as_bytes(), expected);
-        let mut body = EncodeBody::new_client(
+        let mut body = Box::pin(EncodeBody::new_client(
             ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default(),
             tokio_stream::iter([Ok(snapshot)]),
             None,
             None,
-        );
+        ));
         let frame = data_frame(&mut body);
         assert_eq!(frame.as_ptr().wrapping_add(5), pointer);
         assert_eq!(&frame[5..], expected);
@@ -196,12 +196,12 @@ fn fanout_shares_one_allocation_until_last_transport_slice_is_released() {
     value.data.fill(1);
     let frames: Vec<_> = (0..8)
         .map(|_| {
-            let mut body = EncodeBody::new_client(
+            let mut body = Box::pin(EncodeBody::new_client(
                 ProtoEncoder::<proto_rs::EncodedSnapshot<Message>, BytesMode>::default(),
                 tokio_stream::iter([Ok(snapshot.clone())]),
                 None,
                 None,
-            );
+            ));
             let frame = data_frame(&mut body);
             assert_eq!(frame.as_ptr().wrapping_add(5), pointer);
             assert_eq!(&frame[5..], expected);
@@ -249,7 +249,7 @@ fn ordinary_batches_flush_on_pending_and_preserve_source_errors() {
             }
         }
     }
-    let mut body = EncodeBody::new_client(ProtoEncoder::<u64, proto_rs::SunByRef>::default(), Source(0), None, None);
+    let mut body = Box::pin(EncodeBody::new_client(ProtoEncoder::<u64, proto_rs::SunByRef>::default(), Source(0), None, None));
     assert_eq!(batch_values(&data_frame(&mut body)), [0, 1]);
     assert_eq!(batch_values(&data_frame(&mut body)), [128]);
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
@@ -271,7 +271,7 @@ fn ordinary_batches_bound_ready_empty_streams_and_check_individual_limits() {
             Poll::Ready(Some(Ok(0)))
         }
     }
-    let mut body = EncodeBody::new_client(ProtoEncoder::<u64, proto_rs::SunByRef>::default(), ReadyZeros(300), None, Some(0));
+    let mut body = Box::pin(EncodeBody::new_client(ProtoEncoder::<u64, proto_rs::SunByRef>::default(), ReadyZeros(300), None, Some(0)));
     for count in [128, 128, 44] {
         assert_eq!(batch_values(&data_frame(&mut body)), vec![0; count]);
     }
@@ -279,12 +279,12 @@ fn ordinary_batches_bound_ready_empty_streams_and_check_individual_limits() {
         Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())),
         Poll::Ready(None)
     ));
-    let mut body = EncodeBody::new_client(
+    let mut body = Box::pin(EncodeBody::new_client(
         ProtoEncoder::<u64, proto_rs::SunByRef>::default(),
         tokio_stream::iter([Ok(0), Ok(u64::MAX)]),
         None,
         Some(1),
-    );
+    ));
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
         panic!("batch bypassed individual message limit")
     };
@@ -299,7 +299,7 @@ fn ordinary_batch_flushes_at_size_hint_threshold() {
             data: vec![42; 20_000],
         })
     }));
-    let mut body = EncodeBody::new_client(ProtoEncoder::<Message, proto_rs::SunByRef>::default(), source, None, None);
+    let mut body = Box::pin(EncodeBody::new_client(ProtoEncoder::<Message, proto_rs::SunByRef>::default(), source, None, None));
     let first = data_frame(&mut body);
     let second = data_frame(&mut body);
     assert!(first.len() > 40_000 && first.len() < 41_000);
@@ -326,12 +326,12 @@ fn owned_batch_hook_rejects_malformed_frames() {
         }
     }
     for malformed in [&[][..], &[0], &[1, 0, 0, 0, 0], &[0, 0, 0, 0, 1], &[0, 0, 0, 0, 0, 0]] {
-        let mut body = EncodeBody::new_client(
+        let mut body = Box::pin(EncodeBody::new_client(
             BatchEncoder,
             tokio_stream::iter([Ok(Bytes::copy_from_slice(malformed))]),
             None,
             None,
-        );
+        ));
         let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
             panic!("malformed batch accepted")
         };
@@ -363,12 +363,12 @@ fn switching_from_buffered_to_owned_batches_preserves_order() {
     }
     let batch = Bytes::from_static(&[0, 0, 0, 0, 1, 2]);
     let pointer = batch.as_ptr();
-    let mut body = EncodeBody::new_client(
+    let mut body = Box::pin(EncodeBody::new_client(
         Switching(false),
         tokio_stream::iter([Ok(Bytes::from_static(&[1])), Ok(batch), Err(tonic::Status::aborted("end"))]),
         None,
         None,
-    );
+    ));
     assert_eq!(&data_frame(&mut body)[..], &[0, 0, 0, 0, 1, 1]);
     assert_eq!(data_frame(&mut body).as_ptr(), pointer);
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
@@ -385,12 +385,12 @@ fn tls_pool_waits_for_the_final_frame_owner() {
     };
     let snapshot = EncodedSnapshot::new(&value);
     let pointer = snapshot.as_bytes().as_ptr();
-    let mut body = EncodeBody::new_client(
+    let mut body = Box::pin(EncodeBody::new_client(
         ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default(),
         tokio_stream::iter([Ok(snapshot)]),
         None,
         None,
-    );
+    ));
     let frame = data_frame(&mut body);
     let retained = frame.slice(5..);
     drop(frame);
@@ -438,23 +438,23 @@ fn compressed_snapshot_send_limit_matches_buffered_policy() {
         id: 1,
         data: vec![42; 10000],
     };
-    let mut body = EncodeBody::new_client(
+    let mut body = Box::pin(EncodeBody::new_client(
         ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default(),
         tokio_stream::iter([Ok(value.to_encoded_snapshot())]),
         Some(CompressionEncoding::Gzip),
         Some(1),
-    );
+    ));
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
         panic!("compressed limit ignored")
     };
     assert_eq!(error.code(), tonic::Code::OutOfRange);
     // Tonic's limit applies to the encoded (compressed) message size.
-    let mut body = EncodeBody::new_client(
+    let mut body = Box::pin(EncodeBody::new_client(
         ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default(),
         tokio_stream::iter([Ok(value.to_encoded_snapshot())]),
         Some(CompressionEncoding::Gzip),
         Some(1024),
-    );
+    ));
     assert_eq!(data_frame(&mut body)[0], 1);
 }
 
@@ -512,7 +512,10 @@ impl Encoder for MixedEncoder {
 
 #[test]
 fn mixed_buffered_owned_and_error_order_is_preserved() {
-    let owned = Bytes::from_static(&[0, 0, 0, 0, 1, 2]);
+    let mut owned = vec![2; 5 + 65536];
+    owned[..5].copy_from_slice(&[0, 0, 1, 0, 0]);
+    let owned = Bytes::from(owned);
+    let expected = owned.clone();
     let pointer = owned.as_ptr();
     let source = tokio_stream::iter([
         Ok(Mixed::Buffered(vec![1])),
@@ -520,11 +523,11 @@ fn mixed_buffered_owned_and_error_order_is_preserved() {
         Ok(Mixed::Buffered(vec![3])),
         Err(tonic::Status::aborted("end")),
     ]);
-    let mut body = EncodeBody::new_client(MixedEncoder, source, None, None);
+    let mut body = Box::pin(EncodeBody::new_client(MixedEncoder, source, None, None));
     assert_eq!(&data_frame(&mut body)[..], &[0, 0, 0, 0, 1, 1]);
     let frame = data_frame(&mut body);
     assert_eq!(frame.as_ptr(), pointer);
-    assert_eq!(&frame[..], &[0, 0, 0, 0, 1, 2]);
+    assert_eq!(frame, expected);
     assert_eq!(&data_frame(&mut body)[..], &[0, 0, 0, 0, 1, 3]);
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
         panic!("missing terminal error")
@@ -541,12 +544,12 @@ fn owned_message_limits_and_header_validation_are_enforced() {
         id: 1,
         data: vec![42; 128],
     });
-    let mut body = EncodeBody::new_client(
+    let mut body = Box::pin(EncodeBody::new_client(
         ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default(),
         tokio_stream::iter([Ok(snapshot)]),
         None,
         Some(8),
-    );
+    ));
     let Poll::Ready(Some(Err(error))) = Pin::new(&mut body).poll_frame(&mut Context::from_waker(Waker::noop())) else {
         panic!("oversized owned message accepted")
     };
@@ -559,13 +562,13 @@ fn owned_server_trailers_and_compression_override_are_preserved() {
     let value = Message { id: 3, data: vec![8; 100] };
     let snapshot = value.to_encoded_snapshot();
     let pointer = snapshot.as_bytes().as_ptr();
-    let mut body = EncodeBody::new_server(
+    let mut body = Box::pin(EncodeBody::new_server(
         ProtoEncoder::<EncodedSnapshot<Message>, BytesMode>::default(),
         tokio_stream::iter([Ok(snapshot)]),
         Some(CompressionEncoding::Gzip),
         SingleMessageCompressionOverride::Disable,
         None,
-    );
+    ));
     let frame = data_frame(&mut body);
     assert_eq!(frame[0], 0);
     assert_eq!(frame.as_ptr().wrapping_add(5), pointer);

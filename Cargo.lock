@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "proto-rs-hyper"
-version = "1.11.0-proto.1"
+version = "1.12.0-proto.1"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.14.6"
+version = "0.14.9"
 dependencies = [
  "async-trait",
  "axum",
@@ -3218,6 +3218,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-stream",
+ "tokio-util",
  "tower",
  "tower-layer",
  "tower-service",

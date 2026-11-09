@@ -188,6 +188,15 @@ impl Service<http::Uri> for Factory {
             if let Some(v) = settings.max_header_list_size {
                 builder.max_header_list_size(v);
             }
+            if let Some(v) = settings.max_concurrent_reset_streams {
+                builder.max_concurrent_reset_streams(v);
+            }
+            if let Some(v) = settings.reset_stream_duration {
+                builder.reset_stream_duration(v);
+            }
+            if let Some(v) = settings.max_local_error_reset_streams {
+                builder.max_local_error_reset_streams(v);
+            }
             let (sender, connection) = builder.handshake(io).await?;
             *previous.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(socket_metrics.clone());
             metrics.register(socket_metrics);

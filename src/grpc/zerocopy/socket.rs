@@ -326,6 +326,16 @@ impl ZeroCopyIo {
         Ok(Self { socket, shared, config })
     }
 
+    /// Adopt a freshly accepted TCP socket while preserving its socket options.
+    ///
+    /// # Safety
+    /// No MSG_ZEROCOPY sends may have occurred on this socket, and no other
+    /// owner may submit such sends or consume its error queue (including via
+    /// duplicate descriptors). This transport must exclusively own that state.
+    pub unsafe fn from_fresh_stream(socket: TcpStream, config: ZeroCopyConfig) -> io::Result<Self> {
+        Self::from_connector(socket, config, false)
+    }
+
     pub fn metrics(&self) -> ZeroCopyMetrics {
         self.shared.metrics.clone()
     }

@@ -162,13 +162,18 @@ impl<T, Mode> ProtoEncoder<T, Mode> {
     }
 }
 
-impl AsBytes for crate::PreparedMessage {
-    fn as_bytes(&self) -> &[u8] {
-        self.payload()
+impl EncoderExt<crate::PreparedMessage, BytesMode> for ProtoEncoder<crate::PreparedMessage, BytesMode> {
+    fn encode_sun(&mut self, item: crate::PreparedMessage, dst: &mut EncodeBuf<'_>) -> Result<(), Status> {
+        dst.put(item.payload());
+        Ok(())
     }
     #[cfg(feature = "tonic-owned")]
-    fn into_owned_message(self) -> Result<tonic::codec::EncodeResult<Self>, Status> {
-        Ok(tonic::codec::EncodeResult::Owned(self))
+    fn supports_owned_sun(&self) -> bool {
+        true
+    }
+    #[cfg(feature = "tonic-owned")]
+    fn encode_owned_sun(&mut self, item: crate::PreparedMessage) -> Result<tonic::codec::EncodeResult<crate::PreparedMessage>, Status> {
+        Ok(tonic::codec::EncodeResult::Owned(item))
     }
 }
 
